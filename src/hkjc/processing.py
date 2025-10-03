@@ -6,6 +6,7 @@ from typing import Tuple, List
 from .live_odds import live_odds
 from .qpbanker import win_probability, expected_value, average_odds
 from .optimization import _pareto_filter
+from .harville_model import HarvilleOptimizer
 
 import polars as pl
 import numpy as np
@@ -26,7 +27,7 @@ def _process_single_qp_trade(banker: int, covered: List[int], odds_pla: List[flo
     return (banker, covered, win_prob, exp_value, ave_odds)
 
 
-def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate: float = 0.12) -> pl.DataFrame:
+def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate: float = 0.12, harville_fit=True) -> pl.DataFrame:
     """Generate all possible qp tickets for the specified race.
 
     Args:
@@ -34,13 +35,24 @@ def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate:
         venue_code (str): Venue code, e.g., 'ST' for Shatin, 'HV' for Happy Valley.
         race_number (int): Race number.
         rebate (float, optional): The rebate percentage. Defaults to 0.12.
+        harville_fit (bool, optional): Whether to fit the odds using Harville model. Defaults to True.
 
     Returns:
         pl.DataFrame: DataFrame with all possible trades and their metrics.
     """
-    odds = live_odds(date, venue_code, race_number, odds_type=['PLA', 'QPL'])
+
+    odds = live_odds(date, venue_code, race_number,
+                     odds_type=['PLA', 'QPL', 'WIN', 'QIN'])
     N = len(odds['PLA'])
     candidates = np.arange(1, N+1)
+
+    if harville_fit:
+        ho = HarvilleOptimizer(N)
+        fit_res = ho.fit(1/odds['WIN'], 1/odds['QIN'],
+                         1/odds['QPL'], 1/odds['PLA'])
+        if fit_res['success']:
+            odds['PLA'] = 1/fit_res['b_fitted']
+            odds['QPL'] = 1/fit_res['Q_fitted']
 
     results = [_process_single_qp_trade(banker, covered, odds['PLA'], odds['QPL'], rebate)
                for banker in tqdm(candidates, desc="Processing bankers")
