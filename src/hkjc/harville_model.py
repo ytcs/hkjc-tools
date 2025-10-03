@@ -104,7 +104,8 @@ def _extract_pair_in_top_k(dp: np.ndarray, n: int, k: int) -> np.ndarray:
         
         for i in range(k):
             for j in range(k):
-                M[horses[i], horses[j]] += prob
+                if horses[i] != horses[j]:
+                    M[horses[i], horses[j]] += prob
     
     return M
 
