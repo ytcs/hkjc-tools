@@ -27,7 +27,7 @@ def _process_single_qp_trade(banker: int, covered: List[int], odds_pla: List[flo
     return (banker, covered, win_prob, exp_value, ave_odds)
 
 
-def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate: float = 0.12, harville_fit=True) -> pl.DataFrame:
+def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate: float = 0.12, harville_fit=False) -> pl.DataFrame:
     """Generate all possible qp tickets for the specified race.
 
     Args:
@@ -35,7 +35,7 @@ def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate:
         venue_code (str): Venue code, e.g., 'ST' for Shatin, 'HV' for Happy Valley.
         race_number (int): Race number.
         rebate (float, optional): The rebate percentage. Defaults to 0.12.
-        harville_fit (bool, optional): Whether to fit the odds using Harville model. Defaults to True.
+        harville_fit (bool, optional): Whether to fit the odds using Harville model. Defaults to False.
 
     Returns:
         pl.DataFrame: DataFrame with all possible trades and their metrics.
@@ -65,7 +65,7 @@ def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate:
     return df
 
 
-def generate_pareto_qp_trades(date: str, venue_code: str, race_number: int, rebate: float = 0.12, groupby: List[str] = []) -> pl.DataFrame:
+def generate_pareto_qp_trades(date: str, venue_code: str, race_number: int, rebate: float = 0.12, groupby: List[str] = [], harville_fit=False) -> pl.DataFrame:
     """Generate qp tickets that are Pareto optimal for the specified race.
 
     Args:
@@ -74,11 +74,12 @@ def generate_pareto_qp_trades(date: str, venue_code: str, race_number: int, reba
         race_number (int): Race number.
         rebate (float, optional): The rebate percentage. Defaults to 0.12.
         groupby (List[str], optional): Columns to group by when determining Pareto optimality. Defaults to [] (global optimal).
+        harville_fit (bool, optional): Whether to fit the odds using Harville model. Defaults to False.
 
     Returns:
         pl.DataFrame: DataFrame with all Pareto trades and their metrics.
     """
-    df = generate_all_qp_trades(date, venue_code, race_number, rebate)
+    df = generate_all_qp_trades(date, venue_code, race_number, rebate, harville_fit=harville_fit)
     pareto_df = _pareto_filter(df, groupby=groupby, by=[
                                'WinProb', 'ExpValue'], maximize=True)
     return pareto_df
