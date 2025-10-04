@@ -69,7 +69,7 @@ def generate_pareto_qp_trades(date: str, venue_code: str, race_number: int, reba
     Returns:
         pl.DataFrame: DataFrame with all Pareto trades and their metrics.
     """
-    df = generate_all_qp_trades(date, venue_code, race_number, rebate, harville_fit=fit_harville)
+    df = generate_all_qp_trades(date, venue_code, race_number, rebate, fit_harville=fit_harville)
     pareto_df = _pareto_filter(df, groupby=groupby, by=[
                                'WinProb', 'ExpValue'], maximize=True)
     return pareto_df
