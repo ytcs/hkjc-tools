@@ -36,7 +36,7 @@ def speedpro_energy(race_date: str) -> pl.DataFrame:
 
     df = (df.with_columns(pl.col('RunnerNumber').str.to_integer())
           .with_columns(pl.col('SpeedPRO_Energy_Difference').str.to_integer())
-          .select(['RaceNumber', 'RunnerNumber', 'HorseName', 'FitnessRatings','SpeedPRO_Energy_Difference']))
+          .select(['RaceNo', 'RunnerNumber', 'HorseName', 'FitnessRatings','SpeedPRO_Energy_Difference']))
 
     return df
 
