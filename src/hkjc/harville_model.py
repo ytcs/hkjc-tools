@@ -20,6 +20,12 @@ from scipy.optimize import minimize
 from numba import njit
 from typing import Tuple, Optional
 
+LAMBDA_DEFAULTS = {
+    'WIN': 1.0,
+    'QIN': 2.0,
+    'QPL': 1.5,
+    'PLA': 0.7
+}
 
 @njit(cache=True)
 def _popcount(mask: int) -> int:
@@ -173,7 +179,7 @@ def _kl_divergence(p_obs: np.ndarray, p_model: np.ndarray) -> float:
     return np.sum(p_obs_flat * np.log(p_obs_flat / p_model_flat))
 
 
-class HarvilleOptimizer:
+class HarvilleModel:
     """
     Fits Harville race model to betting market odds using dynamic programming.
     
@@ -182,9 +188,9 @@ class HarvilleOptimizer:
     relative strength. This optimizer estimates theta from observed betting odds
     across multiple pool types.
     
-    Default lambda weights (1.0, 2.0, 1.5, 0.7) reflect that early Win odds are
-    biased by informed traders waiting until closing, while exotic pools provide
-    more stable signals for ensemble estimation.
+    Default lambda weights reflect that early Win odds are biased by informed 
+    traders waiting until closing, while exotic pools provide more stable 
+    signals for ensemble estimation.
     
     Attributes:
         n (int): Number of horses
@@ -194,10 +200,10 @@ class HarvilleOptimizer:
         lambda_banker (float): Weight for Banker pool loss
     """
     
-    def __init__(self, n_horses: int, lambda_win: float = 1.0, lambda_qin: float = 2.0, 
-                 lambda_quinella: float = 1.5, lambda_banker: float = 0.7):
+    def __init__(self, n_horses: int, lambda_win: float = LAMBDA_DEFAULTS['WIN'], lambda_qin: float = LAMBDA_DEFAULTS['QIN'], 
+                 lambda_quinella: float = LAMBDA_DEFAULTS['QPL'], lambda_banker: float = LAMBDA_DEFAULTS['PLA']) -> None:
         """
-        Initialize optimizer.
+        Initialize model.
         
         Args:
             n_horses: Number of horses in race (recommend <= 20 for speed)
@@ -218,8 +224,9 @@ class HarvilleOptimizer:
         self.lambda_quinella = lambda_quinella
         self.lambda_banker = lambda_banker
         self._eval_count = 0
+        self.result = None
     
-    def loss(self, theta: np.ndarray, W_obs: Optional[np.ndarray], 
+    def _loss(self, theta: np.ndarray, W_obs: Optional[np.ndarray], 
              Qin_obs: Optional[np.ndarray], Q_obs: Optional[np.ndarray], 
              b_obs: Optional[np.ndarray]) -> float:
         """
@@ -328,7 +335,7 @@ class HarvilleOptimizer:
         
         if method == 'L-BFGS-B':
             result = minimize(
-                fun=lambda x: self.loss(x, W_obs, Qin_obs, Q_obs, b_obs),
+                fun=lambda x: self._loss(x, W_obs, Qin_obs, Q_obs, b_obs),
                 x0=theta_init,
                 method='L-BFGS-B',
                 bounds=[(1e-6, 1.0) for _ in range(self.n)],
@@ -336,7 +343,7 @@ class HarvilleOptimizer:
             )
         else:
             result = minimize(
-                fun=lambda x: self.loss(x, W_obs, Qin_obs, Q_obs, b_obs),
+                fun=lambda x: self._loss(x, W_obs, Qin_obs, Q_obs, b_obs),
                 x0=theta_init,
                 method='SLSQP',
                 bounds=[(1e-6, 1.0) for _ in range(self.n)],
@@ -349,7 +356,7 @@ class HarvilleOptimizer:
         
         W_fitted, Qin_fitted, Q_fitted, b_fitted, P_fitted = _compute_probabilities(theta_opt)
         
-        return {
+        self.result = {
             'theta': theta_opt,
             'W_fitted': W_fitted,
             'Qin_fitted': Qin_fitted,
@@ -361,3 +368,82 @@ class HarvilleOptimizer:
             'message': result.message,
             'n_eval': self._eval_count
         }
+
+        return self.result
+    
+def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float] = None) -> dict:
+    """
+    Fit Harville model to observed betting odds.
+    
+    At least one odds type must be provided. All odds should be probabilities
+    (not decimal/fractional odds). Matrices should be symmetric where applicable.
+    
+    Args:
+        odds: Dictionary of odds arrays with types as keys.:
+                'WIN' (n,), 'QIN' (n,n), 'QPL' (n,n), 'PLA' (n,)
+        lambdas: Optional dictionary of lambda weights for each odds type.
+                    Keys can be 'WIN', 'QIN', 'QPL', 'PLA'. Defaults to
+                    {'WIN': 1.0, 'QIN': 2.0, 'QPL': 1.5, 'PLA': 0.7}
+        
+    Returns:
+        Dictionary containing:
+            - theta: Fitted strength parameters (n,)
+            - W_fitted: Fitted Win probabilities (n,)
+            - Qin_fitted: Fitted Qin probabilities (n, n)
+            - Q_fitted: Fitted Quinella probabilities (n, n)
+            - b_fitted: Fitted Banker probabilities (n,)
+            - P_fitted: Full place probability matrix (n, n), P[i,j] = 
+                        prob horse i finishes in position j
+            - loss: Final loss value
+            - success: Whether optimization converged
+            - message: Optimizer status message
+            - n_eval: Number of loss function evaluations
+    """
+    n_horses = None
+    W_obs = None
+    Qin_obs = None
+    Q_obs = None
+    b_obs = None
+    
+    if 'WIN' in odds:
+        W_odds = odds['WIN']
+        if n_horses is None:
+            n_horses = len(W_odds)
+        elif n_horses != len(W_odds):
+            raise ValueError("Inconsistent number of horses in WIN odds")
+        W_obs = np.nan_to_num(1.0 / W_odds, 0)
+    
+    if 'QIN' in odds:
+        Qin_odds = odds['QIN']
+        if n_horses is None:
+            n_horses = Qin_odds.shape[0]
+        elif n_horses != Qin_odds.shape[0]:
+            raise ValueError("Inconsistent number of horses in QIN odds")
+        Qin_obs = np.nan_to_num(1.0 / Qin_odds, 0)
+    
+    if 'QPL' in odds:
+        Q_odds = odds['QPL']
+        if n_horses is None:
+            n_horses = Q_odds.shape[0]
+        elif n_horses != Q_odds.shape[0]:
+            raise ValueError("Inconsistent number of horses in QPL odds")
+        Q_obs = np.nan_to_num(1.0 / Q_odds, 0)
+    
+    if 'PLA' in odds:
+        b_odds = odds['PLA']
+        if n_horses is None:
+            n_horses = len(b_odds)
+        elif n_horses != len(b_odds):
+            raise ValueError("Inconsistent number of horses in PLA odds")
+        b_obs = np.nan_to_num(1.0 / b_odds, 0)
+    
+    merged_lambdas = {**LAMBDA_DEFAULTS, **(lambdas or {})}
+    ho = HarvilleModel(
+        n_horses,
+        lambda_win=merged_lambdas['WIN'],
+        lambda_qin=merged_lambdas['QIN'],
+        lambda_quinella=merged_lambdas['QPL'],
+        lambda_banker=merged_lambdas['PLA']
+    )
+    result = ho.fit(W_obs=W_obs, Qin_obs=Qin_obs, Q_obs=Q_obs, b_obs=b_obs)
+    return result
