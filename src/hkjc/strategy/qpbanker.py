@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List
 import numpy as np
 
+
 def _pla_odds_partition(pla_odds: np.ndarray, banker: int, covered: List[int]) -> tuple[float, float, float]:
     """Partition the place odds into banker, covered and eliminated sets.
 
