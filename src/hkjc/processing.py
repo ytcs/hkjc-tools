@@ -99,12 +99,8 @@ def generate_all_pla_trades(date: str, venue_code: str, race_number: int, rebate
     N = len(odds['PLA'])
     candidates = np.arange(1, N+1)
 
-    fit_res = fit_harville_to_odds(
-        W_obs=odds['WIN'],
-        Qin_obs=odds['QIN'],
-        Q_obs=odds['QPL'],
-        b_obs=odds['PLA']
-    )
+    fit_res = fit_harville_to_odds(odds)
+
     if fit_res['success']:
         odds['PLA'] = np.nan_to_num(1/fit_res['b_fitted'], posinf=0)
         odds['QPL'] = np.nan_to_num(1/fit_res['Q_fitted'], posinf=0)
