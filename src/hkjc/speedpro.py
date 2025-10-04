@@ -12,7 +12,7 @@ ENERGY_XLS_TEMPLATE = "https://racing.hkjc.com/racing/speedpro/assets/excel/{dat
 SPEEDMAP_URL_TEMPLATE = "https://racing.hkjc.com/racing/speedpro/assets/json/speedguide/race_{race_num}.json"
 
 
-def speedpro_df(race_date: str) -> pl.DataFrame:
+def speedpro_energy(race_date: str) -> pl.DataFrame:
     """Fetch and process SpeedPro scores for a given race date.
 
     Args:
@@ -29,10 +29,14 @@ def speedpro_df(race_date: str) -> pl.DataFrame:
 
     df = pl.read_excel(ENERGY_XLS_TEMPLATE.format(
         date=dt.strptime(race_date, "%Y-%m-%d").strftime("%Y%m%d")))
-
+    
     # Clean column names
     df.columns = [col.strip().replace(" ", "").replace(
         "\n", "_").replace('.', '') for col in df.columns]
+
+    df = (df.with_columns(pl.col('RunnerNumber').str.to_integer())
+          .with_columns(pl.col('SpeedPRO_Energy_Difference').str.to_integer())
+          .select(['RaceNumber', 'RunnerNumber', 'HorseName', 'FitnessRatings','SpeedPRO_Energy_Difference']))
 
     return df
 

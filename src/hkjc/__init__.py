@@ -6,7 +6,7 @@ from importlib.metadata import version as _version
 
 __all__ = ["live_odds", "qpbanker",
 		    "generate_all_qp_trades", "generate_pareto_qp_trades",
-			"speedpro_df", "speedmap","harveille_model"]
+			"speedpro_energy", "speedmap","harveille_model"]
 
 try:
 	__version__ = _version(__name__)
@@ -15,5 +15,5 @@ except Exception:  # pragma: no cover - best-effort version resolution
 
 from .live_odds import live_odds
 from .processing import generate_all_qp_trades, generate_pareto_qp_trades
-from .speedpro import speedmap, speedpro_df
+from .speedpro import speedmap, speedpro_energy
 from . import harville_model
