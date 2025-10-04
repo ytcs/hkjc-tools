@@ -3,8 +3,6 @@
 from __future__ import annotations
 from typing import Tuple, List
 
-from .harville_model import fit_harville_to_odds
-
 import requests
 from cachetools.func import ttl_cache
 import numpy as np
@@ -87,7 +85,7 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
     ]
 
 
-def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str] = ['PLA', 'QPL'], fit_harville=False) -> dict:
+def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str] = ['PLA', 'QPL']) -> dict:
     """Fetch live odds as numpy arrays.
 
     Args:
@@ -112,7 +110,7 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
     except Exception:
         raise ValueError("Date must be in 'YYYY-MM-DD' format")
 
-    mandatory_types = ['WIN','PLA','QIN','QPL'] if fit_harville else ['PLA']
+    mandatory_types = ['PLA']
 
     data = _fetch_live_odds(date, venue_code, race_number,
                             odds_type=tuple(set(mandatory_types+odds_type)))
@@ -129,24 +127,11 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
     for entry in data:
         if entry["Type"] in ["QIN", "QPL"]:
             horse_ids = list(map(int, entry["HorseID"].split(",")))
-            odds[entry["Type"]][horse_ids[0] - 1, horse_ids[1] - 1] = entry["Odds"]
-            odds[entry["Type"]][horse_ids[1] - 1, horse_ids[0] - 1] = entry["Odds"]
-        elif entry["Type"] in ["PLA","WIN"]:
+            odds[entry["Type"]][horse_ids[0] - 1,
+                                horse_ids[1] - 1] = entry["Odds"]
+            odds[entry["Type"]][horse_ids[1] - 1,
+                                horse_ids[0] - 1] = entry["Odds"]
+        elif entry["Type"] in ["PLA", "WIN"]:
             odds[entry["Type"]][int(entry["HorseID"]) - 1] = entry["Odds"]
-
-    if fit_harville:
-        fit_res = fit_harville_to_odds(
-            W_obs=odds['WIN'],
-            Qin_obs=odds['QIN'],
-            Q_obs=odds['QPL'],
-            b_obs=odds['PLA']
-        )
-        if fit_res['success']:
-            odds['PLA'] = np.nan_to_num(1/fit_res['b_fitted'], posinf=0)
-            odds['QPL'] = np.nan_to_num(1/fit_res['Q_fitted'], posinf=0)
-            odds['WIN'] = np.nan_to_num(1/fit_res['W_fitted'], posinf=0)
-            odds['QIN'] = np.nan_to_num(1/fit_res['Qin_fitted'], posinf=0)
-        else:
-            print(f"[WARNING] Harville model fitting failed: {fit_res.get('message','')}")
 
     return {t: odds[t] for t in odds_type}

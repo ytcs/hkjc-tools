@@ -1,7 +1,7 @@
 import polars as pl
 from typing import List, Union
 
-def _pareto_filter(
+def pareto_filter(
     df: pl.DataFrame, 
     groupby: List[str], 
     by: List[str], 
