@@ -17,7 +17,7 @@ def win_probability(p_matrix: np.ndarray, covered: List[int]) -> float:
         float: probability
     """
     
-    win_prob = 1-np.prod(1-np.sum(p_matrix[covered, :3], axis=1))
+    win_prob = 1-np.prod(1-np.sum([p_matrix[c-1, :3] for c in covered], axis=1))
     return win_prob
 
 
@@ -35,7 +35,7 @@ def expected_value(pla_odds: np.ndarray, p_matrix: np.ndarray, covered: List[int
     """
     true_prob = np.sum(p_matrix[:, :3], axis=1)
     C = len(covered)
-    ev = np.sum((true_prob*(pla_odds-rebate))[covered])/C - (1-rebate)
+    ev = np.sum([(true_prob*(pla_odds-rebate))[c-1] for c in covered])/C - (1-rebate)
     return ev
 
 def average_odds(pla_odds: np.ndarray, covered: List[int]) -> float:
