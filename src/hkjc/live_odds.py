@@ -112,7 +112,7 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
     except Exception:
         raise ValueError("Date must be in 'YYYY-MM-DD' format")
 
-    mandatory_types = ('WIN','PLA','QIN','QPL') if fit_harville else ('PLA')
+    mandatory_types = ['WIN','PLA','QIN','QPL'] if fit_harville else ['PLA']
 
     data = _fetch_live_odds(date, venue_code, race_number,
                             odds_type=tuple(set(mandatory_types+odds_type)))
