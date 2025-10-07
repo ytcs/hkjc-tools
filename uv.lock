@@ -110,7 +110,7 @@ wheels = [
 
 [[package]]
 name = "hkjc"
-version = "0.3.11"
+version = "0.3.14"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
