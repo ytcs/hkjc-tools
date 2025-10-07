@@ -63,7 +63,12 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
     # Use horse track records
     dfs = [_extract_horse_data(horse_id) for horse_id in tqdm(horse_ids, desc='Processing horses ...', leave=False)]
     df = pl.concat(dfs)
-    return _clean_horse_data(df)
+
+    try:
+        return _clean_horse_data(df)
+    except:
+        print('Failed to clean data. Returning raw data for debug.')
+    return df
 
 
 # ==========================
