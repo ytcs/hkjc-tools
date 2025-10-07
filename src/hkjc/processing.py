@@ -45,7 +45,7 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
 
     dfs = []
 
-    for date in pl.date_range(start_dt, end_dt, interval='1d', eager=True):
+    for date in tqdm(pl.date_range(start_dt, end_dt, interval='1d', eager=True)):
         for venue_code in ['ST', 'HV']:
             df = _historical_process_single_date_venue(date, venue_code)
             if df is None:
