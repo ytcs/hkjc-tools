@@ -6,7 +6,7 @@ from typing import Tuple, List, Union
 from .live_odds import live_odds
 from .strategy import qpbanker, place_only
 from .harville_model import fit_harville_to_odds
-from .historical import _extract_race_data
+from .historical import get_race_data, get_horse_data
 from .utils import _validate_date
 
 import polars as pl
@@ -14,7 +14,6 @@ import numpy as np
 from itertools import combinations
 from tqdm import tqdm
 from datetime import datetime as dt
-from joblib import delayed, Parallel
 
 
 def _all_subsets(lst): return [list(x) for r in range(
@@ -30,11 +29,12 @@ incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
 
 def _historical_process_single_date_venue(date: str, venue_code: str) -> List[pl.DataFrame]:
     dfs = []
-    iter_date = tqdm(range(1, 12), desc=f"Processing {date} {venue_code} ...", leave=False)
+    iter_date = tqdm(
+        range(1, 12), desc=f"Processing {date} {venue_code} ...", leave=False)
     for race_number in iter_date:
         try:
-            dfs.append(_extract_race_data(date.strftime('%Y/%m/%d'),
-                                          venue_code, race_number))
+            dfs.append(get_race_data(date.strftime('%Y/%m/%d'),
+                                     venue_code, race_number))
         except:
             if race_number == 1:
                 iter_date.close()
@@ -56,13 +56,21 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
             dfs += _historical_process_single_date_venue(date, venue_code)
 
     if dfs == []:
-        raise ValueError("Failed to obtain any race data. This could be due to invalid date range, or server requests limit. Please try again later.")
+        raise ValueError(
+            "Failed to obtain any race data. This could be due to invalid date range, or server requests limit. Please try again later.")
 
-    df = (pl.concat(dfs)
-          .filter(~pl.col('Pla').is_in(incidents))
-          .with_columns(
-        pl.col('Pla').str.split(' ').list.first().alias('Pla')
-    )
+    horse_ids = pl.concat(dfs)['HorseID'].unique()
+
+    # Use horse track records
+    dfs = [get_horse_data(horse_id) for horse_id in horse_ids]
+    df = (
+        pl.concat(dfs).with_columns(
+            pl.col('Date').str.strptime(pl.Date, '%m/%d/%y')
+        ).filter(pl.col('Date').is_between(start_dt, end_dt))
+        .filter(~pl.col('Pla').is_in(incidents))
+        .with_columns(
+            pl.col('Pla').str.split(' ').list.first().alias('Pla')
+        )
     )
 
     df = df.with_columns([
