@@ -98,8 +98,7 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
         pl.col('Dr').cast(pl.Int64, strict=False),
         pl.col('Rtg').cast(pl.Int64, strict=False),
         pl.col('Dist').cast(pl.Int64, strict=False),
-        pl.col('WinOdds').cast(pl.Float64, strict=False),
-        pl.col('RaceIndex').cast(pl.Int64, strict=False)
+        pl.col('WinOdds').cast(pl.Float64, strict=False)
     ])
 
     df = (df.filter(~pl.col('FinishTime').str.starts_with('--'))
@@ -107,7 +106,7 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
         (
             pl.col("FinishTime").str.split_exact(".", 1).struct.field("field_0").cast(pl.Int64) * 60 +
             pl.col("FinishTime").str.split_exact(
-                ".", 1).struct.field("field_1").cast(pl.Int64)
+                ".", 1).struct.field("field_1").cast(pl.Float64)
         ).cast(pl.Float64).alias("FinishTime")
     ))
 
@@ -117,6 +116,14 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
         .alias('RCTrackCourse')
     ).unnest('RCTrackCourse')
 
+    df = df.with_columns(
+        pl.when(pl.col('Date').str.len_chars() <= 8)
+        .then(pl.col('Date').str.strptime(pl.Date, '%d/%m/%y', strict=False))
+        .otherwise(pl.col('Date').str.strptime(pl.Date, '%d/%m/%Y'))
+    ).with_columns(
+        pl.concat_str(pl.col('Date').dt.strftime('%Y%m%d'), pl.col(
+            'Venue'), pl.col('RaceIndex')).alias('RaceId')
+    )
     return df
 
 
@@ -145,7 +152,7 @@ def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
         (
             pl.col("FinishTime").str.split_exact(":", 1).struct.field("field_0").cast(pl.Int64) * 60 +
             pl.col("FinishTime").str.split_exact(
-                ":", 1).struct.field("field_1").cast(pl.Int64)
+                ":", 1).struct.field("field_1").cast(pl.Float64)
         ).cast(pl.Float64).alias("FinishTime")
     )
 

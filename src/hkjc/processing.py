@@ -65,7 +65,7 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
     df = pl.concat(dfs)
 
     try:
-        return _clean_horse_data(df)
+        return _clean_horse_data(df).filter(pl.col('Date').is_between(start_dt, end_dt))
     except:
         print('Failed to clean data. Returning raw data for debug.')
     return df
