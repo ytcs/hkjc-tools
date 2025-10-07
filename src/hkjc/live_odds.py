@@ -6,9 +6,10 @@ from typing import Tuple, List
 import requests
 from cachetools.func import ttl_cache
 import numpy as np
-from datetime import datetime as dt
 
-ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
+from .utils import _validate_date, _validate_venue_code
+
+HKJC_LIVEODDS_ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
 
 LIVEODDS_PAYLOAD = {
     "operationName": "racing",
@@ -70,7 +71,8 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
         "User-Agent": "python-hkjc-fetch/0.1",
     }
 
-    r = requests.post(ENDPOINT, json=payload, headers=headers, timeout=10)
+    r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload,
+                      headers=headers, timeout=10)
     if r.status_code != 200:
         raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
 
@@ -104,11 +106,8 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
             If odds_type is 'WIN','PLA', returns a 1D array of place odds.
             If odds_type is 'QIN','QPL', returns a 2D array of quinella place odds. 
     """
-    # validate date format
-    try:
-        dt.strptime(date, "%Y-%m-%d")
-    except Exception:
-        raise ValueError("Date must be in 'YYYY-MM-DD' format")
+    _validate_date(date)
+    _validate_venue_code(venue_code)
 
     mandatory_types = ['PLA']
 
