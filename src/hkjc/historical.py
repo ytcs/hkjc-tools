@@ -52,11 +52,13 @@ def _classify_running_style(df: pl.DataFrame, running_pos_col="RunningPosition")
         .alias("split_data").cast(pl.Int64, strict=False)
     ).unnest("split_data")
 
-    df = df.with_columns(pl.col('FinishPosition').fill_null(pl.col('Position3')))
+    df = df.with_columns(
+        pl.col('FinishPosition').fill_null(pl.col('Position3')))
 
     df = df.with_columns([
         (pl.col("StartPosition")-pl.col("FinishPosition")).alias("PositionChange"),
-        pl.mean_horizontal("StartPosition", "Position2").alias("AvgStartPosition"),
+        pl.mean_horizontal("StartPosition", "Position2").alias(
+            "AvgStartPosition"),
     ]).with_columns(pl.when(pl.col("StartPosition").is_null()).then(pl.lit("--"))
                     .when((pl.col("AvgStartPosition") <= 3) & (pl.col("StartPosition") <= 3)).then(pl.lit("FrontRunner"))
                     .when((pl.col("PositionChange") >= 1) & (pl.col("StartPosition") >= 6)).then(pl.lit("Closer"))
@@ -77,35 +79,7 @@ def _extract_horse_data(horse_no: str) -> pl.DataFrame:
         pl.col('Date') != '')  # Remove empty rows
     horse_data = _classify_running_style(horse_data)
 
-    # Extract horse profile info
-    table = soup.find_all('table', class_='table_eng_text')
-    profile_data = _parse_html_table(table[0], skip_header=True)
-    profile_data = _parse_html_table(table[1], skip_header=True)
-
-    try:
-        current_rating = int(profile_data.filter(
-            pl.col("column_0").str.starts_with("Current Rating"))['column_2'].item(0))
-        season_start_rating = int(profile_data.filter(pl.col(
-            "column_0").str.starts_with("Start of Season Rating"))['column_2'].item(0))
-    except:
-        current_rating, season_start_rating = 0, 0
-
-    try:
-        last_rating = int(profile_data.filter(
-            pl.col("column_0").str.starts_with("Last Rating"))['column_2'].item(0))
-    except:
-        last_rating = 0
-
-    horse_info = {
-        'HorseID': horse_no,
-        'CurrentRating': current_rating,
-        'SeasonStartRating': season_start_rating,
-        'LastRating': last_rating if current_rating == 0 else current_rating
-    }
-    horse_data = (horse_data.with_columns([
-        pl.lit(value).alias(key) for key, value in horse_info.items()
-    ])
-    )
+    horse_data = horse_data.with_columns(pl.lit(horse_no).alias('HorseNo'))
 
     return horse_data
 
@@ -128,12 +102,14 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
         pl.col('RaceIndex').cast(pl.Int64, strict=False)
     ])
 
-    df = df.with_columns(
+    df = (df.filter(~pl.col('FinishTime').str.starts_with('--'))
+          .with_columns(
         (
             pl.col("FinishTime").str.split_exact(".", 1).struct.field("field_0").cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.split_exact(".", 1).struct.field("field_1").cast(pl.Int64)
+            pl.col("FinishTime").str.split_exact(
+                ".", 1).struct.field("field_1").cast(pl.Int64)
         ).cast(pl.Float64).alias("FinishTime")
-    )
+    ))
 
     df = df.with_columns(
         pl.col('RCTrackCourse').str.split_exact(' / ', 2)
@@ -143,9 +119,11 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
 
     return df
 
+
 def get_horse_data(horse_no: str) -> pl.DataFrame:
     df = _extract_horse_data(horse_no)
     return _clean_horse_data(df)
+
 
 def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
     """ Clean and convert horse data to suitable data types
@@ -166,11 +144,13 @@ def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
     df = df.with_columns(
         (
             pl.col("FinishTime").str.split_exact(":", 1).struct.field("field_0").cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.split_exact(":", 1).struct.field("field_1").cast(pl.Int64)
+            pl.col("FinishTime").str.split_exact(
+                ":", 1).struct.field("field_1").cast(pl.Int64)
         ).cast(pl.Float64).alias("FinishTime")
     )
 
     return df
+
 
 def _extract_race_data(date: str, venue_code: str, race_number: int) -> pl.DataFrame:
     soup = _soupify_race_page(date, venue_code, race_number)
@@ -211,5 +191,5 @@ def _extract_race_data(date: str, venue_code: str, race_number: int) -> pl.DataF
 
 
 def get_race_data(date: str, venue_code: str, race_number: int) -> pl.DataFrame:
-    df = _extract_race_data(date,venue_code,race_number)
+    df = _extract_race_data(date, venue_code, race_number)
     return _clean_race_data(df)
