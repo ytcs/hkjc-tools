@@ -6,7 +6,7 @@ from typing import Tuple, List, Union
 from .live_odds import live_odds
 from .strategy import qpbanker, place_only
 from .harville_model import fit_harville_to_odds
-from .historical import get_race_data, get_horse_data
+from .historical import _extract_horse_data, _extract_race_data, _clean_horse_data
 from .utils import _validate_date
 
 import polars as pl
@@ -23,8 +23,7 @@ def _all_subsets(lst): return [list(x) for r in range(
 # ======================================
 # Historical data processing functions
 # ======================================
-incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
-             'UR', 'VOID', 'WR', 'WV', 'WV-A', 'WX', 'WX-A', 'WXNR']
+
 
 
 def _historical_process_single_date_venue(date: str, venue_code: str) -> List[pl.DataFrame]:
@@ -33,7 +32,7 @@ def _historical_process_single_date_venue(date: str, venue_code: str) -> List[pl
         range(1, 12), desc=f"Processing {date} {venue_code} ...", leave=False)
     for race_number in iter_date:
         try:
-            dfs.append(get_race_data(date.strftime('%Y/%m/%d'),
+            dfs.append(_extract_race_data(date.strftime('%Y/%m/%d'),
                                      venue_code, race_number))
         except:
             if race_number == 1:
@@ -51,7 +50,7 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
 
     dfs = []
 
-    for date in tqdm(pl.date_range(start_dt, end_dt, interval='1d', eager=True)):
+    for date in tqdm(pl.date_range(start_dt, end_dt, interval='1d', eager=True), leave=False, desc='Scanning for horse IDs ...'):
         for venue_code in ['ST', 'HV']:
             dfs += _historical_process_single_date_venue(date, venue_code)
 
@@ -62,35 +61,9 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
     horse_ids = pl.concat(dfs)['HorseID'].unique()
 
     # Use horse track records
-    dfs = [get_horse_data(horse_id) for horse_id in horse_ids]
-    df = (
-        pl.concat(dfs).with_columns(
-            pl.col('Date').str.strptime(pl.Date, '%m/%d/%y')
-        ).filter(pl.col('Date').is_between(start_dt, end_dt))
-        .filter(~pl.col('Pla').is_in(incidents))
-        .with_columns(
-            pl.col('Pla').str.split(' ').list.first().alias('Pla')
-        )
-    )
-
-    df = df.with_columns([
-        pl.col('Pla').cast(pl.Int64, strict=False),
-        pl.col('HorseNo').cast(pl.Int64, strict=False),
-        pl.col('ActWt').cast(pl.Int64, strict=False),
-        pl.col('DeclarHorseWt').cast(pl.Int64, strict=False),
-        pl.col('Dr').cast(pl.Int64, strict=False),
-        pl.col('RaceDistance').cast(pl.Int64, strict=False),
-        pl.col('WinOdds').cast(pl.Float64, strict=False)
-    ])
-
-    df = df.with_columns(
-        (
-            pl.col("FinishTime").str.split(":").list.get(0).cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.split(":").list.get(1).cast(pl.Float64)
-        ).cast(pl.Float64).alias("FinishTime")
-    )
-
-    return df
+    dfs = [_extract_horse_data(horse_id) for horse_id in tqdm(horse_ids, desc='Processing horses ...', leave=False)]
+    df = pl.concat(dfs)
+    return _clean_horse_data(df)
 
 
 # ==========================
