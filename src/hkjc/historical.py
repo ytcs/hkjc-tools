@@ -7,7 +7,7 @@ import polars as pl
 from bs4 import BeautifulSoup
 from cachetools.func import ttl_cache
 
-from .utils import _validate_date, _validate_venue_code, _parse_html_table
+from .utils import _parse_html_table
 
 HKJC_RACE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate={date}&Racecourse={venue_code}&RaceNo={race_number}"
 HKJC_HORSE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseId={horse_id}"
@@ -77,15 +77,12 @@ def _extract_horse_data(horse_id: str) -> pl.DataFrame:
     # Extract horse profile info
     table = soup.find_all('table', class_='table_eng_text')
     profile_data = _parse_html_table(table[0], skip_header=True)
-    country, age = profile_data.filter(pl.col("column_0").str.starts_with("Country"))['column_2'].item(0).split('/')
     profile_data = _parse_html_table(table[1], skip_header=True)
     current_rating = profile_data.filter(pl.col("column_0").str.starts_with("Current Rating"))['column_2'].item(0)
     season_start_rating = profile_data.filter(pl.col("column_0").str.starts_with("Start of Season Rating"))['column_2'].item(0)
 
     horse_info = {
         'HorseID': horse_id,
-        'OriginCountry': country.strip(),
-        'Age': int(age),
         'CurrentRating': int(current_rating),
         'SeasonStartRating': int(season_start_rating)
     }
