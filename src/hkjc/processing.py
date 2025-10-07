@@ -14,6 +14,7 @@ import numpy as np
 from itertools import combinations
 from tqdm import tqdm
 from datetime import datetime as dt
+from joblib import delayed, Parallel
 
 
 def _all_subsets(lst): return [list(x) for r in range(
@@ -27,13 +28,18 @@ incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
              'UR', 'VOID', 'WR', 'WV', 'WV-A', 'WX', 'WX-A', 'WXNR']
 
 
-def _historical_process_single_date_venue(date: str, venue_code: str) -> Union[pl.DataFrame, None]:
-    for race_number in range(1, 12):
+def _historical_process_single_date_venue(date: str, venue_code: str) -> List[pl.DataFrame]:
+    dfs = []
+    iter_date = tqdm(range(1, 12), desc=f"Processing {date} {venue_code} ...", leave=False)
+    for race_number in iter_date:
         try:
-            _extract_race_data(date.strftime('%Y/%m/%d'),
-                               venue_code, race_number)
+            dfs.append(_extract_race_data(date.strftime('%Y/%m/%d'),
+                                          venue_code, race_number))
         except:
-            return None
+            if race_number == 1:
+                iter_date.close()
+                return []
+    return dfs
 
 
 def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
@@ -47,10 +53,10 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
 
     for date in tqdm(pl.date_range(start_dt, end_dt, interval='1d', eager=True)):
         for venue_code in ['ST', 'HV']:
-            df = _historical_process_single_date_venue(date, venue_code)
-            if df is None:
-                continue
-            dfs.append(df)
+            dfs += _historical_process_single_date_venue(date, venue_code)
+
+    if dfs == []:
+        raise ValueError("Failed to obtain any race data. This could be due to invalid date range, or server requests limit. Please try again later.")
 
     df = (pl.concat(dfs)
           .filter(~pl.col('Pla').is_in(incidents))
@@ -69,10 +75,11 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
         pl.col('WinOdds').cast(pl.Float64, strict=False)
     ])
 
-    df = df.with_columns(pl.col('Finish Time')
-        .str.strptime(pl.Duration, format='%M:%S.%f', strict=False)
-        .dt.total_seconds()
-        .alias('Finish Time')
+    df = df.with_columns(
+        (
+            pl.col("FinishTime").str.split(":").list.get(0).cast(pl.Int64) * 60 +
+            pl.col("FinishTime").str.split(":").list.get(1).cast(pl.Float64)
+        ).cast(pl.Float64).alias("FinishTime")
     )
 
     return df
