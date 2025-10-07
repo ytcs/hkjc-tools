@@ -56,10 +56,9 @@ def _classify_running_style(df: pl.DataFrame, running_pos_col="RunningPosition")
 
     df = df.with_columns([
         (pl.col("StartPosition")-pl.col("FinishPosition")).alias("PositionChange"),
-        pl.mean_horizontal("StartPosition", "Position2",
-                           "Position3", "FinishPosition").alias("AvgPosition"),
+        pl.mean_horizontal("StartPosition", "Position2").alias("AvgStartPosition"),
     ]).with_columns(pl.when(pl.col("StartPosition").is_null()).then(pl.lit("--"))
-                    .when((pl.col("AvgPosition") <= 3.5) & (pl.col("StartPosition") <= 3)).then(pl.lit("FrontRunner"))
+                    .when((pl.col("AvgStartPosition") <= 3) & (pl.col("StartPosition") <= 3)).then(pl.lit("FrontRunner"))
                     .when((pl.col("PositionChange") >= 1) & (pl.col("StartPosition") >= 6)).then(pl.lit("Closer"))
                     .otherwise(pl.lit("Pacer")).alias("RunningStyle"))
 
