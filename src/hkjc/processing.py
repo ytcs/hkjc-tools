@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import Tuple, List, Union
 
-from .live_odds import live_odds
+from .live import live_odds
 from .strategy import qpbanker, place_only
 from .harville_model import fit_harville_to_odds
 from .historical import _extract_horse_data, _extract_race_data, _clean_horse_data
