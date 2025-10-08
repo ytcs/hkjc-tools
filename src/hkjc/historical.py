@@ -104,10 +104,9 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
     df = (df.filter(~pl.col('FinishTime').str.starts_with('--'))
           .with_columns(
         (
-            pl.col("FinishTime").str.split_exact(".", 1).struct.field("field_0").cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.split_exact(
-                ".", 1).struct.field("field_1").cast(pl.Float64)
-        ).cast(pl.Float64).alias("FinishTime")
+            pl.col("FinishTime").str.splitn(".", 2).struct.field("field_0").cast(pl.Int64) * 60 +
+            pl.col("FinishTime").str.splitn(".", 2).struct.field("field_1").cast(pl.Float64)
+        ).cast(pl.Float64).round(2).alias("FinishTime")
     ))
 
     df = df.with_columns(
@@ -150,10 +149,9 @@ def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
 
     df = df.with_columns(
         (
-            pl.col("FinishTime").str.split_exact(":", 1).struct.field("field_0").cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.split_exact(
-                ":", 1).struct.field("field_1").cast(pl.Float64)
-        ).cast(pl.Float64).alias("FinishTime")
+            pl.col("FinishTime").str.splitn(":", 2).struct.field("field_0").cast(pl.Int64) * 60 +
+            pl.col("FinishTime").str.splitn(":", 2).struct.field("field_1").cast(pl.Float64)
+        ).cast(pl.Float64).round(2).alias("FinishTime")
     )
 
     return df
