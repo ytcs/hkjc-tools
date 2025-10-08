@@ -25,6 +25,8 @@ def disp_race_info():
             race_info['Races'][race_num]['Runners'][i]['Fitness'] = df['FitnessRatings'].item(0)
 
 # TODO: add horse running style favorite from horse info
+# get_horse_data
+# pack favorite running style 
     return render_template('index.html',
                            race_info=race_info)
 
@@ -78,6 +80,9 @@ def disp_live_odds(race_no=1):
     fitted_odds = fit_harville_to_odds(odds_dict)
 
 # TODO: repackage odds into json 
+# dict with keys = odd types
+# each contains json {horse_id : odds} for WIN/PLA , {horse_id1: {horse_id2: odds}} for QPL/QIN 
+
     return fitted_odds.__repr__()
 
 @app.route('/speedmap/<race_no>')

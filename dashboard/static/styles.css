@@ -19,26 +19,42 @@ body {
     border: 1px solid #ddd;
 }
 
-.header {
-    background: #667eea;
-    color: white;
-    padding: 15px;
-    text-align: center;
-    border-bottom: 2px solid #5568d3;
-}
-
-.header h1 {
-    font-size: 1.5em;
-    font-weight: 600;
-}
-
 .tabs {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #667eea;
+    border-bottom: 2px solid #5568d3;
+    padding: 8px 15px;
+    gap: 15px;
     flex-wrap: wrap;
-    background: #f8f9fa;
-    border-bottom: 1px solid #ddd;
-    padding: 5px;
+}
+
+.tabs-buttons {
+    display: flex;
+    flex-wrap: wrap;
     gap: 3px;
+    flex: 1;
+}
+
+.race-header-info {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    color: white;
+    font-weight: 600;
+    font-size: 1.1em;
+    white-space: nowrap;
+}
+
+.race-date {
+    color: white;
+}
+
+.race-venue {
+    color: white;
+    padding-left: 10px;
+    border-left: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .tab-btn {
@@ -74,13 +90,15 @@ body {
     padding: 10px;
     margin-bottom: 15px;
     border: 1px solid #e0e0e0;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 10px;
 }
 
 .race-info-item {
     padding: 5px;
+    flex: 0 1 auto;
+    min-width: fit-content;
 }
 
 .race-info-label {
@@ -96,6 +114,10 @@ body {
     color: #333;
 }
 
+.race-info-item:has(.track-workout-btn) {
+    margin-left: auto;
+}
+
 .track-workout-btn {
     padding: 8px 16px;
     background: #667eea;
@@ -105,7 +127,6 @@ body {
     cursor: pointer;
     font-size: 0.85em;
     font-weight: 600;
-    width: 100%;
     transition: background 0.2s ease;
 }
 
@@ -211,11 +232,6 @@ body {
     background: #e8eaf6 !important;
 }
 
-.runners-table tr.scratched {
-    opacity: 0.5;
-    background: #ffe0e0 !important;
-}
-
 .horse-no {
     font-weight: 600;
     color: #667eea;
@@ -293,17 +309,21 @@ body {
         font-size: 13px;
     }
     
-    .header {
-        padding: 10px;
-    }
-    
-    .header h1 {
-        font-size: 1.2em;
-    }
-    
     .tabs {
+        padding: 6px 10px;
+        gap: 10px;
+    }
+    
+    .tabs-buttons {
         overflow-x: auto;
         flex-wrap: nowrap;
+    }
+    
+    .race-header-info {
+        font-size: 0.9em;
+        gap: 10px;
+        width: 100%;
+        justify-content: center;
     }
     
     .tab-btn {

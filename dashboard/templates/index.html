@@ -10,17 +10,19 @@
 
 <body>
     <div class="container">
-        <div class="header">
-            <h1>HKJC 🏇 {{ race_info.Date }} 🏇 {{ race_info.Venue }}</h1>
-        </div>
-
         <div class="tabs">
-            {% for race_num in race_info.Races.keys()|sort|map('int')|sort %}
-            <button class="tab-btn {% if loop.first %}active{% endif %}" onclick="showRace('{{ race_num }}')"
-                id="tab-{{ race_num }}">
-                Race {{ race_num }}
-            </button>
-            {% endfor %}
+            <div class="tabs-buttons">
+                {% for race_num in race_info.Races.keys()|sort|map('int')|sort %}
+                <button class="tab-btn {% if loop.first %}active{% endif %}" onclick="showRace('{{ race_num }}')"
+                    id="tab-{{ race_num }}">
+                    Race {{ race_num }}
+                </button>
+                {% endfor %}
+            </div>
+            <div class="race-header-info">
+                <span class="race-date"> {{ race_info.Date }}</span>
+                <span class="race-venue">{{ race_info.Venue }}</span>
+            </div>
         </div>
 
         {% for race_num, race in race_info.Races.items()|sort %}
@@ -52,7 +54,7 @@
                 </div>
                 <div class="race-info-item">
                     <button class="track-workout-btn" onclick="openTrackWorkoutVideo('{{ race_info.Date }}', '{{ race_num }}')">
-                        🎥 Track Workout Video
+                        🎥 Track Workout
                     </button>
                 </div>
             </div>
@@ -91,7 +93,7 @@
                 </thead>
                 <tbody>
                     {% for runner in race.Runners %}
-                    <tr class="runner-row {% if is_scratched %}scratched{% endif %}" 
+                    <tr class="runner-row" 
                         onclick="toggleRunnerHistory(this, '{{ race_num }}', '{{ runner.HorseNo }}', '{{ race.Going }}', '{{ race.Track }}', '{{ race.Dist }}')">
                         <td>
                             <span class="expand-icon">▶</span>
