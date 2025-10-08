@@ -4,10 +4,10 @@ This module re-exports commonly used symbols from the submodules.
 """
 from importlib.metadata import version as _version
 
-__all__ = ["live", "qpbanker",
+__all__ = ["live", "features",
            "generate_all_qp_trades", "generate_all_pla_trades", "pareto_filter",
-                        "speedpro_energy", "speedmap", "harveille_model",
-                        "generate_historical_data"]
+           "speedpro_energy", "speedmap", "harveille_model",
+           "generate_historical_data"]
 
 try:
     __version__ = _version(__name__)
@@ -17,4 +17,4 @@ except Exception:  # pragma: no cover - best-effort version resolution
 from .processing import generate_all_qp_trades, generate_all_pla_trades, generate_historical_data
 from .utils import pareto_filter
 from .speedpro import speedmap, speedpro_energy
-from . import harville_model, live
+from . import harville_model, live, features
