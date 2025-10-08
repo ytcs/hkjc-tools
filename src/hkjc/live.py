@@ -265,9 +265,10 @@ def _fetch_live_races(date: str, venue_code: str) -> dict:
     if r.status_code != 200:
         raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
 
-    races = r.json()['data']['raceMeetings'][0]['races']
+    data = r.json()['data']['raceMeetings'][0]
+    races = data['races']
 
-    race_info = {}
+    race_info = {'Date': data['date'], 'Venue': data['venueCode'], 'Races': {}}
     for race in races:
         race_num = race['no']
         race_name = race['raceName_en']
@@ -277,12 +278,15 @@ def _fetch_live_races(date: str, venue_code: str) -> dict:
         race_class = race['raceClass_en']
         race_course = race['raceCourse']['displayCode']
 
-        runners = [{'Dr': runner['barrierDrawNumber'],
-                    'Rtg' : int(runner['currentRating']),
-                    'Wt' : int(runner['currentWeight']),
+        runners = [{'No': runner['no'],
+                    'Name': runner['name_en'],
+                    'Dr': runner['barrierDrawNumber'],
+                    'Rtg': int(runner['currentRating']),
+                    'Wt': int(runner['currentWeight']),
+                    'Handicap': int(runner['handicapWeight']),
                     'HorseNo': runner['horse']['code']
-                    } for runner in race['runners']]
-        race_info[race_num]={
+                    } for runner in race['runners'] if runner['status'] == "Declared"]
+        race_info['Races'][race_num] = {
             'No': race_num,
             'Name': race_name,
             'Class': race_class,
@@ -290,7 +294,7 @@ def _fetch_live_races(date: str, venue_code: str) -> dict:
             'Dist': race_dist,
             'Going': race_going,
             'Track': race_track,
-            'Runners': runners            
+            'Runners': runners
         }
     return race_info
 
@@ -353,6 +357,11 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
 
     race_info = _fetch_live_races(date, venue_code)
     N = len(race_info[race_number]['Runners'])
+
+    if (race_info['Date'] != date) or (race_info['Venue'] != venue_code):
+        print(f"[WARNING] Requested {date} {venue_code} but server returned {race_info['Date']} {race_info['Venue']}.")
+        date = race_info['Date']
+        venue_code = race_info['Venue']
 
     data = _fetch_live_odds(date, venue_code, race_number,
                             odds_type=tuple(odds_type))
