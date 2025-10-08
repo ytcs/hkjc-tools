@@ -7,8 +7,6 @@ import requests
 from cachetools.func import ttl_cache
 import numpy as np
 
-from .utils import _validate_date, _validate_venue_code
-
 HKJC_LIVEODDS_ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
 
 RACEMTG_PAYLOAD = {
@@ -245,7 +243,7 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 
 
 @ttl_cache(maxsize=12, ttl=1000)
-def _fetch_live_races(date: str, venue_code: str) -> dict:
+def _fetch_live_races(date: str=None, venue_code: str=None) -> dict:
     """Fetch live race data from HKJC GraphQL endpoint."""
     payload = RACEMTG_PAYLOAD.copy()
     payload["variables"] = payload["variables"].copy()
@@ -300,7 +298,7 @@ def _fetch_live_races(date: str, venue_code: str) -> dict:
 
 
 @ttl_cache(maxsize=12, ttl=30)
-def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tuple[str] = ('PLA', 'QPL')) -> List[dict]:
+def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tuple[str] = ('PLA', )) -> List[dict]:
     """Fetch live odds data from HKJC GraphQL endpoint."""
     payload = LIVEODDS_PAYLOAD.copy()
     payload["variables"] = payload["variables"].copy()
@@ -333,14 +331,14 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
     ]
 
 
-def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str] = ['PLA', 'QPL']) -> dict:
+def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str] = ['WIN', 'PLA', 'QPL', 'QIN']) -> dict:
     """Fetch live odds as numpy arrays.
 
     Args:
         date (str): Date in 'YYYY-MM-DD' format.
         venue_code (str): Venue code, e.g., 'ST' for Shatin, 'HV' for Happy Valley.
         race_number (int): Race number.
-        odds_type (List[str]): Types of odds to fetch. Default is ['PLA', 'QPL']. Currently the following types are supported:
+        odds_type (List[str]): Types of odds to fetch. Default is ['WIN', 'PLA', 'QPL', 'QIN']. Currently the following types are supported:
             - 'WIN': Win odds
             - 'PLA': Place odds
             - 'QIN': Quinella odds
@@ -352,11 +350,8 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
             If odds_type is 'WIN','PLA', returns a 1D array of place odds.
             If odds_type is 'QIN','QPL', returns a 2D array of quinella place odds. 
     """
-    _validate_date(date)
-    _validate_venue_code(venue_code)
-
     race_info = _fetch_live_races(date, venue_code)
-    N = len(race_info[race_number]['Runners'])
+    N = len(race_info['Races'][race_number]['Runners'])
 
     if (race_info['Date'] != date) or (race_info['Venue'] != venue_code):
         print(f"[WARNING] Requested {date} {venue_code} but server returned {race_info['Date']} {race_info['Venue']}.")
