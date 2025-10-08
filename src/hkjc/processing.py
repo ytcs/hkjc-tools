@@ -42,7 +42,15 @@ def _historical_process_single_date_venue(date: str, venue_code: str) -> List[pl
 
 
 def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
-    """Generate historical race dataset from start_date to end_date"""
+    """Generate historical race dataset from start_date to end_date (inclusive).
+    
+    Args:
+        start_date (str): Date in 'YYYY-MM-DD' format.
+        end_date (str): Date in 'YYYY-MM-DD' format.
+
+    Returns:
+        pl.DataFrame: DataFrame with all records.
+    """
     _validate_date(start_date)
     _validate_date(end_date)
     start_dt = dt.strptime(start_date, '%Y-%m-%d')
@@ -50,7 +58,7 @@ def generate_historical_data(start_date: str, end_date: str) -> pl.DataFrame:
 
     dfs = []
 
-    for date in tqdm(pl.date_range(start_dt, end_dt, interval='1d', eager=True), leave=False, desc='Scanning for horse IDs ...'):
+    for date in tqdm(pl.date_range(start_dt, end_dt, interval='1d', eager=True, closed='both'), leave=False, desc='Scanning for horse IDs ...'):
         for venue_code in ['ST', 'HV']:
             dfs += _historical_process_single_date_venue(date, venue_code)
 

@@ -1,4 +1,4 @@
-""" Polars expressions to commonly-used analysis features, subject to frequent changes.
+""" Polars expressions for commonly-used analysis features, subject to frequent changes.
 """
 import polars as pl
 
