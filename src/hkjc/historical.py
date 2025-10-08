@@ -122,7 +122,7 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
     ).with_columns(
         pl.concat_str(pl.col('Date').dt.strftime('%Y%m%d'), pl.col(
             'Venue'), pl.col('RaceIndex')).alias('RaceId')
-    )
+    ).drop("VideoReplay")
     return df
 
 
