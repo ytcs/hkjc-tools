@@ -283,7 +283,7 @@ def _fetch_live_races(date: str=None, venue_code: str=None) -> dict:
                     'Wt': int(runner['currentWeight']),
                     'Handicap': int(runner['handicapWeight']),
                     'HorseNo': runner['horse']['code']
-                    } for runner in race['runners'] if runner['status'] == "Declared"]
+                    } for runner in race['runners'] if runner['status'] != "Standby"]
         race_info['Races'][race_num] = {
             'No': race_num,
             'Name': race_name,
