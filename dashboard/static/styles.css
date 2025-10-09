@@ -219,7 +219,7 @@ body {
 .runners-table th {
     background: #667eea;
     color: white;
-    padding: 6px 8px;
+    padding: 6px 4px;
     text-align: left;
     font-weight: 600;
     font-size: 0.85em;
@@ -253,7 +253,7 @@ body {
 }
 
 .runners-table td {
-    padding: 5px 8px;
+    padding: 5px 4px;
     border: 1px solid #e0e0e0;
     white-space: nowrap;
 }
@@ -425,7 +425,7 @@ body {
     font-weight: 700;
     color: #92400e;
     position: relative;
-    padding-right: 18px !important; /* Make room for star */
+    padding-right: 16px !important; /* Make room for star */
 }
 
 .preferred-cell::after {

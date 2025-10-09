@@ -86,32 +86,38 @@
                 <thead>
                     <tr>
                         <th width="30"></th>
-                        <th>No</th>
-                        <th>Draw</th>
-                        <th>Horse No</th>
-                        <th>Name</th>
-                        <th>Wt (lbs)</th>
-                        <th>Handicap Wt (lbs)</th>
-                        <th class="sortable" onclick="sortTable('{{ race_num }}', 7, 'number')">
+                        <th width="40">No</th>
+                        <th width="50">Draw</th>
+                        <th width="80">Horse No</th>
+                        <th width="200">Name</th>
+                        <th width="60">Wt (lbs)</th>
+                        <th width="100">Handicap Wt (lbs)</th>
+                        <th width="90">Fav Style</th>
+                        <th width="80" class="sortable" onclick="sortTable('{{ race_num }}', 8, 'number')">
+                            Last Time <span class="sort-arrow">⇅</span>
+                        </th>
+                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 9, 'number')">
                             Rating <span class="sort-arrow">⇅</span>
                         </th>
-                        <th class="sortable" onclick="sortTable('{{ race_num }}', 8, 'number')">
+                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 10, 'number')">
                             Fitness <span class="sort-arrow">⇅</span>
                         </th>
-                        <th class="sortable" onclick="sortTable('{{ race_num }}', 9, 'number')">
+                        <th width="90" class="sortable" onclick="sortTable('{{ race_num }}', 11, 'number')">
                             Energy Diff <span class="sort-arrow">⇅</span>
                         </th>
-                        <th>Fav Style</th>
-                        <th class="sortable" onclick="sortTable('{{ race_num }}', 11, 'number')">
+                        <th width="120" class="sortable" onclick="sortTable('{{ race_num }}', 12, 'number')">
+                            Energy Diff (Adj) <span class="sort-arrow">⇅</span>
+                        </th>                        
+                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 14, 'number')">
                             WIN <span class="sort-arrow">⇅</span>
                         </th>
-                        <th class="sortable" onclick="sortTable('{{ race_num }}', 12, 'number')">
+                        <th width="70" class="sortable" onclick="sortTable('{{ race_num }}', 15, 'number')">
                             WIN (fit) <span class="sort-arrow">⇅</span>
                         </th>
-                        <th class="sortable" onclick="sortTable('{{ race_num }}', 13, 'number')">
+                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 16, 'number')">
                             PLA <span class="sort-arrow">⇅</span>
                         </th>
-                        <th class="sortable" onclick="sortTable('{{ race_num }}', 14, 'number')">
+                        <th width="70" class="sortable" onclick="sortTable('{{ race_num }}', 17, 'number')">
                             PLA (fit) <span class="sort-arrow">⇅</span>
                         </th>
                     </tr>
@@ -124,6 +130,7 @@
                         data-going="{{ race.Going }}"
                         data-track="{{ race.Track }}"
                         data-dist="{{ race.Dist }}"
+                        data-venue="{{ race_info.Venue }}"
                         onclick="toggleRunnerHistory(this, '{{ race_num }}', '{{ runner.HorseNo }}', '{{ race.Going }}', '{{ race.Track }}', '{{ race.Dist }}')">
                         <td>
                             <span class="expand-icon">▶</span>
@@ -137,17 +144,19 @@
                         <td>{{ runner.Name }}</td>
                         <td>{{ runner.Wt }}</td>
                         <td>{{ runner.Handicap }}</td>
+                        <td class="fav-style" data-race="{{ race_num }}" data-horse="{{ runner.HorseNo }}">Unknown</td>
+                        <td class="last-finish-time" data-race="{{ race_num }}" data-horse="{{ runner.HorseNo }}">-</td>
                         <td>{{ runner.Rtg }}</td>
                         <td>{{ runner.Fitness }}</td>
                         <td>{{ runner.SPEnergy }}</td>
-                        <td class="fav-style" data-race="{{ race_num }}" data-horse="{{ runner.HorseNo }}">Unknown</td>
+                        <td>{{ (runner.SPEnergy + (runner.Fitness - 2) * 3) }}</td>                        
                         <td class="odds-win" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
                         <td class="odds-win-fit" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
                         <td class="odds-pla" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
                         <td class="odds-pla-fit" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
                     </tr>
                     <tr class="runner-details-row" id="runner-details-{{ race_num }}-{{ runner.HorseNo }}">
-                        <td colspan="15" class="runner-details-cell">
+                        <td colspan="17" class="runner-details-cell">
                             <div class="runner-details-content" id="runner-details-content-{{ race_num }}-{{ runner.HorseNo }}">
                                 <div class="details-loading">Loading details...</div>
                             </div>

@@ -86,9 +86,12 @@ def disp_horse_info(horse_no):
     dist = request.args.get('dist', type=int)
     track = request.args.get('track')
     going = request.args.get('going')
+    venue = request.args.get('venue')
 
     if track not in going_dict.keys():
         track = None
+    if venue not in ['HV', 'ST']:
+        venue = None
     if (going is not None) and (track is not None) and (going in going_dict[track].keys()):
         going = going_dict[track][going]  # translate going to code
     else:
@@ -105,6 +108,8 @@ def disp_horse_info(horse_no):
             df = df.filter(pl.col('Track') == 'AWT')
         if going is not None:
             df = df.filter(pl.col('G') == going)
+        if venue is not None:
+            df = df.filter(pl.col('Venue')==venue)
 
     return render_template('horse-info.html', df=df.head(5))
 

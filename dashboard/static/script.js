@@ -29,6 +29,7 @@ const Utils = {
             going: row.dataset.going || '',
             track: row.dataset.track || '',
             distance: row.dataset.dist || '',
+            venue: row.dataset.venue || '',
             runnerNo: row.querySelector('.odds-win')?.dataset.horse || row.dataset.horse
         };
     },
@@ -171,9 +172,14 @@ const API = {
         }, 1);
     },
     
-    fetchHorseHistory(horseNo, going, track, distance) {
+    fetchHorseHistory(horseNo, going, track, distance, venue) {
         return RequestQueue.enqueue(async () => {
-            const params = new URLSearchParams({ going: going || '', track: track || '', dist: distance || '' });
+            const params = new URLSearchParams({ 
+                going: going || '', 
+                track: track || '', 
+                dist: distance || '',
+                venue: venue || ''
+            });
             return (await this.fetch(`/horse_info/${horseNo}?${params}`)).text();
         }, 0);
     },
@@ -225,8 +231,8 @@ const RaceReadiness = {
         if (runnerRows.length === 0) return false;
         
         return runnerRows.some(row => {
-            const fitness = Utils.parseNum(row.cells[8]?.textContent.trim());
-            const energy = Utils.parseNum(row.cells[9]?.textContent.trim());
+            const fitness = Utils.parseNum(row.cells[10]?.textContent.trim());
+            const energy = Utils.parseNum(row.cells[11]?.textContent.trim());
             return fitness !== 0 || energy !== 0;
         });
     },
@@ -379,64 +385,198 @@ const Odds = {
 // ============================================================================
 // RUNNER DETAILS MODULE - Horse history and details
 // ============================================================================
+/**
+ * ARCHITECTURE: Event-Driven Column Updates
+ * 
+ * This module uses a centralized dispatcher pattern to update columns that extract
+ * data from horse history HTML. This eliminates the need to manually call update
+ * functions in multiple code paths.
+ * 
+ * HOW IT WORKS:
+ * 1. When runner details are loaded (fresh or cached), updateAllColumns() is called
+ * 2. updateAllColumns() iterates through columnExtractors and updates each column
+ * 3. Each extractor defines: what to extract, how to process it, and what to update
+ * 
+ * HOW TO ADD A NEW COLUMN:
+ * 
+ * Step 1: Add HTML cell with appropriate class and data attributes
+ *   <td class="my-new-column" data-race="{{ race_num }}" data-horse="{{ runner.HorseNo }}">-</td>
+ * 
+ * Step 2: Add extractor configuration below (that's it! No need to modify any other code)
+ *   {
+ *     name: 'myNewColumn',                    // For debugging
+ *     selector: '.my-new-column',             // CSS selector to find the cell
+ *     extract: (historyHtml) => { ... },      // Extract raw data from history HTML
+ *     process: (rawData) => { ... },          // Transform raw data to display value
+ *     onUpdate: (raceNum) => { ... }          // Optional: trigger side effects (charts, etc.)
+ *   }
+ * 
+ * Step 3: (Optional) Add to PreferredHighlight.columns if it should be highlighted
+ * 
+ * BENEFITS:
+ * - Single source of truth for column updates
+ * - No need to trace through multiple code paths
+ * - Automatic handling of both fresh and cached data
+ * - Easy to add/remove columns without breaking existing code
+ * - Clear separation between extraction, processing, and display
+ */
 const RunnerDetails = {
-    extractRunningStyles(historyHtml) {
-        const doc = new DOMParser().parseFromString(historyHtml, 'text/html');
-        const table = Utils.$('table', doc);
-        if (!table) return [];
-        
-        const headerRow = Utils.$('thead tr', table);
-        if (!headerRow) return [];
-        
-        const styleColumnIndex = Utils.$$('th', headerRow)
-            .findIndex(th => th.textContent.trim().toLowerCase() === 'style');
-        
-        if (styleColumnIndex === -1) return [];
-        
-        return Utils.$$('tbody tr', table)
-            .slice(0, 5)
-            .map(row => row.querySelectorAll('td')[styleColumnIndex]?.textContent.trim())
-            .filter(Boolean);
-    },
+    /**
+     * COLUMN EXTRACTORS
+     * Centralized configuration for all columns that extract data from history HTML.
+     * 
+     * EXAMPLE: Adding a "Last Jockey" column
+     * 
+     * // 1. Add to HTML (index.html):
+     * // <td class="last-jockey" data-race="{{ race_num }}" data-horse="{{ runner.HorseNo }}">-</td>
+     * 
+     * // 2. Add extractor here:
+     * // {
+     * //   name: 'lastJockey',
+     * //   selector: '.last-jockey',
+     * //   extract: (historyHtml) => {
+     * //     const doc = new DOMParser().parseFromString(historyHtml, 'text/html');
+     * //     const table = Utils.$('table', doc);
+     * //     if (!table) return null;
+     * //     const jockeyIndex = Utils.$$('th', Utils.$('thead tr', table))
+     * //       .findIndex(th => th.textContent.trim().toLowerCase() === 'jockey');
+     * //     const firstRow = Utils.$('tbody tr', table);
+     * //     return firstRow?.querySelectorAll('td')[jockeyIndex]?.textContent.trim() || null;
+     * //   },
+     * //   process: (rawData) => rawData || '-',
+     * //   onUpdate: null
+     * // }
+     * 
+     * // That's it! No need to modify toggle(), toggleAll(), load(), etc.
+     * // The centralized updateAllColumns() handles all paths automatically.
+     */
+    columnExtractors: [
+        {
+            name: 'favStyle',
+            selector: '.fav-style',
+            extract: (historyHtml) => {
+                const doc = new DOMParser().parseFromString(historyHtml, 'text/html');
+                const table = Utils.$('table', doc);
+                if (!table) return null;
+                
+                const headerRow = Utils.$('thead tr', table);
+                if (!headerRow) return null;
+                
+                const styleColumnIndex = Utils.$$('th', headerRow)
+                    .findIndex(th => th.textContent.trim().toLowerCase() === 'style');
+                
+                if (styleColumnIndex === -1) return null;
+                
+                const styles = Utils.$$('tbody tr', table)
+                    .slice(0, 5)
+                    .map(row => row.querySelectorAll('td')[styleColumnIndex]?.textContent.trim())
+                    .filter(Boolean);
+                
+                return styles;
+            },
+            process: (rawData) => {
+                // Calculate mode of running styles
+                if (!rawData?.length) return 'Unknown';
+                
+                const frequency = rawData.reduce((acc, val) => {
+                    acc[val] = (acc[val] || 0) + 1;
+                    return acc;
+                }, {});
+                
+                const mode = Object.entries(frequency)
+                    .reduce((max, [val, freq]) => freq > max[1] ? [val, freq] : max, [null, 0])[0];
+                
+                return mode || 'Unknown';
+            },
+            onUpdate: (raceNum) => {
+                FavStyleChart.update(raceNum);
+            }
+        },
+        {
+            name: 'lastTime',
+            selector: '.last-finish-time',
+            extract: (historyHtml) => {
+                const doc = new DOMParser().parseFromString(historyHtml, 'text/html');
+                const table = Utils.$('table', doc);
+                if (!table) return null;
+                
+                const headerRow = Utils.$('thead tr', table);
+                if (!headerRow) return null;
+                
+                // Look for "Finish Time" column (case-insensitive)
+                const timeColumnIndex = Utils.$$('th', headerRow)
+                    .findIndex(th => {
+                        const text = th.textContent.trim().toLowerCase();
+                        return text === 'finish time' || text === 'time';
+                    });
+                
+                if (timeColumnIndex === -1) {
+                    Utils.log('Finish Time column not found in history table');
+                    return null;
+                }
+                
+                const firstBodyRow = Utils.$('tbody tr', table);
+                if (!firstBodyRow) return null;
+                
+                const timeCell = firstBodyRow.querySelectorAll('td')[timeColumnIndex];
+                const timeValue = timeCell?.textContent.trim() || null;
+                
+                Utils.log(`Extracted finish time: ${timeValue}`);
+                return timeValue;
+            },
+            process: (rawData) => rawData || '-',
+            onUpdate: null
+        }
+    ],
     
-    calculateMode(arr) {
-        if (!arr?.length) return null;
+    /**
+     * CENTRALIZED UPDATE DISPATCHER
+     * Single point where all column updates happen when runner details are loaded.
+     * This eliminates the need to manually call update functions in multiple places.
+     */
+    updateAllColumns(raceNum, horseNo, historyHtml) {
+        Utils.log(`Updating all columns for race ${raceNum}, horse ${horseNo}`);
+        let needsHighlightUpdate = false;
         
-        const frequency = arr.reduce((acc, val) => {
-            acc[val] = (acc[val] || 0) + 1;
-            return acc;
-        }, {});
+        this.columnExtractors.forEach(({ name, selector, extract, process, onUpdate }) => {
+            const cell = Utils.$(`${selector}[data-race="${raceNum}"][data-horse="${horseNo}"]`);
+            if (!cell) {
+                Utils.log(`Cell not found for ${name}: ${selector}[data-race="${raceNum}"][data-horse="${horseNo}"]`);
+                return;
+            }
+            
+            try {
+                const rawData = extract(historyHtml);
+                const displayValue = process(rawData);
+                cell.textContent = displayValue;
+                Utils.log(`Updated ${name} for horse ${horseNo}: ${displayValue}`);
+                
+                if (onUpdate) onUpdate(raceNum);
+                needsHighlightUpdate = true;
+            } catch (error) {
+                console.error(`Error updating ${name} for horse ${horseNo}:`, error);
+                cell.textContent = name === 'favStyle' ? 'Unknown' : '-';
+            }
+        });
         
-        return Object.entries(frequency)
-            .reduce((max, [val, freq]) => freq > max[1] ? [val, freq] : max, [null, 0])[0];
-    },
-    
-    updateFavStyle(raceNum, horseNo, historyHtml) {
-        const cell = Utils.$(`.fav-style[data-race="${raceNum}"][data-horse="${horseNo}"]`);
-        if (!cell) return;
-        
-        try {
-            cell.textContent = this.calculateMode(this.extractRunningStyles(historyHtml)) || 'Unknown';
-            FavStyleChart.update(raceNum);
+        // Update highlighting once after all columns are updated
+        if (needsHighlightUpdate) {
             PreferredHighlight.update(raceNum);
-        } catch (error) {
-            console.error(`Error updating fav style for horse ${horseNo}:`, error);
-            cell.textContent = 'Unknown';
         }
     },
     
-    async load(raceNum, horseNo, going, track, distance) {
+    async load(raceNum, horseNo, going, track, distance, venue) {
         const cacheKey = `${raceNum}-${horseNo}`;
         
         if (Cache.has('runnerDetails', cacheKey)) {
             const cachedHtml = Cache.get('runnerDetails', cacheKey);
-            this.updateFavStyle(raceNum, horseNo, cachedHtml);
+            this.updateAllColumns(raceNum, horseNo, cachedHtml);
             return cachedHtml;
         }
         
-        const html = await API.fetchHorseHistory(horseNo, going, track, distance);
+        const html = await API.fetchHorseHistory(horseNo, going, track, distance, venue);
         Cache.set('runnerDetails', cacheKey, html);
-        this.updateFavStyle(raceNum, horseNo, html);
+        this.updateAllColumns(raceNum, horseNo, html);
         return html;
     },
     
@@ -458,21 +598,24 @@ const RunnerDetails = {
             const runnerNo = Utils.$('.odds-win', rowElement)?.dataset.horse || horseNo;
             const oddsData = Cache.get('odds', raceNum);
             const cacheKey = `${raceNum}-${horseNo}`;
+            const venue = rowElement.dataset.venue || '';
             
             if (!Cache.has('runnerDetails', cacheKey)) {
                 detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData,
                     '<div class="details-loading">Loading race history...</div>');
                 
                 try {
-                    const historyHtml = await this.load(raceNum, horseNo, going, track, distance);
+                    const historyHtml = await this.load(raceNum, horseNo, going, track, distance, venue);
                     detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData, historyHtml);
                 } catch (error) {
                     detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData,
                         `<div class="details-loading error">Error: ${error.message}</div>`);
                 }
             } else {
-                detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData, 
-                    Cache.get('runnerDetails', cacheKey));
+                const cachedHtml = Cache.get('runnerDetails', cacheKey);
+                detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData, cachedHtml);
+                // Update all columns using centralized dispatcher
+                this.updateAllColumns(raceNum, horseNo, cachedHtml);
             }
         }
         
@@ -480,18 +623,23 @@ const RunnerDetails = {
     },
     
     async loadRunnerData(raceNum, runnerData, oddsData) {
-        const { horseNo, runnerNo, going, track, distance } = runnerData;
+        const { horseNo, runnerNo, going, track, distance, venue } = runnerData;
         const cacheKey = `${raceNum}-${horseNo}`;
         
-        if (Cache.has('runnerDetails', cacheKey)) return;
-        
-        const detailsContent = Utils.$(`#runner-details-content-${raceNum}-${horseNo}`);
         const detailsRow = Utils.$(`#runner-details-${raceNum}-${horseNo}`);
-        
         if (!detailsRow.classList.contains('expanded')) return;
         
+        if (Cache.has('runnerDetails', cacheKey)) {
+            // Update all columns using centralized dispatcher
+            const cachedHtml = Cache.get('runnerDetails', cacheKey);
+            this.updateAllColumns(raceNum, horseNo, cachedHtml);
+            return;
+        }
+        
+        const detailsContent = Utils.$(`#runner-details-content-${raceNum}-${horseNo}`);
+        
         try {
-            const historyHtml = await this.load(raceNum, horseNo, going, track, distance);
+            const historyHtml = await this.load(raceNum, horseNo, going, track, distance, venue);
             detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, 
                 Cache.get('odds', raceNum), historyHtml);
         } catch (error) {
@@ -516,12 +664,19 @@ const RunnerDetails = {
                 
                 Utils.addClass([detailsRow, Utils.$('.expand-icon', row)], 'expanded');
                 
-                detailsContent.innerHTML = this.createContent(
-                    raceNum, runnerData.runnerNo, runnerData.horseNo, oddsData,
-                    Cache.has('runnerDetails', cacheKey) 
-                        ? Cache.get('runnerDetails', cacheKey)
-                        : '<div class="details-loading">Loading race history...</div>'
-                );
+                if (Cache.has('runnerDetails', cacheKey)) {
+                    const cachedHtml = Cache.get('runnerDetails', cacheKey);
+                    detailsContent.innerHTML = this.createContent(
+                        raceNum, runnerData.runnerNo, runnerData.horseNo, oddsData, cachedHtml
+                    );
+                    // Update all columns using centralized dispatcher
+                    this.updateAllColumns(raceNum, runnerData.horseNo, cachedHtml);
+                } else {
+                    detailsContent.innerHTML = this.createContent(
+                        raceNum, runnerData.runnerNo, runnerData.horseNo, oddsData,
+                        '<div class="details-loading">Loading race history...</div>'
+                    );
+                }
                 
                 return runnerData;
             });
@@ -561,13 +716,13 @@ const RunnerDetails = {
             Utils.log(`Prefetching race ${raceNum}${raceNum === priorityRaceNum ? ' (priority)' : ''}...`);
             
             for (const row of Utils.$$('.runner-row', raceContent)) {
-                const { horseNo, going, track, distance } = Utils.getRunnerData(row);
+                const { horseNo, going, track, distance, venue } = Utils.getRunnerData(row);
                 const cacheKey = `${raceNum}-${horseNo}`;
                 
                 if (!horseNo || Cache.has('runnerDetails', cacheKey)) continue;
                 
                 try {
-                    await this.load(raceNum, horseNo, going, track, distance);
+                    await this.load(raceNum, horseNo, going, track, distance, venue);
                     Utils.log(`✓ Prefetched race ${raceNum} - horse ${horseNo}`);
                 } catch (error) {
                     console.error(`✗ Error prefetching race ${raceNum} - horse ${horseNo}:`, error);
@@ -636,12 +791,14 @@ const PreferredHighlight = {
     // Column configuration: index, type (max/min/fixed/range), and value checker
     columns: [
         { name: 'draw', index: 2, check: v => [3, 4, 5].includes(parseInt(v)) },
-        { name: 'rating', index: 7, type: 'max' },
-        { name: 'fitness', index: 8, type: 'max' },
-        { name: 'energyDiff', index: 9, type: 'max' },
-        { name: 'favStyle', index: 10, check: v => v === 'FrontRunner' },
-        { name: 'win', index: 11, type: 'min' },
-        { name: 'pla', index: 13, type: 'min' }
+        { name: 'favStyle', index: 7, check: v => v === 'FrontRunner' },
+        { name: 'lastTime', index: 8, type: 'min' },
+        { name: 'rating', index: 9, type: 'max' },
+        { name: 'fitness', index: 10, check: v => parseFloat(v) >= 3 },
+        { name: 'energyDiff', index: 11, type: 'max' },
+        { name: 'energyDiffAdj', index: 12, type: 'max' },
+        { name: 'win', index: 14, type: 'min' },
+        { name: 'pla', index: 16, type: 'min' }
     ],
     
     calculateRacePreferred(raceNum) {
@@ -656,8 +813,12 @@ const PreferredHighlight = {
         
         Utils.$$('.runner-row', raceContent).forEach(row => {
             this.columns.filter(col => col.type).forEach(col => {
-                const value = Utils.parseNum(row.cells[col.index]?.textContent.trim(), 
-                    col.type === 'max' ? -Infinity : Infinity);
+                const textValue = row.cells[col.index]?.textContent.trim();
+                
+                // Skip '-' values (no data)
+                if (textValue === '-') return;
+                
+                const value = Utils.parseNum(textValue, col.type === 'max' ? -Infinity : Infinity);
                 
                 if (col.type === 'max' && value > preferred[col.name]) {
                     preferred[col.name] = value;
@@ -670,6 +831,29 @@ const PreferredHighlight = {
         return preferred;
     },
     
+    checkColumnUniformity(raceNum) {
+        const raceContent = Utils.$(`#race-${raceNum}`);
+        if (!raceContent) return new Set();
+        
+        const runnerRows = Utils.$$('.runner-row', raceContent);
+        const uniformColumns = new Set();
+        
+        this.columns.forEach(col => {
+            const values = new Set();
+            runnerRows.forEach(row => {
+                const value = row.cells[col.index]?.textContent.trim();
+                if (value) values.add(value);
+            });
+            
+            // If all non-empty values are the same, mark as uniform
+            if (values.size <= 1) {
+                uniformColumns.add(col.name);
+            }
+        });
+        
+        return uniformColumns;
+    },
+    
     applyHighlighting(raceNum) {
         const raceContent = Utils.$(`#race-${raceNum}`);
         if (!raceContent) return;
@@ -678,6 +862,7 @@ const PreferredHighlight = {
         const racePreferred = this.calculateRacePreferred(raceNum);
         if (!racePreferred) return;
         
+        const uniformColumns = this.checkColumnUniformity(raceNum);
         const horseCounts = new Map();
         
         // First pass: highlight cells and count preferred attributes
@@ -689,6 +874,12 @@ const PreferredHighlight = {
             this.columns.forEach(col => {
                 const cell = cells[col.index];
                 const value = cell?.textContent.trim();
+                
+                // Skip highlighting if column is uniform
+                if (uniformColumns.has(col.name)) return;
+                
+                // Skip '-' values (no data)
+                if (value === '-') return;
                 
                 let isPreferred = false;
                 if (col.check) {
@@ -911,6 +1102,8 @@ const UI = {
         rows.sort((a, b) => {
             const getValue = (row) => {
                 const val = row.cells[columnIndex].textContent.trim();
+                // Treat '-' as Infinity for numeric sorts so it goes to the end
+                if (type === 'number' && val === '-') return Infinity;
                 return type === 'number' ? Utils.parseNum(val, -Infinity) : val.toLowerCase();
             };
             
