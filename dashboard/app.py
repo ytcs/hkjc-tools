@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, render_template, request
+from flask_caching import Cache
 
 import polars as pl
 import numpy as np
@@ -26,7 +27,12 @@ def arr_to_dict(arr: np.ndarray, dtype=float):
 
 
 app = Flask(__name__)
-
+config = {
+    "CACHE_TYPE": "FileSystemCache",
+    "CACHE_DIR": "/tmp/hkjc_cache_dir"
+}
+app.config.from_mapping(config)
+cache = Cache(app)
 
 @app.route("/")
 def disp_race_info():
@@ -73,6 +79,7 @@ going_dict = {'TURF': turf_going_dict, 'ALL WEATHER TRACK': aw_going_dict}
 
 
 @app.route("/horse_info/<horse_no>", methods=['GET'])
+@cache.cached(timeout=7200)
 def disp_horse_info(horse_no):
     # read optional filters
     dist = request.args.get('dist', type=int)
