@@ -87,16 +87,18 @@ def disp_horse_info(horse_no):
         going = None
 
     df = get_horse_data(horse_no)
-    if dist is not None:
-        df = df.filter(pl.col('Dist') == dist)
-    if track and track.upper() == 'TURF':
-        df = df.filter(pl.col('Track') == 'Turf')
-    elif track and track.upper() == 'ALL WEATHER TRACK':
-        df = df.filter(pl.col('Track') == 'AWT')
-    if going is not None:
-        df = df.filter(pl.col('G') == going)
 
-    return render_template('horse-info.html', df=df)
+    if df.height > 0:
+        if dist is not None:
+            df = df.filter(pl.col('Dist') == dist)
+        if track and track.upper() == 'TURF':
+            df = df.filter(pl.col('Track') == 'Turf')
+        elif track and track.upper() == 'ALL WEATHER TRACK':
+            df = df.filter(pl.col('Track') == 'AWT')
+        if going is not None:
+            df = df.filter(pl.col('G') == going)
+
+    return render_template('horse-info.html', df=df.head(5))
 
 
 @app.route('/live_odds/<race_no>')
@@ -114,4 +116,10 @@ def disp_live_odds(race_no=1):
 def disp_speedmap(race_no=1):
     return speedmap(int(race_no))
 
-# TODO: trades
+# TODO: trades API
+
+# TODO: Single QP trade calculation: ?banker= & cover= , , , => return ev win-prob avgodds
+
+# TODO: Recommend QP trade given banker ?exclude= , , , &maxC=  => return list of pareto trades, cover, ev, win-prob, avgodds
+
+# TODO: Recommend Place only trade ?exclude= , , , &maxC => return list of pareto trades, cover, ev, win-prob, avgodds

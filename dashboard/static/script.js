@@ -37,9 +37,50 @@ const Utils = {
      * Conditional debug logging
      */
     log(...args) {
-        if (CONFIG.DEBUG) {
-            console.log(...args);
-        }
+        if (CONFIG.DEBUG) console.log(...args);
+    },
+    
+    /**
+     * DOM query helpers
+     */
+    $(selector, context = document) {
+        return context.querySelector(selector);
+    },
+    
+    $$(selector, context = document) {
+        return Array.from(context.querySelectorAll(selector));
+    },
+    
+    /**
+     * Batch class operations
+     */
+    addClass(elements, className) {
+        (Array.isArray(elements) ? elements : [elements]).forEach(el => el?.classList.add(className));
+    },
+    
+    removeClass(elements, className) {
+        (Array.isArray(elements) ? elements : [elements]).forEach(el => el?.classList.remove(className));
+    },
+    
+    toggleClass(elements, className, force) {
+        (Array.isArray(elements) ? elements : [elements]).forEach(el => el?.classList.toggle(className, force));
+    },
+    
+    /**
+     * Parse float with fallback
+     */
+    parseNum(value, fallback = 0) {
+        const num = parseFloat(value);
+        return isNaN(num) ? fallback : num;
+    },
+    
+    /**
+     * Create HTML element from string
+     */
+    createElement(html) {
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        return template.content.firstChild;
     }
 };
 
@@ -65,7 +106,7 @@ const RequestQueue = {
     queue: [],
     activeCount: 0,
     
-    async enqueue(requestFn, priority = 0) {
+    enqueue(requestFn, priority = 0) {
         return new Promise((resolve, reject) => {
             this.queue.push({ requestFn, resolve, reject, priority });
             this.queue.sort((a, b) => b.priority - a.priority);
@@ -74,16 +115,13 @@ const RequestQueue = {
     },
     
     async process() {
-        if (this.activeCount >= CONFIG.MAX_CONCURRENT_REQUESTS || this.queue.length === 0) {
-            return;
-        }
+        if (this.activeCount >= CONFIG.MAX_CONCURRENT_REQUESTS || !this.queue.length) return;
         
         const { requestFn, resolve, reject } = this.queue.shift();
         this.activeCount++;
         
         try {
-            const result = await requestFn();
-            resolve(result);
+            resolve(await requestFn());
         } catch (error) {
             reject(error);
         } finally {
@@ -115,50 +153,34 @@ const API = {
         const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
         
         try {
-            const response = await fetch(url, {
-                ...options,
-                signal: controller.signal
-            });
-            
+            const response = await fetch(url, { ...options, signal: controller.signal });
             clearTimeout(timeoutId);
             
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             return response;
         } catch (error) {
             clearTimeout(timeoutId);
-            if (error.name === 'AbortError') {
-                throw new Error('Request timeout');
-            }
+            if (error.name === 'AbortError') throw new Error('Request timeout');
             throw error;
         }
     },
     
-    async fetchOdds(raceNum) {
+    fetchOdds(raceNum) {
         return RequestQueue.enqueue(async () => {
-            const response = await this.fetch(`/live_odds/${raceNum}`);
-            return await response.json();
+            return (await this.fetch(`/live_odds/${raceNum}`)).json();
         }, 1);
     },
     
-    async fetchHorseHistory(horseNo, going, track, distance) {
+    fetchHorseHistory(horseNo, going, track, distance) {
         return RequestQueue.enqueue(async () => {
-            const params = new URLSearchParams({
-                going: going || '',
-                track: track || '',
-                dist: distance || ''
-            });
-            const response = await this.fetch(`/horse_info/${horseNo}?${params}`);
-            return await response.text();
+            const params = new URLSearchParams({ going: going || '', track: track || '', dist: distance || '' });
+            return (await this.fetch(`/horse_info/${horseNo}?${params}`)).text();
         }, 0);
     },
     
-    async fetchSpeedmap(raceNum) {
+    fetchSpeedmap(raceNum) {
         return RequestQueue.enqueue(async () => {
-            const response = await this.fetch(`/speedmap/${raceNum}`);
-            return await response.text();
+            return (await this.fetch(`/speedmap/${raceNum}`)).text();
         }, 0);
     }
 };
@@ -172,9 +194,7 @@ const Cache = {
     },
     
     set(cacheName, key, value) {
-        if (!State.caches[cacheName]) {
-            State.caches[cacheName] = new Map();
-        }
+        if (!State.caches[cacheName]) State.caches[cacheName] = new Map();
         State.caches[cacheName].set(key, value);
     },
     
@@ -183,11 +203,7 @@ const Cache = {
     },
     
     clear(cacheName) {
-        if (cacheName) {
-            State.caches[cacheName]?.clear();
-        } else {
-            Object.values(State.caches).forEach(cache => cache.clear());
-        }
+        cacheName ? State.caches[cacheName]?.clear() : Object.values(State.caches).forEach(cache => cache.clear());
     }
 };
 
@@ -199,23 +215,18 @@ const RaceReadiness = {
         if (State.raceReadiness.has(raceNum)) {
             return State.raceReadiness.get(raceNum);
         }
-        
         const ready = this.checkRaceData(raceNum);
         State.raceReadiness.set(raceNum, ready);
         return ready;
     },
     
     checkRaceData(raceNum) {
-        const raceContent = document.getElementById(`race-${raceNum}`);
-        if (!raceContent) return false;
-        
-        const runnerRows = raceContent.querySelectorAll('.runner-row');
+        const runnerRows = Utils.$$(`#race-${raceNum} .runner-row`);
         if (runnerRows.length === 0) return false;
         
-        // Check if any runner has non-zero fitness or energy
-        return Array.from(runnerRows).some(row => {
-            const fitness = parseFloat(row.cells[8]?.textContent.trim()) || 0;
-            const energy = parseFloat(row.cells[9]?.textContent.trim()) || 0;
+        return runnerRows.some(row => {
+            const fitness = Utils.parseNum(row.cells[8]?.textContent.trim());
+            const energy = Utils.parseNum(row.cells[9]?.textContent.trim());
             return fitness !== 0 || energy !== 0;
         });
     },
@@ -243,73 +254,84 @@ const Odds = {
             return data;
         } catch (error) {
             console.error(`Error loading odds for race ${raceNum}:`, error);
-            return null;
         }
     },
     
     updateDisplay(raceNum, oddsData) {
         if (!oddsData?.Raw || !oddsData?.Fit) return;
         
-        this.updateCells(`.odds-win[data-race="${raceNum}"]`, oddsData.Raw.WIN);
-        this.updateCells(`.odds-win-fit[data-race="${raceNum}"]`, oddsData.Fit.WIN);
-        this.updateCells(`.odds-pla[data-race="${raceNum}"]`, oddsData.Raw.PLA);
-        this.updateCells(`.odds-pla-fit[data-race="${raceNum}"]`, oddsData.Fit.PLA);
+        // Update main odds cells
+        const updates = [
+            ['.odds-win', oddsData.Raw.WIN],
+            ['.odds-win-fit', oddsData.Fit.WIN],
+            ['.odds-pla', oddsData.Raw.PLA],
+            ['.odds-pla-fit', oddsData.Fit.PLA]
+        ];
         
-        document.querySelectorAll(`.odds-table[data-race="${raceNum}"]`).forEach(table => {
-            const horseNo = table.dataset.horse;
-            this.updateOddsTable(table, horseNo, oddsData);
-        });
+        updates.forEach(([className, data]) => 
+            this.updateCells(`${className}[data-race="${raceNum}"]`, data)
+        );
+        
+        // Update odds tables
+        Utils.$$(`.odds-table[data-race="${raceNum}"]`).forEach(table => 
+            this.updateOddsTable(table, table.dataset.horse, oddsData)
+        );
+        
+        PreferredHighlight.update(raceNum);
     },
     
     updateCells(selector, oddsData) {
-        document.querySelectorAll(selector).forEach(cell => {
-            const horseNo = cell.dataset.horse;
-            const odds = oddsData?.[horseNo];
-            if (odds !== undefined) {
-                cell.textContent = odds;
-            }
+        Utils.$$(selector).forEach(cell => {
+            const odds = oddsData?.[cell.dataset.horse];
+            if (odds !== undefined) cell.textContent = odds;
         });
     },
     
     updateOddsTable(table, horseNo, oddsData) {
-        const allHorses = Object.keys(oddsData.Raw.WIN || {}).sort((a, b) => parseInt(a) - parseInt(b));
-        const otherHorses = allHorses.filter(h => h !== horseNo);
-        const rows = table.querySelectorAll('tbody tr');
+        const otherHorses = Object.keys(oddsData.Raw.WIN || {})
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .filter(h => h !== horseNo);
         
+        const rows = Utils.$$('tbody tr', table);
         if (rows.length < 4) return;
         
         const updateRow = (rowIndex, dataPath) => {
-            const cells = rows[rowIndex].querySelectorAll('td:not(.odds-type-label)');
-            otherHorses.forEach((h, idx) => {
-                if (cells[idx]) {
-                    const odds = dataPath[horseNo]?.[h] || dataPath[h]?.[horseNo];
-                    cells[idx].textContent = odds !== undefined ? odds : '-';
-                }
+            const cells = Utils.$$('td:not(.odds-type-label)', rows[rowIndex]);
+            cells.forEach((cell, idx) => {
+                const h = otherHorses[idx];
+                const odds = dataPath[horseNo]?.[h] || dataPath[h]?.[horseNo];
+                cell.textContent = odds !== undefined ? odds : '-';
             });
         };
         
-        updateRow(0, oddsData.Raw.QIN);
-        updateRow(1, oddsData.Fit.QIN);
-        updateRow(2, oddsData.Raw.QPL);
-        updateRow(3, oddsData.Fit.QPL);
+        [oddsData.Raw.QIN, oddsData.Fit.QIN, oddsData.Raw.QPL, oddsData.Fit.QPL]
+            .forEach((data, i) => updateRow(i, data));
     },
     
     createSection(raceNum, horseNo, oddsData) {
         if (!oddsData?.Raw || !oddsData?.Fit) return '';
         
-        const allHorses = Object.keys(oddsData.Raw.WIN || {}).sort((a, b) => parseInt(a) - parseInt(b));
-        const otherHorses = allHorses.filter(h => h !== horseNo);
+        const otherHorses = Object.keys(oddsData.Raw.WIN || {})
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .filter(h => h !== horseNo);
         
         if (otherHorses.length === 0) return '';
         
-        const createRow = (label, data) => {
-            let row = `<tr><td class="odds-type-label">${label}</td>`;
-            otherHorses.forEach(h => {
-                const odds = data?.[horseNo]?.[h] || data?.[h]?.[horseNo];
-                row += `<td>${odds !== undefined ? odds : '-'}</td>`;
-            });
-            return row + '</tr>';
-        };
+        const createRow = (label, data) => `
+            <tr>
+                <td class="odds-type-label">${label}</td>
+                ${otherHorses.map(h => {
+                    const odds = data?.[horseNo]?.[h] || data?.[h]?.[horseNo];
+                    return `<td>${odds !== undefined ? odds : '-'}</td>`;
+                }).join('')}
+            </tr>`;
+        
+        const rows = [
+            ['QIN', oddsData.Raw.QIN],
+            ['QIN (fit)', oddsData.Fit.QIN],
+            ['QPL', oddsData.Raw.QPL],
+            ['QPL (fit)', oddsData.Fit.QPL]
+        ];
         
         return `
             <div class="odds-table-container">
@@ -321,10 +343,7 @@ const Odds = {
                         </tr>
                     </thead>
                     <tbody>
-                        ${createRow('QIN', oddsData.Raw.QIN)}
-                        ${createRow('QIN (fit)', oddsData.Fit.QIN)}
-                        ${createRow('QPL', oddsData.Raw.QPL)}
-                        ${createRow('QPL (fit)', oddsData.Fit.QPL)}
+                        ${rows.map(([label, data]) => createRow(label, data)).join('')}
                     </tbody>
                 </table>
             </div>
@@ -332,26 +351,18 @@ const Odds = {
     },
     
     startPolling() {
-        const allRaceNums = Array.from(document.querySelectorAll('.race-content'))
-            .map(el => el.id.replace('race-', ''));
+        const allRaceNums = Utils.$$('.race-content').map(el => el.id.replace('race-', ''));
         
-        // Initial load
         allRaceNums.forEach(raceNum => this.load(raceNum));
         
-        // Clear existing interval
-        if (State.polling.oddsIntervalId) {
-            clearTimeout(State.polling.oddsIntervalId);
-        }
+        if (State.polling.oddsIntervalId) clearTimeout(State.polling.oddsIntervalId);
         
-        // Set up polling with jitter
         const scheduleNextPoll = () => {
             const jitter = Math.random() * CONFIG.POLL_JITTER - (CONFIG.POLL_JITTER / 2);
-            const nextInterval = CONFIG.ODDS_POLL_INTERVAL + jitter;
-            
             State.polling.oddsIntervalId = setTimeout(() => {
                 allRaceNums.forEach(raceNum => this.load(raceNum));
                 scheduleNextPoll();
-            }, nextInterval);
+            }, CONFIG.ODDS_POLL_INTERVAL + jitter);
         };
         
         scheduleNextPoll();
@@ -370,69 +381,47 @@ const Odds = {
 // ============================================================================
 const RunnerDetails = {
     extractRunningStyles(historyHtml) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(historyHtml, 'text/html');
-        const table = doc.querySelector('table');
-        
+        const doc = new DOMParser().parseFromString(historyHtml, 'text/html');
+        const table = Utils.$('table', doc);
         if (!table) return [];
         
-        // Find Style column
-        const headerRow = table.querySelector('thead tr');
+        const headerRow = Utils.$('thead tr', table);
         if (!headerRow) return [];
         
-        const headers = Array.from(headerRow.querySelectorAll('th'));
-        const styleColumnIndex = headers.findIndex(th => 
-            th.textContent.trim().toLowerCase() === 'style'
-        );
+        const styleColumnIndex = Utils.$$('th', headerRow)
+            .findIndex(th => th.textContent.trim().toLowerCase() === 'style');
         
         if (styleColumnIndex === -1) return [];
         
-        // Extract styles from top 5 rows
-        const rows = Array.from(table.querySelectorAll('tbody tr'));
-        const styles = [];
-        
-        for (let i = 0; i < Math.min(5, rows.length); i++) {
-            const cells = rows[i].querySelectorAll('td');
-            if (styleColumnIndex < cells.length) {
-                const styleText = cells[styleColumnIndex].textContent.trim();
-                if (styleText) {
-                    styles.push(styleText);
-                }
-            }
-        }
-        
-        return styles;
+        return Utils.$$('tbody tr', table)
+            .slice(0, 5)
+            .map(row => row.querySelectorAll('td')[styleColumnIndex]?.textContent.trim())
+            .filter(Boolean);
     },
     
     calculateMode(arr) {
-        if (!arr || arr.length === 0) return null;
+        if (!arr?.length) return null;
         
-        const frequency = {};
-        let maxFreq = 0;
-        let mode = null;
+        const frequency = arr.reduce((acc, val) => {
+            acc[val] = (acc[val] || 0) + 1;
+            return acc;
+        }, {});
         
-        arr.forEach(value => {
-            frequency[value] = (frequency[value] || 0) + 1;
-            if (frequency[value] > maxFreq) {
-                maxFreq = frequency[value];
-                mode = value;
-            }
-        });
-        
-        return mode;
+        return Object.entries(frequency)
+            .reduce((max, [val, freq]) => freq > max[1] ? [val, freq] : max, [null, 0])[0];
     },
     
     updateFavStyle(raceNum, horseNo, historyHtml) {
-        const cell = document.querySelector(`.fav-style[data-race="${raceNum}"][data-horse="${horseNo}"]`);
+        const cell = Utils.$(`.fav-style[data-race="${raceNum}"][data-horse="${horseNo}"]`);
         if (!cell) return;
         
         try {
-            const styles = this.extractRunningStyles(historyHtml);
-            const favStyle = this.calculateMode(styles);
-            cell.textContent = favStyle || '-';
+            cell.textContent = this.calculateMode(this.extractRunningStyles(historyHtml)) || 'Unknown';
+            FavStyleChart.update(raceNum);
+            PreferredHighlight.update(raceNum);
         } catch (error) {
             console.error(`Error updating fav style for horse ${horseNo}:`, error);
-            cell.textContent = '-';
+            cell.textContent = 'Unknown';
         }
     },
     
@@ -445,15 +434,10 @@ const RunnerDetails = {
             return cachedHtml;
         }
         
-        try {
-            const html = await API.fetchHorseHistory(horseNo, going, track, distance);
-            Cache.set('runnerDetails', cacheKey, html);
-            this.updateFavStyle(raceNum, horseNo, html);
-            return html;
-        } catch (error) {
-            console.error(`Error loading history for horse ${horseNo}:`, error);
-            throw error;
-        }
+        const html = await API.fetchHorseHistory(horseNo, going, track, distance);
+        Cache.set('runnerDetails', cacheKey, html);
+        this.updateFavStyle(raceNum, horseNo, html);
+        return html;
     },
     
     createContent(raceNum, runnerNo, horseNo, oddsData, historyHtml) {
@@ -463,39 +447,32 @@ const RunnerDetails = {
     },
     
     async toggle(rowElement, raceNum, horseNo, going, track, distance) {
-        const detailsRow = document.getElementById(`runner-details-${raceNum}-${horseNo}`);
+        const detailsRow = Utils.$(`#runner-details-${raceNum}-${horseNo}`);
+        const expandIcon = Utils.$('.expand-icon', rowElement);
         const isExpanded = detailsRow.classList.contains('expanded');
         
-        if (isExpanded) {
-            detailsRow.classList.remove('expanded');
-            rowElement.querySelector('.expand-icon').classList.remove('expanded');
-        } else {
-            detailsRow.classList.add('expanded');
-            rowElement.querySelector('.expand-icon').classList.add('expanded');
-            
-            const detailsContent = document.getElementById(`runner-details-content-${raceNum}-${horseNo}`);
-            const runnerNo = rowElement.querySelector('.odds-win')?.dataset.horse || horseNo;
+        Utils.toggleClass([detailsRow, expandIcon], 'expanded', !isExpanded);
+        
+        if (!isExpanded) {
+            const detailsContent = Utils.$(`#runner-details-content-${raceNum}-${horseNo}`);
+            const runnerNo = Utils.$('.odds-win', rowElement)?.dataset.horse || horseNo;
             const oddsData = Cache.get('odds', raceNum);
             const cacheKey = `${raceNum}-${horseNo}`;
             
             if (!Cache.has('runnerDetails', cacheKey)) {
-                detailsContent.innerHTML = this.createContent(
-                    raceNum, runnerNo, horseNo, oddsData,
-                    '<div class="details-loading">Loading race history...</div>'
-                );
+                detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData,
+                    '<div class="details-loading">Loading race history...</div>');
                 
                 try {
                     const historyHtml = await this.load(raceNum, horseNo, going, track, distance);
                     detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData, historyHtml);
                 } catch (error) {
-                    detailsContent.innerHTML = this.createContent(
-                        raceNum, runnerNo, horseNo, oddsData,
-                        `<div class="details-loading error">Error: ${error.message}</div>`
-                    );
+                    detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData,
+                        `<div class="details-loading error">Error: ${error.message}</div>`);
                 }
             } else {
-                const historyHtml = Cache.get('runnerDetails', cacheKey);
-                detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData, historyHtml);
+                detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, oddsData, 
+                    Cache.get('runnerDetails', cacheKey));
             }
         }
         
@@ -505,56 +482,46 @@ const RunnerDetails = {
     async loadRunnerData(raceNum, runnerData, oddsData) {
         const { horseNo, runnerNo, going, track, distance } = runnerData;
         const cacheKey = `${raceNum}-${horseNo}`;
-        const detailsContent = document.getElementById(`runner-details-content-${raceNum}-${horseNo}`);
-        const detailsRow = document.getElementById(`runner-details-${raceNum}-${horseNo}`);
         
-        if (!Cache.has('runnerDetails', cacheKey)) {
-            try {
-                const historyHtml = await this.load(raceNum, horseNo, going, track, distance);
-                
-                if (detailsRow.classList.contains('expanded')) {
-                    const currentOddsData = Cache.get('odds', raceNum);
-                    detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, currentOddsData, historyHtml);
-                }
-            } catch (error) {
-                if (detailsRow.classList.contains('expanded')) {
-                    const currentOddsData = Cache.get('odds', raceNum);
-                    detailsContent.innerHTML = this.createContent(
-                        raceNum, runnerNo, horseNo, currentOddsData,
-                        `<div class="details-loading error">Error: ${error.message}</div>`
-                    );
-                }
-            }
+        if (Cache.has('runnerDetails', cacheKey)) return;
+        
+        const detailsContent = Utils.$(`#runner-details-content-${raceNum}-${horseNo}`);
+        const detailsRow = Utils.$(`#runner-details-${raceNum}-${horseNo}`);
+        
+        if (!detailsRow.classList.contains('expanded')) return;
+        
+        try {
+            const historyHtml = await this.load(raceNum, horseNo, going, track, distance);
+            detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, 
+                Cache.get('odds', raceNum), historyHtml);
+        } catch (error) {
+            detailsContent.innerHTML = this.createContent(raceNum, runnerNo, horseNo, 
+                Cache.get('odds', raceNum), 
+                `<div class="details-loading error">Error: ${error.message}</div>`);
         }
     },
     
     async toggleAll(raceNum, buttonElement) {
-        const raceContent = document.getElementById(`race-${raceNum}`);
-        const runnerRows = Array.from(raceContent.querySelectorAll('.runner-row'));
+        const raceContent = Utils.$(`#race-${raceNum}`);
+        const runnerRows = Utils.$$('.runner-row', raceContent);
         const isExpanding = !buttonElement.classList.contains('all-expanded');
         
         if (isExpanding) {
             const oddsData = Cache.get('odds', raceNum);
-            
-            // Expand UI immediately for all runners
             const runners = runnerRows.map(row => {
                 const runnerData = Utils.getRunnerData(row);
                 const cacheKey = `${raceNum}-${runnerData.horseNo}`;
-                const detailsRow = document.getElementById(`runner-details-${raceNum}-${runnerData.horseNo}`);
-                const detailsContent = document.getElementById(`runner-details-content-${raceNum}-${runnerData.horseNo}`);
+                const detailsRow = Utils.$(`#runner-details-${raceNum}-${runnerData.horseNo}`);
+                const detailsContent = Utils.$(`#runner-details-content-${raceNum}-${runnerData.horseNo}`);
                 
-                detailsRow.classList.add('expanded');
-                row.querySelector('.expand-icon').classList.add('expanded');
+                Utils.addClass([detailsRow, Utils.$('.expand-icon', row)], 'expanded');
                 
-                if (Cache.has('runnerDetails', cacheKey)) {
-                    const historyHtml = Cache.get('runnerDetails', cacheKey);
-                    detailsContent.innerHTML = this.createContent(raceNum, runnerData.runnerNo, runnerData.horseNo, oddsData, historyHtml);
-                } else {
-                    detailsContent.innerHTML = this.createContent(
-                        raceNum, runnerData.runnerNo, runnerData.horseNo, oddsData,
-                        '<div class="details-loading">Loading race history...</div>'
-                    );
-                }
+                detailsContent.innerHTML = this.createContent(
+                    raceNum, runnerData.runnerNo, runnerData.horseNo, oddsData,
+                    Cache.has('runnerDetails', cacheKey) 
+                        ? Cache.get('runnerDetails', cacheKey)
+                        : '<div class="details-loading">Loading race history...</div>'
+                );
                 
                 return runnerData;
             });
@@ -568,34 +535,36 @@ const RunnerDetails = {
                 }
             })();
         } else {
-            // Collapse all
             runnerRows.forEach(row => {
-                const horseNo = row.dataset.horse;
-                const detailsRow = document.getElementById(`runner-details-${raceNum}-${horseNo}`);
-                detailsRow.classList.remove('expanded');
-                row.querySelector('.expand-icon').classList.remove('expanded');
+                const detailsRow = Utils.$(`#runner-details-${raceNum}-${row.dataset.horse}`);
+                Utils.removeClass([detailsRow, Utils.$('.expand-icon', row)], 'expanded');
             });
-            
             UI.updateExpandAllButtonState(raceNum);
         }
     },
     
-    async prefetchAll() {
+    async prefetchAll(priorityRaceNum = null) {
         Utils.log('Starting background prefetch of runner histories...');
         
-        const allRaces = Array.from(document.querySelectorAll('.race-content'));
-        if (allRaces.length === 0) return;
+        const sortedRaces = Utils.$$('.race-content').sort((a, b) => {
+            const aNum = a.id.replace('race-', '');
+            const bNum = b.id.replace('race-', '');
+            if (priorityRaceNum) {
+                if (aNum === priorityRaceNum) return -1;
+                if (bNum === priorityRaceNum) return 1;
+            }
+            return parseInt(aNum) - parseInt(bNum);
+        });
         
-        for (const raceContent of allRaces) {
+        for (const raceContent of sortedRaces) {
             const raceNum = raceContent.id.replace('race-', '');
-            const runnerRows = Array.from(raceContent.querySelectorAll('.runner-row'));
+            Utils.log(`Prefetching race ${raceNum}${raceNum === priorityRaceNum ? ' (priority)' : ''}...`);
             
-            for (const row of runnerRows) {
+            for (const row of Utils.$$('.runner-row', raceContent)) {
                 const { horseNo, going, track, distance } = Utils.getRunnerData(row);
-                if (!horseNo) continue;
-                
                 const cacheKey = `${raceNum}-${horseNo}`;
-                if (Cache.has('runnerDetails', cacheKey)) continue;
+                
+                if (!horseNo || Cache.has('runnerDetails', cacheKey)) continue;
                 
                 try {
                     await this.load(raceNum, horseNo, going, track, distance);
@@ -615,15 +584,15 @@ const RunnerDetails = {
 // ============================================================================
 const Speedmap = {
     ensureImageElement(raceNum, container) {
-        if (!container.querySelector('img')) {
+        if (!Utils.$('img', container)) {
             container.innerHTML = `<img id="speedmap-${raceNum}" class="speedmap-image" alt="Race ${raceNum} Speed Map" />`;
         }
-        return document.getElementById(`speedmap-${raceNum}`);
+        return Utils.$(`#speedmap-${raceNum}`);
     },
     
     async load(raceNum) {
-        const speedmapContainer = document.querySelector(`#race-${raceNum} .speedmap-container`);
-        const speedmapImg = document.getElementById(`speedmap-${raceNum}`);
+        const speedmapContainer = Utils.$(`#race-${raceNum} .speedmap-container`);
+        const speedmapImg = Utils.$(`#speedmap-${raceNum}`);
         if (!speedmapImg || !speedmapContainer) return;
         
         if (!RaceReadiness.isReady(raceNum)) {
@@ -654,11 +623,240 @@ const Speedmap = {
     },
     
     async loadAll() {
-        const speedmapImages = document.querySelectorAll('.speedmap-image');
-        for (const img of speedmapImages) {
-            const raceNum = img.id.replace('speedmap-', '');
-            await this.load(raceNum);
+        for (const img of Utils.$$('.speedmap-image')) {
+            await this.load(img.id.replace('speedmap-', ''));
         }
+    }
+};
+
+// ============================================================================
+// PREFERRED HIGHLIGHT MODULE - Highlight preferred values and top horses
+// ============================================================================
+const PreferredHighlight = {
+    // Column configuration: index, type (max/min/fixed/range), and value checker
+    columns: [
+        { name: 'draw', index: 2, check: v => [3, 4, 5].includes(parseInt(v)) },
+        { name: 'rating', index: 7, type: 'max' },
+        { name: 'fitness', index: 8, type: 'max' },
+        { name: 'energyDiff', index: 9, type: 'max' },
+        { name: 'favStyle', index: 10, check: v => v === 'FrontRunner' },
+        { name: 'win', index: 11, type: 'min' },
+        { name: 'pla', index: 13, type: 'min' }
+    ],
+    
+    calculateRacePreferred(raceNum) {
+        const raceContent = Utils.$(`#race-${raceNum}`);
+        if (!raceContent) return null;
+        
+        const preferred = {};
+        
+        this.columns.filter(col => col.type).forEach(col => {
+            preferred[col.name] = col.type === 'max' ? -Infinity : Infinity;
+        });
+        
+        Utils.$$('.runner-row', raceContent).forEach(row => {
+            this.columns.filter(col => col.type).forEach(col => {
+                const value = Utils.parseNum(row.cells[col.index]?.textContent.trim(), 
+                    col.type === 'max' ? -Infinity : Infinity);
+                
+                if (col.type === 'max' && value > preferred[col.name]) {
+                    preferred[col.name] = value;
+                } else if (col.type === 'min' && value > 0 && value < preferred[col.name]) {
+                    preferred[col.name] = value;
+                }
+            });
+        });
+        
+        return preferred;
+    },
+    
+    applyHighlighting(raceNum) {
+        const raceContent = Utils.$(`#race-${raceNum}`);
+        if (!raceContent) return;
+        
+        const runnerRows = Utils.$$('.runner-row', raceContent);
+        const racePreferred = this.calculateRacePreferred(raceNum);
+        if (!racePreferred) return;
+        
+        const horseCounts = new Map();
+        
+        // First pass: highlight cells and count preferred attributes
+        runnerRows.forEach(row => {
+            const cells = row.cells;
+            Utils.removeClass(Array.from(cells), 'preferred-cell');
+            
+            let count = 0;
+            this.columns.forEach(col => {
+                const cell = cells[col.index];
+                const value = cell?.textContent.trim();
+                
+                let isPreferred = false;
+                if (col.check) {
+                    isPreferred = col.check(value);
+                } else if (col.type && racePreferred[col.name] !== undefined) {
+                    const numValue = Utils.parseNum(value, col.type === 'max' ? -Infinity : Infinity);
+                    isPreferred = numValue === racePreferred[col.name] && 
+                                  (col.type === 'max' || numValue > 0);
+                }
+                
+                if (isPreferred) {
+                    Utils.addClass(cell, 'preferred-cell');
+                    count++;
+                }
+            });
+            
+            horseCounts.set(row.dataset.horse, count);
+        });
+        
+        // Second pass: highlight horses with most preferred attributes
+        const maxCount = Math.max(...horseCounts.values());
+        
+        runnerRows.forEach(row => {
+            const count = horseCounts.get(row.dataset.horse);
+            Utils.removeClass(row, 'most-preferred-horse');
+            Utils.$('.most-preferred-badge', row)?.remove();
+            
+            if (count === maxCount && maxCount > 0) {
+                Utils.addClass(row, 'most-preferred-horse');
+                
+                const nameCell = row.cells[4];
+                if (nameCell && !Utils.$('.most-preferred-badge', nameCell)) {
+                    const badge = document.createElement('span');
+                    badge.className = 'most-preferred-badge';
+                    badge.textContent = `${count}★`;
+                    badge.title = `${count} preferred attribute${count > 1 ? 's' : ''}`;
+                    nameCell.appendChild(badge);
+                }
+            }
+        });
+    },
+    
+    update(raceNum) {
+        this.applyHighlighting(raceNum);
+    },
+    
+    initAll() {
+        Utils.$$('.race-content').forEach(raceContent => 
+            this.applyHighlighting(raceContent.id.replace('race-', ''))
+        );
+    }
+};
+
+// ============================================================================
+// FAV STYLE CHART MODULE - Pie chart for running style distribution
+// ============================================================================
+const FavStyleChart = {
+    charts: new Map(),
+    styleColors: {
+        'FrontRunner': '#48bb78',
+        'Pacer': '#667eea',
+        'Closer': '#f56565',
+        'Unknown': '#a0aec0'
+    },
+    
+    getStyleDistribution(raceNum) {
+        const raceContent = Utils.$(`#race-${raceNum}`);
+        if (!raceContent) return {};
+        
+        return Utils.$$('.fav-style', raceContent).reduce((dist, cell) => {
+            const style = cell.textContent.trim();
+            if (style) dist[style] = (dist[style] || 0) + 1;
+            return dist;
+        }, {});
+    },
+    
+    getColorForStyle(style) {
+        return this.styleColors[style] || '#a0aec0';
+    },
+    
+    draw(raceNum) {
+        const canvas = Utils.$(`#fav-style-chart-${raceNum}`);
+        if (!canvas) return;
+        
+        const distribution = this.getStyleDistribution(raceNum);
+        const entries = Object.entries(distribution).sort((a, b) => b[1] - a[1]);
+        
+        if (this.charts.has(raceNum)) this.charts.get(raceNum).destroy();
+        if (entries.length === 0) return;
+        
+        const labels = entries.map(([style]) => style);
+        const data = entries.map(([, count]) => count);
+        const colors = labels.map(style => this.getColorForStyle(style));
+        
+        const ctx = canvas.getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderColor: '#fff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                animation: {
+                    duration: 500  // 2x faster (default is 1000ms)
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 8,
+                            font: {
+                                size: 10
+                            },
+                            generateLabels: function(chart) {
+                                const data = chart.data;
+                                if (data.labels.length && data.datasets.length) {
+                                    const dataset = data.datasets[0];
+                                    const total = dataset.data.reduce((a, b) => a + b, 0);
+                                    return data.labels.map((label, i) => {
+                                        const value = dataset.data[i];
+                                        const percentage = ((value / total) * 100).toFixed(1);
+                                        return {
+                                            text: `${label}: ${value} (${percentage}%)`,
+                                            fillStyle: dataset.backgroundColor[i],
+                                            hidden: false,
+                                            index: i
+                                        };
+                                    });
+                                }
+                                return [];
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${label}: ${value} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        this.charts.set(raceNum, chart);
+    },
+    
+    update(raceNum) {
+        const raceContent = Utils.$(`#race-${raceNum}`);
+        if (this.charts.has(raceNum) || raceContent?.classList.contains('active')) {
+            this.draw(raceNum);
+        }
+    },
+    
+    initAll() {
+        const activeRace = Utils.$('.race-content.active');
+        if (activeRace) this.draw(activeRace.id.replace('race-', ''));
     }
 };
 
@@ -667,58 +865,57 @@ const Speedmap = {
 // ============================================================================
 const UI = {
     showRace(raceNum) {
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        document.getElementById(`tab-${raceNum}`).classList.add('active');
-        document.querySelectorAll('.race-content').forEach(content => content.classList.remove('active'));
-        document.getElementById(`race-${raceNum}`).classList.add('active');
+        Utils.removeClass(Utils.$$('.tab-btn'), 'active');
+        Utils.addClass(Utils.$(`#tab-${raceNum}`), 'active');
+        Utils.removeClass(Utils.$$('.race-content'), 'active');
+        Utils.addClass(Utils.$(`#race-${raceNum}`), 'active');
         
-        if (!Cache.has('odds', raceNum)) {
-            Odds.load(raceNum);
-        }
+        sessionStorage.setItem('activeRaceTab', raceNum);
+        
+        if (!Cache.has('odds', raceNum)) Odds.load(raceNum);
+        if (!FavStyleChart.charts.has(raceNum)) FavStyleChart.draw(raceNum);
+        
+        PreferredHighlight.update(raceNum);
     },
     
     updateExpandAllButtonState(raceNum) {
-        const raceContent = document.getElementById(`race-${raceNum}`);
-        const expandAllBtn = raceContent.querySelector('.expand-all-btn');
-        const detailsRows = Array.from(raceContent.querySelectorAll('.runner-details-row'));
+        const raceContent = Utils.$(`#race-${raceNum}`);
+        const expandAllBtn = Utils.$('.expand-all-btn', raceContent);
+        const detailsRows = Utils.$$('.runner-details-row', raceContent);
         const allExpanded = detailsRows.length > 0 && detailsRows.every(row => row.classList.contains('expanded'));
         
-        expandAllBtn.classList.toggle('all-expanded', allExpanded);
-        expandAllBtn.querySelector('.expand-all-text').textContent = allExpanded ? 'Collapse All' : 'Expand All';
-        const icon = expandAllBtn.querySelector('.expand-all-icon');
-        if (icon) {
-            icon.textContent = allExpanded ? '▲' : '▼';
-        }
+        Utils.toggleClass(expandAllBtn, 'all-expanded', allExpanded);
+        Utils.$('.expand-all-text', expandAllBtn).textContent = allExpanded ? 'Collapse All' : 'Expand All';
+        
+        const icon = Utils.$('.expand-all-icon', expandAllBtn);
+        if (icon) icon.textContent = allExpanded ? '▲' : '▼';
     },
     
     sortTable(raceNum, columnIndex, type) {
-        const table = document.querySelector(`#race-${raceNum} .runners-table`);
-        const tbody = table.querySelector('tbody');
-        const header = table.querySelectorAll('thead th')[columnIndex];
-        const allHeaders = table.querySelectorAll('thead th.sortable');
-        const rows = Array.from(tbody.querySelectorAll('tr')).filter((row, index) => index % 2 === 0);
+        const table = Utils.$(`#race-${raceNum} .runners-table`);
+        const tbody = Utils.$('tbody', table);
+        const headers = Utils.$$('thead th', table);
+        const header = headers[columnIndex];
+        const allHeaders = Utils.$$('thead th.sortable', table);
+        const rows = Utils.$$('tr', tbody).filter((row, index) => index % 2 === 0);
         const isAscending = !header.classList.contains('sort-asc');
         
         // Reset all headers
         allHeaders.forEach(h => {
-            h.classList.remove('sort-asc', 'sort-desc');
-            const arrow = h.querySelector('.sort-arrow');
+            Utils.removeClass(h, ['sort-asc', 'sort-desc']);
+            const arrow = Utils.$('.sort-arrow', h);
             if (arrow) arrow.textContent = '⇅';
         });
         
         // Sort rows
         rows.sort((a, b) => {
-            let aComp, bComp;
+            const getValue = (row) => {
+                const val = row.cells[columnIndex].textContent.trim();
+                return type === 'number' ? Utils.parseNum(val, -Infinity) : val.toLowerCase();
+            };
             
-            if (type === 'number') {
-                aComp = parseFloat(a.cells[columnIndex].textContent.trim());
-                bComp = parseFloat(b.cells[columnIndex].textContent.trim());
-                if (isNaN(aComp)) aComp = -Infinity;
-                if (isNaN(bComp)) bComp = -Infinity;
-            } else {
-                aComp = a.cells[columnIndex].textContent.trim().toLowerCase();
-                bComp = b.cells[columnIndex].textContent.trim().toLowerCase();
-            }
+            const aComp = getValue(a);
+            const bComp = getValue(b);
             
             return isAscending ? 
                 (aComp > bComp ? 1 : aComp < bComp ? -1 : 0) : 
@@ -726,16 +923,17 @@ const UI = {
         });
         
         // Update header
-        header.classList.add(isAscending ? 'sort-asc' : 'sort-desc');
-        const arrow = header.querySelector('.sort-arrow');
+        Utils.addClass(header, isAscending ? 'sort-asc' : 'sort-desc');
+        const arrow = Utils.$('.sort-arrow', header);
         if (arrow) arrow.textContent = isAscending ? '▲' : '▼';
         
         // Reorder rows
         rows.forEach(row => {
-            const detailsRow = row.nextElementSibling;
             tbody.appendChild(row);
-            if (detailsRow) tbody.appendChild(detailsRow);
+            if (row.nextElementSibling) tbody.appendChild(row.nextElementSibling);
         });
+        
+        PreferredHighlight.update(raceNum);
     },
     
     openTrackWorkoutVideo(raceDate, raceNum) {
@@ -754,11 +952,21 @@ const App = {
     init() {
         console.log('Initializing HKJC Race Info...');
         
+        const savedRaceTab = sessionStorage.getItem('activeRaceTab');
+        if (savedRaceTab && Utils.$(`#tab-${savedRaceTab}`)) {
+            UI.showRace(savedRaceTab);
+        }
+        
+        const activeRace = Utils.$('.race-content.active');
+        const activeRaceNum = activeRace?.id.replace('race-', '');
+        
         Speedmap.loadAll();
+        FavStyleChart.initAll();
+        PreferredHighlight.initAll();
         Odds.startPolling();
-        RunnerDetails.prefetchAll().catch(error => {
-            console.error('Error in background prefetch:', error);
-        });
+        RunnerDetails.prefetchAll(activeRaceNum).catch(error => 
+            console.error('Error in background prefetch:', error)
+        );
         
         console.log('Application initialized successfully');
     },
@@ -767,6 +975,8 @@ const App = {
         Odds.stopPolling();
         RequestQueue.clear();
         Cache.clear();
+        FavStyleChart.charts.forEach(chart => chart.destroy());
+        FavStyleChart.charts.clear();
     }
 };
 

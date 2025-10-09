@@ -5,17 +5,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HKJC Race Info</title>
+    <link rel="icon" href="https://hkjc.com/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
     <div class="container">
         <div class="tabs">
+            <img src="https://consvc.hkjc.com//consvc.hkjc.com/-/media/Sites/JCBW/MenuIcons/eWinLogo/horse_svg/Racing/horse/horse.svg" alt="Horse Icon" class="horse-icon">
             <div class="tabs-buttons">
                 {% for race_num in race_info.Races.keys()|sort|map('int')|sort %}
                 <button class="tab-btn {% if loop.first %}active{% endif %}" onclick="showRace('{{ race_num }}')"
                     id="tab-{{ race_num }}">
-                    Race {{ race_num }}
+                    {{ race_num }}
                 </button>
                 {% endfor %}
             </div>
@@ -59,8 +62,17 @@
                 </div>
             </div>
 
-            <div class="speedmap-container">
-                <img id="speedmap-{{ race_num }}" class="speedmap-image" alt="Race {{ race_num }} Speed Map" />
+            <div class="race-visual-container">
+                <div class="speedmap-section">
+                    <div class="speedmap-container">
+                        <img id="speedmap-{{ race_num }}" class="speedmap-image" alt="Race {{ race_num }} Speed Map" />
+                    </div>
+                </div>
+                <div class="fav-style-chart-section">
+                    <div class="fav-style-chart-container">
+                        <canvas id="fav-style-chart-{{ race_num }}"></canvas>
+                    </div>
+                </div>
             </div>
 
             <div class="expand-all-container">
@@ -128,7 +140,7 @@
                         <td>{{ runner.Rtg }}</td>
                         <td>{{ runner.Fitness }}</td>
                         <td>{{ runner.SPEnergy }}</td>
-                        <td class="fav-style" data-race="{{ race_num }}" data-horse="{{ runner.HorseNo }}">-</td>
+                        <td class="fav-style" data-race="{{ race_num }}" data-horse="{{ runner.HorseNo }}">Unknown</td>
                         <td class="odds-win" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
                         <td class="odds-win-fit" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
                         <td class="odds-pla" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
