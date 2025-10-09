@@ -8,6 +8,7 @@ from hkjc.live import live_odds, _fetch_live_races
 from hkjc.harville_model import fit_harville_to_odds
 from hkjc.historical import get_horse_data
 from hkjc.speedpro import speedmap, speedpro_energy
+from hkjc.strategy import qpbanker, place_only
 
 
 def arr_to_dict(arr: np.ndarray, dtype=float):
@@ -35,7 +36,7 @@ config = {
 app.config.from_mapping(config)
 cache = Cache(app)
 
-@app.route("/")
+@app.route('/')
 def disp_race_info():
     race_info = _fetch_live_races('', '')
 
@@ -79,8 +80,8 @@ aw_going_dict = {'WET FAST': 'WF',
 going_dict = {'TURF': turf_going_dict, 'ALL WEATHER TRACK': aw_going_dict}
 
 
-@app.route("/horse_info/<horse_no>", methods=['GET'])
-@cache.cached(timeout=7200, query_string=True)
+@app.route('/horse_info/<horse_no>', methods=['GET'])
+@cache.cached(timeout=86400, query_string=True) # cache horse history for 1 day
 def disp_horse_info(horse_no):
     # read optional filters
     dist = request.args.get('dist', type=int)
@@ -114,9 +115,9 @@ def disp_horse_info(horse_no):
     return render_template('horse-info.html', df=df.head(5))
 
 
-@app.route('/live_odds/<race_no>')
+@app.route('/live_odds/<int:race_no>')
 def disp_live_odds(race_no=1):
-    odds_dict = live_odds('', '', int(race_no))
+    odds_dict = live_odds('', '', race_no)
     fitted_odds = fit_harville_to_odds(odds_dict)['odds_fit']
     odds_json = {'Raw': {k: arr_to_dict(v) for k, v in odds_dict.items()},
                  'Fit': {k: arr_to_dict(v) for k, v in fitted_odds.items()}
@@ -125,13 +126,27 @@ def disp_live_odds(race_no=1):
     return jsonify(odds_json)
 
 
-@app.route('/speedmap/<race_no>')
+@app.route('/speedmap/<int:race_no>')
 def disp_speedmap(race_no=1):
-    return speedmap(int(race_no))
+    return speedmap(race_no)
 
 # TODO: trades API
 
-# TODO: Single QP trade calculation: ?banker= & cover= , , , => return ev win-prob avgodds
+@app.route('/qp/<int:race_no>/<int:banker>/<cover>', methods=['GET'])
+def disp_qp_metrics(race_no=1, banker=1, cover='2'):
+    use_filter = request.args.get('filter', type=bool)
+    odds = live_odds('','',race_number=race_no)
+    if use_filter:
+        res = fit_harville_to_odds(odds)
+        if res['success']:
+            odds = res['odds_fit']
+    covered = [int(v) for v in cover.split(',')]
+    ev = qpbanker.expected_value(odds['PLA'],odds['QPL'],banker,covered)
+    win = qpbanker.win_probability(odds['PLA'],banker,covered)
+    avg_odds = qpbanker.average_odds(odds['QPL'],banker,covered)
+
+    return {'Banker': banker, 'Covered': covered, 'ExpectedValue': ev, 'Win Rate': win, 'AvgOdds': avg_odds}
+
 
 # TODO: Recommend QP trade given banker ?exclude= , , , &maxC=  => return list of pareto trades, cover, ev, win-prob, avgodds
 
