@@ -198,10 +198,12 @@ class HarvilleModel:
         lambda_qin (float): Weight for Qin pool loss
         lambda_quinella (float): Weight for Quinella pool loss
         lambda_banker (float): Weight for Banker pool loss
+        takeout_rate (float): House take out rate (e.g., 0.175 = 17.5%)
     """
     
     def __init__(self, n_horses: int, lambda_win: float = LAMBDA_DEFAULTS['WIN'], lambda_qin: float = LAMBDA_DEFAULTS['QIN'], 
-                 lambda_quinella: float = LAMBDA_DEFAULTS['QPL'], lambda_banker: float = LAMBDA_DEFAULTS['PLA']) -> None:
+                 lambda_quinella: float = LAMBDA_DEFAULTS['QPL'], lambda_banker: float = LAMBDA_DEFAULTS['PLA'],
+                 takeout_rate: float = 0.175) -> None:
         """
         Initialize model.
         
@@ -211,6 +213,9 @@ class HarvilleModel:
             lambda_qin: Weight for Qin odds (prob pair finishes 1st-2nd)
             lambda_quinella: Weight for Quinella odds (prob pair in top 3)
             lambda_banker: Weight for Banker odds (prob horse in top 3)
+            takeout_rate: House take out rate as decimal (default 0.175 = 17.5%).
+                         The observed odds include the house's take, which makes
+                         them higher than true odds. This parameter adjusts for that.
             
         Raises:
             ValueError: If n_horses > 20 (exponential complexity warning)
@@ -223,8 +228,50 @@ class HarvilleModel:
         self.lambda_qin = lambda_qin
         self.lambda_quinella = lambda_quinella
         self.lambda_banker = lambda_banker
+        self.takeout_rate = takeout_rate
         self._eval_count = 0
         self.result = None
+    
+    def _adjust_for_takeout(self, probs: Optional[np.ndarray]) -> Optional[np.ndarray]:
+        """
+        Adjust observed probabilities to remove house takeout rate.
+        
+        Observed odds from the betting market include the house's take, causing
+        the sum of implied probabilities to exceed 1.0. This method adjusts them
+        to represent true probabilities.
+        
+        Args:
+            probs: Observed probabilities (can be 1D or 2D array)
+            
+        Returns:
+            Adjusted probabilities with takeout removed, or None if input is None
+        """
+        if probs is None:
+            return None
+        
+        # Multiply by (1 - takeout_rate) to remove the house edge
+        adjusted = probs * (1.0 - self.takeout_rate)
+        
+        return adjusted
+    
+    def _probs_to_market_odds(self, probs: np.ndarray) -> np.ndarray:
+        """
+        Convert fitted probabilities to market odds including takeout rate.
+        
+        This converts true probabilities (which sum to 1.0) back to decimal odds
+        as they would appear in the betting market, which includes the house's
+        takeout rate. The resulting odds can be directly compared to observed odds.
+        
+        Args:
+            probs: Fitted probabilities (1D or 2D array)
+            
+        Returns:
+            Market odds (decimal format) with takeout reintroduced
+        """
+        
+        # Convert true probabilities to market odds with takeout
+        # Market odds are worse (higher) than fair odds due to house edge
+        return (1.0 - self.takeout_rate) / probs
     
     def _loss(self, theta: np.ndarray, W_obs: Optional[np.ndarray], 
              Qin_obs: Optional[np.ndarray], Q_obs: Optional[np.ndarray], 
@@ -290,26 +337,34 @@ class HarvilleModel:
             
         Returns:
             Dictionary containing:
-                - theta: Fitted strength parameters (n,)
-                - W_fitted: Fitted Win probabilities (n,)
-                - Qin_fitted: Fitted Qin probabilities (n, n)
-                - Q_fitted: Fitted Quinella probabilities (n, n)
-                - b_fitted: Fitted Banker probabilities (n,)
-                - P_fitted: Full place probability matrix (n, n), P[i,j] = 
-                            prob horse i finishes in position j
-                - loss: Final loss value
                 - success: Whether optimization converged
                 - message: Optimizer status message
                 - n_eval: Number of loss function evaluations
+                - loss: Final loss value
+                - prob_fit: Dictionary of fitted probabilities (sum to 1.0)
+                    - theta: Fitted strength parameters (n,)
+                    - W: Win probabilities (n,)
+                    - Qin: Qin probabilities (n, n)
+                    - Q: Quinella probabilities (n, n)
+                    - b: Banker probabilities (n,)
+                    - P: Full place probability matrix (n, n), P[i,j] = 
+                         prob horse i finishes in position j
+                - odds_fit: Dictionary of fitted market odds (directly comparable to observed)
+                    - WIN: Win odds (n,)
+                    - QIN: Qin odds (n, n)
+                    - QPL: Quinella Place odds (n, n)
+                    - PLA: Place odds (n,)
                 
         Raises:
             ValueError: If no odds provided or shapes don't match n_horses
             
         Example:
-            >>> opt = HarvilleOptimizer(n_horses=10)
+            >>> opt = HarvilleModel(n_horses=10, takeout_rate=0.175)
             >>> results = opt.fit(W_obs=win_probs, Q_obs=quinella_probs)
-            >>> print(f"Fitted strengths: {results['theta']}")
+            >>> print(f"Fitted strengths: {results['prob_fit']['theta']}")
             >>> print(f"Converged: {results['success']}")
+            >>> # Compare fitted odds to observed odds
+            >>> diff = results['odds_fit']['WIN'] - observed_win_odds
         """
         if W_obs is None and Qin_obs is None and Q_obs is None and b_obs is None:
             raise ValueError("At least one type of odds must be provided")
@@ -322,6 +377,12 @@ class HarvilleModel:
             raise ValueError(f"Q_obs must be ({self.n}, {self.n})")
         if b_obs is not None and b_obs.shape != (self.n,):
             raise ValueError(f"b_obs must be ({self.n},)")
+        
+        # Adjust observed probabilities for house takeout rate
+        W_obs = self._adjust_for_takeout(W_obs)
+        Qin_obs = self._adjust_for_takeout(Qin_obs)
+        Q_obs = self._adjust_for_takeout(Q_obs)
+        b_obs = self._adjust_for_takeout(b_obs)
         
         if theta_init is None:
             if W_obs is not None:
@@ -356,27 +417,41 @@ class HarvilleModel:
         
         W_fitted, Qin_fitted, Q_fitted, b_fitted, P_fitted = _compute_probabilities(theta_opt)
         
+        # Convert fitted probabilities to market odds (with takeout reintroduced)
+        WIN_odds_fitted = self._probs_to_market_odds(W_fitted)
+        PLA_odds_fitted = self._probs_to_market_odds(b_fitted)
+        QIN_odds_fitted = self._probs_to_market_odds(Qin_fitted)
+        QPL_odds_fitted = self._probs_to_market_odds(Q_fitted)
+        
         self.result = {
-            'theta': theta_opt,
-            'W_fitted': W_fitted,
-            'Qin_fitted': Qin_fitted,
-            'Q_fitted': Q_fitted,
-            'b_fitted': b_fitted,
-            'P_fitted': P_fitted,
-            'loss': result.fun,
             'success': result.success,
             'message': result.message,
-            'n_eval': self._eval_count
+            'n_eval': self._eval_count,
+            'loss': result.fun,
+            'prob_fit': {
+                'theta': theta_opt,
+                'W': W_fitted,
+                'Qin': Qin_fitted,
+                'Q': Q_fitted,
+                'b': b_fitted,
+                'P': P_fitted
+            },
+            'odds_fit': {
+                'WIN': WIN_odds_fitted,
+                'QIN': QIN_odds_fitted,
+                'QPL': QPL_odds_fitted,
+                'PLA': PLA_odds_fitted
+            }
         }
 
         return self.result
     
-def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float] = None) -> dict:
+def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float] = None, takeout_rate: float = 0.175) -> dict:
     """
     Fit Harville model to observed betting odds.
     
-    At least one odds type must be provided. All odds should be probabilities
-    (not decimal/fractional odds). Matrices should be symmetric where applicable.
+    At least one odds type must be provided. All odds should be decimal odds
+    (not probabilities). Matrices should be symmetric where applicable.
     
     Args:
         odds: Dictionary of odds arrays with types as keys.:
@@ -384,20 +459,35 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
         lambdas: Optional dictionary of lambda weights for each odds type.
                     Keys can be 'WIN', 'QIN', 'QPL', 'PLA'. Defaults to
                     {'WIN': 1.0, 'QIN': 2.0, 'QPL': 1.5, 'PLA': 0.7}
+        takeout_rate: House take out rate as decimal (default 0.175 = 17.5%).
+                     The house keeps this percentage of the betting pool, causing
+                     observed odds to be higher than fair odds.
         
     Returns:
         Dictionary containing:
-            - theta: Fitted strength parameters (n,)
-            - W_fitted: Fitted Win probabilities (n,)
-            - Qin_fitted: Fitted Qin probabilities (n, n)
-            - Q_fitted: Fitted Quinella probabilities (n, n)
-            - b_fitted: Fitted Banker probabilities (n,)
-            - P_fitted: Full place probability matrix (n, n), P[i,j] = 
-                        prob horse i finishes in position j
-            - loss: Final loss value
             - success: Whether optimization converged
             - message: Optimizer status message
             - n_eval: Number of loss function evaluations
+            - loss: Final loss value
+            - prob_fit: Dictionary of fitted probabilities (sum to 1.0)
+                - theta: Fitted strength parameters (n,)
+                - W: Win probabilities (n,)
+                - Qin: Qin probabilities (n, n)
+                - Q: Quinella probabilities (n, n)
+                - b: Banker probabilities (n,)
+                - P: Full place probability matrix (n, n), P[i,j] = 
+                     prob horse i finishes in position j
+            - odds_fit: Dictionary of fitted market odds (directly comparable to observed)
+                - WIN: Win odds (n,)
+                - QIN: Qin odds (n, n)
+                - QPL: Quinella Place odds (n, n)
+                - PLA: Place odds (n,)
+                
+    Example:
+        >>> odds = {'WIN': np.array([3.5, 4.2, 5.0, 8.5, 12.0])}
+        >>> result = fit_harville_to_odds(odds, takeout_rate=0.175)
+        >>> print(result['prob_fit']['theta'])  # True winning probabilities
+        >>> print(result['odds_fit']['WIN'])  # Fitted market odds (compare to input)
     """
     n_horses = None
     W_obs = None
@@ -443,7 +533,8 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
         lambda_win=merged_lambdas['WIN'],
         lambda_qin=merged_lambdas['QIN'],
         lambda_quinella=merged_lambdas['QPL'],
-        lambda_banker=merged_lambdas['PLA']
+        lambda_banker=merged_lambdas['PLA'],
+        takeout_rate=takeout_rate
     )
     result = ho.fit(W_obs=W_obs, Qin_obs=Qin_obs, Q_obs=Q_obs, b_obs=b_obs)
     return result
