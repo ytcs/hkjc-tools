@@ -4,6 +4,12 @@ from datetime import datetime as dt
 import bs4
 import re
 
+def _try_int(value: str) -> int:
+    try:
+        return int(value)
+    except:
+        return 0
+    
 
 def _validate_date(date_str: str) -> bool:
     # validate date format

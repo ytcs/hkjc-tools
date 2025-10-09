@@ -7,6 +7,8 @@ import requests
 from cachetools.func import ttl_cache
 import numpy as np
 
+from .utils import _try_int
+
 HKJC_LIVEODDS_ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
 
 RACEMTG_PAYLOAD = {
@@ -241,6 +243,14 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 }""",
 }
 
+HEADERS = {
+        "Origin": "https://bet.hkjc.com",
+        "Referer": "https://bet.hkjc.com",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+    }
+
 
 @ttl_cache(maxsize=12, ttl=1000)
 def _fetch_live_races(date: str=None, venue_code: str=None) -> dict:
@@ -250,16 +260,10 @@ def _fetch_live_races(date: str=None, venue_code: str=None) -> dict:
     payload["variables"]["date"] = date
     payload["variables"]["venueCode"] = venue_code
 
-    headers = {
-        "Origin": "https://bet.hkjc.com",
-        "Referer": "https://bet.hkjc.com",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "python-hkjc-fetch/0.1",
-    }
+    headers = HEADERS
 
     r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload,
-                      headers=headers, timeout=10)
+                      headers=headers, timeout=60)
     if r.status_code != 200:
         raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
 
@@ -279,9 +283,9 @@ def _fetch_live_races(date: str=None, venue_code: str=None) -> dict:
         runners = [{'No': runner['no'],
                     'Name': runner['name_en'],
                     'Dr': runner['barrierDrawNumber'],
-                    'Rtg': int(runner['currentRating']),
-                    'Wt': int(runner['currentWeight']),
-                    'Handicap': int(runner['handicapWeight']),
+                    'Rtg': _try_int(runner['currentRating']),
+                    'Wt': _try_int(runner['currentWeight']),
+                    'Handicap': _try_int(runner['handicapWeight']),
                     'HorseNo': runner['horse']['code']
                     } for runner in race['runners'] if runner['status'] != "Standby"]
         race_info['Races'][race_num] = {
@@ -307,16 +311,10 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
     payload["variables"]["raceNo"] = race_number
     payload["variables"]["oddsTypes"] = odds_type
 
-    headers = {
-        "Origin": "https://bet.hkjc.com",
-        "Referer": "https://bet.hkjc.com",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "python-hkjc-fetch/0.1",
-    }
+    headers = HEADERS
 
     r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload,
-                      headers=headers, timeout=10)
+                      headers=headers, timeout=60)
     if r.status_code != 200:
         raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
 
