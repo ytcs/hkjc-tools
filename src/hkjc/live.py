@@ -244,16 +244,18 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 }
 
 HEADERS = {
-        "Origin": "https://bet.hkjc.com",
-        "Referer": "https://bet.hkjc.com",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-    }
+    "Origin": "https://bet.hkjc.com",
+    "Referer": "https://bet.hkjc.com",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+}
+
+REQUEST_TIMEOUT = 30
 
 
 @ttl_cache(maxsize=12, ttl=1000)
-def _fetch_live_races(date: str=None, venue_code: str=None) -> dict:
+def _fetch_live_races(date: str = None, venue_code: str = None) -> dict:
     """Fetch live race data from HKJC GraphQL endpoint."""
     payload = RACEMTG_PAYLOAD.copy()
     payload["variables"] = payload["variables"].copy()
@@ -263,7 +265,7 @@ def _fetch_live_races(date: str=None, venue_code: str=None) -> dict:
     headers = HEADERS
 
     r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload,
-                      headers=headers, timeout=60)
+                      headers=headers, timeout=REQUEST_TIMEOUT)
     if r.status_code != 200:
         raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
 
@@ -314,7 +316,7 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
     headers = HEADERS
 
     r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload,
-                      headers=headers, timeout=60)
+                      headers=headers, timeout=REQUEST_TIMEOUT)
     if r.status_code != 200:
         raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
 
@@ -352,7 +354,8 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
     N = len(race_info['Races'][race_number]['Runners'])
 
     if (race_info['Date'] != date) or (race_info['Venue'] != venue_code):
-        print(f"[WARNING] Requested {date} {venue_code} but server returned {race_info['Date']} {race_info['Venue']}.")
+        print(
+            f"[WARNING] Requested {date} {venue_code} but server returned {race_info['Date']} {race_info['Venue']}.")
         date = race_info['Date']
         venue_code = race_info['Venue']
 

@@ -15,12 +15,14 @@ HKJC_HORSE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Ho
 incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
              'UR', 'VOID', 'WR', 'WV', 'WV-A', 'WX', 'WX-A', 'WXNR']
 
+REQUEST_TIMEOUT = 10
+
 
 @ttl_cache(maxsize=100, ttl=3600)
 def _soupify(url: str) -> BeautifulSoup:
     """Fetch and parse a webpage and return BeautifulSoup object
     """
-    response = requests.get(url, timeout=180)
+    response = requests.get(url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     return BeautifulSoup(response.content, 'html.parser')
 
@@ -105,7 +107,8 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
           .with_columns(
         (
             pl.col("FinishTime").str.splitn(".", 2).struct.field("field_0").cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.splitn(".", 2).struct.field("field_1").cast(pl.Float64)
+            pl.col("FinishTime").str.splitn(
+                ".", 2).struct.field("field_1").cast(pl.Float64)
         ).cast(pl.Float64).round(2).alias("FinishTime")
     ))
 
@@ -150,7 +153,8 @@ def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
     df = df.with_columns(
         (
             pl.col("FinishTime").str.splitn(":", 2).struct.field("field_0").cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.splitn(":", 2).struct.field("field_1").cast(pl.Float64)
+            pl.col("FinishTime").str.splitn(
+                ":", 2).struct.field("field_1").cast(pl.Float64)
         ).cast(pl.Float64).round(2).alias("FinishTime")
     )
 
