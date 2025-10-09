@@ -20,7 +20,7 @@ incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
 def _soupify(url: str) -> BeautifulSoup:
     """Fetch and parse a webpage and return BeautifulSoup object
     """
-    response = requests.get(url, timeout=30)
+    response = requests.get(url, timeout=180)
     response.raise_for_status()
     return BeautifulSoup(response.content, 'html.parser')
 
