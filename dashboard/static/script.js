@@ -750,16 +750,16 @@ const Speedmap = {
         const speedmapImg = Utils.$(`#speedmap-${raceNum}`);
         if (!speedmapImg || !speedmapContainer) return;
         
-        if (!RaceReadiness.isReady(raceNum)) {
-            speedmapImg.style.display = 'none';
-            speedmapContainer.innerHTML = '<div class="race-not-ready">Race not ready</div>';
-            return;
-        }
-        
         if (Cache.has('speedmaps', raceNum)) {
-            const img = this.ensureImageElement(raceNum, speedmapContainer);
-            img.src = Cache.get('speedmaps', raceNum);
-            img.style.display = 'block';
+            const cachedData = Cache.get('speedmaps', raceNum);
+            if (cachedData) {
+                const img = this.ensureImageElement(raceNum, speedmapContainer);
+                img.src = cachedData;
+                img.style.display = 'block';
+            } else {
+                speedmapImg.style.display = 'none';
+                speedmapContainer.innerHTML = '<div class="race-not-ready">Speedmap not available</div>';
+            }
             return;
         }
         
@@ -767,13 +767,23 @@ const Speedmap = {
         
         try {
             const base64String = await API.fetchSpeedmap(raceNum);
+            
+            // Check if response is empty or invalid
+            if (!base64String || base64String.trim() === '') {
+                Cache.set('speedmaps', raceNum, null);
+                speedmapContainer.innerHTML = '<div class="race-not-ready">Speedmap not available</div>';
+                return;
+            }
+            
             Cache.set('speedmaps', raceNum, base64String);
             const img = this.ensureImageElement(raceNum, speedmapContainer);
             img.src = base64String;
             img.style.display = 'block';
         } catch (error) {
             console.error(`Error loading speedmap for race ${raceNum}:`, error);
+            Cache.set('speedmaps', raceNum, null);
             speedmapImg.style.display = 'none';
+            speedmapContainer.innerHTML = '<div class="race-not-ready">Speedmap not available</div>';
         }
     },
     
