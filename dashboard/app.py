@@ -28,8 +28,9 @@ def arr_to_dict(arr: np.ndarray, dtype=float):
 
 app = Flask(__name__)
 config = {
-    "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DIR": "/tmp/hkjc_cache_dir"
+    "CACHE_TYPE": "RedisCache",
+    "CACHE_REDIS_HOST": "localhost",
+    "CACHE_REDIS_PORT": "6379"
 }
 app.config.from_mapping(config)
 cache = Cache(app)
@@ -79,7 +80,7 @@ going_dict = {'TURF': turf_going_dict, 'ALL WEATHER TRACK': aw_going_dict}
 
 
 @app.route("/horse_info/<horse_no>", methods=['GET'])
-@cache.cached(timeout=7200)
+@cache.cached(timeout=7200, query_string=True)
 def disp_horse_info(horse_no):
     # read optional filters
     dist = request.args.get('dist', type=int)
