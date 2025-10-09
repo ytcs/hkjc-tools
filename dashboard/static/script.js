@@ -24,7 +24,8 @@ const State = {
     polling: {
         oddsIntervalId: null
     },
-    activeRequests: new Set()
+    activeRequests: new Set(),
+    raceReadiness: new Map() // Track which races have speed pro data available
 };
 
 // ============================================================================
@@ -182,6 +183,63 @@ const Cache = {
 };
 
 // ============================================================================
+// RACE READINESS MODULE - Check if speed pro data is available
+// ============================================================================
+const RaceReadiness = {
+    /**
+     * Check if race has speed pro data available
+     * Returns cached value if available, otherwise computes and caches
+     */
+    isReady(raceNum) {
+        // Return cached value if available
+        if (State.raceReadiness.has(raceNum)) {
+            return State.raceReadiness.get(raceNum);
+        }
+        
+        // Compute readiness
+        const ready = this.checkRaceData(raceNum);
+        State.raceReadiness.set(raceNum, ready);
+        return ready;
+    },
+    
+    /**
+     * Check race data by examining fitness and energy values
+     */
+    checkRaceData(raceNum) {
+        const raceContent = document.getElementById(`race-${raceNum}`);
+        if (!raceContent) return false;
+        
+        const runnerRows = raceContent.querySelectorAll('.runner-row');
+        if (runnerRows.length === 0) return false;
+        
+        const fitnessValues = Array.from(runnerRows).map(row => 
+            parseFloat(row.cells[8]?.textContent.trim()) || 0
+        );
+        const energyValues = Array.from(runnerRows).map(row => 
+            parseFloat(row.cells[9]?.textContent.trim()) || 0
+        );
+        
+        // Race is not ready if all fitness and energy values are 0
+        return !(fitnessValues.every(v => v === 0) && energyValues.every(v => v === 0));
+    },
+    
+    /**
+     * Force recheck of race readiness (clears cache)
+     */
+    recheck(raceNum) {
+        State.raceReadiness.delete(raceNum);
+        return this.isReady(raceNum);
+    },
+    
+    /**
+     * Clear all race readiness cache
+     */
+    clear() {
+        State.raceReadiness.clear();
+    }
+};
+
+// ============================================================================
 // ODDS MODULE - Live odds management
 // ============================================================================
 const Odds = {
@@ -189,6 +247,12 @@ const Odds = {
      * Fetch and cache odds for a race
      */
     async load(raceNum) {
+        // Skip if race is not ready
+        if (!RaceReadiness.isReady(raceNum)) {
+            console.log(`Skipping odds for race ${raceNum} - race not ready`);
+            return null;
+        }
+        
         try {
             const data = await API.fetchOdds(raceNum);
             Cache.set('odds', raceNum, data);
@@ -528,23 +592,41 @@ const Speedmap = {
      * Load speedmap for a race
      */
     async load(raceNum) {
-    const speedmapImg = document.getElementById(`speedmap-${raceNum}`);
-    if (!speedmapImg) return;
-    
+        const speedmapContainer = document.querySelector(`#race-${raceNum} .speedmap-container`);
+        const speedmapImg = document.getElementById(`speedmap-${raceNum}`);
+        if (!speedmapImg || !speedmapContainer) return;
+        
+        // Check if race data is ready using global flag
+        if (!RaceReadiness.isReady(raceNum)) {
+            speedmapImg.style.display = 'none';
+            speedmapContainer.innerHTML = '<div class="race-not-ready">Race not ready</div>';
+            return;
+        }
+        
         // Check cache first
         if (Cache.has('speedmaps', raceNum)) {
-            speedmapImg.src = Cache.get('speedmaps', raceNum);
-        speedmapImg.style.display = 'block';
-        return;
-    }
-    
-    speedmapImg.style.display = 'none';
-    
+            // Restore image element if it was replaced
+            if (!speedmapContainer.querySelector('img')) {
+                speedmapContainer.innerHTML = `<img id="speedmap-${raceNum}" class="speedmap-image" alt="Race ${raceNum} Speed Map" />`;
+            }
+            const img = document.getElementById(`speedmap-${raceNum}`);
+            img.src = Cache.get('speedmaps', raceNum);
+            img.style.display = 'block';
+            return;
+        }
+        
+        speedmapImg.style.display = 'none';
+        
         try {
             const base64String = await API.fetchSpeedmap(raceNum);
             Cache.set('speedmaps', raceNum, base64String);
-            speedmapImg.src = base64String;
-            speedmapImg.style.display = 'block';
+            // Restore image element if it was replaced
+            if (!speedmapContainer.querySelector('img')) {
+                speedmapContainer.innerHTML = `<img id="speedmap-${raceNum}" class="speedmap-image" alt="Race ${raceNum} Speed Map" />`;
+            }
+            const img = document.getElementById(`speedmap-${raceNum}`);
+            img.src = base64String;
+            img.style.display = 'block';
         } catch (error) {
             console.error(`Error loading speedmap for race ${raceNum}:`, error);
             speedmapImg.style.display = 'none';

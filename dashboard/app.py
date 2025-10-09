@@ -32,17 +32,24 @@ app = Flask(__name__)
 def disp_race_info():
     race_info = _fetch_live_races('', '')
 
-    df_speedpro = speedpro_energy(race_info['Date'])
-    for race_num, race in race_info['Races'].items():
-        for i, runner in enumerate(race['Runners']):
-            df = (df_speedpro
-                  .filter(pl.col('RaceNo') == race_num)
-                  .filter(pl.col('RunnerNumber') == int(runner['No']))
-                  )
-            race_info['Races'][race_num]['Runners'][i]['SPEnergy'] = df['SpeedPRO_Energy_Difference'].item(
-                0)
-            race_info['Races'][race_num]['Runners'][i]['Fitness'] = df['FitnessRatings'].item(
-                0)
+    try:
+        df_speedpro = speedpro_energy(race_info['Date'])
+        for race_num, race in race_info['Races'].items():
+            for i, runner in enumerate(race['Runners']):
+                df = (df_speedpro
+                    .filter(pl.col('RaceNo') == race_num)
+                    .filter(pl.col('RunnerNumber') == int(runner['No']))
+                    )
+                race_info['Races'][race_num]['Runners'][i]['SPEnergy'] = df['SpeedPRO_Energy_Difference'].item(
+                    0)
+                race_info['Races'][race_num]['Runners'][i]['Fitness'] = df['FitnessRatings'].item(
+                    0)
+    except: # fill with dummy value if SpeedPro not available
+        for race_num, race in race_info['Races'].items():
+            for i, runner in enumerate(race['Runners']):
+                race_info['Races'][race_num]['Runners'][i]['SPEnergy'] = 0
+                race_info['Races'][race_num]['Runners'][i]['Fitness'] = 0
+
 
 # TODO: add horse running style favorite from horse info
 # get_horse_data
@@ -101,10 +108,12 @@ def disp_live_odds(race_no=1):
     odds_dict = live_odds('', '', int(race_no))
     fitted_odds = fit_harville_to_odds(odds_dict)['odds_fit']
     odds_json = {'Raw': {k: arr_to_dict(v) for k, v in odds_dict.items()},
-                 'Fit': {k: arr_to_dict(v) for k, v in fitted_odds.items()}
-                 }
-
+                'Fit': {k: arr_to_dict(v) for k, v in fitted_odds.items()}
+                }
+    
     return jsonify(odds_json)
+
+
 
 
 @app.route('/speedmap/<race_no>')

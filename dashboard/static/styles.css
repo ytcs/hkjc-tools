@@ -156,6 +156,14 @@ body {
     margin-top: -280px;
 }
 
+.race-not-ready {
+    padding: 20px;
+    color: #666;
+    font-size: 1em;
+    font-style: italic;
+    text-align: center;
+}
+
 .expand-all-container {
     margin-bottom: 10px;
 }
