@@ -269,7 +269,16 @@ def _fetch_live_races(date: str = None, venue_code: str = None) -> dict:
     if r.status_code != 200:
         raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
 
-    data = r.json()['data']['raceMeetings'][0]
+    data = r.json()['data']['raceMeetings'] # list of all meetings
+
+    # Prioritize first local race, if not continue with the first race (default 0)
+    index = 0 
+    for i, entry in enumerate(data):
+        if entry['venueCode'] in ['HV', 'ST']:
+            index = i
+            break
+
+    data = data[index]
     races = data['races']
 
     race_info = {'Date': data['date'], 'Venue': data['venueCode'], 'Races': {}}
