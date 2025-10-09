@@ -243,7 +243,7 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 }""",
 }
 
-HEADERS = {
+JSON_HEADERS = {
     "Origin": "https://bet.hkjc.com",
     "Referer": "https://bet.hkjc.com",
     "Content-Type": "application/json",
@@ -262,7 +262,7 @@ def _fetch_live_races(date: str = None, venue_code: str = None) -> dict:
     payload["variables"]["date"] = date
     payload["variables"]["venueCode"] = venue_code
 
-    headers = HEADERS
+    headers = JSON_HEADERS
 
     r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload,
                       headers=headers, timeout=REQUEST_TIMEOUT)
@@ -313,7 +313,7 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
     payload["variables"]["raceNo"] = race_number
     payload["variables"]["oddsTypes"] = odds_type
 
-    headers = HEADERS
+    headers = JSON_HEADERS
 
     r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload,
                       headers=headers, timeout=REQUEST_TIMEOUT)

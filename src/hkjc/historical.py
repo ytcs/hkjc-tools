@@ -17,12 +17,19 @@ incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
 
 REQUEST_TIMEOUT = 10
 
+HTML_HEADERS = {
+    "Origin": "https://racing.hkjc.com",
+    "Referer": "https://racing.hkjc.com",
+    "Content-Type": "text/plain",
+    "Accept": "*/*",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+}
 
 @ttl_cache(maxsize=100, ttl=3600)
 def _soupify(url: str) -> BeautifulSoup:
     """Fetch and parse a webpage and return BeautifulSoup object
     """
-    response = requests.get(url, timeout=REQUEST_TIMEOUT)
+    response = requests.get(url, timeout=REQUEST_TIMEOUT, headers=HTML_HEADERS)
     response.raise_for_status()
     return BeautifulSoup(response.content, 'html.parser')
 
@@ -45,6 +52,9 @@ def _soupify_horse_page(horse_no: str) -> BeautifulSoup:
 def _classify_running_style(df: pl.DataFrame, running_pos_col="RunningPosition") -> pl.DataFrame:
     """Classify running style based on RunningPosition column
     """
+    if df.height == 0:
+        return df
+    
     # Split the RunningPosition column into separate columns and convert to integers
     df = df.with_columns(
         pl.col(running_pos_col)
@@ -79,9 +89,9 @@ def _extract_horse_data(horse_no: str) -> pl.DataFrame:
     table = soup.find('table', class_='bigborder')
     horse_data = _parse_html_table(table).filter(
         pl.col('Date') != '')  # Remove empty rows
-    horse_data = _classify_running_style(horse_data)
-
-    horse_data = horse_data.with_columns(pl.lit(horse_no).alias('HorseNo'))
+    if horse_data.height > 0:
+        horse_data = _classify_running_style(horse_data)
+        horse_data = horse_data.with_columns(pl.lit(horse_no).alias('HorseNo'))
 
     return horse_data
 
@@ -89,6 +99,9 @@ def _extract_horse_data(horse_no: str) -> pl.DataFrame:
 def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
     """ Clean and convert horse data to suitable data types
     """
+    if df.height == 0:
+        return df
+    
     df = df.with_columns(
         pl.col('Pla').str.split(' ').list.first().alias('Pla')
     ).filter(~pl.col('Pla').is_in(incidents))
@@ -137,6 +150,9 @@ def get_horse_data(horse_no: str) -> pl.DataFrame:
 def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
     """ Clean and convert horse data to suitable data types
     """
+    if df.height == 0:
+        return df
+    
     df = df.with_columns(
         pl.col('Pla').str.split(' ').list.first().alias('Pla')
     ).filter(~pl.col('Pla').is_in(incidents))
