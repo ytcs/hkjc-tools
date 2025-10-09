@@ -673,7 +673,7 @@ const FavStyleChart = {
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                animation: { duration: 500 },
+                animation: false,
                 plugins: {
                     legend: {
                         position: 'bottom',

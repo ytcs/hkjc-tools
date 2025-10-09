@@ -140,7 +140,7 @@ body {
     gap: 20px;
     margin-bottom: 15px;
     justify-content: center;
-    align-items: flex-start;
+    align-items: center;
     flex-wrap: wrap;
 }
 
@@ -151,7 +151,7 @@ body {
 }
 
 .fav-style-chart-section {
-    flex: 0 0 256px;
+    flex: 0 0 282px;
 }
 
 .speedmap-container {
@@ -188,8 +188,8 @@ body {
 .fav-style-chart-container canvas {
     display: block;
     margin: 0 auto;
-    max-height: 240px;
-    max-width: 240px;
+    max-height: 264px;
+    max-width: 264px;
 }
 
 .expand-all-container {
