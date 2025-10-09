@@ -177,16 +177,18 @@ body {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9em;
+    table-layout: auto;
 }
 
 .runners-table th {
     background: #667eea;
     color: white;
-    padding: 8px;
+    padding: 6px 8px;
     text-align: left;
     font-weight: 600;
     font-size: 0.85em;
     border: 1px solid #5568d3;
+    white-space: nowrap;
 }
 
 .runners-table th.sortable {
@@ -215,8 +217,9 @@ body {
 }
 
 .runners-table td {
-    padding: 6px 8px;
+    padding: 5px 8px;
     border: 1px solid #e0e0e0;
+    white-space: nowrap;
 }
 
 .runners-table tbody tr:nth-child(4n+1),
@@ -246,42 +249,64 @@ body {
     font-size: 0.7em;
 }
 
-.history-row {
+.runner-details-row {
     display: none;
 }
 
-.history-row.expanded {
+.runner-details-row.expanded {
     display: table-row;
 }
 
-.history-cell {
+.runner-details-cell {
     padding: 0 !important;
     background: #f9f9f9;
     border: 1px solid #ddd;
 }
 
-.history-content {
-    padding: 10px;
+.runner-details-content {
+    padding: 15px;
     overflow-x: auto;
 }
 
-.history-loading {
+.runner-details-wrapper {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.details-left {
+    flex: 0 0 auto;
+    min-width: 300px;
+}
+
+.details-right {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.details-loading {
     padding: 15px;
     text-align: center;
     color: #666;
     font-style: italic;
 }
 
+.details-loading.error {
+    color: #ff4444;
+}
+
 .race-history-table {
-    width: 100%;
+    width: auto;
     font-size: 0.85em;
     border-collapse: collapse;
+    table-layout: auto;
 }
 
 .race-history-table th {
     background: #667eea;
     color: white;
-    padding: 6px;
+    padding: 5px 6px;
     text-align: left;
     font-size: 0.8em;
     white-space: nowrap;
@@ -290,7 +315,7 @@ body {
 }
 
 .race-history-table td {
-    padding: 4px 6px;
+    padding: 3px 6px;
     border: 1px solid #e0e0e0;
     white-space: nowrap;
 }
@@ -301,6 +326,52 @@ body {
 
 .race-history-table tbody tr:hover {
     background: #e8eaf6;
+}
+
+.odds-table-container {
+    overflow-x: auto;
+}
+
+.odds-table {
+    width: auto;
+    font-size: 0.85em;
+    border-collapse: collapse;
+    background: white;
+    table-layout: auto;
+}
+
+.odds-table th {
+    background: #48bb78;
+    color: white;
+    padding: 5px 6px;
+    text-align: center;
+    font-size: 0.85em;
+    white-space: nowrap;
+    font-weight: 600;
+    border: 1px solid #38a169;
+}
+
+.odds-table td {
+    padding: 4px 6px;
+    border: 1px solid #e0e0e0;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.odds-table .odds-type-label {
+    background: #f0fdf4;
+    font-weight: 600;
+    color: #166534;
+    text-align: left;
+    padding-left: 10px;
+}
+
+.odds-table tbody tr:nth-child(even) {
+    background: #f9fafb;
+}
+
+.odds-table tbody tr:hover {
+    background: #e0f2f1;
 }
 
 @media (max-width: 768px) {
@@ -352,5 +423,13 @@ body {
     .race-history-table th,
     .race-history-table td {
         padding: 3px;
+    }
+    
+    .runner-details-wrapper {
+        flex-direction: column;
+    }
+    
+    .details-left {
+        min-width: 100%;
     }
 }

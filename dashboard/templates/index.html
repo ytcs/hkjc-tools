@@ -89,6 +89,18 @@
                         <th class="sortable" onclick="sortTable('{{ race_num }}', 9, 'number')">
                             Energy Diff <span class="sort-arrow">⇅</span>
                         </th>
+                        <th class="sortable" onclick="sortTable('{{ race_num }}', 10, 'number')">
+                            WIN <span class="sort-arrow">⇅</span>
+                        </th>
+                        <th class="sortable" onclick="sortTable('{{ race_num }}', 11, 'number')">
+                            WIN (fit) <span class="sort-arrow">⇅</span>
+                        </th>
+                        <th class="sortable" onclick="sortTable('{{ race_num }}', 12, 'number')">
+                            PLA <span class="sort-arrow">⇅</span>
+                        </th>
+                        <th class="sortable" onclick="sortTable('{{ race_num }}', 13, 'number')">
+                            PLA (fit) <span class="sort-arrow">⇅</span>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -110,11 +122,15 @@
                         <td>{{ runner.Rtg }}</td>
                         <td>{{ runner.Fitness }}</td>
                         <td>{{ runner.SPEnergy }}</td>
+                        <td class="odds-win" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
+                        <td class="odds-win-fit" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
+                        <td class="odds-pla" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
+                        <td class="odds-pla-fit" data-race="{{ race_num }}" data-horse="{{ runner.No }}">-</td>
                     </tr>
-                    <tr class="history-row" id="history-{{ race_num }}-{{ runner.HorseNo }}">
-                        <td colspan="10" class="history-cell">
-                            <div class="history-content" id="history-content-{{ race_num }}-{{ runner.HorseNo }}">
-                                <div class="history-loading">Loading history...</div>
+                    <tr class="runner-details-row" id="runner-details-{{ race_num }}-{{ runner.HorseNo }}">
+                        <td colspan="14" class="runner-details-cell">
+                            <div class="runner-details-content" id="runner-details-content-{{ race_num }}-{{ runner.HorseNo }}">
+                                <div class="details-loading">Loading details...</div>
                             </div>
                         </td>
                     </tr>
