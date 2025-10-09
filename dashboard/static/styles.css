@@ -43,7 +43,7 @@ body {
     align-items: center;
     color: white;
     font-weight: 600;
-    font-size: 1.1em;
+    font-size: 1.5em;
     white-space: nowrap;
 }
 
@@ -255,6 +255,11 @@ body {
     text-align: center;
     color: #667eea;
     font-size: 0.7em;
+    transition: transform 0.2s ease;
+}
+
+.expand-icon.expanded {
+    transform: rotate(90deg);
 }
 
 .runner-details-row {
