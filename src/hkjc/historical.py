@@ -25,6 +25,7 @@ HTML_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
 }
 
+
 @ttl_cache(maxsize=100, ttl=3600)
 def _soupify(url: str) -> BeautifulSoup:
     """Fetch and parse a webpage and return BeautifulSoup object
@@ -54,7 +55,7 @@ def _classify_running_style(df: pl.DataFrame, running_pos_col="RunningPosition")
     """
     if df.height == 0:
         return df
-    
+
     # Split the RunningPosition column into separate columns and convert to integers
     df = df.with_columns(
         pl.col(running_pos_col)
@@ -86,12 +87,16 @@ def _extract_horse_data(horse_no: str) -> pl.DataFrame:
     """Extract horse info and history from horse page
     """
     soup = _soupify_horse_page(horse_no)
+    horse_name = soup.find('title').get_text().split('- Horses -')[0].strip()
     table = soup.find('table', class_='bigborder')
     horse_data = _parse_html_table(table).filter(
         pl.col('Date') != '')  # Remove empty rows
     if horse_data.height > 0:
         horse_data = _classify_running_style(horse_data)
-        horse_data = horse_data.with_columns(pl.lit(horse_no).alias('HorseNo'))
+        horse_data = horse_data.with_columns([
+            pl.lit(horse_no).alias('HorseNo'),
+            pl.lit(horse_name).alias('HorseName')
+        ])
 
     return horse_data
 
@@ -101,7 +106,7 @@ def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
     """
     if df.height == 0:
         return df
-    
+
     df = df.with_columns(
         pl.col('Pla').str.split(' ').list.first().alias('Pla')
     ).filter(~pl.col('Pla').is_in(incidents))
@@ -152,7 +157,7 @@ def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
     """
     if df.height == 0:
         return df
-    
+
     df = df.with_columns(
         pl.col('Pla').str.split(' ').list.first().alias('Pla')
     ).filter(~pl.col('Pla').is_in(incidents))
