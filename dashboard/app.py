@@ -36,6 +36,7 @@ config = {
 app.config.from_mapping(config)
 cache = Cache(app)
 
+
 @app.route('/')
 def disp_race_info():
     race_info = _fetch_live_races('', '')
@@ -81,7 +82,8 @@ going_dict = {'TURF': turf_going_dict, 'ALL WEATHER TRACK': aw_going_dict}
 
 
 @app.route('/horse_info/<horse_no>', methods=['GET'])
-@cache.cached(timeout=86400, query_string=True) # cache horse history for 1 day
+# cache horse history for 1 day
+@cache.cached(timeout=86400, query_string=True)
 def disp_horse_info(horse_no):
     # read optional filters
     dist = request.args.get('dist', type=int)
@@ -110,7 +112,7 @@ def disp_horse_info(horse_no):
         if going is not None:
             df = df.filter(pl.col('G') == going)
         if venue is not None:
-            df = df.filter(pl.col('Venue')==venue)
+            df = df.filter(pl.col('Venue') == venue)
 
     return render_template('horse-info.html', df=df.head(5))
 
@@ -130,24 +132,26 @@ def disp_live_odds(race_no=1):
 def disp_speedmap(race_no=1):
     return speedmap(race_no)
 
-# TODO: trades API
 
 @app.route('/qp/<int:race_no>/<int:banker>/<cover>', methods=['GET'])
 def disp_qp_metrics(race_no=1, banker=1, cover='2'):
     use_filter = request.args.get('filter', type=bool)
-    odds = live_odds('','',race_number=race_no)
+    odds = live_odds('', '', race_number=race_no)
     if use_filter:
         res = fit_harville_to_odds(odds)
         if res['success']:
             odds = res['odds_fit']
     covered = [int(v) for v in cover.split(',')]
-    ev = qpbanker.expected_value(odds['PLA'],odds['QPL'],banker,covered)
-    win = qpbanker.win_probability(odds['PLA'],banker,covered)
-    avg_odds = qpbanker.average_odds(odds['QPL'],banker,covered)
+    ev = qpbanker.expected_value(odds['PLA'], odds['QPL'], banker, covered)
+    win = qpbanker.win_probability(odds['PLA'], banker, covered)
+    avg_odds = qpbanker.average_odds(odds['QPL'], banker, covered)
 
     return {'Banker': banker, 'Covered': covered, 'ExpectedValue': ev, 'Win Rate': win, 'AvgOdds': avg_odds}
 
 
 # TODO: Recommend QP trade given banker ?exclude= , , , &maxC=  => return list of pareto trades, cover, ev, win-prob, avgodds
+@app.route('/qprec/<int:race_no>/<int:banker>', methods=['GET'])
+def disp_qp_recs(race_no=1, banker=1, exclude=[], maxC=None):
+    pass
 
 # TODO: Recommend Place only trade ?exclude= , , , &maxC => return list of pareto trades, cover, ev, win-prob, avgodds
