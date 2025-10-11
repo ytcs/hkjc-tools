@@ -203,11 +203,10 @@ body {
     text-align: center;
 }
 
-.fav-style-chart-container canvas {
-    display: block;
+.fav-style-chart-container > div {
     margin: 0 auto;
-    max-height: 264px;
-    max-width: 264px;
+    height: 280px;
+    max-width: 280px;
 }
 
 .expand-all-container {
@@ -497,6 +496,233 @@ body {
     font-weight: 600;
 }
 
+/* Trade Calculator Section */
+.trade-calculator-section {
+    margin-top: 20px;
+    border: 1px solid #e0e0e0;
+    background: #fafafa;
+}
+
+.trade-calculator-tabs {
+    display: flex;
+    background: #f5f5f5;
+    border-bottom: 2px solid #ddd;
+    gap: 2px;
+}
+
+.trade-tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: #e0e0e0;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #666;
+    transition: background 0.2s ease;
+}
+
+.trade-tab-btn:hover {
+    background: #d0d0d0;
+}
+
+.trade-tab-btn.active {
+    background: #667eea;
+    color: white;
+}
+
+.trade-tab-content {
+    display: none;
+    padding: 15px;
+}
+
+.trade-tab-content.active {
+    display: block;
+}
+
+.trade-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.trade-control-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #333;
+    margin-right: 5px;
+}
+
+.runner-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+}
+
+.runner-select-btn,
+.runner-radio-btn {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #666;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.runner-select-btn:hover,
+.runner-radio-btn:hover {
+    background: #f0f0f0;
+    border-color: #667eea;
+}
+
+.runner-select-btn.selected {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+/* Exclude buttons use red to distinguish from cover (blue) */
+[id^="pareto-exclude-"] .runner-select-btn.selected {
+    background: #e53e3e;
+    color: white;
+    border-color: #e53e3e;
+}
+
+.runner-radio-btn.selected {
+    background: #48bb78;
+    color: white;
+    border-color: #48bb78;
+}
+
+.filter-control {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.filter-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #333;
+}
+
+.filter-toggle-btn {
+    padding: 6px 14px;
+    border: 1px solid #ddd;
+    background: white;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #666;
+    border-radius: 3px;
+    min-width: 50px;
+    transition: all 0.2s ease;
+}
+
+.filter-toggle-btn[data-filter="true"] {
+    background: #48bb78;
+    color: white;
+    border-color: #48bb78;
+}
+
+.calculate-btn {
+    padding: 8px 20px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 600;
+    transition: background 0.2s ease;
+}
+
+.calculate-btn:hover {
+    background: #5568d3;
+}
+
+.trade-metrics {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.metric-card {
+    flex: 1;
+    min-width: 120px;
+    max-width: 180px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 12px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.metric-label {
+    display: block;
+    font-size: 0.75em;
+    color: #666;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.metric-value {
+    display: block;
+    font-size: 1.4em;
+    font-weight: 700;
+    color: #333;
+}
+
+.trade-plot-container {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 15px;
+    height: 480px;
+    overflow: hidden;
+}
+
+/* Pareto Section */
+.pareto-section {
+    margin-top: 20px;
+    border: 1px solid #e0e0e0;
+    background: #fafafa;
+}
+
+.pareto-header {
+    background: #f5f5f5;
+    border-bottom: 2px solid #ddd;
+    padding: 12px 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.pareto-title {
+    font-size: 1em;
+    font-weight: 700;
+    color: #333;
+    white-space: nowrap;
+}
+
+.pareto-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    flex: 1;
+}
+
 @media (max-width: 768px) {
     body {
         padding: 5px;
@@ -565,5 +791,42 @@ body {
     
     .details-left {
         min-width: 100%;
+    }
+    
+    .trade-calculator-tabs {
+        gap: 1px;
+    }
+    
+    .trade-tab-btn {
+        padding: 8px 12px;
+        font-size: 0.8em;
+    }
+    
+    .trade-tab-content {
+        padding: 10px;
+    }
+    
+    .runner-buttons {
+        gap: 3px;
+    }
+    
+    .runner-select-btn,
+    .runner-radio-btn {
+        padding: 5px 10px;
+        font-size: 0.8em;
+    }
+    
+    .metric-card {
+        min-width: 100px;
+        padding: 10px;
+    }
+    
+    .metric-value {
+        font-size: 1.2em;
+    }
+    
+    .trade-plot-container {
+        height: 380px;
+        padding: 10px;
     }
 }

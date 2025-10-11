@@ -7,7 +7,7 @@
     <title>HKJC Race Info</title>
     <link rel="icon" href="https://hkjc.com/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 
 <body>
@@ -73,7 +73,7 @@
                 </div>
                 <div class="fav-style-chart-section">
                     <div class="fav-style-chart-container">
-                        <canvas id="fav-style-chart-{{ race_num }}"></canvas>
+                        <div id="fav-style-chart-{{ race_num }}"></div>
                     </div>
                 </div>
             </div>
@@ -111,16 +111,16 @@
                         <th width="120" class="sortable" onclick="sortTable('{{ race_num }}', 12, 'number')">
                             Energy Diff (Adj) <span class="sort-arrow">⇅</span>
                         </th>                        
-                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 14, 'number')">
+                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 13, 'number')">
                             WIN <span class="sort-arrow">⇅</span>
                         </th>
-                        <th width="70" class="sortable" onclick="sortTable('{{ race_num }}', 15, 'number')">
+                        <th width="70" class="sortable" onclick="sortTable('{{ race_num }}', 14, 'number')">
                             WIN (fit) <span class="sort-arrow">⇅</span>
                         </th>
-                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 16, 'number')">
+                        <th width="60" class="sortable" onclick="sortTable('{{ race_num }}', 15, 'number')">
                             PLA <span class="sort-arrow">⇅</span>
                         </th>
-                        <th width="70" class="sortable" onclick="sortTable('{{ race_num }}', 17, 'number')">
+                        <th width="70" class="sortable" onclick="sortTable('{{ race_num }}', 16, 'number')">
                             PLA (fit) <span class="sort-arrow">⇅</span>
                         </th>
                     </tr>
@@ -168,6 +168,74 @@
                     {% endfor %}
                 </tbody>
             </table>
+
+            <div class="trade-calculator-section">
+                <div class="trade-calculator-tabs">
+                    <button class="trade-tab-btn active" onclick="showTradeTab('{{ race_num }}', 'pla')">PLA</button>
+                    <button class="trade-tab-btn" onclick="showTradeTab('{{ race_num }}', 'qpl')">QPL</button>
+                </div>
+
+                <div class="trade-tab-content active" id="trade-pla-{{ race_num }}">
+                    <div class="trade-controls">
+                        <label class="trade-control-label">Cover:</label>
+                        <div class="runner-buttons" id="pla-cover-{{ race_num }}">
+                            {% for runner in race.Runners %}
+                            <button class="runner-select-btn" data-runner="{{ runner.No }}" onclick="toggleCover('{{ race_num }}', 'pla', '{{ runner.No }}')">{{ runner.No }}</button>
+                            {% endfor %}
+                        </div>
+                        <button class="calculate-btn" onclick="calculatePLA('{{ race_num }}')">Calculate</button>
+                    </div>
+                    <div class="trade-metrics" id="pla-metrics-{{ race_num }}">
+                        <div class="metric-card"><span class="metric-label">Cost</span><span class="metric-value">-</span></div>
+                        <div class="metric-card"><span class="metric-label">Win Prob</span><span class="metric-value">-</span></div>
+                        <div class="metric-card"><span class="metric-label">Exp Value</span><span class="metric-value">-</span></div>
+                        <div class="metric-card"><span class="metric-label">Avg Odds</span><span class="metric-value">-</span></div>
+                    </div>
+                </div>
+
+                <div class="trade-tab-content" id="trade-qpl-{{ race_num }}">
+                    <div class="trade-controls">
+                        <label class="trade-control-label">Banker:</label>
+                        <div class="runner-buttons" id="qpl-banker-{{ race_num }}">
+                            {% for runner in race.Runners %}
+                            <button class="runner-radio-btn" data-runner="{{ runner.No }}" onclick="selectBanker('{{ race_num }}', '{{ runner.No }}')">{{ runner.No }}</button>
+                            {% endfor %}
+                        </div>
+                        <label class="trade-control-label">Cover:</label>
+                        <div class="runner-buttons" id="qpl-cover-{{ race_num }}">
+                            {% for runner in race.Runners %}
+                            <button class="runner-select-btn" data-runner="{{ runner.No }}" onclick="toggleCover('{{ race_num }}', 'qpl', '{{ runner.No }}')">{{ runner.No }}</button>
+                            {% endfor %}
+                        </div>
+                        <div class="filter-control">
+                            <label class="filter-label">Filter:</label>
+                            <button class="filter-toggle-btn" id="qpl-filter-{{ race_num }}" data-filter="false" onclick="toggleFilter('{{ race_num }}')">OFF</button>
+                            <button class="calculate-btn" onclick="calculateQPL('{{ race_num }}')">Calculate</button>
+                        </div>
+                    </div>
+                    <div class="trade-metrics" id="qpl-metrics-{{ race_num }}">
+                        <div class="metric-card"><span class="metric-label">Cost</span><span class="metric-value">-</span></div>
+                        <div class="metric-card"><span class="metric-label">Win Prob</span><span class="metric-value">-</span></div>
+                        <div class="metric-card"><span class="metric-label">Exp Value</span><span class="metric-value">-</span></div>
+                        <div class="metric-card"><span class="metric-label">Avg Odds</span><span class="metric-value">-</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pareto-section">
+                <div class="pareto-header">
+                    <span class="pareto-title">PLA Pareto Frontier</span>
+                    <div class="pareto-controls">
+                        <label class="trade-control-label">Exclude:</label>
+                        <div class="runner-buttons" id="pareto-exclude-{{ race_num }}">
+                            {% for runner in race.Runners %}
+                            <button class="runner-select-btn" data-runner="{{ runner.No }}" onclick="toggleExclude('{{ race_num }}', '{{ runner.No }}')">{{ runner.No }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="trade-plot-container" id="pareto-plot-{{ race_num }}"></div>
+            </div>
         </div>
         {% endfor %}
     </div>

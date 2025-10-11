@@ -29,10 +29,16 @@ const Utils = {
     $$(selector, context = document) { return Array.from(context.querySelectorAll(selector)); },
     
     addClass(elements, className) {
-        (Array.isArray(elements) ? elements : [elements]).forEach(el => el?.classList.add(className));
+        const classes = Array.isArray(className) ? className : [className];
+        (Array.isArray(elements) ? elements : [elements]).forEach(el => 
+            classes.forEach(cls => el?.classList.add(cls))
+        );
     },
     removeClass(elements, className) {
-        (Array.isArray(elements) ? elements : [elements]).forEach(el => el?.classList.remove(className));
+        const classes = Array.isArray(className) ? className : [className];
+        (Array.isArray(elements) ? elements : [elements]).forEach(el => 
+            classes.forEach(cls => el?.classList.remove(cls))
+        );
     },
     toggleClass(elements, className, force) {
         (Array.isArray(elements) ? elements : [elements]).forEach(el => el?.classList.toggle(className, force));
@@ -131,6 +137,25 @@ const API = {
     fetchSpeedmap(raceNum) {
         return RequestQueue.enqueue(async () => 
             (await this.fetch(`/speedmap/${Utils.validateRaceNum(raceNum)}`)).text(), 0);
+    },
+    
+    fetchParetoData(raceNum, exclude = '') {
+        return RequestQueue.enqueue(async () => {
+            const url = `/plarec/${Utils.validateRaceNum(raceNum)}${exclude ? `?exclude=${exclude}` : ''}`;
+            return (await this.fetch(url)).json();
+        }, 1);
+    },
+    
+    fetchPLAData(raceNum, cover) {
+        return RequestQueue.enqueue(async () => 
+            (await this.fetch(`/pla/${Utils.validateRaceNum(raceNum)}/${cover}`)).json(), 0);
+    },
+    
+    fetchQPLData(raceNum, banker, cover, filter) {
+        return RequestQueue.enqueue(async () => {
+            const url = `/qp/${Utils.validateRaceNum(raceNum)}/${banker}/${cover}?filter=${filter}`;
+            return (await this.fetch(url)).json();
+        }, 0);
     }
 };
 
@@ -195,6 +220,7 @@ const Odds = {
             this.updateOddsTable(table, table.dataset.horse, oddsData));
         
         PreferredHighlight.update(raceNum);
+        TradeCalculator.updateParetoForOddsChange(raceNum);
     },
     
     updateCells(selector, oddsData) {
@@ -719,12 +745,11 @@ const PreferredHighlight = {
 };
 
 const FavStyleChart = {
-    charts: new Map(),
     styleColors: { 'FrontRunner': '#48bb78', 'Pacer': '#667eea', 'Closer': '#f56565', 'Unknown': '#a0aec0' },
     
     draw(raceNum) {
-        const canvas = Utils.$(`#fav-style-chart-${raceNum}`);
-        if (!canvas) return;
+        const container = Utils.$(`#fav-style-chart-${raceNum}`);
+        if (!container) return;
         
         const raceContent = Utils.$(`#race-${raceNum}`);
         if (!raceContent) return;
@@ -736,63 +761,314 @@ const FavStyleChart = {
         }, {});
         
         const entries = Object.entries(distribution).sort((a, b) => b[1] - a[1]);
-        if (this.charts.has(raceNum)) this.charts.get(raceNum).destroy();
-        if (!entries.length) return;
+        if (!entries.length) {
+            container.innerHTML = '';
+            return;
+        }
         
         const labels = entries.map(([style]) => style);
-        const data = entries.map(([, count]) => count);
+        const values = entries.map(([, count]) => count);
         const colors = labels.map(s => this.styleColors[s] || '#a0aec0');
+        const total = values.reduce((a, b) => a + b, 0);
         
-        this.charts.set(raceNum, new Chart(canvas.getContext('2d'), {
+        const data = [{
+            values: values,
+            labels: labels,
             type: 'pie',
-            data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }] },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                animation: false,
-                plugins: {
+            marker: {
+                colors: colors,
+                line: { color: 'white', width: 2 }
+            },
+            textposition: 'inside',
+            textinfo: 'label+percent',
+            hovertemplate: '%{label}<br>%{value} horses (%{percent})<extra></extra>',
+            direction: 'clockwise',
+            sort: false
+        }];
+        
+        const layout = {
+            showlegend: true,
                     legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 8,
-                            font: { size: 10 },
-                            generateLabels: chart => {
-                                const d = chart.data;
-                                if (d.labels.length && d.datasets.length) {
-                                    const ds = d.datasets[0];
-                                    const total = ds.data.reduce((a, b) => a + b, 0);
-                                    return d.labels.map((label, i) => ({
-                                        text: `${label}: ${ds.data[i]} (${((ds.data[i] / total) * 100).toFixed(1)}%)`,
-                                        fillStyle: ds.backgroundColor[i],
-                                        hidden: false,
-                                        index: i
-                                    }));
-                                }
-                                return [];
-                            }
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => {
-                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                                return `${ctx.label}: ${ctx.parsed} (${((ctx.parsed / total) * 100).toFixed(1)}%)`;
-                            }
-                        }
-                    }
-                }
-            }
-        }));
+                orientation: 'h',
+                x: 0.5,
+                xanchor: 'center',
+                y: -0.1,
+                font: { size: 10 }
+            },
+            margin: { l: 10, r: 10, t: 10, b: 40 },
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            height: 280
+        };
+        
+        const config = {
+            responsive: true,
+            displayModeBar: false
+        };
+        
+        Plotly.newPlot(container, data, layout, config);
     },
     
     update(raceNum) {
         const rc = Utils.$(`#race-${raceNum}`);
-        if (this.charts.has(raceNum) || rc?.classList.contains('active')) this.draw(raceNum);
+        if (rc?.classList.contains('active')) this.draw(raceNum);
     },
     
     initAll() {
         const activeRace = Utils.$('.race-content.active');
         if (activeRace) this.draw(activeRace.id.replace('race-', ''));
+    }
+};
+
+const TradeCalculator = {
+    state: new Map(), // Store state per race: { excludedRunners, plaCover, qplBanker, qplCover, qplFilter }
+    
+    getState(raceNum) {
+        if (!this.state.has(raceNum)) {
+            this.state.set(raceNum, {
+                excludedRunners: new Set(),
+                plaCover: new Set(),
+                qplBanker: null,
+                qplCover: new Set(),
+                qplFilter: false
+            });
+        }
+        return this.state.get(raceNum);
+    },
+    
+    showTab(raceNum, tabName) {
+        const validRaceNum = Utils.validateRaceNum(raceNum);
+        const raceContent = Utils.$(`#race-${validRaceNum}`);
+        if (!raceContent) return;
+        
+        // Update tab buttons
+        Utils.removeClass(Utils.$$('.trade-tab-btn', raceContent), 'active');
+        const tabTextMap = { 'pla': 'PLA', 'qpl': 'QPL' };
+        const activeTabBtn = Array.from(Utils.$$('.trade-tab-btn', raceContent))
+            .find(btn => btn.textContent.trim() === tabTextMap[tabName]);
+        if (activeTabBtn) Utils.addClass(activeTabBtn, 'active');
+        
+        // Update tab content
+        Utils.removeClass(Utils.$$('.trade-tab-content', raceContent), 'active');
+        Utils.addClass(Utils.$(`#trade-${tabName}-${validRaceNum}`), 'active');
+    },
+    
+    toggleExclude(raceNum, runnerNo) {
+        const validRaceNum = Utils.validateRaceNum(raceNum);
+        const state = this.getState(validRaceNum);
+        const btn = Utils.$(`#pareto-exclude-${validRaceNum} [data-runner="${runnerNo}"]`);
+        
+        if (state.excludedRunners.has(runnerNo)) {
+            state.excludedRunners.delete(runnerNo);
+            Utils.removeClass(btn, 'selected');
+        } else {
+            state.excludedRunners.add(runnerNo);
+            Utils.addClass(btn, 'selected');
+        }
+        
+        this.loadParetoData(validRaceNum);
+    },
+    
+    toggleCover(raceNum, type, runnerNo) {
+        const validRaceNum = Utils.validateRaceNum(raceNum);
+        const state = this.getState(validRaceNum);
+        const coverSet = type === 'pla' ? state.plaCover : state.qplCover;
+        const btn = Utils.$(`#${type}-cover-${validRaceNum} [data-runner="${runnerNo}"]`);
+        
+        if (coverSet.has(runnerNo)) {
+            coverSet.delete(runnerNo);
+            Utils.removeClass(btn, 'selected');
+        } else {
+            coverSet.add(runnerNo);
+            Utils.addClass(btn, 'selected');
+        }
+    },
+    
+    selectBanker(raceNum, runnerNo) {
+        const validRaceNum = Utils.validateRaceNum(raceNum);
+        const state = this.getState(validRaceNum);
+        
+        // Deselect all banker buttons
+        Utils.removeClass(Utils.$$(`#qpl-banker-${validRaceNum} .runner-radio-btn`), 'selected');
+        
+        // Select the clicked one
+        const btn = Utils.$(`#qpl-banker-${validRaceNum} [data-runner="${runnerNo}"]`);
+        state.qplBanker = runnerNo;
+        Utils.addClass(btn, 'selected');
+    },
+    
+    toggleFilter(raceNum) {
+        const validRaceNum = Utils.validateRaceNum(raceNum);
+        const state = this.getState(validRaceNum);
+        const btn = Utils.$(`#qpl-filter-${validRaceNum}`);
+        
+        state.qplFilter = !state.qplFilter;
+        btn.dataset.filter = state.qplFilter.toString();
+        btn.textContent = state.qplFilter ? 'ON' : 'OFF';
+    },
+    
+    async loadParetoData(raceNum) {
+        try {
+            const validRaceNum = Utils.validateRaceNum(raceNum);
+            const state = this.getState(validRaceNum);
+            const exclude = Array.from(state.excludedRunners).sort((a, b) => parseInt(a) - parseInt(b)).join(',');
+            
+            const data = await API.fetchParetoData(validRaceNum, exclude);
+            this.drawParetoPlot(validRaceNum, data);
+        } catch (error) {
+            console.error(`Error loading Pareto data for race ${raceNum}:`, error);
+            const plotContainer = Utils.$(`#pareto-plot-${raceNum}`);
+            if (plotContainer) plotContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">Error loading Pareto data</div>';
+        }
+    },
+    
+    async calculatePLA(raceNum) {
+        try {
+            const validRaceNum = Utils.validateRaceNum(raceNum);
+            const state = this.getState(validRaceNum);
+            
+            if (state.plaCover.size === 0) {
+                alert('Please select at least one runner to cover');
+                return;
+            }
+            
+            const cover = Array.from(state.plaCover).sort((a, b) => parseInt(a) - parseInt(b)).join(',');
+            const data = await API.fetchPLAData(validRaceNum, cover);
+            this.updateMetrics(validRaceNum, 'pla', data);
+        } catch (error) {
+            console.error(`Error calculating PLA for race ${raceNum}:`, error);
+            alert('Error calculating PLA. Please try again.');
+        }
+    },
+    
+    async calculateQPL(raceNum) {
+        try {
+            const validRaceNum = Utils.validateRaceNum(raceNum);
+            const state = this.getState(validRaceNum);
+            
+            if (!state.qplBanker) {
+                alert('Please select a banker');
+                return;
+            }
+            
+            if (state.qplCover.size === 0) {
+                alert('Please select at least one runner to cover');
+                return;
+            }
+            
+            const cover = Array.from(state.qplCover).sort((a, b) => parseInt(a) - parseInt(b)).join(',');
+            const data = await API.fetchQPLData(validRaceNum, state.qplBanker, cover, state.qplFilter);
+            this.updateMetrics(validRaceNum, 'qpl', data);
+        } catch (error) {
+            console.error(`Error calculating QPL for race ${raceNum}:`, error);
+            alert('Error calculating QPL. Please try again.');
+        }
+    },
+    
+    updateMetrics(raceNum, type, data) {
+        const metricsContainer = Utils.$(`#${type}-metrics-${raceNum}`);
+        if (!metricsContainer) return;
+        
+        const metrics = [
+            { label: 'Cost', value: data.Covered?.length || 0 },
+            { label: 'Win Prob', value: data.WinProb !== undefined ? data.WinProb.toFixed(2) + '%' : '-' },
+            { label: 'Exp Value', value: data.ExpValue !== undefined ? data.ExpValue.toFixed(2) : '-' },
+            { label: 'Avg Odds', value: data.AvgOdds !== undefined ? data.AvgOdds.toFixed(2) : '-' }
+        ];
+        
+        const cards = Utils.$$('.metric-card', metricsContainer);
+        metrics.forEach((metric, i) => {
+            if (cards[i]) {
+                Utils.$('.metric-value', cards[i]).textContent = metric.value;
+            }
+        });
+    },
+    
+    drawParetoPlot(raceNum, data) {
+        const plotContainer = Utils.$(`#pareto-plot-${raceNum}`);
+        if (!plotContainer) return;
+        
+        if (!data || data.length === 0) {
+            plotContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No Pareto data available</div>';
+            return;
+        }
+        
+        // Group by cost
+        const groupedByCost = {};
+        data.forEach(trade => {
+            const cost = trade.Covered.length;
+            if (!groupedByCost[cost]) groupedByCost[cost] = [];
+            groupedByCost[cost].push(trade);
+        });
+        
+        // Create traces for each cost level
+        const traces = Object.keys(groupedByCost).sort((a, b) => parseInt(a) - parseInt(b)).map(cost => {
+            const trades = groupedByCost[cost];
+            return {
+                x: trades.map(t => t.WinProb),
+                y: trades.map(t => t.ExpValue),
+                mode: 'markers',
+                type: 'scatter',
+                name: `Cost ${cost}`,
+                marker: {
+                    size: 8,
+                    line: { width: 1, color: 'white' }
+                },
+                text: trades.map(t => 
+                    `Cost: ${cost}<br>` +
+                    `Covered: [${t.Covered.join(', ')}]<br>` +
+                    `Win Prob: ${t.WinProb.toFixed(2)}%<br>` +
+                    `Exp Value: ${t.ExpValue.toFixed(2)}<br>` +
+                    `Avg Odds: ${t.AvgOdds.toFixed(2)}`
+                ),
+                hovertemplate: '%{text}<extra></extra>'
+            };
+        });
+        
+        const isMobile = window.innerWidth <= 768;
+        
+        const layout = {
+            xaxis: { title: 'Win Probability (%)' },
+            yaxis: { title: 'Expected Value' },
+            hovermode: 'closest',
+            margin: { l: 60, r: 20, t: isMobile ? 60 : 80, b: 50 },
+            height: isMobile ? 300 : 400,
+            showlegend: true,
+            legend: { 
+                orientation: 'h',
+                x: 0.5,
+                xanchor: 'center',
+                y: isMobile ? 1.18 : 1.15,
+                yanchor: 'top',
+                font: { size: isMobile ? 9 : 11 }
+            },
+            plot_bgcolor: '#fafafa',
+            paper_bgcolor: 'white'
+        };
+        
+        const config = {
+            responsive: true,
+            displayModeBar: false
+        };
+        
+        Plotly.newPlot(plotContainer, traces, layout, config);
+    },
+    
+    async updateParetoForOddsChange(raceNum) {
+        // Update Pareto plot for the active race (since it's always visible now)
+        const activeRace = Utils.$('.race-content.active');
+        if (activeRace && activeRace.id === `race-${raceNum}`) {
+            await this.loadParetoData(raceNum);
+        }
+    },
+    
+    initAll() {
+        // Load Pareto data for the active race
+        const activeRace = Utils.$('.race-content.active');
+        if (activeRace) {
+            const raceNum = activeRace.id.replace('race-', '');
+            this.loadParetoData(raceNum);
+        }
     }
 };
 
@@ -806,8 +1082,9 @@ const UI = {
             Utils.addClass(Utils.$(`#race-${validRaceNum}`), 'active');
             sessionStorage.setItem('activeRaceTab', validRaceNum);
             if (!Cache.has('odds', validRaceNum)) Odds.load(validRaceNum);
-            if (!FavStyleChart.charts.has(validRaceNum)) FavStyleChart.draw(validRaceNum);
+            FavStyleChart.draw(validRaceNum);
             PreferredHighlight.update(validRaceNum);
+            TradeCalculator.loadParetoData(validRaceNum);
         } catch (error) {
             console.error('Error showing race:', error);
         }
@@ -832,42 +1109,101 @@ const UI = {
             if (!table) return;
             
             const tbody = Utils.$('tbody', table);
-            const header = Utils.$$('thead th', table)[columnIndex];
-            if (!header) return;
+            const allHeaders = Utils.$$('thead th', table);
+            const header = allHeaders[columnIndex];
             
-            const allHeaders = Utils.$$('thead th.sortable', table);
-            const rows = Utils.$$('tr', tbody).filter((_, i) => i % 2 === 0);
-            const isAscending = !header.classList.contains('sort-asc');
+            if (!tbody || !header) return;
             
-            allHeaders.forEach(h => {
+            // Determine sort direction BEFORE any DOM manipulation
+            const wasAscending = header.classList.contains('sort-asc');
+            const wasDescending = header.classList.contains('sort-desc');
+            const isAscending = wasDescending || !wasAscending; // If desc or unsorted, go asc. If asc, go desc.
+            
+            // Collect all runner rows with their details rows and sort data
+            // IMPORTANT: Store both the elements AND extract them from DOM immediately
+            const rowPairs = [];
+            const allRows = Array.from(tbody.children); // Convert to array immediately
+            
+            for (let i = 0; i < allRows.length; i++) {
+                const row = allRows[i];
+                if (row.classList && row.classList.contains('runner-row')) {
+                    const detailsRow = allRows[i + 1]; // Get the next row
+                    const cell = row.cells[columnIndex];
+                    
+                    if (cell) {
+                        const rawValue = cell.textContent.trim();
+                        let sortValue;
+                        
+                        if (type === 'number') {
+                            if (rawValue === '-' || rawValue === '') {
+                                sortValue = isAscending ? Infinity : -Infinity;
+                            } else {
+                                sortValue = Utils.parseNum(rawValue, isAscending ? Infinity : -Infinity);
+                            }
+                        } else {
+                            sortValue = rawValue.toLowerCase();
+                        }
+                        
+                        rowPairs.push({
+                            runnerRow: row,
+                            detailsRow: detailsRow && detailsRow.classList && detailsRow.classList.contains('runner-details-row') ? detailsRow : null,
+                            sortValue: sortValue
+                        });
+                    }
+                    
+                    i++; // Skip the details row in the loop
+                }
+            }
+            
+            if (rowPairs.length === 0) return;
+            
+            // Sort the pairs
+            rowPairs.sort((a, b) => {
+                const aVal = a.sortValue;
+                const bVal = b.sortValue;
+                
+                if (type === 'number') {
+                    return isAscending ? aVal - bVal : bVal - aVal;
+                } else {
+                    if (isAscending) {
+                        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                    } else {
+                        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+                    }
+                }
+            });
+            
+            // Update ALL header indicators
+            Utils.$$('thead th.sortable', table).forEach(h => {
                 Utils.removeClass(h, ['sort-asc', 'sort-desc']);
                 const arrow = Utils.$('.sort-arrow', h);
                 if (arrow) arrow.textContent = '⇅';
             });
             
-            rows.sort((a, b) => {
-                const getValue = (row) => {
-                    const val = row.cells[columnIndex].textContent.trim();
-                    if (type === 'number' && val === '-') return Infinity;
-                    return type === 'number' ? Utils.parseNum(val, -Infinity) : val.toLowerCase();
-                };
-                const [aComp, bComp] = [getValue(a), getValue(b)];
-                return isAscending ? (aComp > bComp ? 1 : aComp < bComp ? -1 : 0) : 
-                                     (aComp < bComp ? 1 : aComp > bComp ? -1 : 0);
-            });
-            
+            // Set the current header's sort state
             Utils.addClass(header, isAscending ? 'sort-asc' : 'sort-desc');
             const arrow = Utils.$('.sort-arrow', header);
             if (arrow) arrow.textContent = isAscending ? '▲' : '▼';
             
-            rows.forEach(row => {
-                tbody.appendChild(row);
-                if (row.nextElementSibling) tbody.appendChild(row.nextElementSibling);
+            // Remove all existing rows first (without using innerHTML)
+            while (tbody.firstChild) {
+                tbody.removeChild(tbody.firstChild);
+            }
+            
+            // Use DocumentFragment for efficient DOM manipulation
+            const fragment = document.createDocumentFragment();
+            rowPairs.forEach(({ runnerRow, detailsRow }) => {
+                fragment.appendChild(runnerRow);
+                if (detailsRow) fragment.appendChild(detailsRow);
             });
+            
+            // Append sorted rows
+            tbody.appendChild(fragment);
             
             PreferredHighlight.update(validRaceNum);
         } catch (error) {
             console.error('Error sorting table:', error);
+            console.error(error.stack);
         }
     },
     
@@ -906,6 +1242,7 @@ const App = {
         Speedmap.loadAll();
         FavStyleChart.initAll();
         PreferredHighlight.initAll();
+        TradeCalculator.initAll();
         Odds.startPolling();
         RunnerDetails.prefetchAll(activeRaceNum).catch(error => 
             console.error('Error in background prefetch:', error));
@@ -916,8 +1253,6 @@ const App = {
         Odds.stopPolling();
         RequestQueue.clear();
         Cache.clear();
-        FavStyleChart.charts.forEach(chart => chart.destroy());
-        FavStyleChart.charts.clear();
     }
 };
 
@@ -928,6 +1263,13 @@ window.toggleAllRunners = (raceNum, btn) => RunnerDetails.toggleAll(raceNum, btn
 window.sortTable = (raceNum, colIdx, type) => UI.sortTable(raceNum, colIdx, type);
 window.openTrackWorkoutVideo = (date, raceNum) => UI.openTrackWorkoutVideo(date, raceNum);
 window.openTipsIndex = (raceNum) => UI.openTipsIndex(raceNum);
+window.showTradeTab = (raceNum, tabName) => TradeCalculator.showTab(raceNum, tabName);
+window.toggleExclude = (raceNum, runnerNo) => TradeCalculator.toggleExclude(raceNum, runnerNo);
+window.toggleCover = (raceNum, type, runnerNo) => TradeCalculator.toggleCover(raceNum, type, runnerNo);
+window.selectBanker = (raceNum, runnerNo) => TradeCalculator.selectBanker(raceNum, runnerNo);
+window.toggleFilter = (raceNum) => TradeCalculator.toggleFilter(raceNum);
+window.calculatePLA = (raceNum) => TradeCalculator.calculatePLA(raceNum);
+window.calculateQPL = (raceNum) => TradeCalculator.calculateQPL(raceNum);
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.addEventListener('beforeunload', () => App.cleanup());
