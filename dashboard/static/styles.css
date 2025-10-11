@@ -288,6 +288,10 @@ body {
     background: #e8eaf6 !important;
 }
 
+.runner-no {
+    font-weight: 700;
+}
+
 .horse-no {
     font-weight: 600;
     color: #667eea;

@@ -138,7 +138,7 @@
                         <td>
                             <span class="expand-icon">▶</span>
                         </td>
-                        <td>{{ runner.No }}</td>
+                        <td class="runner-no">{{ runner.No }}</td>
                         <td>{{ runner.Dr if runner.Dr else '-' }}</td>
                         <td class="horse-no">
                             <a href="https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseNo={{ runner.HorseNo }}"
@@ -208,7 +208,7 @@
                             {% endfor %}
                         </div>
                         <div class="filter-control">
-                            <label class="filter-label">Filter:</label>
+                            <label class="filter-label">Harville Fit:</label>
                             <button class="filter-toggle-btn" id="qpl-filter-{{ race_num }}" data-filter="false" onclick="toggleFilter('{{ race_num }}')">OFF</button>
                             <button class="calculate-btn" onclick="calculateQPL('{{ race_num }}')">Calculate</button>
                         </div>
