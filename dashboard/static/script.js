@@ -971,7 +971,7 @@ const TradeCalculator = {
         
         const metrics = [
             { label: 'Cost', value: data.Covered?.length || 0 },
-            { label: 'Win Prob', value: data.WinProb !== undefined ? data.WinProb.toFixed(2) + '%' : '-' },
+            { label: 'Win Prob', value: data.WinProb !== undefined ? (data.WinProb*100).toFixed(2) + '%' : '-' },
             { label: 'Exp Value', value: data.ExpValue !== undefined ? data.ExpValue.toFixed(2) : '-' },
             { label: 'Avg Odds', value: data.AvgOdds !== undefined ? data.AvgOdds.toFixed(2) : '-' }
         ];
