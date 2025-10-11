@@ -113,20 +113,11 @@ def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate:
     candidates = np.arange(1, N+1)
 
     if fit_harville:
-        fit_res = fit_harville_to_odds(
-            W_obs=odds['WIN'],
-            Qin_obs=odds['QIN'],
-            Q_obs=odds['QPL'],
-            b_obs=odds['PLA']
-        )
+        fit_res = fit_harville_to_odds(odds)
         if fit_res['success']:
-            odds['PLA'] = np.nan_to_num(1/fit_res['b_fitted'], posinf=0)
-            odds['QPL'] = np.nan_to_num(1/fit_res['Q_fitted'], posinf=0)
-            odds['WIN'] = np.nan_to_num(1/fit_res['W_fitted'], posinf=0)
-            odds['QIN'] = np.nan_to_num(1/fit_res['Qin_fitted'], posinf=0)
+            odds = fit_res['odds_fit']
         else:
-            print(
-                f"[WARNING] Harville model fitting failed: {fit_res.get('message','')}")
+            print(f"[WARNING] Harville model fitting failed: {fit_res.get('message','')}")
 
     results = [_process_single_qp_trade(banker, covered, odds['PLA'], odds['QPL'], rebate)
                for banker in tqdm(candidates, desc="Processing bankers")
