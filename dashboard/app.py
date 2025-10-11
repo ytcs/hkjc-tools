@@ -152,7 +152,7 @@ def disp_qp_metrics(race_no=1, banker=1, cover='2'):
 
     return {'Banker': banker, 'Covered': covered, 'ExpValue': round(ev, 2), 'WinProb': round(win, 2), 'AvgOdds': round(avg_odds, 2)}
 
-@app.route('/pla/<int:race_no>/<cover>', methods=['GET'])
+@app.route('/pla/<int:race_no>/<cover>')
 def disp_pla_metrics(race_no=1, cover=[]):
     odds = live_odds('', '', race_number=race_no)
 
@@ -219,7 +219,7 @@ def disp_pla_recs(race_no=1, exclude=[], maxC=None):
         df_trades = df_trades.filter(elimination(excluded))
     if maxC:
         df_trades = df_trades.filter(pl.col('NumCovered') <= maxC)
-    pareto_trades = pareto_filter(df_trades, [], ['WinProb', 'ExpValue']).sort(
+    pareto_trades = pareto_filter(df_trades, ['NumCovered'], ['WinProb', 'ExpValue']).sort(
         'WinProb', descending=True)
 
     return [format_trade(t) for t in pareto_trades.iter_rows(named=True)]
