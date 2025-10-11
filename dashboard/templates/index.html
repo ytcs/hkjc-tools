@@ -191,6 +191,18 @@
                         <div class="metric-card"><span class="metric-label">Exp Value</span><span class="metric-value">-</span></div>
                         <div class="metric-card"><span class="metric-label">Avg Odds</span><span class="metric-value">-</span></div>
                     </div>
+                    <div class="pareto-header">
+                        <span class="pareto-title">PLA Pareto Frontier</span>
+                        <div class="pareto-controls">
+                            <label class="trade-control-label">Exclude:</label>
+                            <div class="runner-buttons" id="pla-pareto-exclude-{{ race_num }}">
+                                {% for runner in race.Runners %}
+                                <button class="runner-select-btn" data-runner="{{ runner.No }}" onclick="toggleParetoExclude('{{ race_num }}', 'pla', '{{ runner.No }}')">{{ runner.No }}</button>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="trade-plot-container" id="pla-pareto-plot-{{ race_num }}"></div>
                 </div>
 
                 <div class="trade-tab-content" id="trade-qpl-{{ race_num }}">
@@ -219,28 +231,29 @@
                         <div class="metric-card"><span class="metric-label">Exp Value</span><span class="metric-value">-</span></div>
                         <div class="metric-card"><span class="metric-label">Avg Odds</span><span class="metric-value">-</span></div>
                     </div>
-                </div>
-            </div>
-
-            <div class="pareto-section">
-                <div class="pareto-header">
-                    <span class="pareto-title">PLA Pareto Frontier</span>
-                    <div class="pareto-controls">
-                        <label class="trade-control-label">Exclude:</label>
-                        <div class="runner-buttons" id="pareto-exclude-{{ race_num }}">
-                            {% for runner in race.Runners %}
-                            <button class="runner-select-btn" data-runner="{{ runner.No }}" onclick="toggleExclude('{{ race_num }}', '{{ runner.No }}')">{{ runner.No }}</button>
-                            {% endfor %}
+                    <div class="pareto-header">
+                        <span class="pareto-title">QPL Pareto Frontier</span>
+                        <div class="pareto-controls">
+                            <label class="trade-control-label">Exclude:</label>
+                            <div class="runner-buttons" id="qpl-pareto-exclude-{{ race_num }}">
+                                {% for runner in race.Runners %}
+                                <button class="runner-select-btn" data-runner="{{ runner.No }}" onclick="toggleParetoExclude('{{ race_num }}', 'qpl', '{{ runner.No }}')">{{ runner.No }}</button>
+                                {% endfor %}
+                            </div>
                         </div>
                     </div>
+                    <div class="trade-plot-container" id="qpl-pareto-plot-{{ race_num }}"></div>
                 </div>
-                <div class="trade-plot-container" id="pareto-plot-{{ race_num }}"></div>
             </div>
         </div>
         {% endfor %}
     </div>
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='core.js') }}"></script>
+    <script src="{{ url_for('static', filename='race-data.js') }}"></script>
+    <script src="{{ url_for('static', filename='race-ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='trade-calculator.js') }}"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 
 </html>
