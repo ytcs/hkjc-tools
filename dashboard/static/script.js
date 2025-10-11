@@ -30,18 +30,19 @@ const Utils = {
     
     addClass(elements, className) {
         const classes = Array.isArray(className) ? className : [className];
-        (Array.isArray(elements) ? elements : [elements]).forEach(el => 
-            classes.forEach(cls => el?.classList.add(cls))
-        );
+        const els = Array.isArray(elements) ? elements : [elements];
+        els.forEach(el => el && classes.forEach(cls => el.classList.add(cls)));
     },
+    
     removeClass(elements, className) {
         const classes = Array.isArray(className) ? className : [className];
-        (Array.isArray(elements) ? elements : [elements]).forEach(el => 
-            classes.forEach(cls => el?.classList.remove(cls))
-        );
+        const els = Array.isArray(elements) ? elements : [elements];
+        els.forEach(el => el && classes.forEach(cls => el.classList.remove(cls)));
     },
+    
     toggleClass(elements, className, force) {
-        (Array.isArray(elements) ? elements : [elements]).forEach(el => el?.classList.toggle(className, force));
+        const els = Array.isArray(elements) ? elements : [elements];
+        els.forEach(el => el?.classList.toggle(className, force));
     },
     
     parseNum(value, fallback = 0) {
@@ -49,16 +50,22 @@ const Utils = {
         return isNaN(num) ? fallback : num;
     },
     
+    makeCacheKey(...parts) {
+        return parts.join('-');
+    },
+    
     validateRaceNum(raceNum) {
         const num = parseInt(raceNum);
         if (isNaN(num) || num < 1 || num > 99) throw new Error(`Invalid race number: ${raceNum}`);
         return num.toString();
     },
+    
     validateHorseNo(horseNo) {
         if (!horseNo || typeof horseNo !== 'string' || !horseNo.trim()) 
             throw new Error(`Invalid horse number: ${horseNo}`);
         return horseNo.trim();
     },
+    
     validateDate(dateStr) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) 
             throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`);
@@ -139,10 +146,17 @@ const API = {
             (await this.fetch(`/speedmap/${Utils.validateRaceNum(raceNum)}`)).text(), 0);
     },
     
-    fetchParetoData(raceNum, exclude = '') {
+    fetchParetoData(raceNum, exclude = '', abortSignal = null) {
         return RequestQueue.enqueue(async () => {
             const url = `/plarec/${Utils.validateRaceNum(raceNum)}${exclude ? `?exclude=${exclude}` : ''}`;
-            return (await this.fetch(url)).json();
+            return (await this.fetch(url, { signal: abortSignal })).json();
+        }, 1);
+    },
+    
+    fetchQParetoData(raceNum, banker, exclude = '', filter = false, abortSignal = null) {
+        return RequestQueue.enqueue(async () => {
+            const url = `/qprec/${Utils.validateRaceNum(raceNum)}/${banker}?exclude=${exclude}&filter=${filter}`;
+            return (await this.fetch(url, { signal: abortSignal })).json();
         }, 1);
     },
     
@@ -206,94 +220,97 @@ const Odds = {
     updateDisplay(raceNum, oddsData) {
         if (!oddsData?.Raw || !oddsData?.Fit) return;
         
-        // Update raw odds normally
-        [['.odds-win', oddsData.Raw.WIN], ['.odds-pla', oddsData.Raw.PLA]]
-            .forEach(([cls, data]) => this.updateCells(`${cls}[data-race="${raceNum}"]`, data));
-        
-        // Update fit odds as differences
-        [['.odds-win-fit', oddsData.Raw.WIN, oddsData.Fit.WIN],
-         ['.odds-pla-fit', oddsData.Raw.PLA, oddsData.Fit.PLA]]
-            .forEach(([cls, rawData, fitData]) => 
-                this.updateCellsWithDiff(`${cls}[data-race="${raceNum}"]`, rawData, fitData));
-        
-        Utils.$$(`.odds-table[data-race="${raceNum}"]`).forEach(table => 
-            this.updateOddsTable(table, table.dataset.horse, oddsData));
+        this.updateRawOdds(raceNum, oddsData);
+        this.updateFitOdds(raceNum, oddsData);
+        this.updateAllOddsTables(raceNum, oddsData);
         
         PreferredHighlight.update(raceNum);
         TradeCalculator.updateParetoForOddsChange(raceNum);
     },
     
-    updateCells(selector, oddsData) {
-        Utils.$$(selector).forEach(cell => {
-            const odds = oddsData?.[cell.dataset.horse];
-            if (odds !== undefined) cell.textContent = odds;
+    updateRawOdds(raceNum, oddsData) {
+        const updates = [
+            ['.odds-win', oddsData.Raw.WIN],
+            ['.odds-pla', oddsData.Raw.PLA]
+        ];
+        
+        updates.forEach(([selector, data]) => {
+            Utils.$$(`${selector}[data-race="${raceNum}"]`).forEach(cell => {
+                const odds = data?.[cell.dataset.horse];
+                if (odds !== undefined) cell.textContent = odds;
+            });
         });
     },
     
-    updateCellsWithDiff(selector, rawData, fitData) {
-        Utils.$$(selector).forEach(cell => {
-            const horseNo = cell.dataset.horse;
-            const rawOdds = rawData?.[horseNo];
-            const fitOdds = fitData?.[horseNo];
+    updateFitOdds(raceNum, oddsData) {
+        const updates = [
+            ['.odds-win-fit', oddsData.Raw.WIN, oddsData.Fit.WIN],
+            ['.odds-pla-fit', oddsData.Raw.PLA, oddsData.Fit.PLA]
+        ];
+        
+        updates.forEach(([selector, rawData, fitData]) => {
+            Utils.$$(`${selector}[data-race="${raceNum}"]`).forEach(cell => {
+                this.updateDiffCell(cell, rawData, fitData);
+            });
+        });
+    },
+    
+    updateDiffCell(cell, rawData, fitData) {
+        const horseNo = cell.dataset.horse;
+        const rawOdds = rawData?.[horseNo];
+        const fitOdds = fitData?.[horseNo];
+        
+        Utils.removeClass(cell, ['odds-diff-positive', 'odds-diff-negative']);
+        
+        if (rawOdds !== undefined && fitOdds !== undefined) {
+            const diff = fitOdds - rawOdds;
+            cell.textContent = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}`;
             
-            // Remove existing diff classes
-            Utils.removeClass(cell, ['odds-diff-positive', 'odds-diff-negative']);
-            
-            if (rawOdds !== undefined && fitOdds !== undefined) {
-                const diff = fitOdds - rawOdds;
-                const sign = diff >= 0 ? '+' : '';
-                cell.textContent = `${sign}${diff.toFixed(1)}`;
-                
-                // Add appropriate class
-                if (diff < 0) {
-                    Utils.addClass(cell, 'odds-diff-negative');
-                } else if (diff > 0) {
-                    Utils.addClass(cell, 'odds-diff-positive');
-                }
+            if (diff !== 0) {
+                Utils.addClass(cell, diff < 0 ? 'odds-diff-negative' : 'odds-diff-positive');
             }
+        }
+    },
+    
+    updateAllOddsTables(raceNum, oddsData) {
+        Utils.$$(`.odds-table[data-race="${raceNum}"]`).forEach(table => {
+            this.updateOddsTable(table, table.dataset.horse, oddsData);
         });
     },
     
     updateOddsTable(table, horseNo, oddsData) {
         const otherHorses = Object.keys(oddsData.Raw.WIN || {})
-            .sort((a, b) => parseInt(a) - parseInt(b)).filter(h => h !== horseNo);
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .filter(h => h !== horseNo);
         const rows = Utils.$$('tbody tr', table);
         if (rows.length < 4) return;
         
-        // Row 0: QIN (raw), Row 1: QIN (fit), Row 2: QPL (raw), Row 3: QPL (fit)
-        const dataConfig = [
-            { data: oddsData.Raw.QIN, isFit: false, rawData: null },
-            { data: oddsData.Fit.QIN, isFit: true, rawData: oddsData.Raw.QIN },
-            { data: oddsData.Raw.QPL, isFit: false, rawData: null },
-            { data: oddsData.Fit.QPL, isFit: true, rawData: oddsData.Raw.QPL }
+        const configs = [
+            { data: oddsData.Raw.QIN, rawData: null },
+            { data: oddsData.Fit.QIN, rawData: oddsData.Raw.QIN },
+            { data: oddsData.Raw.QPL, rawData: null },
+            { data: oddsData.Fit.QPL, rawData: oddsData.Raw.QPL }
         ];
         
-        dataConfig.forEach(({ data, isFit, rawData }, i) => {
-            Utils.$$('td:not(.odds-type-label)', rows[i]).forEach((cell, idx) => {
-                const h = otherHorses[idx];
+        configs.forEach(({ data, rawData }, rowIdx) => {
+            Utils.$$('td:not(.odds-type-label)', rows[rowIdx]).forEach((cell, colIdx) => {
+                const h = otherHorses[colIdx];
                 const odds = data?.[horseNo]?.[h] || data?.[h]?.[horseNo];
                 
-                // Remove existing diff classes
                 Utils.removeClass(cell, ['odds-diff-positive', 'odds-diff-negative']);
                 
-                if (isFit && rawData) {
-                    // Calculate and display difference
-                    const rawOdds = rawData[horseNo]?.[h] || rawData[h]?.[horseNo];
+                if (rawData) {
+                    const rawOdds = rawData?.[horseNo]?.[h] || rawData?.[h]?.[horseNo];
                     if (odds !== undefined && rawOdds !== undefined) {
                         const diff = odds - rawOdds;
-                        const sign = diff >= 0 ? '+' : '';
-                        cell.textContent = `${sign}${diff.toFixed(1)}`;
-                        
-                        if (diff < 0) {
-                            Utils.addClass(cell, 'odds-diff-negative');
-                        } else if (diff > 0) {
-                            Utils.addClass(cell, 'odds-diff-positive');
+                        cell.textContent = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}`;
+                        if (diff !== 0) {
+                            Utils.addClass(cell, diff < 0 ? 'odds-diff-negative' : 'odds-diff-positive');
                         }
                     } else {
                         cell.textContent = '-';
                     }
                 } else {
-                    // Display raw odds normally
                     cell.textContent = odds !== undefined ? odds : '-';
                 }
             });
@@ -302,37 +319,47 @@ const Odds = {
     
     createSection(raceNum, horseNo, oddsData) {
         if (!oddsData?.Raw || !oddsData?.Fit) return '';
+        
         const otherHorses = Object.keys(oddsData.Raw.WIN || {})
-            .sort((a, b) => parseInt(a) - parseInt(b)).filter(h => h !== horseNo);
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .filter(h => h !== horseNo);
+        
         if (!otherHorses.length) return '';
         
-        const createRow = (label, data, isFit = false, rawData = null) => `<tr><td class="odds-type-label">${label}</td>${
-            otherHorses.map(h => {
+        const createRow = (label, data, rawData = null) => {
+            const cells = otherHorses.map(h => {
                 const odds = data?.[horseNo]?.[h] || data?.[h]?.[horseNo];
                 
-                if (isFit && rawData) {
+                if (rawData) {
                     const rawOdds = rawData?.[horseNo]?.[h] || rawData?.[h]?.[horseNo];
                     if (odds !== undefined && rawOdds !== undefined) {
                         const diff = odds - rawOdds;
-                        const sign = diff >= 0 ? '+' : '';
                         const className = diff < 0 ? 'odds-diff-negative' : (diff > 0 ? 'odds-diff-positive' : '');
-                        return `<td class="${className}">${sign}${diff.toFixed(1)}</td>`;
+                        return `<td class="${className}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)}</td>`;
                     }
-                    return `<td>-</td>`;
+                    return '<td>-</td>';
                 }
                 
                 return `<td>${odds !== undefined ? odds : '-'}</td>`;
-            }).join('')}</tr>`;
+            }).join('');
+            
+            return `<tr><td class="odds-type-label">${label}</td>${cells}</tr>`;
+        };
+        
+        const rowConfigs = [
+            ['QIN', oddsData.Raw.QIN],
+            ['QIN (fit)', oddsData.Fit.QIN, oddsData.Raw.QIN],
+            ['QPL', oddsData.Raw.QPL],
+            ['QPL (fit)', oddsData.Fit.QPL, oddsData.Raw.QPL]
+        ];
+        
+        const headerCells = otherHorses.map(h => `<th>vs ${h}</th>`).join('');
+        const bodyRows = rowConfigs.map(args => createRow(...args)).join('');
         
         return `<div class="odds-table-container">
             <table class="odds-table" data-race="${raceNum}" data-horse="${horseNo}">
-                <thead><tr><th>Type</th>${otherHorses.map(h => `<th>vs ${h}</th>`).join('')}</tr></thead>
-                <tbody>${[
-                    ['QIN', oddsData.Raw.QIN, false, null], 
-                    ['QIN (fit)', oddsData.Fit.QIN, true, oddsData.Raw.QIN], 
-                    ['QPL', oddsData.Raw.QPL, false, null], 
-                    ['QPL (fit)', oddsData.Fit.QPL, true, oddsData.Raw.QPL]
-                ].map(([label, data, isFit, rawData]) => createRow(label, data, isFit, rawData)).join('')}</tbody>
+                <thead><tr><th>Type</th>${headerCells}</tr></thead>
+                <tbody>${bodyRows}</tbody>
             </table></div>`;
     },
     
@@ -365,8 +392,14 @@ const RunnerDetails = {
         const doc = new DOMParser().parseFromString(historyHtml, 'text/html');
         const table = Utils.$('table', doc);
         if (!table) return null;
-        const headerRow = Utils.$('thead tr', table);
-        return { table, headerRow };
+        return { table, headerRow: Utils.$('thead tr', table) };
+    },
+    
+    findColumnIndex(headerRow, columnNames) {
+        return Utils.$$('th', headerRow).findIndex(th => {
+            const text = th.textContent.trim().toLowerCase();
+            return columnNames.some(name => text === name || text.includes(name));
+        });
     },
     
     columnExtractors: [
@@ -376,17 +409,20 @@ const RunnerDetails = {
             extract: (historyHtml) => {
                 const parsed = RunnerDetails.parseHistoryTable(historyHtml);
                 if (!parsed) return null;
-                const styleIdx = Utils.$$('th', parsed.headerRow)
-                    .findIndex(th => th.textContent.trim().toLowerCase() === 'style');
+                
+                const styleIdx = RunnerDetails.findColumnIndex(parsed.headerRow, ['style']);
                 if (styleIdx === -1) return null;
+                
                 return Utils.$$('tbody tr', parsed.table).slice(0, 5)
                     .map(row => row.querySelectorAll('td')[styleIdx]?.textContent.trim())
                     .filter(Boolean);
             },
             process: (rawData) => {
                 if (!rawData?.length) return 'Unknown';
-                const freq = rawData.reduce((acc, val) => (acc[val] = (acc[val] || 0) + 1, acc), {});
-                return Object.entries(freq).reduce((max, [val, f]) => f > max[1] ? [val, f] : max, [null, 0])[0] || 'Unknown';
+                const freq = {};
+                rawData.forEach(val => freq[val] = (freq[val] || 0) + 1);
+                return Object.entries(freq)
+                    .reduce((max, [val, count]) => count > max[1] ? [val, count] : max, [null, 0])[0] || 'Unknown';
             },
             onUpdate: (raceNum) => FavStyleChart.update(raceNum)
         },
@@ -396,9 +432,13 @@ const RunnerDetails = {
             extract: (historyHtml) => {
                 const parsed = RunnerDetails.parseHistoryTable(historyHtml);
                 if (!parsed) return null;
-                const timeIdx = Utils.$$('th', parsed.headerRow)
-                    .findIndex(th => ['finish time', 'time'].includes(th.textContent.trim().toLowerCase()));
-                if (timeIdx === -1) { Utils.log('Finish Time column not found'); return null; }
+                
+                const timeIdx = RunnerDetails.findColumnIndex(parsed.headerRow, ['finish time', 'time']);
+                if (timeIdx === -1) {
+                    Utils.log('Finish Time column not found');
+                    return null;
+                }
+                
                 const firstRow = Utils.$('tbody tr', parsed.table);
                 const timeValue = firstRow?.querySelectorAll('td')[timeIdx]?.textContent.trim() || null;
                 Utils.log(`Extracted finish time: ${timeValue}`);
@@ -415,7 +455,10 @@ const RunnerDetails = {
         
         this.columnExtractors.forEach(({ name, selector, extract, process, onUpdate }) => {
             const cell = Utils.$(`${selector}[data-race="${raceNum}"][data-horse="${horseNo}"]`);
-            if (!cell) { Utils.log(`Cell not found for ${name}`); return; }
+            if (!cell) {
+                Utils.log(`Cell not found for ${name}`);
+                return;
+            }
             
             try {
                 cell.textContent = process(extract(historyHtml));
@@ -434,7 +477,7 @@ const RunnerDetails = {
     async load(raceNum, horseNo, going, track, distance, venue) {
         const validRaceNum = Utils.validateRaceNum(raceNum);
         const validHorseNo = Utils.validateHorseNo(horseNo);
-        const cacheKey = `${validRaceNum}-${validHorseNo}`;
+        const cacheKey = Utils.makeCacheKey(validRaceNum, validHorseNo);
         
         if (Cache.has('runnerDetails', cacheKey)) {
             const cachedHtml = Cache.get('runnerDetails', cacheKey);
@@ -464,7 +507,7 @@ const RunnerDetails = {
             const detailsContent = Utils.$(`#runner-details-content-${raceNum}-${horseNo}`);
             const runnerNo = Utils.$('.odds-win', rowElement)?.dataset.horse || horseNo;
             const oddsData = Cache.get('odds', raceNum);
-            const cacheKey = `${raceNum}-${horseNo}`;
+            const cacheKey = Utils.makeCacheKey(raceNum, horseNo);
             const venue = rowElement.dataset.venue || '';
             
             if (!Cache.has('runnerDetails', cacheKey)) {
@@ -488,8 +531,9 @@ const RunnerDetails = {
     
     async loadRunnerData(raceNum, runnerData) {
         const { horseNo, runnerNo, going, track, distance, venue } = runnerData;
-        const cacheKey = `${raceNum}-${horseNo}`;
+        const cacheKey = Utils.makeCacheKey(raceNum, horseNo);
         const detailsRow = Utils.$(`#runner-details-${raceNum}-${horseNo}`);
+        
         if (!detailsRow.classList.contains('expanded')) return;
         
         if (Cache.has('runnerDetails', cacheKey)) {
@@ -516,7 +560,7 @@ const RunnerDetails = {
             const oddsData = Cache.get('odds', raceNum);
             const runners = runnerRows.map(row => {
                 const runnerData = Utils.getRunnerData(row);
-                const cacheKey = `${raceNum}-${runnerData.horseNo}`;
+                const cacheKey = Utils.makeCacheKey(raceNum, runnerData.horseNo);
                 const detailsRow = Utils.$(`#runner-details-${raceNum}-${runnerData.horseNo}`);
                 const detailsContent = Utils.$(`#runner-details-content-${raceNum}-${runnerData.horseNo}`);
                 
@@ -549,7 +593,8 @@ const RunnerDetails = {
     async prefetchAll(priorityRaceNum = null) {
         Utils.log('Starting background prefetch...');
         const sortedRaces = Utils.$$('.race-content').sort((a, b) => {
-            const aNum = a.id.replace('race-', ''), bNum = b.id.replace('race-', '');
+            const aNum = a.id.replace('race-', '');
+            const bNum = b.id.replace('race-', '');
             if (priorityRaceNum) {
                 if (aNum === priorityRaceNum) return -1;
                 if (bNum === priorityRaceNum) return 1;
@@ -563,7 +608,9 @@ const RunnerDetails = {
             
             for (const row of Utils.$$('.runner-row', raceContent)) {
                 const { horseNo, going, track, distance, venue } = Utils.getRunnerData(row);
-                if (!horseNo || Cache.has('runnerDetails', `${raceNum}-${horseNo}`)) continue;
+                const cacheKey = Utils.makeCacheKey(raceNum, horseNo);
+                
+                if (!horseNo || Cache.has('runnerDetails', cacheKey)) continue;
                 
                 try {
                     await this.load(raceNum, horseNo, going, track, distance, venue);
@@ -582,25 +629,16 @@ const Speedmap = {
         try {
             const validRaceNum = Utils.validateRaceNum(raceNum);
             const container = Utils.$(`#race-${validRaceNum} .speedmap-container`);
-            const img = Utils.$(`#speedmap-${validRaceNum}`);
-            if (!img || !container) return;
+            if (!container) return;
             
             if (Cache.has('speedmaps', validRaceNum)) {
-                const cached = Cache.get('speedmaps', validRaceNum);
-                if (cached) {
-                    if (!Utils.$('img', container)) {
-                        container.innerHTML = `<img id="speedmap-${validRaceNum}" class="speedmap-image" alt="Race ${validRaceNum} Speed Map" />`;
-                    }
-                    Utils.$(`#speedmap-${validRaceNum}`).src = cached;
-                    Utils.$(`#speedmap-${validRaceNum}`).style.display = 'block';
-                } else {
-                    img.style.display = 'none';
-                    container.innerHTML = '<div class="race-not-ready">Speedmap not available</div>';
-                }
+                this.displayCached(validRaceNum, container);
                 return;
             }
             
-            img.style.display = 'none';
+            const img = Utils.$(`#speedmap-${validRaceNum}`);
+            if (img) img.style.display = 'none';
+            
             const base64String = await API.fetchSpeedmap(validRaceNum);
             
             if (!base64String?.trim()) {
@@ -610,14 +648,28 @@ const Speedmap = {
             }
             
             Cache.set('speedmaps', validRaceNum, base64String);
-            if (!Utils.$('img', container)) {
-                container.innerHTML = `<img id="speedmap-${validRaceNum}" class="speedmap-image" alt="Race ${validRaceNum} Speed Map" />`;
-            }
-            Utils.$(`#speedmap-${validRaceNum}`).src = base64String;
-            Utils.$(`#speedmap-${validRaceNum}`).style.display = 'block';
+            this.displayImage(validRaceNum, container, base64String);
         } catch (error) {
             console.error(`Error loading speedmap for race ${raceNum}:`, error);
         }
+    },
+    
+    displayCached(raceNum, container) {
+        const cached = Cache.get('speedmaps', raceNum);
+        if (cached) {
+            this.displayImage(raceNum, container, cached);
+        } else {
+            container.innerHTML = '<div class="race-not-ready">Speedmap not available</div>';
+        }
+    },
+    
+    displayImage(raceNum, container, src) {
+        if (!Utils.$('img', container)) {
+            container.innerHTML = `<img id="speedmap-${raceNum}" class="speedmap-image" alt="Race ${raceNum} Speed Map" />`;
+        }
+        const img = Utils.$(`#speedmap-${raceNum}`);
+        img.src = src;
+        img.style.display = 'block';
     },
     
     async loadAll() {
@@ -649,19 +701,27 @@ const PreferredHighlight = {
         }
         
         const preferred = {};
-        this.columns.filter(col => col.type).forEach(col => {
+        const typedColumns = this.columns.filter(col => col.type);
+        
+        typedColumns.forEach(col => {
             preferred[col.name] = col.type === 'max' ? -Infinity : Infinity;
         });
         
         runnerRows.forEach(row => {
-            this.columns.filter(col => col.type).forEach(col => {
+            typedColumns.forEach(col => {
                 const textValue = row.cells[col.index]?.textContent.trim();
                 if (textValue === '-') return;
+                
                 const value = Utils.parseNum(textValue, col.type === 'max' ? -Infinity : Infinity);
-                if (col.type === 'max' && value > preferred[col.name]) preferred[col.name] = value;
-                else if (col.type === 'min' && value > 0 && value < preferred[col.name]) preferred[col.name] = value;
+                
+                if (col.type === 'max') {
+                    if (value > preferred[col.name]) preferred[col.name] = value;
+                } else if (value > 0 && value < preferred[col.name]) {
+                    preferred[col.name] = value;
+                }
             });
         });
+        
         return preferred;
     },
     
@@ -687,6 +747,11 @@ const PreferredHighlight = {
         if (!racePreferred) return;
         
         const uniformColumns = this.checkColumnUniformity(runnerRows);
+        const horseCounts = this.highlightPreferredCells(runnerRows, racePreferred, uniformColumns);
+        this.markMostPreferredHorses(runnerRows, horseCounts);
+    },
+    
+    highlightPreferredCells(runnerRows, racePreferred, uniformColumns) {
         const horseCounts = new Map();
         
         runnerRows.forEach(row => {
@@ -696,22 +761,38 @@ const PreferredHighlight = {
             this.columns.forEach(col => {
                 const cell = row.cells[col.index];
                 const value = cell?.textContent.trim();
+                
                 if (uniformColumns.has(col.name) || value === '-') return;
                 
-                let isPreferred = false;
-                if (col.check) {
-                    isPreferred = col.check(value);
-                } else if (col.type && racePreferred[col.name] !== undefined) {
-                    const numValue = Utils.parseNum(value, col.type === 'max' ? -Infinity : Infinity);
-                    isPreferred = numValue === racePreferred[col.name] && (col.type === 'max' || numValue > 0);
+                const isPreferred = this.isCellPreferred(col, value, racePreferred);
+                if (isPreferred) {
+                    Utils.addClass(cell, 'preferred-cell');
+                    count++;
                 }
-                
-                if (isPreferred) { Utils.addClass(cell, 'preferred-cell'); count++; }
             });
+            
             horseCounts.set(row.dataset.horse, count);
         });
         
+        return horseCounts;
+    },
+    
+    isCellPreferred(col, value, racePreferred) {
+        if (col.check) {
+            return col.check(value);
+        }
+        
+        if (col.type && racePreferred[col.name] !== undefined) {
+            const numValue = Utils.parseNum(value, col.type === 'max' ? -Infinity : Infinity);
+            return numValue === racePreferred[col.name] && (col.type === 'max' || numValue > 0);
+        }
+        
+        return false;
+    },
+    
+    markMostPreferredHorses(runnerRows, horseCounts) {
         const maxCount = Math.max(...horseCounts.values());
+        
         runnerRows.forEach(row => {
             const count = horseCounts.get(row.dataset.horse);
             Utils.removeClass(row, 'most-preferred-horse');
@@ -719,16 +800,19 @@ const PreferredHighlight = {
             
             if (count === maxCount && maxCount > 0) {
                 Utils.addClass(row, 'most-preferred-horse');
-                const nameCell = row.cells[4];
-                if (nameCell && !Utils.$('.most-preferred-badge', nameCell)) {
-                    const badge = document.createElement('span');
-                    badge.className = 'most-preferred-badge';
-                    badge.textContent = `${count}★`;
-                    badge.title = `${count} preferred attribute${count > 1 ? 's' : ''}`;
-                    nameCell.appendChild(badge);
-                }
+                this.addPreferredBadge(row.cells[4], count);
             }
         });
+    },
+    
+    addPreferredBadge(nameCell, count) {
+        if (!nameCell || Utils.$('.most-preferred-badge', nameCell)) return;
+        
+        const badge = document.createElement('span');
+        badge.className = 'most-preferred-badge';
+        badge.textContent = `${count}★`;
+        badge.title = `${count} preferred attribute${count > 1 ? 's' : ''}`;
+        nameCell.appendChild(badge);
     },
     
     update(raceNum) {
@@ -745,7 +829,12 @@ const PreferredHighlight = {
 };
 
 const FavStyleChart = {
-    styleColors: { 'FrontRunner': '#48bb78', 'Pacer': '#667eea', 'Closer': '#f56565', 'Unknown': '#a0aec0' },
+    styleColors: {
+        'FrontRunner': '#48bb78',
+        'Pacer': '#667eea',
+        'Closer': '#f56565',
+        'Unknown': '#a0aec0'
+    },
     
     draw(raceNum) {
         const container = Utils.$(`#fav-style-chart-${raceNum}`);
@@ -754,13 +843,9 @@ const FavStyleChart = {
         const raceContent = Utils.$(`#race-${raceNum}`);
         if (!raceContent) return;
         
-        const distribution = Utils.$$('.fav-style', raceContent).reduce((dist, cell) => {
-            const style = cell.textContent.trim();
-            if (style) dist[style] = (dist[style] || 0) + 1;
-            return dist;
-        }, {});
-        
+        const distribution = this.getStyleDistribution(raceContent);
         const entries = Object.entries(distribution).sort((a, b) => b[1] - a[1]);
+        
         if (!entries.length) {
             container.innerHTML = '';
             return;
@@ -769,16 +854,12 @@ const FavStyleChart = {
         const labels = entries.map(([style]) => style);
         const values = entries.map(([, count]) => count);
         const colors = labels.map(s => this.styleColors[s] || '#a0aec0');
-        const total = values.reduce((a, b) => a + b, 0);
         
         const data = [{
-            values: values,
-            labels: labels,
+            values,
+            labels,
             type: 'pie',
-            marker: {
-                colors: colors,
-                line: { color: 'white', width: 2 }
-            },
+            marker: { colors, line: { color: 'white', width: 2 } },
             textposition: 'inside',
             textinfo: 'label+percent',
             hovertemplate: '%{label}<br>%{value} horses (%{percent})<extra></extra>',
@@ -788,7 +869,7 @@ const FavStyleChart = {
         
         const layout = {
             showlegend: true,
-                    legend: {
+            legend: {
                 orientation: 'h',
                 x: 0.5,
                 xanchor: 'center',
@@ -801,12 +882,15 @@ const FavStyleChart = {
             height: 280
         };
         
-        const config = {
-            responsive: true,
-            displayModeBar: false
-        };
-        
-        Plotly.newPlot(container, data, layout, config);
+        Plotly.newPlot(container, data, layout, { responsive: true, displayModeBar: false });
+    },
+    
+    getStyleDistribution(raceContent) {
+        return Utils.$$('.fav-style', raceContent).reduce((dist, cell) => {
+            const style = cell.textContent.trim();
+            if (style) dist[style] = (dist[style] || 0) + 1;
+            return dist;
+        }, {});
     },
     
     update(raceNum) {
@@ -821,19 +905,32 @@ const FavStyleChart = {
 };
 
 const TradeCalculator = {
-    state: new Map(), // Store state per race: { excludedRunners, plaCover, qplBanker, qplCover, qplFilter }
+    state: new Map(),
     
     getState(raceNum) {
         if (!this.state.has(raceNum)) {
             this.state.set(raceNum, {
                 excludedRunners: new Set(),
                 plaCover: new Set(),
-                qplBanker: null,
+                qplBanker: '1',
                 qplCover: new Set(),
-                qplFilter: false
+                qplFilter: false,
+                plaParetoController: null,
+                qplParetoController: null
             });
         }
         return this.state.get(raceNum);
+    },
+    
+    showLoadingIndicator(plotContainer) {
+        plotContainer.innerHTML = `<div style="text-align: center; padding: 60px 20px; color: #667eea;">
+            <div style="font-size: 1.2em; margin-bottom: 10px;">⏳ Loading Pareto Frontier...</div>
+            <div style="font-size: 0.9em; color: #999;">Computing optimal trade combinations</div>
+        </div>`;
+    },
+    
+    showErrorIndicator(plotContainer) {
+        plotContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #e53e3e;">Error loading Pareto data</div>';
     },
     
     showTab(raceNum, tabName) {
@@ -841,60 +938,120 @@ const TradeCalculator = {
         const raceContent = Utils.$(`#race-${validRaceNum}`);
         if (!raceContent) return;
         
-        // Update tab buttons
-        Utils.removeClass(Utils.$$('.trade-tab-btn', raceContent), 'active');
-        const tabTextMap = { 'pla': 'PLA', 'qpl': 'QPL' };
-        const activeTabBtn = Array.from(Utils.$$('.trade-tab-btn', raceContent))
-            .find(btn => btn.textContent.trim() === tabTextMap[tabName]);
-        if (activeTabBtn) Utils.addClass(activeTabBtn, 'active');
-        
-        // Update tab content
-        Utils.removeClass(Utils.$$('.trade-tab-content', raceContent), 'active');
-        Utils.addClass(Utils.$(`#trade-${tabName}-${validRaceNum}`), 'active');
+        this.updateTabButtons(raceContent, tabName);
+        this.updateTabContent(raceContent, validRaceNum, tabName);
+        this.syncExcludeButtons(validRaceNum, tabName);
+        this.loadParetoForTab(validRaceNum, tabName);
     },
     
-    toggleExclude(raceNum, runnerNo) {
-        const validRaceNum = Utils.validateRaceNum(raceNum);
-        const state = this.getState(validRaceNum);
-        const btn = Utils.$(`#pareto-exclude-${validRaceNum} [data-runner="${runnerNo}"]`);
+    updateTabButtons(raceContent, tabName) {
+        Utils.removeClass(Utils.$$('.trade-tab-btn', raceContent), 'active');
+        const tabTextMap = { 'pla': 'PLA', 'qpl': 'QPL' };
+        const activeTabBtn = Utils.$$('.trade-tab-btn', raceContent)
+            .find(btn => btn.textContent.trim() === tabTextMap[tabName]);
+        if (activeTabBtn) Utils.addClass(activeTabBtn, 'active');
+    },
+    
+    updateTabContent(raceContent, raceNum, tabName) {
+        Utils.removeClass(Utils.$$('.trade-tab-content', raceContent), 'active');
+        Utils.addClass(Utils.$(`#trade-${tabName}-${raceNum}`), 'active');
+    },
+    
+    syncExcludeButtons(raceNum, tabName) {
+        const state = this.getState(raceNum);
+        const excludeButtons = Utils.$$(`#${tabName}-pareto-exclude-${raceNum} .runner-select-btn`);
         
-        if (state.excludedRunners.has(runnerNo)) {
-            state.excludedRunners.delete(runnerNo);
+        excludeButtons.forEach(btn => {
+            const runnerNo = btn.dataset.runner;
+            if (state.excludedRunners.has(runnerNo)) {
+                Utils.addClass(btn, 'selected');
+            } else {
+                Utils.removeClass(btn, 'selected');
+            }
+        });
+    },
+    
+    loadParetoForTab(raceNum, tabName) {
+        if (tabName === 'pla') {
+            this.loadPLAParetoData(raceNum);
+        } else if (tabName === 'qpl') {
+            this.loadQPLParetoData(raceNum);
+        }
+    },
+    
+    toggleSetMember(raceNum, set, selector, runnerNo, reloadCallback = null) {
+        const btn = Utils.$(selector);
+        
+        if (set.has(runnerNo)) {
+            set.delete(runnerNo);
             Utils.removeClass(btn, 'selected');
         } else {
-            state.excludedRunners.add(runnerNo);
+            set.add(runnerNo);
             Utils.addClass(btn, 'selected');
         }
         
-        this.loadParetoData(validRaceNum);
+        if (reloadCallback) reloadCallback();
+    },
+    
+    toggleParetoExclude(raceNum, type, runnerNo) {
+        const validRaceNum = Utils.validateRaceNum(raceNum);
+        const state = this.getState(validRaceNum);
+        
+        if (state.excludedRunners.has(runnerNo)) {
+            state.excludedRunners.delete(runnerNo);
+        } else {
+            state.excludedRunners.add(runnerNo);
+        }
+        
+        this.updateExcludeButtonsForRunner(validRaceNum, runnerNo);
+        
+        const activeRace = Utils.$('.race-content.active');
+        if (activeRace && activeRace.id === `race-${validRaceNum}`) {
+            const activeTab = Utils.$('.trade-tab-content.active', activeRace);
+            if (activeTab?.id === `trade-pla-${validRaceNum}`) {
+                this.loadPLAParetoData(validRaceNum);
+            } else if (activeTab?.id === `trade-qpl-${validRaceNum}`) {
+                this.loadQPLParetoData(validRaceNum);
+            }
+        }
+    },
+    
+    updateExcludeButtonsForRunner(raceNum, runnerNo) {
+        const state = this.getState(raceNum);
+        const isExcluded = state.excludedRunners.has(runnerNo);
+        
+        ['pla', 'qpl'].forEach(type => {
+            const btn = Utils.$(`#${type}-pareto-exclude-${raceNum} [data-runner="${runnerNo}"]`);
+            if (btn) {
+                if (isExcluded) {
+                    Utils.addClass(btn, 'selected');
+                } else {
+                    Utils.removeClass(btn, 'selected');
+                }
+            }
+        });
     },
     
     toggleCover(raceNum, type, runnerNo) {
         const validRaceNum = Utils.validateRaceNum(raceNum);
         const state = this.getState(validRaceNum);
         const coverSet = type === 'pla' ? state.plaCover : state.qplCover;
-        const btn = Utils.$(`#${type}-cover-${validRaceNum} [data-runner="${runnerNo}"]`);
+        const selector = `#${type}-cover-${validRaceNum} [data-runner="${runnerNo}"]`;
         
-        if (coverSet.has(runnerNo)) {
-            coverSet.delete(runnerNo);
-            Utils.removeClass(btn, 'selected');
-        } else {
-            coverSet.add(runnerNo);
-            Utils.addClass(btn, 'selected');
-        }
+        this.toggleSetMember(validRaceNum, coverSet, selector, runnerNo);
     },
     
     selectBanker(raceNum, runnerNo) {
         const validRaceNum = Utils.validateRaceNum(raceNum);
         const state = this.getState(validRaceNum);
         
-        // Deselect all banker buttons
         Utils.removeClass(Utils.$$(`#qpl-banker-${validRaceNum} .runner-radio-btn`), 'selected');
         
-        // Select the clicked one
         const btn = Utils.$(`#qpl-banker-${validRaceNum} [data-runner="${runnerNo}"]`);
         state.qplBanker = runnerNo;
         Utils.addClass(btn, 'selected');
+        
+        this.loadQPLParetoData(validRaceNum);
     },
     
     toggleFilter(raceNum) {
@@ -905,21 +1062,59 @@ const TradeCalculator = {
         state.qplFilter = !state.qplFilter;
         btn.dataset.filter = state.qplFilter.toString();
         btn.textContent = state.qplFilter ? 'ON' : 'OFF';
+        
+        this.loadQPLParetoData(validRaceNum);
     },
     
-    async loadParetoData(raceNum) {
-        try {
-            const validRaceNum = Utils.validateRaceNum(raceNum);
-            const state = this.getState(validRaceNum);
-            const exclude = Array.from(state.excludedRunners).sort((a, b) => parseInt(a) - parseInt(b)).join(',');
-            
-            const data = await API.fetchParetoData(validRaceNum, exclude);
-            this.drawParetoPlot(validRaceNum, data);
-        } catch (error) {
-            console.error(`Error loading Pareto data for race ${raceNum}:`, error);
-            const plotContainer = Utils.$(`#pareto-plot-${raceNum}`);
-            if (plotContainer) plotContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">Error loading Pareto data</div>';
+    async loadParetoData(raceNum, type) {
+        const validRaceNum = Utils.validateRaceNum(raceNum);
+        const state = this.getState(validRaceNum);
+        const controllerKey = `${type}ParetoController`;
+        
+        if (state[controllerKey]) {
+            state[controllerKey].abort();
         }
+        
+        state[controllerKey] = new AbortController();
+        
+        try {
+            const plotContainer = Utils.$(`#${type}-pareto-plot-${raceNum}`);
+            if (!plotContainer) return;
+            
+            this.showLoadingIndicator(plotContainer);
+            
+            const exclude = Array.from(state.excludedRunners)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .join(',');
+            
+            let data;
+            if (type === 'pla') {
+                data = await API.fetchParetoData(validRaceNum, exclude, state[controllerKey].signal);
+            } else {
+                const banker = state.qplBanker || '1';
+                const filter = state.qplFilter;
+                data = await API.fetchQParetoData(validRaceNum, banker, exclude, filter, state[controllerKey].signal);
+            }
+            
+            this.drawParetoPlot(validRaceNum, type, data);
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                Utils.log(`${type.toUpperCase()} Pareto request cancelled for race ${raceNum}`);
+                return;
+            }
+            
+            console.error(`Error loading ${type.toUpperCase()} Pareto data for race ${raceNum}:`, error);
+            const plotContainer = Utils.$(`#${type}-pareto-plot-${raceNum}`);
+            if (plotContainer) this.showErrorIndicator(plotContainer);
+        }
+    },
+    
+    async loadPLAParetoData(raceNum) {
+        return this.loadParetoData(raceNum, 'pla');
+    },
+    
+    async loadQPLParetoData(raceNum) {
+        return this.loadParetoData(raceNum, 'qpl');
     },
     
     async calculatePLA(raceNum) {
@@ -932,7 +1127,9 @@ const TradeCalculator = {
                 return;
             }
             
-            const cover = Array.from(state.plaCover).sort((a, b) => parseInt(a) - parseInt(b)).join(',');
+            const cover = Array.from(state.plaCover)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .join(',');
             const data = await API.fetchPLAData(validRaceNum, cover);
             this.updateMetrics(validRaceNum, 'pla', data);
         } catch (error) {
@@ -956,7 +1153,9 @@ const TradeCalculator = {
                 return;
             }
             
-            const cover = Array.from(state.qplCover).sort((a, b) => parseInt(a) - parseInt(b)).join(',');
+            const cover = Array.from(state.qplCover)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .join(',');
             const data = await API.fetchQPLData(validRaceNum, state.qplBanker, cover, state.qplFilter);
             this.updateMetrics(validRaceNum, 'qpl', data);
         } catch (error) {
@@ -970,63 +1169,56 @@ const TradeCalculator = {
         if (!metricsContainer) return;
         
         const metrics = [
-            { label: 'Cost', value: data.Covered?.length || 0 },
-            { label: 'Win Prob', value: data.WinProb !== undefined ? (data.WinProb*100).toFixed(2) + '%' : '-' },
-            { label: 'Exp Value', value: data.ExpValue !== undefined ? data.ExpValue.toFixed(2) : '-' },
-            { label: 'Avg Odds', value: data.AvgOdds !== undefined ? data.AvgOdds.toFixed(2) : '-' }
+            data.Covered?.length || 0,
+            data.WinProb !== undefined ? `${(data.WinProb * 100).toFixed(2)}%` : '-',
+            data.ExpValue !== undefined ? data.ExpValue.toFixed(2) : '-',
+            data.AvgOdds !== undefined ? data.AvgOdds.toFixed(2) : '-'
         ];
         
         const cards = Utils.$$('.metric-card', metricsContainer);
-        metrics.forEach((metric, i) => {
-            if (cards[i]) {
-                Utils.$('.metric-value', cards[i]).textContent = metric.value;
-            }
+        metrics.forEach((value, i) => {
+            const valueEl = Utils.$('.metric-value', cards[i]);
+            if (valueEl) valueEl.textContent = value;
         });
     },
     
-    drawParetoPlot(raceNum, data) {
-        const plotContainer = Utils.$(`#pareto-plot-${raceNum}`);
+    drawParetoPlot(raceNum, type, data) {
+        const plotContainer = Utils.$(`#${type}-pareto-plot-${raceNum}`);
         if (!plotContainer) return;
         
         if (!data || data.length === 0) {
-            plotContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No Pareto data available</div>';
+            plotContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No Pareto trade</div>';
             return;
         }
         
-        // Group by cost
-        const groupedByCost = {};
-        data.forEach(trade => {
+        const groupedByCost = data.reduce((acc, trade) => {
             const cost = trade.Covered.length;
-            if (!groupedByCost[cost]) groupedByCost[cost] = [];
-            groupedByCost[cost].push(trade);
-        });
+            if (!acc[cost]) acc[cost] = [];
+            acc[cost].push(trade);
+            return acc;
+        }, {});
         
-        // Create traces for each cost level
-        const traces = Object.keys(groupedByCost).sort((a, b) => parseInt(a) - parseInt(b)).map(cost => {
-            const trades = groupedByCost[cost];
-            return {
-                x: trades.map(t => t.WinProb),
-                y: trades.map(t => t.ExpValue),
-                mode: 'markers',
-                type: 'scatter',
-                name: `Cost ${cost}`,
-                marker: {
-                    size: 8,
-                    line: { width: 1, color: 'white' }
-                },
-                text: trades.map(t => 
-                    `Cost: ${cost}<br>` +
-                    `Covered: [${t.Covered.join(', ')}]<br>` +
-                    `Win Prob: ${t.WinProb.toFixed(2)}%<br>` +
-                    `Exp Value: ${t.ExpValue.toFixed(2)}<br>` +
-                    `Avg Odds: ${t.AvgOdds.toFixed(2)}`
-                ),
-                hovertemplate: '%{text}<extra></extra>'
-            };
-        });
+        const traces = Object.keys(groupedByCost)
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .map(cost => {
+                const trades = groupedByCost[cost];
+                return {
+                    x: trades.map(t => t.WinProb),
+                    y: trades.map(t => t.ExpValue),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: `Cost ${cost}`,
+                    marker: { size: 8, line: { width: 1, color: 'white' } },
+                    text: trades.map(t => 
+                        `Cost: ${cost}<br>Covered: [${t.Covered.join(', ')}]<br>` +
+                        `Win Prob: ${t.WinProb.toFixed(2)}%<br>Exp Value: ${t.ExpValue.toFixed(2)}<br>` +
+                        `Avg Odds: ${t.AvgOdds.toFixed(2)}`
+                    ),
+                    hovertemplate: '%{text}<extra></extra>'
+                };
+            });
         
         const isMobile = window.innerWidth <= 768;
-        
         const layout = {
             xaxis: { title: 'Win Probability (%)' },
             yaxis: { title: 'Expected Value' },
@@ -1046,28 +1238,37 @@ const TradeCalculator = {
             paper_bgcolor: 'white'
         };
         
-        const config = {
-            responsive: true,
-            displayModeBar: false
-        };
-        
-        Plotly.newPlot(plotContainer, traces, layout, config);
+        Plotly.newPlot(plotContainer, traces, layout, { responsive: true, displayModeBar: false });
     },
     
     async updateParetoForOddsChange(raceNum) {
-        // Update Pareto plot for the active race (since it's always visible now)
         const activeRace = Utils.$('.race-content.active');
-        if (activeRace && activeRace.id === `race-${raceNum}`) {
-            await this.loadParetoData(raceNum);
+        if (!activeRace || activeRace.id !== `race-${raceNum}`) return;
+        
+        const activeTab = Utils.$('.trade-tab-content.active', activeRace);
+        if (activeTab?.id === `trade-pla-${raceNum}`) {
+            await this.loadPLAParetoData(raceNum);
+        } else if (activeTab?.id === `trade-qpl-${raceNum}`) {
+            await this.loadQPLParetoData(raceNum);
         }
     },
     
     initAll() {
-        // Load Pareto data for the active race
+        Utils.$$('.race-content').forEach(raceContent => {
+            const raceNum = raceContent.id.replace('race-', '');
+            this.getState(raceNum);
+            
+            const bankerBtn = Utils.$(`#qpl-banker-${raceNum} [data-runner="1"]`);
+            if (bankerBtn) Utils.addClass(bankerBtn, 'selected');
+            
+            this.syncExcludeButtons(raceNum, 'pla');
+            this.syncExcludeButtons(raceNum, 'qpl');
+        });
+        
         const activeRace = Utils.$('.race-content.active');
         if (activeRace) {
             const raceNum = activeRace.id.replace('race-', '');
-            this.loadParetoData(raceNum);
+            this.loadPLAParetoData(raceNum);
         }
     }
 };
@@ -1076,15 +1277,18 @@ const UI = {
     showRace(raceNum) {
         try {
             const validRaceNum = Utils.validateRaceNum(raceNum);
+            
             Utils.removeClass(Utils.$$('.tab-btn'), 'active');
             Utils.addClass(Utils.$(`#tab-${validRaceNum}`), 'active');
             Utils.removeClass(Utils.$$('.race-content'), 'active');
             Utils.addClass(Utils.$(`#race-${validRaceNum}`), 'active');
+            
             sessionStorage.setItem('activeRaceTab', validRaceNum);
+            
             if (!Cache.has('odds', validRaceNum)) Odds.load(validRaceNum);
             FavStyleChart.draw(validRaceNum);
             PreferredHighlight.update(validRaceNum);
-            TradeCalculator.loadParetoData(validRaceNum);
+            TradeCalculator.loadPLAParetoData(validRaceNum);
         } catch (error) {
             console.error('Error showing race:', error);
         }
@@ -1094,10 +1298,12 @@ const UI = {
         const raceContent = Utils.$(`#race-${raceNum}`);
         const expandAllBtn = Utils.$('.expand-all-btn', raceContent);
         const detailsRows = Utils.$$('.runner-details-row', raceContent);
-        const allExpanded = detailsRows.length > 0 && detailsRows.every(row => row.classList.contains('expanded'));
+        const allExpanded = detailsRows.length > 0 && 
+                           detailsRows.every(row => row.classList.contains('expanded'));
         
         Utils.toggleClass(expandAllBtn, 'all-expanded', allExpanded);
         Utils.$('.expand-all-text', expandAllBtn).textContent = allExpanded ? 'Collapse All' : 'Expand All';
+        
         const icon = Utils.$('.expand-all-icon', expandAllBtn);
         if (icon) icon.textContent = allExpanded ? '▲' : '▼';
     },
@@ -1109,102 +1315,90 @@ const UI = {
             if (!table) return;
             
             const tbody = Utils.$('tbody', table);
-            const allHeaders = Utils.$$('thead th', table);
-            const header = allHeaders[columnIndex];
-            
+            const header = Utils.$$('thead th', table)[columnIndex];
             if (!tbody || !header) return;
             
-            // Determine sort direction BEFORE any DOM manipulation
-            const wasAscending = header.classList.contains('sort-asc');
-            const wasDescending = header.classList.contains('sort-desc');
-            const isAscending = wasDescending || !wasAscending; // If desc or unsorted, go asc. If asc, go desc.
-            
-            // Collect all runner rows with their details rows and sort data
-            // IMPORTANT: Store both the elements AND extract them from DOM immediately
-            const rowPairs = [];
-            const allRows = Array.from(tbody.children); // Convert to array immediately
-            
-            for (let i = 0; i < allRows.length; i++) {
-                const row = allRows[i];
-                if (row.classList && row.classList.contains('runner-row')) {
-                    const detailsRow = allRows[i + 1]; // Get the next row
-                    const cell = row.cells[columnIndex];
-                    
-                    if (cell) {
-                        const rawValue = cell.textContent.trim();
-                        let sortValue;
-                        
-                        if (type === 'number') {
-                            if (rawValue === '-' || rawValue === '') {
-                                sortValue = isAscending ? Infinity : -Infinity;
-                            } else {
-                                sortValue = Utils.parseNum(rawValue, isAscending ? Infinity : -Infinity);
-                            }
-                        } else {
-                            sortValue = rawValue.toLowerCase();
-                        }
-                        
-                        rowPairs.push({
-                            runnerRow: row,
-                            detailsRow: detailsRow && detailsRow.classList && detailsRow.classList.contains('runner-details-row') ? detailsRow : null,
-                            sortValue: sortValue
-                        });
-                    }
-                    
-                    i++; // Skip the details row in the loop
-                }
-            }
+            const isAscending = header.classList.contains('sort-desc') || !header.classList.contains('sort-asc');
+            const rowPairs = this.extractRowPairs(tbody, columnIndex, type, isAscending);
             
             if (rowPairs.length === 0) return;
             
-            // Sort the pairs
-            rowPairs.sort((a, b) => {
-                const aVal = a.sortValue;
-                const bVal = b.sortValue;
-                
-                if (type === 'number') {
-                    return isAscending ? aVal - bVal : bVal - aVal;
-                } else {
-                    if (isAscending) {
-                        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-                    } else {
-                        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
-                    }
-                }
-            });
-            
-            // Update ALL header indicators
-            Utils.$$('thead th.sortable', table).forEach(h => {
-                Utils.removeClass(h, ['sort-asc', 'sort-desc']);
-                const arrow = Utils.$('.sort-arrow', h);
-                if (arrow) arrow.textContent = '⇅';
-            });
-            
-            // Set the current header's sort state
-            Utils.addClass(header, isAscending ? 'sort-asc' : 'sort-desc');
-            const arrow = Utils.$('.sort-arrow', header);
-            if (arrow) arrow.textContent = isAscending ? '▲' : '▼';
-            
-            // Remove all existing rows first (without using innerHTML)
-            while (tbody.firstChild) {
-                tbody.removeChild(tbody.firstChild);
-            }
-            
-            // Use DocumentFragment for efficient DOM manipulation
-            const fragment = document.createDocumentFragment();
-            rowPairs.forEach(({ runnerRow, detailsRow }) => {
-                fragment.appendChild(runnerRow);
-                if (detailsRow) fragment.appendChild(detailsRow);
-            });
-            
-            // Append sorted rows
-            tbody.appendChild(fragment);
+            this.sortRowPairs(rowPairs, type, isAscending);
+            this.updateSortIndicators(table, header, isAscending);
+            this.replaceTableBody(tbody, rowPairs);
             
             PreferredHighlight.update(validRaceNum);
         } catch (error) {
             console.error('Error sorting table:', error);
-            console.error(error.stack);
         }
+    },
+    
+    extractRowPairs(tbody, columnIndex, type, isAscending) {
+        const rowPairs = [];
+        const allRows = Array.from(tbody.children);
+        
+        for (let i = 0; i < allRows.length; i++) {
+            const row = allRows[i];
+            if (!row.classList?.contains('runner-row')) continue;
+            
+            const detailsRow = allRows[i + 1];
+            const cell = row.cells[columnIndex];
+            
+            if (cell) {
+                rowPairs.push({
+                    runnerRow: row,
+                    detailsRow: detailsRow?.classList?.contains('runner-details-row') ? detailsRow : null,
+                    sortValue: this.getSortValue(cell.textContent.trim(), type, isAscending)
+                });
+            }
+            i++;
+        }
+        
+        return rowPairs;
+    },
+    
+    getSortValue(rawValue, type, isAscending) {
+        if (type === 'number') {
+            if (rawValue === '-' || rawValue === '') {
+                return isAscending ? Infinity : -Infinity;
+            }
+            return Utils.parseNum(rawValue, isAscending ? Infinity : -Infinity);
+        }
+        return rawValue.toLowerCase();
+    },
+    
+    sortRowPairs(rowPairs, type, isAscending) {
+        rowPairs.sort((a, b) => {
+            if (type === 'number') {
+                return isAscending ? a.sortValue - b.sortValue : b.sortValue - a.sortValue;
+            }
+            const cmp = a.sortValue < b.sortValue ? -1 : a.sortValue > b.sortValue ? 1 : 0;
+            return isAscending ? cmp : -cmp;
+        });
+    },
+    
+    updateSortIndicators(table, activeHeader, isAscending) {
+        Utils.$$('thead th.sortable', table).forEach(h => {
+            Utils.removeClass(h, ['sort-asc', 'sort-desc']);
+            const arrow = Utils.$('.sort-arrow', h);
+            if (arrow) arrow.textContent = '⇅';
+        });
+        
+        Utils.addClass(activeHeader, isAscending ? 'sort-asc' : 'sort-desc');
+        const arrow = Utils.$('.sort-arrow', activeHeader);
+        if (arrow) arrow.textContent = isAscending ? '▲' : '▼';
+    },
+    
+    replaceTableBody(tbody, rowPairs) {
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+        
+        const fragment = document.createDocumentFragment();
+        rowPairs.forEach(({ runnerRow, detailsRow }) => {
+            fragment.appendChild(runnerRow);
+            if (detailsRow) fragment.appendChild(detailsRow);
+        });
+        
+        tbody.appendChild(fragment);
     },
     
     openTrackWorkoutVideo(raceDate, raceNum) {
@@ -1264,7 +1458,7 @@ window.sortTable = (raceNum, colIdx, type) => UI.sortTable(raceNum, colIdx, type
 window.openTrackWorkoutVideo = (date, raceNum) => UI.openTrackWorkoutVideo(date, raceNum);
 window.openTipsIndex = (raceNum) => UI.openTipsIndex(raceNum);
 window.showTradeTab = (raceNum, tabName) => TradeCalculator.showTab(raceNum, tabName);
-window.toggleExclude = (raceNum, runnerNo) => TradeCalculator.toggleExclude(raceNum, runnerNo);
+window.toggleParetoExclude = (raceNum, type, runnerNo) => TradeCalculator.toggleParetoExclude(raceNum, type, runnerNo);
 window.toggleCover = (raceNum, type, runnerNo) => TradeCalculator.toggleCover(raceNum, type, runnerNo);
 window.selectBanker = (raceNum, runnerNo) => TradeCalculator.selectBanker(raceNum, runnerNo);
 window.toggleFilter = (raceNum) => TradeCalculator.toggleFilter(raceNum);
