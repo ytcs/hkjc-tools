@@ -115,8 +115,26 @@ body {
     color: #333;
 }
 
-.race-info-item:has(.track-workout-btn) {
+.race-buttons-group {
     margin-left: auto;
+    display: flex;
+    gap: 8px;
+}
+
+.tips-index-btn {
+    padding: 8px 16px;
+    background: #9db68f;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+    transition: background 0.2s ease;
+}
+
+.tips-index-btn:hover {
+    background: #8aa67a;
 }
 
 .track-workout-btn {
@@ -417,6 +435,19 @@ body {
 
 .odds-table tbody tr:hover {
     background: #e0f2f1;
+}
+
+/* Odds difference styling */
+.odds-diff-negative {
+    background: #d1fae5;
+    color: #065f46;
+    font-weight: 600;
+}
+
+.odds-diff-positive {
+    background: #fee2e2;
+    color: #991b1b;
+    font-weight: 500;
 }
 
 /* Preferred highlighting */

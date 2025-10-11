@@ -55,7 +55,10 @@
                     <span class="race-info-label">Going</span>
                     <span class="race-info-value">{{ race.Going }}</span>
                 </div>
-                <div class="race-info-item">
+                <div class="race-info-item race-buttons-group">
+                    <button class="tips-index-btn" onclick="openTipsIndex('{{ race_num }}')">
+                        💡 Tips Index
+                    </button>
                     <button class="track-workout-btn" onclick="openTrackWorkoutVideo('{{ race_info.Date }}', '{{ race_num }}')">
                         🎥 Track Workout
                     </button>

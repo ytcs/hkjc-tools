@@ -181,9 +181,15 @@ const Odds = {
     updateDisplay(raceNum, oddsData) {
         if (!oddsData?.Raw || !oddsData?.Fit) return;
         
-        [['.odds-win', oddsData.Raw.WIN], ['.odds-win-fit', oddsData.Fit.WIN],
-         ['.odds-pla', oddsData.Raw.PLA], ['.odds-pla-fit', oddsData.Fit.PLA]]
+        // Update raw odds normally
+        [['.odds-win', oddsData.Raw.WIN], ['.odds-pla', oddsData.Raw.PLA]]
             .forEach(([cls, data]) => this.updateCells(`${cls}[data-race="${raceNum}"]`, data));
+        
+        // Update fit odds as differences
+        [['.odds-win-fit', oddsData.Raw.WIN, oddsData.Fit.WIN],
+         ['.odds-pla-fit', oddsData.Raw.PLA, oddsData.Fit.PLA]]
+            .forEach(([cls, rawData, fitData]) => 
+                this.updateCellsWithDiff(`${cls}[data-race="${raceNum}"]`, rawData, fitData));
         
         Utils.$$(`.odds-table[data-race="${raceNum}"]`).forEach(table => 
             this.updateOddsTable(table, table.dataset.horse, oddsData));
@@ -198,17 +204,72 @@ const Odds = {
         });
     },
     
+    updateCellsWithDiff(selector, rawData, fitData) {
+        Utils.$$(selector).forEach(cell => {
+            const horseNo = cell.dataset.horse;
+            const rawOdds = rawData?.[horseNo];
+            const fitOdds = fitData?.[horseNo];
+            
+            // Remove existing diff classes
+            Utils.removeClass(cell, ['odds-diff-positive', 'odds-diff-negative']);
+            
+            if (rawOdds !== undefined && fitOdds !== undefined) {
+                const diff = fitOdds - rawOdds;
+                const sign = diff >= 0 ? '+' : '';
+                cell.textContent = `${sign}${diff.toFixed(1)}`;
+                
+                // Add appropriate class
+                if (diff < 0) {
+                    Utils.addClass(cell, 'odds-diff-negative');
+                } else if (diff > 0) {
+                    Utils.addClass(cell, 'odds-diff-positive');
+                }
+            }
+        });
+    },
+    
     updateOddsTable(table, horseNo, oddsData) {
         const otherHorses = Object.keys(oddsData.Raw.WIN || {})
             .sort((a, b) => parseInt(a) - parseInt(b)).filter(h => h !== horseNo);
         const rows = Utils.$$('tbody tr', table);
         if (rows.length < 4) return;
         
-        [oddsData.Raw.QIN, oddsData.Fit.QIN, oddsData.Raw.QPL, oddsData.Fit.QPL].forEach((data, i) => {
+        // Row 0: QIN (raw), Row 1: QIN (fit), Row 2: QPL (raw), Row 3: QPL (fit)
+        const dataConfig = [
+            { data: oddsData.Raw.QIN, isFit: false, rawData: null },
+            { data: oddsData.Fit.QIN, isFit: true, rawData: oddsData.Raw.QIN },
+            { data: oddsData.Raw.QPL, isFit: false, rawData: null },
+            { data: oddsData.Fit.QPL, isFit: true, rawData: oddsData.Raw.QPL }
+        ];
+        
+        dataConfig.forEach(({ data, isFit, rawData }, i) => {
             Utils.$$('td:not(.odds-type-label)', rows[i]).forEach((cell, idx) => {
                 const h = otherHorses[idx];
-                const odds = data[horseNo]?.[h] || data[h]?.[horseNo];
-                cell.textContent = odds !== undefined ? odds : '-';
+                const odds = data?.[horseNo]?.[h] || data?.[h]?.[horseNo];
+                
+                // Remove existing diff classes
+                Utils.removeClass(cell, ['odds-diff-positive', 'odds-diff-negative']);
+                
+                if (isFit && rawData) {
+                    // Calculate and display difference
+                    const rawOdds = rawData[horseNo]?.[h] || rawData[h]?.[horseNo];
+                    if (odds !== undefined && rawOdds !== undefined) {
+                        const diff = odds - rawOdds;
+                        const sign = diff >= 0 ? '+' : '';
+                        cell.textContent = `${sign}${diff.toFixed(1)}`;
+                        
+                        if (diff < 0) {
+                            Utils.addClass(cell, 'odds-diff-negative');
+                        } else if (diff > 0) {
+                            Utils.addClass(cell, 'odds-diff-positive');
+                        }
+                    } else {
+                        cell.textContent = '-';
+                    }
+                } else {
+                    // Display raw odds normally
+                    cell.textContent = odds !== undefined ? odds : '-';
+                }
             });
         });
     },
@@ -219,18 +280,33 @@ const Odds = {
             .sort((a, b) => parseInt(a) - parseInt(b)).filter(h => h !== horseNo);
         if (!otherHorses.length) return '';
         
-        const createRow = (label, data) => `<tr><td class="odds-type-label">${label}</td>${
+        const createRow = (label, data, isFit = false, rawData = null) => `<tr><td class="odds-type-label">${label}</td>${
             otherHorses.map(h => {
                 const odds = data?.[horseNo]?.[h] || data?.[h]?.[horseNo];
+                
+                if (isFit && rawData) {
+                    const rawOdds = rawData?.[horseNo]?.[h] || rawData?.[h]?.[horseNo];
+                    if (odds !== undefined && rawOdds !== undefined) {
+                        const diff = odds - rawOdds;
+                        const sign = diff >= 0 ? '+' : '';
+                        const className = diff < 0 ? 'odds-diff-negative' : (diff > 0 ? 'odds-diff-positive' : '');
+                        return `<td class="${className}">${sign}${diff.toFixed(1)}</td>`;
+                    }
+                    return `<td>-</td>`;
+                }
+                
                 return `<td>${odds !== undefined ? odds : '-'}</td>`;
             }).join('')}</tr>`;
         
         return `<div class="odds-table-container">
             <table class="odds-table" data-race="${raceNum}" data-horse="${horseNo}">
                 <thead><tr><th>Type</th>${otherHorses.map(h => `<th>vs ${h}</th>`).join('')}</tr></thead>
-                <tbody>${[['QIN', oddsData.Raw.QIN], ['QIN (fit)', oddsData.Fit.QIN], 
-                          ['QPL', oddsData.Raw.QPL], ['QPL (fit)', oddsData.Fit.QPL]]
-                    .map(([label, data]) => createRow(label, data)).join('')}</tbody>
+                <tbody>${[
+                    ['QIN', oddsData.Raw.QIN, false, null], 
+                    ['QIN (fit)', oddsData.Fit.QIN, true, oddsData.Raw.QIN], 
+                    ['QPL', oddsData.Raw.QPL, false, null], 
+                    ['QPL (fit)', oddsData.Fit.QPL, true, oddsData.Raw.QPL]
+                ].map(([label, data, isFit, rawData]) => createRow(label, data, isFit, rawData)).join('')}</tbody>
             </table></div>`;
     },
     
@@ -806,6 +882,17 @@ const UI = {
             console.error('Error opening track workout video:', error);
             alert(`Unable to open track workout video: ${error.message}`);
         }
+    },
+    
+    openTipsIndex(raceNum) {
+        try {
+            const validRaceNum = Utils.validateRaceNum(raceNum);
+            const url = `https://racing.hkjc.com/racing/English/tipsindex/tips_index.asp?RaceNo=${validRaceNum}`;
+            window.open(url, 'tipsIndex', 'width=800,height=600,resizable=yes,scrollbars=yes');
+        } catch (error) {
+            console.error('Error opening tips index:', error);
+            alert(`Unable to open tips index: ${error.message}`);
+        }
     }
 };
 
@@ -840,6 +927,7 @@ window.toggleRunnerHistory = (row, raceNum, horseNo, going, track, dist) =>
 window.toggleAllRunners = (raceNum, btn) => RunnerDetails.toggleAll(raceNum, btn);
 window.sortTable = (raceNum, colIdx, type) => UI.sortTable(raceNum, colIdx, type);
 window.openTrackWorkoutVideo = (date, raceNum) => UI.openTrackWorkoutVideo(date, raceNum);
+window.openTipsIndex = (raceNum) => UI.openTipsIndex(raceNum);
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.addEventListener('beforeunload', () => App.cleanup());
