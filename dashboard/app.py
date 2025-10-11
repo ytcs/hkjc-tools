@@ -9,6 +9,7 @@ from hkjc.harville_model import fit_harville_to_odds
 from hkjc.historical import get_horse_data
 from hkjc.speedpro import speedmap, speedpro_energy
 from hkjc.strategy import qpbanker, place_only
+from hkjc import generate_all_qp_trades, generate_all_pla_trades, pareto_filter
 
 
 def arr_to_dict(arr: np.ndarray, dtype=float):
@@ -22,7 +23,7 @@ def arr_to_dict(arr: np.ndarray, dtype=float):
         dict: 1-indexed nested dictionary
     """
     if arr.ndim == 1:
-        return {i+1: dtype(v) for i, v in enumerate(arr) if not (np.isnan(v) or np.isinf(v))}
+        return {i+1: dtype(np.round(v, 1)) for i, v in enumerate(arr) if not (np.isnan(v) or np.isinf(v))}
 
     return {i+1: arr_to_dict(v) for i, v in enumerate(arr)}
 
@@ -110,7 +111,7 @@ def disp_horse_info(horse_no):
         elif track and track.upper() == 'ALL WEATHER TRACK':
             df = df.filter(pl.col('Track') == 'AWT')
         if going is not None:
-            df = df.filter(pl.col('G') == going)
+            df = df.filter(pl.col('G').str.starts_with(going[0]))
         if venue is not None:
             df = df.filter(pl.col('Venue') == venue)
 
@@ -135,8 +136,11 @@ def disp_speedmap(race_no=1):
 
 @app.route('/qp/<int:race_no>/<int:banker>/<cover>', methods=['GET'])
 def disp_qp_metrics(race_no=1, banker=1, cover='2'):
-    use_filter = request.args.get('filter', type=bool)
+    use_filter = request.args.get('filter')
+    use_filter = use_filter and (use_filter.lower() == 'true')
+
     odds = live_odds('', '', race_number=race_no)
+
     if use_filter:
         res = fit_harville_to_odds(odds)
         if res['success']:
@@ -146,12 +150,59 @@ def disp_qp_metrics(race_no=1, banker=1, cover='2'):
     win = qpbanker.win_probability(odds['PLA'], banker, covered)
     avg_odds = qpbanker.average_odds(odds['QPL'], banker, covered)
 
-    return {'Banker': banker, 'Covered': covered, 'ExpectedValue': ev, 'Win Rate': win, 'AvgOdds': avg_odds}
+    return {'Banker': banker, 'Covered': covered, 'ExpValue': round(ev, 2), 'WinProb': round(win, 2), 'AvgOdds': round(avg_odds, 2)}
 
 
-# TODO: Recommend QP trade given banker ?exclude= , , , &maxC=  => return list of pareto trades, cover, ev, win-prob, avgodds
+def elimination(lst):
+    cond = [~pl.col('Covered').list.contains(l) for l in lst]
+    return pl.all_horizontal(cond)
+
+
+def format_trade(trade):
+    return {'Banker': trade.get('Banker',None),
+            'Covered': trade['Covered'],
+            'WinProb': round(trade['WinProb'], 2),
+            'ExpValue': round(trade['ExpValue'], 2),
+            'AvgOdds': round(trade['AvgOdds'], 2)}
+
+
 @app.route('/qprec/<int:race_no>/<int:banker>', methods=['GET'])
 def disp_qp_recs(race_no=1, banker=1, exclude=[], maxC=None):
-    pass
+    use_filter = request.args.get('filter')
+    use_filter = use_filter and (use_filter.lower() == 'true')
+    exclude = request.args.get('exclude')
+    if exclude:
+        excluded = [int(v) for v in exclude.split(',')]
+    maxC = request.args.get('maxC', type=int)
 
-# TODO: Recommend Place only trade ?exclude= , , , &maxC => return list of pareto trades, cover, ev, win-prob, avgodds
+    df_trades = generate_all_qp_trades(
+        '', '', race_no, fit_harville=use_filter)
+    df_trades = df_trades.filter(pl.col('Banker') == banker)
+    df_trades = df_trades.filter(pl.col('ExpValue') >= 0.05)
+    if exclude:
+        df_trades = df_trades.filter(elimination(excluded))
+    if maxC:
+        df_trades = df_trades.filter(pl.col('NumCovered') <= maxC)
+    pareto_trades = pareto_filter(df_trades, [], ['WinProb', 'ExpValue']).sort(
+        'WinProb', descending=True)
+
+    return [format_trade(t) for t in pareto_trades.iter_rows(named=True)]
+
+
+@app.route('/plarec/<int:race_no>', methods=['GET'])
+def disp_pla_recs(race_no=1, exclude=[], maxC=None):
+    exclude = request.args.get('exclude')
+    if exclude:
+        excluded = [int(v) for v in exclude.split(',')]
+    maxC = request.args.get('maxC', type=int)
+
+    df_trades = generate_all_pla_trades('', '', race_no)
+    df_trades = df_trades.filter(pl.col('ExpValue') >= 0.05)
+    if exclude:
+        df_trades = df_trades.filter(elimination(excluded))
+    if maxC:
+        df_trades = df_trades.filter(pl.col('NumCovered') <= maxC)
+    pareto_trades = pareto_filter(df_trades, [], ['WinProb', 'ExpValue']).sort(
+        'WinProb', descending=True)
+
+    return [format_trade(t) for t in pareto_trades.iter_rows(named=True)]
