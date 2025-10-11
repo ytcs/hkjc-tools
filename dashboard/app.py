@@ -145,7 +145,7 @@ def disp_qp_metrics(race_no=1, banker=1, cover='2'):
         res = fit_harville_to_odds(odds)
         if res['success']:
             odds = res['odds_fit']
-    covered = [int(v) for v in cover.split(',')]
+    covered = [int(v) for v in cover.split(',') if int(v) != banker]
     ev = qpbanker.expected_value(odds['PLA'], odds['QPL'], banker, covered)
     win = qpbanker.win_probability(odds['PLA'], banker, covered)
     avg_odds = qpbanker.average_odds(odds['QPL'], banker, covered)
