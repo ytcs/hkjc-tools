@@ -162,7 +162,7 @@ def generate_all_pla_trades(date: str, venue_code: str, race_number: int, rebate
     if not fit_res['success']:
         raise RuntimeError(
             f"[ERROR] Harville model fitting failed: {fit_res.get('message','')}")
-    p_matrix = fit_res['prob_fit']['P_fitted']
+    p_matrix = fit_res['prob_fit']['P']
 
     results = [_process_single_pla_trade(covered, odds['PLA'], p_matrix, rebate)
                for covered in _all_subsets(candidates)]
