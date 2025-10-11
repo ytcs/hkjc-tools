@@ -115,7 +115,7 @@ def generate_all_qp_trades(date: str, venue_code: str, race_number: int, rebate:
     if fit_harville:
         fit_res = fit_harville_to_odds(odds)
         if fit_res['success']:
-            odds = fit_res['odds_fit']
+            odds['PLA'] = fit_res['odds_fit']['PLA']
         else:
             print(f"[WARNING] Harville model fitting failed: {fit_res.get('message','')}")
 
