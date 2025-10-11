@@ -348,7 +348,7 @@ const RunnerDetails = {
     
     createContent(raceNum, runnerNo, horseNo, oddsData, historyHtml) {
         const oddsSection = oddsData ? `<div class="details-left">${Odds.createSection(raceNum, runnerNo, oddsData)}</div>` : '';
-        return `<div class="runner-details-wrapper">${oddsSection}<div class="details-right">${historyHtml}</div></div>`;
+        return `<div class="runner-details-wrapper">${historyHtml}<div class="details-right">${oddsSection}</div></div>`;
     },
     
     async toggle(rowElement, raceNum, horseNo, going, track, distance) {
@@ -534,8 +534,8 @@ const PreferredHighlight = {
         { name: 'fitness', index: 10, check: v => parseFloat(v) >= 3 },
         { name: 'energyDiff', index: 11, type: 'max' },
         { name: 'energyDiffAdj', index: 12, type: 'max' },
-        { name: 'win', index: 14, type: 'min' },
-        { name: 'pla', index: 16, type: 'min' }
+        { name: 'win', index: 13, type: 'min' },
+        { name: 'pla', index: 15, type: 'min' }
     ],
     updateTimers: new Map(),
     
