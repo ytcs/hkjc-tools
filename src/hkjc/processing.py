@@ -139,7 +139,8 @@ def _process_single_pla_trade(covered: List[int], pla_odds: np.ndarray, p_matrix
 
 
 def generate_all_pla_trades(date: str, venue_code: str, race_number: int, rebate: float = 0.1) -> pl.DataFrame:
-    """Generate all possible place-only tickets for the specified race.
+    """Generate all possible place-only tickets for the specified race. 
+    We try to arbitrage the disagreement between market place odds and filtered odds.
 
     Args:
         date (str): Date in 'YYYY-MM-DD' format.
@@ -158,9 +159,7 @@ def generate_all_pla_trades(date: str, venue_code: str, race_number: int, rebate
 
     fit_res = fit_harville_to_odds(odds)
 
-    if fit_res['success']:
-        odds=fit_res['odds_fit']
-    else:
+    if not fit_res['success']:
         raise RuntimeError(
             f"[ERROR] Harville model fitting failed: {fit_res.get('message','')}")
     p_matrix = fit_res['P_fitted']
