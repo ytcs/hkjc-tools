@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, make_response
 from flask_caching import Cache
 
 import polars as pl
@@ -152,6 +152,21 @@ def disp_qp_metrics(race_no=1, banker=1, cover='2'):
 
     return {'Banker': banker, 'Covered': covered, 'ExpValue': round(ev, 2), 'WinProb': round(win, 2), 'AvgOdds': round(avg_odds, 2)}
 
+@app.route('/pla/<int:race_no>/<cover>', methods=['GET'])
+def disp_pla_metrics(race_no=1, cover=[]):
+    odds = live_odds('', '', race_number=race_no)
+
+    res = fit_harville_to_odds(odds)
+    if not res['success']:
+        raise RuntimeError(
+            f"[ERROR] Harville model fitting failed: {res.get('message','')}")
+    
+    covered = [int(v) for v in cover.split(',')]
+    ev = place_only.expected_value(odds['PLA'], res['prob_fit']['P'], covered)
+    win = place_only.win_probability(res['prob_fit']['P'], covered)
+    avg_odds = place_only.average_odds(odds['PLA'], covered)
+
+    return {'Covered': covered, 'ExpValue': round(ev, 2), 'WinProb': round(win, 2), 'AvgOdds': round(avg_odds, 2)}
 
 def elimination(lst):
     cond = [~pl.col('Covered').list.contains(l) for l in lst]
@@ -187,6 +202,8 @@ def disp_qp_recs(race_no=1, banker=1, exclude=[], maxC=None):
         'WinProb', descending=True)
 
     return [format_trade(t) for t in pareto_trades.iter_rows(named=True)]
+
+
 
 
 @app.route('/plarec/<int:race_no>', methods=['GET'])
