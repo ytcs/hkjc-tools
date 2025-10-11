@@ -198,7 +198,7 @@ def disp_qp_recs(race_no=1, banker=1, exclude=[], maxC=None):
         df_trades = df_trades.filter(elimination(excluded))
     if maxC:
         df_trades = df_trades.filter(pl.col('NumCovered') <= maxC)
-    pareto_trades = pareto_filter(df_trades, [], ['WinProb', 'ExpValue']).sort(
+    pareto_trades = pareto_filter(df_trades, ['NumCovered'], ['WinProb', 'ExpValue']).sort(
         'WinProb', descending=True)
 
     return [format_trade(t) for t in pareto_trades.iter_rows(named=True)]
