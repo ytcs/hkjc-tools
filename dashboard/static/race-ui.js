@@ -369,7 +369,7 @@ const UI = {
         try {
             const validRaceNum = Utils.validateRaceNum(raceNum);
             const url = `https://racing.hkjc.com/racing/English/tipsindex/tips_index.asp?RaceNo=${validRaceNum}`;
-            window.open(url, 'tipsIndex', 'width=800,height=600,resizable=yes,scrollbars=yes');
+            window.open(url, 'tipsIndex', 'width=1000,height=600,resizable=yes,scrollbars=yes');
         } catch (error) {
             console.error('Error opening tips index:', error);
             alert(`Unable to open tips index: ${error.message}`);
