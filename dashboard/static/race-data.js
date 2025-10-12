@@ -83,7 +83,33 @@ const Odds = {
             .sort((a, b) => parseInt(a) - parseInt(b))
             .filter(h => h !== horseNo);
         const rows = Utils.$$('tbody tr', table);
-        if (rows.length < 4) return;
+        
+        // Strict validation: must have exactly 4 rows
+        if (rows.length !== 4) {
+            Utils.log(`Odds table validation failed: expected 4 rows, got ${rows.length}`);
+            return;
+        }
+        
+        // Verify row structure by checking labels
+        const expectedLabels = ['QIN', 'QIN (fit)', 'QPL', 'QPL (fit)'];
+        const actualLabels = rows.map(row => Utils.$('.odds-type-label', row)?.textContent.trim());
+        const structureValid = expectedLabels.every((label, i) => label === actualLabels[i]);
+        
+        if (!structureValid) {
+            Utils.log(`Odds table structure mismatch. Expected: [${expectedLabels.join(', ')}], Got: [${actualLabels.join(', ')}]`);
+            return;
+        }
+        
+        // Additional validation: check data-row-type attributes if present
+        const expectedTypes = ['qin', 'qin-fit', 'qpl', 'qpl-fit'];
+        const actualTypes = rows.map(row => row.dataset.rowType);
+        if (actualTypes[0]) { // Only validate if data attributes exist
+            const typesValid = expectedTypes.every((type, i) => type === actualTypes[i]);
+            if (!typesValid) {
+                Utils.log(`Odds table type attributes mismatch. Expected: [${expectedTypes.join(', ')}], Got: [${actualTypes.join(', ')}]`);
+                return;
+            }
+        }
         
         const configs = [
             { data: oddsData.Raw.QIN, rawData: null },
@@ -126,7 +152,7 @@ const Odds = {
         
         if (!otherHorses.length) return '';
         
-        const createRow = (label, data, rawData = null) => {
+        const createRow = (label, data, rawData = null, rowType = '') => {
             const cells = otherHorses.map(h => {
                 const odds = data?.[horseNo]?.[h] || data?.[h]?.[horseNo];
                 
@@ -143,14 +169,15 @@ const Odds = {
                 return `<td>${odds !== undefined ? odds : '-'}</td>`;
             }).join('');
             
-            return `<tr><td class="odds-type-label">${label}</td>${cells}</tr>`;
+            const dataAttr = rowType ? ` data-row-type="${rowType}"` : '';
+            return `<tr${dataAttr}><td class="odds-type-label">${label}</td>${cells}</tr>`;
         };
         
         const rowConfigs = [
-            ['QIN', oddsData.Raw.QIN],
-            ['QIN (fit)', oddsData.Fit.QIN, oddsData.Raw.QIN],
-            ['QPL', oddsData.Raw.QPL],
-            ['QPL (fit)', oddsData.Fit.QPL, oddsData.Raw.QPL]
+            ['QIN', oddsData.Raw.QIN, null, 'qin'],
+            ['QIN (fit)', oddsData.Fit.QIN, oddsData.Raw.QIN, 'qin-fit'],
+            ['QPL', oddsData.Raw.QPL, null, 'qpl'],
+            ['QPL (fit)', oddsData.Fit.QPL, oddsData.Raw.QPL, 'qpl-fit']
         ];
         
         const headerCells = otherHorses.map(h => `<th>vs ${h}</th>`).join('');
