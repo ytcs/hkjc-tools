@@ -351,7 +351,10 @@ const TradeCalculator = {
     initAll() {
         Utils.$$('.race-content').forEach(raceContent => {
             const raceNum = raceContent.id.replace('race-', '');
-            this.getState(raceNum);
+            const state = this.getState(raceNum);
+            
+            // Auto-exclude runners with negative Energy Diff (Adj)
+            this.autoExcludeNegativeEnergy(raceNum, state);
             
             const bankerBtn = Utils.$(`#qpl-banker-${raceNum} [data-runner="1"]`);
             if (bankerBtn) Utils.addClass(bankerBtn, 'selected');
@@ -365,6 +368,24 @@ const TradeCalculator = {
             const raceNum = activeRace.id.replace('race-', '');
             this.loadPLAParetoData(raceNum);
         }
+    },
+    
+    autoExcludeNegativeEnergy(raceNum, state) {
+        const runnerRows = Utils.$$(`#race-${raceNum} .runner-row`);
+        
+        runnerRows.forEach(row => {
+            // Energy Diff (Adj) is in column index 12
+            const energyDiffAdj = Utils.parseNum(row.cells[12]?.textContent.trim(), 0);
+            
+            if (energyDiffAdj < 0) {
+                // Get runner number from the runner-no cell (column index 1)
+                const runnerNo = row.cells[1]?.textContent.trim();
+                if (runnerNo) {
+                    state.excludedRunners.add(runnerNo);
+                    Utils.log(`Auto-excluded runner ${runnerNo} in race ${raceNum} (Energy Diff Adj: ${energyDiffAdj})`);
+                }
+            }
+        });
     }
 };
 
