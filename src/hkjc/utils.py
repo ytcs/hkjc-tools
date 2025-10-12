@@ -10,6 +10,12 @@ def _try_int(value: str) -> int:
     except:
         return 0
     
+def _try_float(value: str) -> float:
+    try:
+        return float(value)
+    except:
+        return float('nan')
+    
 
 def _validate_date(date_str: str) -> bool:
     # validate date format

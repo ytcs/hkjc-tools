@@ -7,7 +7,7 @@ import requests
 from cachetools.func import ttl_cache
 import numpy as np
 
-from .utils import _try_int
+from .utils import _try_int, _try_float
 
 HKJC_LIVEODDS_ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
 
@@ -333,7 +333,7 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
 
     return [
         {"HorseID": node["combString"], "Type": pool.get(
-            "oddsType"), "Odds": float(node["oddsValue"])}
+            "oddsType"), "Odds": _try_float(node["oddsValue"])}
         for meeting in meetings
         for pool in meeting.get("pmPools", [])
         for node in pool.get("oddsNodes", [])
