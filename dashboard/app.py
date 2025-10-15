@@ -203,7 +203,21 @@ def disp_qp_recs(race_no=1, banker=1, exclude=[], maxC=None):
 
     return [format_trade(t) for t in pareto_trades.iter_rows(named=True)]
 
+@app.route('/predict/<int:race_no>', methods=['GET'])
+def disp_prediction(race_no=1):
+    odds_dict = live_odds('', '', race_no)
+    fitted_odds = fit_harville_to_odds(odds_dict)
+    p_matrix = fitted_odds['prob_fit']['P']
 
+    n_horses, _ = p_matrix.shape
+    prediction = np.zeros(n_horses, dtype=int)
+
+    for j in range(n_horses):
+        horse_for_this_place = np.argmax(p_matrix[:, j])
+        prediction[j] = horse_for_this_place + 1
+        p_matrix[horse_for_this_place, :] = -1
+
+    return [v for k,v in arr_to_dict(prediction,int).items()]
 
 
 @app.route('/plarec/<int:race_no>', methods=['GET'])

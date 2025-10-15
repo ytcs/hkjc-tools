@@ -74,7 +74,7 @@ const Utils = {
 };
 
 const State = {
-    caches: { runnerDetails: new Map(), speedmaps: new Map(), odds: new Map() },
+    caches: { runnerDetails: new Map(), speedmaps: new Map(), odds: new Map(), predictions: new Map() },
     polling: { oddsIntervalId: null },
     raceReadiness: new Map()
 };
@@ -170,6 +170,11 @@ const API = {
             const url = `/qp/${Utils.validateRaceNum(raceNum)}/${banker}/${cover}?filter=${filter}`;
             return (await this.fetch(url)).json();
         }, 0);
+    },
+    
+    fetchPredictions(raceNum) {
+        return RequestQueue.enqueue(async () => 
+            (await this.fetch(`/predict/${Utils.validateRaceNum(raceNum)}`)).json(), 0);
     }
 };
 

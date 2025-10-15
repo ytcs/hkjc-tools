@@ -10,6 +10,7 @@ const App = {
         FavStyleChart.initAll();
         PreferredHighlight.initAll();
         TradeCalculator.initAll();
+        Predictions.loadAll();
         Odds.startPolling();
         RunnerDetails.prefetchAll(activeRaceNum).catch(error => 
             console.error('Error in background prefetch:', error));

@@ -224,6 +224,60 @@ const FavStyleChart = {
     }
 };
 
+const Predictions = {
+    medals: ['🥇', '🥈', '🥉'],
+    
+    async load(raceNum) {
+        const container = Utils.$(`#prediction-content-${raceNum}`);
+        if (!container) return;
+        
+        if (Cache.has('predictions', raceNum)) {
+            this.display(raceNum, Cache.get('predictions', raceNum));
+            return;
+        }
+        
+        try {
+            const predictions = await API.fetchPredictions(raceNum);
+            Cache.set('predictions', raceNum, predictions);
+            this.display(raceNum, predictions);
+        } catch (error) {
+            console.error('Error loading predictions:', error);
+            container.innerHTML = '<div class="prediction-error">Unable to load predictions</div>';
+        }
+    },
+    
+    display(raceNum, predictions) {
+        const container = Utils.$(`#prediction-content-${raceNum}`);
+        if (!container || !Array.isArray(predictions) || predictions.length === 0) {
+            container.innerHTML = '<div class="prediction-error">No predictions available</div>';
+            return;
+        }
+        
+        const topN = 6; // Show top 6 predictions
+        const html = predictions.slice(0, topN).map((horseNo, index) => {
+            const position = index + 1;
+            const medal = this.medals[index] || '';
+            
+            return `
+                <div class="prediction-item" title="Predicted Position ${position}: Horse #${horseNo}">
+                    ${medal ? `<span class="prediction-medal">${medal}</span>` : 
+                             `<span class="prediction-position">${position}</span>`}
+                    <span class="prediction-horse">${horseNo}</span>
+                </div>
+            `;
+        }).join('');
+        
+        container.innerHTML = html;
+    },
+    
+    loadAll() {
+        Utils.$$('.race-content').forEach(rc => {
+            const raceNum = rc.id.replace('race-', '');
+            this.load(raceNum);
+        });
+    }
+};
+
 const UI = {
     showRace(raceNum) {
         try {
@@ -237,6 +291,7 @@ const UI = {
             sessionStorage.setItem('activeRaceTab', validRaceNum);
             
             if (!Cache.has('odds', validRaceNum)) Odds.load(validRaceNum);
+            if (!Cache.has('predictions', validRaceNum)) Predictions.load(validRaceNum);
             FavStyleChart.draw(validRaceNum);
             PreferredHighlight.update(validRaceNum);
             TradeCalculator.loadPLAParetoData(validRaceNum);

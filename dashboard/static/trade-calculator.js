@@ -307,7 +307,7 @@ const TradeCalculator = {
                     text: trades.map(t => 
                         `Cost: ${cost}<br>Covered: [${t.Covered.join(', ')}]<br>` +
                         (t.Banker !== null ? `Banker: ${t.Banker}<br>` : '')+ 
-                        `Win Prob: ${t.WinProb.toFixed(2)}%<br>Exp Value: ${t.ExpValue.toFixed(2)}<br>` +
+                        `Win Prob: ${t.WinProb.toFixed(2)*100}%<br>Exp Value: ${t.ExpValue.toFixed(2)}<br>` +
                         `Avg Odds: ${t.AvgOdds.toFixed(2)}`
                     ),
                     hovertemplate: '%{text}<extra></extra>'
