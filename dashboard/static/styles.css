@@ -234,6 +234,16 @@ body {
 .prediction-container {
     flex: 1;
     min-width: 300px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.prediction-label {
+    color: #666;
+    font-weight: 600;
+    font-size: 0.85em;
+    white-space: nowrap;
 }
 
 .prediction-icon {
@@ -300,13 +310,6 @@ body {
     color: #333;
     font-weight: 600;
     font-size: 0.85em;
-}
-
-.prediction-more {
-    color: #999;
-    font-size: 0.75em;
-    font-style: italic;
-    margin-left: 3px;
 }
 
 .runners-table {
