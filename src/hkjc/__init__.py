@@ -6,7 +6,7 @@ from importlib.metadata import version as _version
 
 __all__ = ["live", "features",
            "generate_all_qp_trades", "generate_all_pla_trades", "pareto_filter",
-           "speedpro_energy", "speedmap", "harveille_model",
+           "speedpro_energy", "speedmap", "harville_model",
            "generate_historical_data"]
 
 try:
