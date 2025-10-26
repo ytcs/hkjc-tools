@@ -16,9 +16,12 @@ Example:
 """
 
 import numpy as np
+import itertools
+import collections
+
 from scipy.optimize import minimize
 from numba import njit
-from typing import Tuple, Optional
+from typing import Tuple, List, Optional
 
 LAMBDA_DEFAULTS = {
     'WIN': 1.0,
@@ -26,6 +29,7 @@ LAMBDA_DEFAULTS = {
     'QPL': 1.5,
     'PLA': 0.7
 }
+
 
 @njit(cache=True)
 def _popcount(mask: int) -> int:
@@ -41,13 +45,13 @@ def _precompute_mask_info(n: int) -> Tuple[np.ndarray, np.ndarray]:
     max_mask = 1 << n
     mask_strength_coef = np.zeros((max_mask, n), dtype=np.float64)
     mask_popcount = np.zeros(max_mask, dtype=np.int32)
-    
+
     for mask in range(max_mask):
         mask_popcount[mask] = _popcount(mask)
         for i in range(n):
             if mask & (1 << i):
                 mask_strength_coef[mask, i] = 1.0
-    
+
     return mask_strength_coef, mask_popcount
 
 
@@ -55,33 +59,33 @@ def _precompute_mask_info(n: int) -> Tuple[np.ndarray, np.ndarray]:
 def _compute_dp_vectorized(theta: np.ndarray, k_max: int) -> np.ndarray:
     n = len(theta)
     max_mask = 1 << n
-    
+
     mask_strength_coef, mask_popcount = _precompute_mask_info(n)
     mask_strength = mask_strength_coef @ theta
-    
+
     dp = np.zeros((k_max + 1, max_mask))
     dp[0, 0] = 1.0
-    
+
     for k in range(k_max):
         valid_masks = np.where(mask_popcount == k)[0]
-        
+
         for mask in valid_masks:
             if dp[k, mask] == 0:
                 continue
-            
+
             s_mask = mask_strength[mask]
             remaining = 1.0 - s_mask
-            
+
             if remaining < 1e-12:
                 continue
-            
+
             prob_current = dp[k, mask]
-            
+
             for i in range(n):
                 if not (mask & (1 << i)):
                     next_mask = mask | (1 << i)
                     dp[k + 1, next_mask] += prob_current * theta[i] / remaining
-    
+
     return dp
 
 
@@ -89,30 +93,30 @@ def _compute_dp_vectorized(theta: np.ndarray, k_max: int) -> np.ndarray:
 def _extract_pair_in_top_k(dp: np.ndarray, n: int, k: int) -> np.ndarray:
     M = np.zeros((n, n))
     max_mask = 1 << n
-    
+
     mask_popcount = np.zeros(max_mask, dtype=np.int32)
     for mask in range(max_mask):
         mask_popcount[mask] = _popcount(mask)
-    
+
     masks_size_k = np.where(mask_popcount == k)[0]
-    
+
     for mask in masks_size_k:
         prob = dp[k, mask]
         if prob == 0:
             continue
-        
+
         horses = np.empty(k, dtype=np.int32)
         idx = 0
         for i in range(n):
             if mask & (1 << i):
                 horses[idx] = i
                 idx += 1
-        
+
         for i in range(k):
             for j in range(k):
                 if horses[i] != horses[j]:
                     M[horses[i], horses[j]] += prob
-    
+
     return M
 
 
@@ -120,78 +124,78 @@ def _extract_pair_in_top_k(dp: np.ndarray, n: int, k: int) -> np.ndarray:
 def _extract_top_k_probs(dp: np.ndarray, n: int, k_max: int) -> np.ndarray:
     T = np.zeros((n, k_max + 1))
     max_mask = 1 << n
-    
+
     mask_popcount = np.zeros(max_mask, dtype=np.int32)
     for mask in range(max_mask):
         mask_popcount[mask] = _popcount(mask)
-    
+
     for k in range(1, k_max + 1):
         masks_size_k = np.where(mask_popcount == k)[0]
-        
+
         for mask in masks_size_k:
             prob = dp[k, mask]
             if prob == 0:
                 continue
-            
+
             for i in range(n):
                 if mask & (1 << i):
                     T[i, k] += prob
-    
+
     return T
 
 
 @njit(cache=True)
 def _compute_probabilities(theta: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     n = len(theta)
-    
+
     dp = _compute_dp_vectorized(theta, n)
-    
+
     T = _extract_top_k_probs(dp, n, n)
-    
+
     P = np.zeros((n, n))
     for i in range(n):
         for j in range(n):
             P[i, j] = T[i, j + 1] - T[i, j]
-    
+
     W = P[:, 0]
     Qin = _extract_pair_in_top_k(dp, n, 2)
     Q = _extract_pair_in_top_k(dp, n, 3)
     b = T[:, 3]
-    
+
     return W, Qin, Q, b, P
 
 
 @njit(cache=True)
 def _kl_divergence(p_obs: np.ndarray, p_model: np.ndarray) -> float:
     eps = 1e-10
-    
+
     p_obs_flat = np.maximum(p_obs.ravel(), eps)
     p_model_flat = np.maximum(p_model.ravel(), eps)
-    
+
     sum_obs = p_obs_flat.sum()
     sum_model = p_model_flat.sum()
-    
+
     if sum_obs > eps:
         p_obs_flat = p_obs_flat / sum_obs
     if sum_model > eps:
         p_model_flat = p_model_flat / sum_model
-    
+
     return np.sum(p_obs_flat * np.log(p_obs_flat / p_model_flat))
 
 
 class HarvilleModel:
     """
     Fits Harville race model to betting market odds using dynamic programming.
-    
+
     The Harville model assigns each horse a latent strength parameter theta_i, where
     the probability of finishing next among remaining horses is proportional to 
     relative strength. This optimizer estimates theta from observed betting odds
     across multiple pool types.
-    
+
     Default lambda weights reflect that early Win odds are biased by informed 
     traders waiting until closing, while exotic pools provide more stable 
     signals for ensemble estimation.
-    
+
     Attributes:
         n (int): Number of horses
         lambda_win (float): Weight for Win pool loss
@@ -200,13 +204,13 @@ class HarvilleModel:
         lambda_banker (float): Weight for Banker pool loss
         takeout_rate (float): House take out rate (e.g., 0.175 = 17.5%)
     """
-    
-    def __init__(self, n_horses: int, lambda_win: float = LAMBDA_DEFAULTS['WIN'], lambda_qin: float = LAMBDA_DEFAULTS['QIN'], 
+
+    def __init__(self, n_horses: int, lambda_win: float = LAMBDA_DEFAULTS['WIN'], lambda_qin: float = LAMBDA_DEFAULTS['QIN'],
                  lambda_quinella: float = LAMBDA_DEFAULTS['QPL'], lambda_banker: float = LAMBDA_DEFAULTS['PLA'],
                  takeout_rate: float = 0.175) -> None:
         """
         Initialize model.
-        
+
         Args:
             n_horses: Number of horses in race (recommend <= 20 for speed)
             lambda_win: Weight for Win odds (prob horse finishes 1st)
@@ -216,13 +220,13 @@ class HarvilleModel:
             takeout_rate: House take out rate as decimal (default 0.175 = 17.5%).
                          The observed odds include the house's take, which makes
                          them higher than true odds. This parameter adjusts for that.
-            
+
         Raises:
             ValueError: If n_horses > 20 (exponential complexity warning)
         """
         if n_horses > 20:
             raise ValueError("N > 20 may be too slow (2^N complexity)")
-        
+
         self.n = n_horses
         self.lambda_win = lambda_win
         self.lambda_qin = lambda_qin
@@ -231,99 +235,100 @@ class HarvilleModel:
         self.takeout_rate = takeout_rate
         self._eval_count = 0
         self.result = None
-    
+
     def _adjust_for_takeout(self, probs: Optional[np.ndarray]) -> Optional[np.ndarray]:
         """
         Adjust observed probabilities to remove house takeout rate.
-        
+
         Observed odds from the betting market include the house's take, causing
         the sum of implied probabilities to exceed 1.0. This method adjusts them
         to represent true probabilities.
-        
+
         Args:
             probs: Observed probabilities (can be 1D or 2D array)
-            
+
         Returns:
             Adjusted probabilities with takeout removed, or None if input is None
         """
         if probs is None:
             return None
-        
+
         # Multiply by (1 - takeout_rate) to remove the house edge
         adjusted = probs * (1.0 - self.takeout_rate)
-        
+
         return adjusted
-    
+
     def _probs_to_market_odds(self, probs: np.ndarray) -> np.ndarray:
         """
         Convert fitted probabilities to market odds including takeout rate.
-        
+
         This converts true probabilities (which sum to 1.0) back to decimal odds
         as they would appear in the betting market, which includes the house's
         takeout rate. The resulting odds can be directly compared to observed odds.
-        
+
         Args:
             probs: Fitted probabilities (1D or 2D array)
-            
+
         Returns:
             Market odds (decimal format) with takeout reintroduced
         """
-        
+
         # Convert true probabilities to market odds with takeout
         # Market odds are worse (higher) than fair odds due to house edge
         return (1.0 - self.takeout_rate) / probs
-    
-    def _loss(self, theta: np.ndarray, W_obs: Optional[np.ndarray], 
-             Qin_obs: Optional[np.ndarray], Q_obs: Optional[np.ndarray], 
-             b_obs: Optional[np.ndarray]) -> float:
+
+    def _loss(self, theta: np.ndarray, W_obs: Optional[np.ndarray],
+              Qin_obs: Optional[np.ndarray], Q_obs: Optional[np.ndarray],
+              b_obs: Optional[np.ndarray]) -> float:
         """
         Compute weighted KL divergence loss between observed and model odds.
-        
+
         Args:
             theta: Strength parameters (will be normalized to simplex)
             W_obs: Observed Win probabilities (n,) or None
             Qin_obs: Observed Qin probabilities (n, n) or None
             Q_obs: Observed Quinella probabilities (n, n) or None
             b_obs: Observed Banker probabilities (n,) or None
-            
+
         Returns:
             Scalar loss value (sum of weighted KL divergences)
         """
         self._eval_count += 1
-        
+
         theta = np.abs(theta) + 1e-10
         theta = theta / theta.sum()
-        
-        W_model, Qin_model, Q_model, b_model, P_model = _compute_probabilities(theta)
-        
+
+        W_model, Qin_model, Q_model, b_model, P_model = _compute_probabilities(
+            theta)
+
         loss = 0.0
-        
+
         if W_obs is not None:
             loss += self.lambda_win * _kl_divergence(W_obs, W_model)
-        
+
         if Qin_obs is not None:
             loss += self.lambda_qin * _kl_divergence(Qin_obs, Qin_model)
-        
+
         if Q_obs is not None:
             loss += self.lambda_quinella * _kl_divergence(Q_obs, Q_model)
-        
+
         if b_obs is not None:
             loss += self.lambda_banker * _kl_divergence(b_obs, b_model)
-        
+
         return loss
-    
-    def fit(self, W_obs: Optional[np.ndarray] = None, 
+
+    def fit(self, W_obs: Optional[np.ndarray] = None,
             Qin_obs: Optional[np.ndarray] = None,
-            Q_obs: Optional[np.ndarray] = None, 
+            Q_obs: Optional[np.ndarray] = None,
             b_obs: Optional[np.ndarray] = None,
-            theta_init: Optional[np.ndarray] = None, 
+            theta_init: Optional[np.ndarray] = None,
             method: str = 'L-BFGS-B') -> dict:
         """
         Fit Harville model to observed betting odds.
-        
+
         At least one odds type must be provided. All odds should be probabilities
         (not decimal/fractional odds). Matrices should be symmetric where applicable.
-        
+
         Args:
             W_obs: Win probabilities, shape (n,). W_obs[i] = prob horse i wins
             Qin_obs: Qin probabilities, shape (n, n). Qin_obs[i,j] = prob horses
@@ -334,7 +339,7 @@ class HarvilleModel:
                    finishes in top 3
             theta_init: Initial strength guess (default: W_obs if available, else uniform)
             method: Scipy optimizer ('L-BFGS-B' or 'SLSQP')
-            
+
         Returns:
             Dictionary containing:
                 - success: Whether optimization converged
@@ -354,10 +359,10 @@ class HarvilleModel:
                     - QIN: Qin odds (n, n)
                     - QPL: Quinella Place odds (n, n)
                     - PLA: Place odds (n,)
-                
+
         Raises:
             ValueError: If no odds provided or shapes don't match n_horses
-            
+
         Example:
             >>> opt = HarvilleModel(n_horses=10, takeout_rate=0.175)
             >>> results = opt.fit(W_obs=win_probs, Q_obs=quinella_probs)
@@ -368,7 +373,7 @@ class HarvilleModel:
         """
         if W_obs is None and Qin_obs is None and Q_obs is None and b_obs is None:
             raise ValueError("At least one type of odds must be provided")
-        
+
         if W_obs is not None and W_obs.shape != (self.n,):
             raise ValueError(f"W_obs must be ({self.n},)")
         if Qin_obs is not None and Qin_obs.shape != (self.n, self.n):
@@ -377,13 +382,13 @@ class HarvilleModel:
             raise ValueError(f"Q_obs must be ({self.n}, {self.n})")
         if b_obs is not None and b_obs.shape != (self.n,):
             raise ValueError(f"b_obs must be ({self.n},)")
-        
+
         # Adjust observed probabilities for house takeout rate
         W_obs = self._adjust_for_takeout(W_obs)
         Qin_obs = self._adjust_for_takeout(Qin_obs)
         Q_obs = self._adjust_for_takeout(Q_obs)
         b_obs = self._adjust_for_takeout(b_obs)
-        
+
         if theta_init is None:
             if W_obs is not None:
                 theta_init = W_obs / W_obs.sum()
@@ -391,9 +396,9 @@ class HarvilleModel:
                 theta_init = np.ones(self.n) / self.n
         else:
             theta_init = theta_init / theta_init.sum()
-        
+
         self._eval_count = 0
-        
+
         if method == 'L-BFGS-B':
             result = minimize(
                 fun=lambda x: self._loss(x, W_obs, Qin_obs, Q_obs, b_obs),
@@ -411,18 +416,19 @@ class HarvilleModel:
                 constraints={'type': 'eq', 'fun': lambda x: x.sum() - 1},
                 options={'maxiter': 500, 'ftol': 1e-9}
             )
-        
+
         theta_opt = np.abs(result.x) + 1e-10
         theta_opt = theta_opt / theta_opt.sum()
-        
-        W_fitted, Qin_fitted, Q_fitted, b_fitted, P_fitted = _compute_probabilities(theta_opt)
-        
+
+        W_fitted, Qin_fitted, Q_fitted, b_fitted, P_fitted = _compute_probabilities(
+            theta_opt)
+
         # Convert fitted probabilities to market odds (with takeout reintroduced)
         WIN_odds_fitted = self._probs_to_market_odds(W_fitted)
         PLA_odds_fitted = self._probs_to_market_odds(b_fitted)
         QIN_odds_fitted = self._probs_to_market_odds(Qin_fitted)
         QPL_odds_fitted = self._probs_to_market_odds(Q_fitted)
-        
+
         self.result = {
             'success': result.success,
             'message': result.message,
@@ -445,14 +451,15 @@ class HarvilleModel:
         }
 
         return self.result
-    
-def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float] = None, takeout_rate: float = 0.175) -> dict:
+
+
+def fit_harville_to_odds(odds: dict[str, np.ndarray], lambdas: dict[str, float] = None, takeout_rate: float = 0.175) -> dict:
     """
     Fit Harville model to observed betting odds.
-    
+
     At least one odds type must be provided. All odds should be decimal odds
     (not probabilities). Matrices should be symmetric where applicable.
-    
+
     Args:
         odds: Dictionary of odds arrays with types as keys.:
                 'WIN' (n,), 'QIN' (n,n), 'QPL' (n,n), 'PLA' (n,)
@@ -462,7 +469,7 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
         takeout_rate: House take out rate as decimal (default 0.175 = 17.5%).
                      The house keeps this percentage of the betting pool, causing
                      observed odds to be higher than fair odds.
-        
+
     Returns:
         Dictionary containing:
             - success: Whether optimization converged
@@ -482,7 +489,7 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
                 - QIN: Qin odds (n, n)
                 - QPL: Quinella Place odds (n, n)
                 - PLA: Place odds (n,)
-                
+
     Example:
         >>> odds = {'WIN': np.array([3.5, 4.2, 5.0, 8.5, 12.0])}
         >>> result = fit_harville_to_odds(odds, takeout_rate=0.175)
@@ -494,7 +501,7 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
     Qin_obs = None
     Q_obs = None
     b_obs = None
-    
+
     if 'WIN' in odds:
         W_odds = odds['WIN']
         if n_horses is None:
@@ -502,7 +509,7 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
         elif n_horses != len(W_odds):
             raise ValueError("Inconsistent number of horses in WIN odds")
         W_obs = np.nan_to_num(1.0 / W_odds, 0)
-    
+
     if 'QIN' in odds:
         Qin_odds = odds['QIN']
         if n_horses is None:
@@ -510,7 +517,7 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
         elif n_horses != Qin_odds.shape[0]:
             raise ValueError("Inconsistent number of horses in QIN odds")
         Qin_obs = np.nan_to_num(1.0 / Qin_odds, 0)
-    
+
     if 'QPL' in odds:
         Q_odds = odds['QPL']
         if n_horses is None:
@@ -518,7 +525,7 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
         elif n_horses != Q_odds.shape[0]:
             raise ValueError("Inconsistent number of horses in QPL odds")
         Q_obs = np.nan_to_num(1.0 / Q_odds, 0)
-    
+
     if 'PLA' in odds:
         b_odds = odds['PLA']
         if n_horses is None:
@@ -526,7 +533,7 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
         elif n_horses != len(b_odds):
             raise ValueError("Inconsistent number of horses in PLA odds")
         b_obs = np.nan_to_num(1.0 / b_odds, 0)
-    
+
     merged_lambdas = {**LAMBDA_DEFAULTS, **(lambdas or {})}
     ho = HarvilleModel(
         n_horses,
@@ -538,3 +545,119 @@ def fit_harville_to_odds(odds : dict[str, np.ndarray], lambdas : dict[str, float
     )
     result = ho.fit(W_obs=W_obs, Qin_obs=Qin_obs, Q_obs=Q_obs, b_obs=b_obs)
     return result
+
+
+def find_top_outcomes(p: np.ndarray, k: int, m: int, ordered: bool = True) -> Tuple[List, List]:
+    """
+    Calculates the k most likely outcomes for the first m places given a
+    probability matrix using optimized NumPy operations.
+
+    Args:
+        p (np.ndarray): An (N, N) NumPy array where p[i, j] is the probability
+                        of runner i (0-indexed) finishing in j-th place (0-indexed).
+        k (int): The number of top outcomes to return.
+        m (int): The number of top places to consider (e.g., 4 for first 4 places).
+        ordered (bool): If True (default), calculates for ordered permutations
+                        (e.g., [1, 2] is different from [2, 1]).
+                        If False, calculates for unordered combinations
+                        (e.g., [1, 2] and [2, 1] are summed).
+
+    Returns:
+        Tuple[List, List]: A tuple containing two lists:
+            - top_outcomes (List[List[int]]): 
+              A list of the top k outcomes (e.g., [[5, 1, 9, 2], ...]).
+              Runner indices are 0-indexed.
+            - top_probabilities (List[float]): 
+              A list of the corresponding probabilities for each outcome.
+
+    Raises:
+        ValueError: If p is not a 2D square NumPy array, if k or m are non-positive,
+                    or if N < m.
+    """
+    # --- 1. Input Validation ---
+    if not isinstance(p, np.ndarray) or p.ndim != 2:
+        raise ValueError("Input 'p' must be a 2D NumPy array.")
+
+    if p.shape[0] != p.shape[1]:
+        raise ValueError(
+            f"Input matrix 'p' must be square (N, N), but has shape {p.shape}.")
+
+    N = p.shape[0]
+
+    if N < m:
+        raise ValueError(
+            f"Input matrix 'p' must have N >= m, but N={N} and m={m}.")
+
+    if not isinstance(k, int) or k <= 0:
+        raise ValueError(f"Input 'k' must be a positive integer, but got {k}.")
+
+    if not isinstance(m, int) or m <= 0:
+        raise ValueError(f"Input 'm' must be a positive integer, but got {m}.")
+
+    # --- 2. Generate All Permutations ---
+    runner_indices = range(N)
+    # We are finding permutations for the first 'm' places
+    permutations_iter = itertools.permutations(runner_indices, m)
+
+    # Convert iterator to a NumPy array for vectorized operations
+    permutations = np.array(list(permutations_iter), dtype=np.uint16)
+    num_outcomes = permutations.shape[0]
+
+    # --- 3. Vectorized Probability Calculation ---
+    # Calculate: p[r1, 0] * p[r2, 1] * ... * p[rm, m-1] for each permutation
+
+    # Initialize probabilities
+    all_probs = np.ones(num_outcomes, dtype=np.float64)
+
+    # Multiply probabilities for each place
+    for j in range(m):
+        all_probs *= p[permutations[:, j], j]
+
+    # --- 4. Branch Logic based on 'ordered' ---
+    if ordered:
+        # --- 4a. Efficiently Find Top K Ordered ---
+        k_clamped = min(k, num_outcomes)
+
+        # Use np.argpartition to find the k largest elements without a full sort
+        top_k_indices_unsorted = np.argpartition(
+            all_probs, -k_clamped)[-k_clamped:]
+
+        # Sort just the top k elements by probability
+        top_k_probs = all_probs[top_k_indices_unsorted]
+        sort_order = np.argsort(top_k_probs)[::-1]  # Descending order
+        top_k_indices = top_k_indices_unsorted[sort_order]
+
+        # --- 5a. Extract and Format Ordered Results ---
+        top_outcomes_np = permutations[top_k_indices]+1 # switch to 1-index
+        top_probabilities = all_probs[top_k_indices]
+
+        return top_outcomes_np.astype(int).tolist(), top_probabilities.tolist()
+
+    else:
+        # --- 4b. Group by Unordered Combination ---
+        # We group all permutations by their content, summing their probabilities.
+        # A sorted tuple (e.g., (1, 2, 5, 9)) is used as the key.
+        grouped_probs = collections.defaultdict(float)
+        for i in range(num_outcomes):
+            # Sort the runners to create a unique key for the combination
+            key = tuple(np.sort(permutations[i]))
+            grouped_probs[key] += all_probs[i]
+
+        # --- 5b. Sort Unordered Groups and Format ---
+
+        # Convert dict to list of (probability, outcome_tuple)
+        all_unordered = [(prob, outcome)
+                         for outcome, prob in grouped_probs.items()]
+
+        # Sort by probability (descending)
+        all_unordered.sort(key=lambda x: x[0], reverse=True)
+
+        # Get the top k
+        k_clamped = min(k, len(all_unordered))
+        top_k_unordered = all_unordered[:k_clamped]
+
+        top_outcomes = [[int(runner)+1 for runner in outcome]
+                        for prob, outcome in top_k_unordered]
+        top_probabilities = [prob for prob, outcome in top_k_unordered]
+
+        return top_outcomes, top_probabilities
