@@ -5,7 +5,7 @@ import polars as pl
 import numpy as np
 
 from hkjc.live import live_odds, _fetch_live_races
-from hkjc.harville_model import fit_harville_to_odds
+from hkjc.harville_model import fit_harville_to_odds, find_top_outcomes
 from hkjc.historical import get_horse_data
 from hkjc.speedpro import speedmap, speedpro_energy
 from hkjc.strategy import qpbanker, place_only
@@ -217,7 +217,21 @@ def disp_prediction(race_no=1):
         prediction[j] = horse_for_this_place + 1
         p_matrix[horse_for_this_place, :] = -1
 
-    return [v for k,v in arr_to_dict(prediction,int).items()]
+    return [v for _,v in arr_to_dict(prediction,int).items()]
+
+@app.route('/outcomes/<int:race_no>', methods=['GET'])
+def disp_top_outcomes(race_no=1):
+    k = request.args.get('k', type=int, default=10)
+    m = request.args.get('m', type=int, default=4)
+    ordered = request.args.get('ordered')
+    ordered = ordered and (ordered.lower() != 'false')
+
+    odds_dict = live_odds('', '', race_no)
+    fitted_odds = fit_harville_to_odds(odds_dict)
+    p_matrix = fitted_odds['prob_fit']['P']
+    outcomes, probs = find_top_outcomes(p_matrix,k,m,ordered)
+
+    return {'ranking': outcomes, 'prob':probs}
 
 
 @app.route('/plarec/<int:race_no>', methods=['GET'])
