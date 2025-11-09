@@ -221,7 +221,7 @@ def disp_prediction(race_no=1):
 
 @app.route('/outcomes/<int:race_no>', methods=['GET'])
 def disp_top_outcomes(race_no=1):
-    k = request.args.get('k', type=int, default=10)
+    k = request.args.get('k', type=int, default=100)
     m = request.args.get('m', type=int, default=4)
     ordered = request.args.get('ordered')
     ordered = ordered and (ordered.lower() != 'false')
