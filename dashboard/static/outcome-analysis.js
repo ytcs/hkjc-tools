@@ -29,11 +29,11 @@ const OutcomeAnalysis = {
         
         state.collapsed = !state.collapsed;
         if (state.collapsed) {
-            Utils.addClass(content, 'collapsed');
-            Utils.addClass(header, 'collapsed');
+            Utils.removeClass(content, 'expanded');
+            Utils.removeClass(header, 'expanded');
         } else {
-            Utils.removeClass(content, 'collapsed');
-            Utils.removeClass(header, 'collapsed');
+            Utils.addClass(content, 'expanded');
+            Utils.addClass(header, 'expanded');
         }
     },
     
@@ -170,12 +170,12 @@ const OutcomeAnalysis = {
     },
     
     initAll() {
-        // Outcome analysis sections start expanded by default
+        // Outcome analysis sections start collapsed by default
         Utils.$$('.outcome-analysis-section').forEach(section => {
             const raceNum = section.closest('.race-content')?.id.replace('race-', '');
             if (raceNum) {
                 const state = this.getState(raceNum);
-                state.collapsed = false;
+                state.collapsed = true;
             }
         });
     }

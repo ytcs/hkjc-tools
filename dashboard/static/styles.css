@@ -616,19 +616,23 @@ body {
 }
 
 .section-content {
-    display: block;
+    display: none;
     padding: 15px;
     background: #fafafa;
     border: 1px solid #e0e0e0;
     border-top: none;
 }
 
-.section-content.collapsed {
-    display: none;
+.section-content.expanded {
+    display: block;
 }
 
-.section-header.collapsed .section-toggle-icon {
+.section-header .section-toggle-icon {
     transform: rotate(-90deg);
+}
+
+.section-header.expanded .section-toggle-icon {
+    transform: rotate(0deg);
 }
 
 /* Outcome Analysis Section */

@@ -46,13 +46,13 @@ window.toggleTradeCalculator = (raceNum) => {
     
     if (!content || !header) return;
     
-    const isCollapsed = content.classList.contains('collapsed');
-    if (isCollapsed) {
-        Utils.removeClass(content, 'collapsed');
-        Utils.removeClass(header, 'collapsed');
+    const isExpanded = content.classList.contains('expanded');
+    if (isExpanded) {
+        Utils.removeClass(content, 'expanded');
+        Utils.removeClass(header, 'expanded');
     } else {
-        Utils.addClass(content, 'collapsed');
-        Utils.addClass(header, 'collapsed');
+        Utils.addClass(content, 'expanded');
+        Utils.addClass(header, 'expanded');
     }
 };
 
