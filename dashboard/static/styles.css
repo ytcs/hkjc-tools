@@ -586,6 +586,209 @@ body {
     font-weight: 600;
 }
 
+/* Collapsible Section Styles */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: #667eea;
+    color: white;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 2px solid #5568d3;
+    transition: background 0.2s ease;
+}
+
+.section-header:hover {
+    background: #5568d3;
+}
+
+.section-title {
+    font-size: 1.1em;
+    font-weight: 700;
+    margin: 0;
+}
+
+.section-toggle-icon {
+    font-size: 0.9em;
+    transition: transform 0.3s ease;
+}
+
+.section-content {
+    display: block;
+    padding: 15px;
+    background: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-top: none;
+}
+
+.section-content.collapsed {
+    display: none;
+}
+
+.section-header.collapsed .section-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+/* Outcome Analysis Section */
+.outcome-analysis-section {
+    margin-top: 20px;
+    border: 1px solid #e0e0e0;
+    background: #fafafa;
+}
+
+.outcome-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.outcome-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.outcome-label {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #333;
+    white-space: nowrap;
+}
+
+.outcome-input {
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9em;
+    width: 80px;
+    text-align: center;
+}
+
+.outcome-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.outcome-results {
+    min-height: 100px;
+}
+
+.outcome-loading {
+    text-align: center;
+    padding: 20px;
+    color: #999;
+    font-style: italic;
+}
+
+.outcome-error {
+    text-align: center;
+    padding: 20px;
+    color: #e53e3e;
+    font-weight: 600;
+}
+
+.outcome-probability-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    background: white;
+    border: 1px solid #e0e0e0;
+}
+
+.outcome-probability-table th {
+    background: #667eea;
+    color: white;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 0.85em;
+    font-weight: 600;
+    border: 1px solid #5568d3;
+}
+
+.outcome-probability-table td {
+    padding: 6px 12px;
+    border: 1px solid #e0e0e0;
+    font-size: 0.9em;
+}
+
+.outcome-probability-table tbody tr:nth-child(even) {
+    background: #f9fafb;
+}
+
+.outcome-probability-table tbody tr:hover {
+    background: #e8eaf6;
+}
+
+.outcome-probability-value {
+    font-weight: 600;
+    color: #667eea;
+}
+
+.outcome-table-container {
+    overflow-x: auto;
+    margin-top: 20px;
+}
+
+.outcome-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid #e0e0e0;
+    font-size: 0.85em;
+}
+
+.outcome-table th {
+    background: #48bb78;
+    color: white;
+    padding: 8px 10px;
+    text-align: center;
+    font-weight: 600;
+    border: 1px solid #38a169;
+    white-space: nowrap;
+}
+
+.outcome-table td {
+    padding: 6px 10px;
+    border: 1px solid #e0e0e0;
+    text-align: center;
+}
+
+.outcome-table tbody tr:nth-child(even) {
+    background: #f9fafb;
+}
+
+.outcome-table tbody tr:hover {
+    background: #e0f2f1;
+}
+
+.outcome-horse-badge {
+    display: inline-block;
+    background: #667eea;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.85em;
+    margin: 2px;
+}
+
+.outcome-prob-badge {
+    display: inline-block;
+    background: #48bb78;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.8em;
+}
+
 /* Trade Calculator Section */
 .trade-calculator-section {
     margin-top: 20px;
@@ -939,5 +1142,38 @@ body {
     
     .prediction-horse {
         font-size: 0.85em;
+    }
+    
+    .outcome-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    
+    .outcome-input-group {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .outcome-input {
+        flex: 1;
+        max-width: 150px;
+    }
+    
+    .outcome-probability-table,
+    .outcome-table {
+        font-size: 0.75em;
+    }
+    
+    .outcome-probability-table th,
+    .outcome-probability-table td,
+    .outcome-table th,
+    .outcome-table td {
+        padding: 4px 6px;
+    }
+    
+    .outcome-horse-badge {
+        font-size: 0.75em;
+        padding: 2px 6px;
     }
 }

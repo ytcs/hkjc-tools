@@ -175,7 +175,35 @@
                 </tbody>
             </table>
 
+            <div class="outcome-analysis-section">
+                <div class="section-header" onclick="toggleOutcomeAnalysis('{{ race_num }}')">
+                    <h3 class="section-title">Outcome Analysis</h3>
+                    <span class="section-toggle-icon">▼</span>
+                </div>
+                <div class="section-content" id="outcome-content-{{ race_num }}">
+                    <div class="outcome-controls">
+                        <div class="outcome-input-group">
+                            <label class="outcome-label">k (outcomes):</label>
+                            <input type="number" class="outcome-input" id="outcome-k-{{ race_num }}" value="100" min="1" max="1000">
+                        </div>
+                        <div class="outcome-input-group">
+                            <label class="outcome-label">m (positions):</label>
+                            <input type="number" class="outcome-input" id="outcome-m-{{ race_num }}" value="3" min="1" max="10">
+                        </div>
+                        <button class="calculate-btn" onclick="loadOutcomeAnalysis('{{ race_num }}')">Analyze</button>
+                    </div>
+                    <div class="outcome-results" id="outcome-results-{{ race_num }}">
+                        <div class="outcome-loading">Click "Analyze" to load outcome analysis</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="trade-calculator-section">
+                <div class="section-header" onclick="toggleTradeCalculator('{{ race_num }}')">
+                    <h3 class="section-title">Trade Calculator</h3>
+                    <span class="section-toggle-icon">▼</span>
+                </div>
+                <div class="section-content" id="trade-content-{{ race_num }}">
                 <div class="trade-calculator-tabs">
                     <button class="trade-tab-btn active" onclick="showTradeTab('{{ race_num }}', 'pla')">PLA</button>
                     <button class="trade-tab-btn" onclick="showTradeTab('{{ race_num }}', 'qpl')">QPL</button>
@@ -250,6 +278,7 @@
                     </div>
                     <div class="trade-plot-container" id="qpl-pareto-plot-{{ race_num }}"></div>
                 </div>
+                </div>
             </div>
         </div>
         {% endfor %}
@@ -259,6 +288,7 @@
     <script src="{{ url_for('static', filename='race-data.js') }}"></script>
     <script src="{{ url_for('static', filename='race-ui.js') }}"></script>
     <script src="{{ url_for('static', filename='trade-calculator.js') }}"></script>
+    <script src="{{ url_for('static', filename='outcome-analysis.js') }}"></script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 

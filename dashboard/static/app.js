@@ -10,6 +10,7 @@ const App = {
         FavStyleChart.initAll();
         PreferredHighlight.initAll();
         TradeCalculator.initAll();
+        OutcomeAnalysis.initAll();
         Predictions.loadAll();
         Odds.startPolling();
         RunnerDetails.prefetchAll(activeRaceNum).catch(error => 
@@ -38,6 +39,22 @@ window.selectBanker = (raceNum, runnerNo) => TradeCalculator.selectBanker(raceNu
 window.toggleFilter = (raceNum) => TradeCalculator.toggleFilter(raceNum);
 window.calculatePLA = (raceNum) => TradeCalculator.calculatePLA(raceNum);
 window.calculateQPL = (raceNum) => TradeCalculator.calculateQPL(raceNum);
+window.toggleTradeCalculator = (raceNum) => {
+    const validRaceNum = Utils.validateRaceNum(raceNum);
+    const content = Utils.$(`#trade-content-${validRaceNum}`);
+    const header = Utils.$(`#race-${validRaceNum} .trade-calculator-section .section-header`);
+    
+    if (!content || !header) return;
+    
+    const isCollapsed = content.classList.contains('collapsed');
+    if (isCollapsed) {
+        Utils.removeClass(content, 'collapsed');
+        Utils.removeClass(header, 'collapsed');
+    } else {
+        Utils.addClass(content, 'collapsed');
+        Utils.addClass(header, 'collapsed');
+    }
+};
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.addEventListener('beforeunload', () => App.cleanup());

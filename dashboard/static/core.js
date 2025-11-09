@@ -175,6 +175,13 @@ const API = {
     fetchPredictions(raceNum) {
         return RequestQueue.enqueue(async () => 
             (await this.fetch(`/predict/${Utils.validateRaceNum(raceNum)}`)).json(), 0);
+    },
+    
+    fetchOutcomes(raceNum, k, m) {
+        return RequestQueue.enqueue(async () => {
+            const url = `/outcomes/${Utils.validateRaceNum(raceNum)}?k=${k}&m=${m}`;
+            return (await this.fetch(url)).json();
+        }, 1);
     }
 };
 
