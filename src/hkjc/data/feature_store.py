@@ -73,6 +73,34 @@ def results_to_outcomes(results: pl.DataFrame) -> pl.DataFrame:
     return add_win_place_outcomes(out)
 
 
+def results_to_features(results: pl.DataFrame) -> pl.DataFrame:
+    """Map a ``historical.get_race_data`` frame to runner-keyed model features.
+
+    Pure transform (no network). Extracts what a result page reliably carries:
+    the **closing win odds** (de-vigged within the race into ``market_win_prob``
+    and its ``log_market_prob`` — the Benter-style backbone feature), the **draw**,
+    and **carried/declared weight**. The market feature is computed per race so the
+    crowd's probabilities sum to 1; ``log_market_prob`` is the natural linear scale
+    for the conditional-logit strength.
+    """
+    base = results.select(
+        pl.col("Date").cast(pl.Utf8).alias("date"),
+        pl.col("Venue").cast(pl.Utf8).alias("venue"),
+        pl.col("RaceNumber").cast(pl.Int64, strict=False).alias("race_no"),
+        pl.col("HorseNo").cast(pl.Int64, strict=False).alias("runner"),
+        pl.col("WinOdds").cast(pl.Float64, strict=False).alias("market_win_odds"),
+        pl.col("Dr").cast(pl.Int64, strict=False).alias("draw"),
+        pl.col("ActWt").cast(pl.Float64, strict=False).alias("act_wt"),
+        pl.col("DeclarHorseWt").cast(pl.Float64, strict=False).alias("decl_wt"),
+    )
+    inv = pl.when(pl.col("market_win_odds") > 0).then(1.0 / pl.col("market_win_odds")).otherwise(None)
+    base = base.with_columns(inv.alias("_inv"))
+    base = base.with_columns(
+        (pl.col("_inv") / pl.col("_inv").sum().over(RACE_KEYS)).alias("market_win_prob")
+    ).drop("_inv")
+    return base.with_columns(pl.col("market_win_prob").log().alias("log_market_prob"))
+
+
 def market_features_from_win(
     win_odds: Sequence[float], date: str, venue: str, race_no: int
 ) -> pl.DataFrame:

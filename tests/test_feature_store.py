@@ -7,6 +7,7 @@ from hkjc.data.feature_store import (
     add_win_place_outcomes,
     market_features_from_win,
     paying_places,
+    results_to_features,
     results_to_outcomes,
 )
 
@@ -55,6 +56,20 @@ def test_results_to_outcomes_maps_hkjc_columns():
     assert out["paying_places"].unique().to_list() == [2]           # 4 runners -> 2 paid
     assert out.filter(pl.col("runner") == 1)["placed"].item() == 1  # Pla 2 is paid
     assert out.filter(pl.col("runner") == 4)["placed"].item() == 0  # Pla 3 not paid
+
+
+def test_results_to_features_devig_and_columns():
+    results = pl.DataFrame({
+        "Date": ["2026/05/31"] * 3, "Venue": ["ST"] * 3, "RaceNumber": [1] * 3,
+        "HorseNo": [1, 2, 3], "WinOdds": [2.0, 4.0, 4.0],
+        "Dr": [5, 1, 8], "ActWt": [126, 120, 133], "DeclarHorseWt": [1100, 1050, 1080],
+    })
+    feat = results_to_features(results)
+    assert abs(feat["market_win_prob"].sum() - 1.0) < 1e-9
+    assert feat.filter(pl.col("runner") == 1)["market_win_prob"].item() == 0.5
+    # log_market_prob is monotone in market prob (favourite has the largest)
+    assert feat["log_market_prob"].arg_max() == 0
+    assert {"draw", "act_wt", "decl_wt"} <= set(feat.columns)
 
 
 def test_market_features_devig_sums_to_one():
