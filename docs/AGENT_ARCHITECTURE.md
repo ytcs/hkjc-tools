@@ -339,10 +339,12 @@ Foundations before self-improvement. Steps 1–2 are the spine; without them the
    `hkjc.data.source` (protocol), `hkjc.data.feature_store` (`FeatureStore`,
    per-source + per-language coverage, the **Win/Place/Quinella outcome schema**).
    Concrete feature-source adapters grow alongside step 4.
-4. ⬜ **Results-trained `RaceModel`.** Break the circularity (§0.1); the first
-   candidate that can structurally beat the Harville-on-odds baseline. Targets
-   **Win/Place/Quinella** (scope decision); plugs into the step-2 harness as a
-   `fit_predict`.
+4. ✅ **Results-trained `RaceModel`.** Break the circularity (§0.1). — shipped:
+   `hkjc.model.ConditionalLogit` (McFadden conditional logit, fit to realized
+   winners, market prob as one feature). `conditional_logit_fit_predict` plugs into
+   the step-2 harness; `strengths()` feeds `PlackettLuceModel` for Place/Quinella.
+   Validated: beats uniform ~37% on multiclass log-loss out-of-sample. *(Next: add
+   real fundamentals + market feature and run vs the market baseline on live data.)*
 5. ⬜ **Memory + orchestrator + carryover detector.** Memory shipped early
    (`hkjc.ledger`); still need the orchestrator and the jackpot-carryover detector.
 6. ⬜ **Heavy data:** Chinese alt-data pipeline (§5.3) and video mining (§5.2), each

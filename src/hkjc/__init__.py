@@ -24,8 +24,8 @@ from importlib.metadata import version as _version
 __all__ = [
     "data", "live", "historical", "speedpro", "features",
     "harville_model", "model", "simulation", "eval", "ledger",
-    "RaceModel", "PlackettLuceModel", "RaceSimulator", "OddsTickStore",
-    "FeatureStore", "DataSource", "Ledger", "pareto_filter",
+    "RaceModel", "PlackettLuceModel", "ConditionalLogit", "RaceSimulator",
+    "OddsTickStore", "FeatureStore", "DataSource", "Ledger", "pareto_filter",
     "speedpro_energy", "speedmap", "generate_historical_data",
 ]
 
@@ -38,7 +38,7 @@ from . import data, features, harville_model, model, simulation, eval, ledger
 from .data import live, historical, speedpro, OddsTickStore, FeatureStore, DataSource
 from .data.processing import generate_historical_data
 from .data.speedpro import speedmap, speedpro_energy
-from .model import RaceModel, PlackettLuceModel
+from .model import RaceModel, PlackettLuceModel, ConditionalLogit
 from .simulation import RaceSimulator
 from .ledger import Ledger
 from .utils import pareto_filter

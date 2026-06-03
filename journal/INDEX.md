@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-9 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+10 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -19,3 +19,7 @@
 ## hypothesis
 
 - **0004-jackpot-carryover-windows-can-be-structurally-ev** (open) [Jackpot carryover windows can be structurally +EV](entries/0004-jackpot-carryover-windows-can-be-structurally-ev.md) — _jackpot, triple-trio, six-up, +ev_
+
+## result
+
+- **0010-results-trained-conditional-logit-model-breaks-t** (open) [Results-trained conditional-logit model breaks the circularity (works)](entries/0010-results-trained-conditional-logit-model-breaks-t.md) — _model, conditional-logit, circularity, win-prediction_

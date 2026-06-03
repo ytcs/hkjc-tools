@@ -44,7 +44,7 @@ betting strategy — the agent composes her own bets on top. See
 | `hkjc.data.odds_ticks` | data | `OddsTickStore`: capture & persist the live-odds time series (Parquet). |
 | `hkjc.data.processing` | data | Build historical datasets across a date range. |
 | `hkjc.harville_model` | model | Fits latent horse strengths to odds via DP (Numba); yields a full place-probability matrix. The default odds→strengths fitter. |
-| `hkjc.model` | model | `RaceModel` interface (swappable) + `PlackettLuceModel` reference impl that samples finishing orders from strengths. |
+| `hkjc.model` | model | `RaceModel` interface (swappable); `PlackettLuceModel` (Harville-on-odds baseline); `ConditionalLogit` results-trained win model (breaks the odds-fitting circularity) + market/uniform baselines. |
 | `hkjc.simulation` | sim | `RaceSimulator`: draw finishing orders from any model and estimate the probability/EV of arbitrary bets. |
 | `hkjc.eval` | eval | The harness: `clv` (closing-line value), `calibration` (log-loss/Brier/ECE/RPS), `walkforward` (folds + sealed `Lockbox`), `selection` (BH-FDR, Deflated Sharpe), `harness` (fit-on-train/score-on-test). |
 | `hkjc.ledger` | memory | `Ledger`: durable, indexed Markdown journal of findings (`record` / `search` / `recent`). |
