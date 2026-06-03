@@ -7,7 +7,7 @@ from tqdm import tqdm
 from datetime import datetime as dt
 
 from .historical import _extract_horse_data, _extract_race_data, _clean_horse_data
-from .utils import _validate_date
+from ..utils import _validate_date
 
 
 def _historical_process_single_date_venue(date, venue_code: str) -> List[pl.DataFrame]:

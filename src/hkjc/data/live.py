@@ -7,7 +7,7 @@ import requests
 from cachetools.func import ttl_cache
 import numpy as np
 
-from .utils import _try_int, _try_float
+from ..utils import _try_int, _try_float
 
 HKJC_LIVEODDS_ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
 
@@ -312,9 +312,15 @@ def _fetch_live_races(date: str = None, venue_code: str = None) -> dict:
     return race_info
 
 
-@ttl_cache(maxsize=12, ttl=30)
-def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tuple[str] = ('PLA', )) -> List[dict]:
-    """Fetch live odds data from HKJC GraphQL endpoint."""
+def _fetch_live_odds_uncached(date: str, venue_code: str, race_number: int, odds_type: Tuple[str] = ('PLA', )) -> List[dict]:
+    """Fetch live odds rows directly from the endpoint, **uncached**.
+
+    Each row also carries the pool's server-side ``LastUpdate`` timestamp so
+    callers that record a time series (see :mod:`hkjc.data.odds_ticks`) can dedupe
+    on genuine market updates rather than on our polling clock. The cached
+    :func:`_fetch_live_odds` wraps this for interactive use; time-series capture
+    should call this directly to avoid recording stale, cache-repeated snapshots.
+    """
     payload = LIVEODDS_PAYLOAD.copy()
     payload["variables"] = payload["variables"].copy()
     payload["variables"]["date"] = date
@@ -332,12 +338,19 @@ def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tu
     meetings = r.json().get("data", {}).get("raceMeetings", [])
 
     return [
-        {"HorseID": node["combString"], "Type": pool.get(
-            "oddsType"), "Odds": _try_float(node["oddsValue"])}
+        {"HorseID": node["combString"], "Type": pool.get("oddsType"),
+         "Odds": _try_float(node["oddsValue"]),
+         "LastUpdate": pool.get("lastUpdateTime")}
         for meeting in meetings
         for pool in meeting.get("pmPools", [])
         for node in pool.get("oddsNodes", [])
     ]
+
+
+@ttl_cache(maxsize=12, ttl=30)
+def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tuple[str] = ('PLA', )) -> List[dict]:
+    """Cached (30s TTL) wrapper around :func:`_fetch_live_odds_uncached`."""
+    return _fetch_live_odds_uncached(date, venue_code, race_number, odds_type)
 
 
 def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str] = ['WIN', 'PLA', 'QPL', 'QIN']) -> dict:

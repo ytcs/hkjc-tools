@@ -22,28 +22,37 @@ Docs:
 
 ## Architecture
 
-The library is a **bedrock** for an automated betting agent, in three layers. It
-provides data and a probabilistic engine; it deliberately does **not** ship any
-fixed betting strategy — the agent composes her own bets on top.
+The library is a **bedrock** for an automated betting agent, organised by concern
+with a single direction of dependency. It provides data, a probabilistic engine,
+an evaluation harness and a memory; it deliberately does **not** ship any fixed
+betting strategy — the agent composes her own bets on top. See
+[`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) for the full design.
 
 ```
-data access  ->  model  ->  simulation
-live/         harville_   RaceSimulator
-historical/   model +     (estimate P/EV of
-speedpro      RaceModel    ANY bet you compose)
+   data         ->   model   ->   sim          eval        ledger
+   live/             harville_     RaceSimulator (judges     (durable,
+   historical/       model +       (P/EV of ANY  models &    indexed
+   speedpro/         RaceModel     bet you        strategies) findings)
+   odds_ticks                      compose)
 ```
 
 | Module | Layer | Purpose |
 | --- | --- | --- |
-| `hkjc.live` | data | Live race cards and live odds (WIN/PLA/QIN/QPL) via the HKJC GraphQL endpoint. |
-| `hkjc.historical` | data | Past race results and per-horse form, scraped from HKJC results pages. |
-| `hkjc.speedpro` | data | SpeedPro energy/fitness figures and speed maps for the current meeting. |
-| `hkjc.harville_model` | model | Fits latent horse strengths to market odds via DP (Numba); yields a full place-probability matrix. The default odds→strengths fitter. |
+| `hkjc.data.live` | data | Live race cards and live odds via the HKJC GraphQL endpoint. |
+| `hkjc.data.historical` | data | Past race results and per-horse form, scraped from HKJC results pages. |
+| `hkjc.data.speedpro` | data | SpeedPro energy/fitness figures and speed maps for the current meeting. |
+| `hkjc.data.odds_ticks` | data | `OddsTickStore`: capture & persist the live-odds time series (Parquet). |
+| `hkjc.data.processing` | data | Build historical datasets across a date range. |
+| `hkjc.harville_model` | model | Fits latent horse strengths to odds via DP (Numba); yields a full place-probability matrix. The default odds→strengths fitter. |
 | `hkjc.model` | model | `RaceModel` interface (swappable) + `PlackettLuceModel` reference impl that samples finishing orders from strengths. |
 | `hkjc.simulation` | sim | `RaceSimulator`: draw finishing orders from any model and estimate the probability/EV of arbitrary bets. |
-| `hkjc.processing` | data | Build historical datasets across a date range. |
+| `hkjc.eval.clv` | eval | Closing-line value: de-vig implied probabilities, opening/closing snapshots, odds drift, CLV of bets. |
+| `hkjc.ledger` | memory | `Ledger`: durable, indexed Markdown journal of findings (`record` / `search` / `recent`). |
 | `hkjc.features` | — | Polars feature expressions (rating gap, front-runner share, ...). |
 | `hkjc.utils` | — | Parsing helpers and a generic Pareto filter. |
+
+The old flat names (`hkjc.live`, `hkjc.historical`, `hkjc.speedpro`) remain
+re-exported for convenience; the canonical paths are under `hkjc.data`.
 
 ### Bring your own model
 
@@ -56,7 +65,7 @@ the stack.
 ## Quick start
 
 ```python
-from hkjc.live import live_odds, _fetch_live_races
+from hkjc.data.live import live_odds, _fetch_live_races
 from hkjc.model import PlackettLuceModel
 from hkjc.simulation import RaceSimulator
 
@@ -77,10 +86,38 @@ sim.expected_return(my_payout_array)           # arbitrary parimutuel dividends
 ```
 
 ```python
-from hkjc.historical import get_race_data, get_horse_data
+from hkjc.data.historical import get_race_data, get_horse_data
 
 results = get_race_data('2026/05/31', 'ST', 1)   # past race result table
 form    = get_horse_data('L276')                  # one horse's full form line
+```
+
+### Capture odds over time, then measure closing-line value
+
+```python
+from hkjc.data.odds_ticks import OddsTickStore
+from hkjc.eval import clv
+
+store = OddsTickStore('ticks')          # Parquet under ./ticks
+store.capture_meeting('', '')           # poll every race once (run on a schedule)
+
+ticks = store.read(pool='WIN')          # tidy time series
+clv.odds_drift(ticks)                   # open->close drift (negative = steam)
+clv.closing_snapshot(ticks)             # the closing line per runner
+```
+
+### Remember what you learn
+
+```python
+from hkjc.ledger import record, search, recent
+
+record("Exotic takeout is not 17.5%",
+       "Trio/Quartet takeout runs ~19.5–25%; the model's 0.175 default only "
+       "holds for WIN/PLA/QIN/QPL. Always net edge against the right pool.",
+       kind="gotcha", tags=["takeout", "betting-rules"])
+
+search("takeout")    # ranked list[Finding]
+recent(5)            # latest entries
 ```
 
 ## Live-data caveats
