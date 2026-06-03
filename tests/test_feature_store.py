@@ -9,6 +9,7 @@ from hkjc.data.feature_store import (
     paying_places,
     results_to_features,
     results_to_outcomes,
+    trailing_form_features,
 )
 
 
@@ -77,6 +78,27 @@ def test_market_features_devig_sums_to_one():
     probs = out["market_win_prob"].to_numpy()
     assert abs(probs.sum() - 1.0) < 1e-9
     assert out["runner"].to_list() == [1, 2, 3]
+
+
+def test_trailing_form_features_no_leakage():
+    import datetime as dt
+    # one horse, 4 runs: finishes 4,1,2,3 on consecutive weeks
+    panel = pl.DataFrame({
+        "horse_id": ["H1"] * 4,
+        "date": [dt.date(2026, 1, d) for d in (1, 8, 15, 22)],
+        "finish_pos": [4, 1, 2, 3],
+        "won": [0, 1, 0, 0],
+    })
+    out = trailing_form_features(panel).sort("date")
+    # debut row: no prior info
+    assert out["prior_runs"].to_list() == [0, 1, 2, 3]
+    assert out["days_since_last"].to_list()[1:] == [7, 7, 7]
+    assert out["days_since_last"][0] is None
+    # win rate before run 3 (after a win in 2 starts) = 1/2; uses only earlier runs
+    assert out["win_rate_prior"][0] is None
+    assert out["win_rate_prior"][2] == 0.5
+    # avg of last-3 finishes before run 4 = mean(4,1,2)
+    assert abs(out["avg_finish_prior3"][3] - (4 + 1 + 2) / 3) < 1e-9
 
 
 def test_make_race_id():

@@ -101,6 +101,40 @@ def results_to_features(results: pl.DataFrame) -> pl.DataFrame:
     return base.with_columns(pl.col("market_win_prob").log().alias("log_market_prob"))
 
 
+def trailing_form_features(
+    panel: pl.DataFrame,
+    group_col: str = "horse_id",
+    date_col: str = "date",
+    finish_col: str = "finish_pos",
+    won_col: str = "won",
+) -> pl.DataFrame:
+    """Per-run recent-form features computed from each horse's **earlier** runs only.
+
+    Leakage-controlled: every feature for a run uses strictly-prior runs of the same
+    horse (``shift(1)`` within the horse, ordered by date). Pass a panel containing
+    the horse's *full* history (including before the study window) so trailing
+    windows aren't truncated. Adds:
+
+    - ``prior_runs`` — career starts before this run
+    - ``days_since_last`` — layoff in days
+    - ``avg_finish_prior3`` — mean finishing position over the last 3 starts
+    - ``win_rate_prior`` — career win rate before this run (null on debut)
+    """
+    p = panel.sort([group_col, date_col])
+    g = group_col
+    p = p.with_columns([
+        (pl.col(date_col).cum_count().over(g) - 1).alias("prior_runs"),
+        (pl.col(date_col) - pl.col(date_col).shift(1).over(g)).dt.total_days().alias("days_since_last"),
+        pl.col(finish_col).shift(1).rolling_mean(window_size=3, min_samples=1).over(g).alias("avg_finish_prior3"),
+        pl.col(won_col).shift(1).cum_sum().over(g).alias("_wins_prior"),
+    ])
+    return p.with_columns(
+        pl.when(pl.col("prior_runs") > 0)
+        .then(pl.col("_wins_prior") / pl.col("prior_runs"))
+        .otherwise(None).alias("win_rate_prior")
+    ).drop("_wins_prior")
+
+
 def market_features_from_win(
     win_odds: Sequence[float], date: str, venue: str, race_no: int
 ) -> pl.DataFrame:
