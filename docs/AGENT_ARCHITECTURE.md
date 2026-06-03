@@ -326,18 +326,22 @@ Non-negotiable for a loop that can touch capital:
 Foundations before self-improvement. Steps 1–2 are the spine; without them the
 "self-improving" part is just an efficient way to overfit 800 races.
 
-1. **Odds tick store + CLV harness.** Persist every poll; compute CLV. Smallest
-   effort, unlocks the densest signal. *(Axis 2 + harness Layer 2.)*
-2. **Walk-forward evaluation harness** with calibration, FDR control, and a
+1. ✅ **Odds tick store + CLV harness.** Persist every poll; compute CLV. Smallest
+   effort, unlocks the densest signal. *(Axis 2 + harness Layer 2.)* — shipped:
+   `hkjc.data.odds_ticks`, `hkjc.eval.clv`.
+2. ✅ **Walk-forward evaluation harness** with calibration, FDR control, and a
    lockbox. The objective function — build before any optimizer runs against it.
-   *(Harness Layers 1 & 3.)*
-3. **`DataSource` protocol + feature store**, with the `languages` field and
+   *(Harness Layers 1 & 3.)* — shipped: `hkjc.eval.{calibration,walkforward,
+   selection,harness}`. *(Layer-3 bankroll P&L still to wire once stake-sizing is
+   decided — see §9.)*
+3. ⬜ **`DataSource` protocol + feature store**, with the `languages` field and
    per-language coverage reporting. The uniform seam for the data axis.
-4. **Results-trained `RaceModel`.** Break the circularity (§0.1); the first
-   candidate that can structurally beat the Harville-on-odds baseline.
-5. **Knowledge ledger + orchestrator + carryover detector.** Make the loop
-   self-sustaining and bank the easy jackpot-mechanics edge.
-6. **Heavy data:** Chinese alt-data pipeline (§5.3) and video mining (§5.2), each
+4. ⬜ **Results-trained `RaceModel`.** Break the circularity (§0.1); the first
+   candidate that can structurally beat the Harville-on-odds baseline. Plugs into
+   the step-2 harness as a `fit_predict`.
+5. ⬜ **Memory + orchestrator + carryover detector.** Memory shipped early
+   (`hkjc.ledger`); still need the orchestrator and the jackpot-carryover detector.
+6. ⬜ **Heavy data:** Chinese alt-data pipeline (§5.3) and video mining (§5.2), each
    onboarded through the §5 protocol and judged by the §3 harness.
 
 ---
@@ -350,5 +354,6 @@ Foundations before self-improvement. Steps 1–2 are the spine; without them the
 - **Live vs. paper horizon:** how long a paper-trading track record before any real
   capital, and what approval ritual crosses that line?
 - **Compute envelope** for the video pipeline (the most expensive axis).
-- **Ledger substrate:** flat files in-repo vs. a small database — start simple,
-  but decide before it sprawls.
+- ~~**Ledger substrate:**~~ *resolved* — flat Markdown entries + a rebuildable
+  `index.jsonl`, in-repo under `journal/` (`hkjc.ledger`). Revisit only if it
+  outgrows a single-file index.

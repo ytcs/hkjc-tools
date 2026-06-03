@@ -46,7 +46,7 @@ betting strategy — the agent composes her own bets on top. See
 | `hkjc.harville_model` | model | Fits latent horse strengths to odds via DP (Numba); yields a full place-probability matrix. The default odds→strengths fitter. |
 | `hkjc.model` | model | `RaceModel` interface (swappable) + `PlackettLuceModel` reference impl that samples finishing orders from strengths. |
 | `hkjc.simulation` | sim | `RaceSimulator`: draw finishing orders from any model and estimate the probability/EV of arbitrary bets. |
-| `hkjc.eval.clv` | eval | Closing-line value: de-vig implied probabilities, opening/closing snapshots, odds drift, CLV of bets. |
+| `hkjc.eval` | eval | The harness: `clv` (closing-line value), `calibration` (log-loss/Brier/ECE/RPS), `walkforward` (folds + sealed `Lockbox`), `selection` (BH-FDR, Deflated Sharpe), `harness` (fit-on-train/score-on-test). |
 | `hkjc.ledger` | memory | `Ledger`: durable, indexed Markdown journal of findings (`record` / `search` / `recent`). |
 | `hkjc.features` | — | Polars feature expressions (rating gap, front-runner share, ...). |
 | `hkjc.utils` | — | Parsing helpers and a generic Pareto filter. |
