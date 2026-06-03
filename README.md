@@ -12,8 +12,13 @@ uv sync
 
 Requires Python >= 3.11.
 
-See [`docs/HKJC_KNOWLEDGE.md`](docs/HKJC_KNOWLEDGE.md) for the field guide to
-HKJC's data sources, endpoints, domain conventions, feature priors and gotchas.
+Docs:
+- [`docs/HKJC_KNOWLEDGE.md`](docs/HKJC_KNOWLEDGE.md) — field guide to HKJC's data
+  sources, endpoints, domain conventions, feature priors and gotchas.
+- [`docs/HKJC_BETTING_RULES.md`](docs/HKJC_BETTING_RULES.md) — full pool catalogue,
+  per-pool takeout, dividend mechanics, and jackpot/carryover special payouts.
+- [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) — design for the
+  closed-loop, self-improving research agent built on this bedrock.
 
 ## Architecture
 

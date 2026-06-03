@@ -133,15 +133,23 @@ https://racing.hkjc.com/racing/English/tipsindex/tips_index.asp?RaceNo={n}
 
 ### 2.2 Pools / bet types (HKJC)
 
-- **WIN** — 1st. **PLA** (place) — top **3** if ≥7 runners, else top **2**.
+- **WIN** — 1st. **PLA** (place) — top **3** if ≥7 runners, top **2** if 4–6, none
+  if ≤3.
 - **QIN** (quinella) — pick the first two in any order.
 - **QPL** (quinella place) — pick any two of the top three.
 - Exotics: **FCT** forecast (1st-2nd ordered), **TCE** tierce (1st-3rd ordered),
   **TRI** trio (top-3 any order), **QTT** quartet, **FF/First-4**, **DBL/TBL**
-  double/treble, **DT/TT** double/triple trio, **6UP**.
+  double/treble, **DT/TT** double/triple trio (**jackpot pools**), **6UP**.
 - The `simulation.RaceSimulator` predicates map onto these: `wins`,
   `places(k=2|3)`, `exact_order` (FCT/TCE/straight exotics), `top_set`
   (QIN/TRI/QTT box), `all_place`/`any_place`.
+
+> **Takeout is NOT uniform across pools** (~17.5% for WIN/PLA/QIN/QPL up to ~25%
+> for QTT/FF), and the jackpot pools carry money forward. The model's
+> `takeout_rate=0.175` default is only valid for the WIN/PLA/QIN/QPL family — see
+> [`HKJC_BETTING_RULES.md`](HKJC_BETTING_RULES.md) for the full pool catalogue,
+> per-pool takeout, dividend mechanics, jackpot/carryover rules and special
+> payouts.
 
 ### 2.3 Runner attributes
 
