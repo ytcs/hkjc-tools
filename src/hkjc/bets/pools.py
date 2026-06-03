@@ -99,9 +99,17 @@ def price_dividends(
     """Attach model probability and realized edge to a race's dividend rows.
 
     For each (pool, winning combination, decimal payout) row, computes the model's
-    probability of that combination and ``edge = model_prob * decimal - 1`` — the
-    EV you would have realized betting that combination at the declared dividend.
-    Rows for pools the simulator can't price are dropped.
+    probability of that combination and ``edge = model_prob * decimal - 1``.
+
+    ⚠️ **Not a tradeable signal.** The declared dividend is the *settled* (post-race)
+    price, and a result page only shows the *winning* combination — never the
+    pre-close crowd prices of the losing combinations you would have had to choose
+    among. Selecting bets by this ``edge`` is look-ahead: it peeks at the
+    settlement price the walk-forward embargo exists to forbid. Use this only as a
+    *post-hoc diagnostic* (e.g. is a model's win-combo probability well-calibrated
+    against realized dividends?). Real exotic value detection needs the live
+    pre-close odds grid (``live_odds`` QIN/QPL matrices), not this. Rows for pools
+    the simulator can't price are dropped.
     """
     rows = []
     for r in dividends.iter_rows(named=True):

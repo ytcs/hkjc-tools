@@ -6,8 +6,12 @@ from typing import Tuple, List
 import requests
 from cachetools.func import ttl_cache
 import numpy as np
+import polars as pl
 
 from ..utils import _try_int, _try_float
+
+# The true carryover/jackpot pools (multi-race; carry forward when not won).
+JACKPOT_POOLS = ["DT", "TT", "SixUP"]
 
 HKJC_LIVEODDS_ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
 
@@ -351,6 +355,77 @@ def _fetch_live_odds_uncached(date: str, venue_code: str, race_number: int, odds
 def _fetch_live_odds(date: str, venue_code: str, race_number: int, odds_type: Tuple[str] = ('PLA', )) -> List[dict]:
     """Cached (30s TTL) wrapper around :func:`_fetch_live_odds_uncached`."""
     return _fetch_live_odds_uncached(date, venue_code, race_number, odds_type)
+
+
+def _parse_jackpots(meeting: dict) -> pl.DataFrame:
+    """Extract jackpot/pool figures from a raceMeetings node (pure; testable).
+
+    Joins ``jpEsts`` (the carried-forward ``jackpot`` and ``estimatedDividend`` per
+    pool leg) with ``poolInvs`` (today's ``investment`` = gross pool) on
+    (oddsType, leg races). For the jackpot pools, ``jackpot`` is the carry-in ``C``
+    and ``investment`` is today's gross ``G`` — exactly what the carryover detector
+    (:mod:`hkjc.bets.carryover`) needs.
+    """
+    jp_index = {}
+    for j in meeting.get("jpEsts") or []:
+        races = tuple((j.get("leg") or {}).get("races") or [])
+        jp_index[(j.get("oddsType"), races)] = j
+    rows = []
+    for p in meeting.get("poolInvs") or []:
+        leg = p.get("leg") or {}
+        races = tuple(leg.get("races") or [])
+        j = jp_index.get((p.get("oddsType"), races), {})
+        rows.append({
+            "pool": p.get("oddsType"),
+            "leg": leg.get("number"),
+            "races": ",".join(map(str, races)),
+            "investment": _try_float(p.get("investment")),       # G: today's gross pool
+            "jackpot": _try_float(j.get("jackpot")),              # C: carried-in jackpot
+            "estimated_dividend": _try_float(j.get("estimatedDividend")),
+            "merged_pool_id": p.get("mergedPoolId"),
+        })
+    return pl.DataFrame(rows)
+
+
+def live_jackpots(date: str = "", venue: str = "", jackpot_only: bool = True) -> pl.DataFrame:
+    """Live jackpot/pool figures for a meeting (the forward carryover data source).
+
+    Returns one row per pool leg with the carried-in ``jackpot`` (C), today's
+    ``investment`` (G) and the ``estimated_dividend``. Empty strings let the server
+    pick the current meeting. Values populate only once the meeting's pools open for
+    betting (they are ``null`` for future meetings) — so this is meant to be polled
+    during the live window and logged, per the carryover build plan.
+
+    With ``jackpot_only`` (default), restricts to the true jackpot pools
+    (Double Trio, Triple Trio, Six Up).
+    """
+    payload = RACEMTG_PAYLOAD.copy()
+    payload["variables"] = payload["variables"].copy()
+    payload["variables"]["date"] = date or None
+    payload["variables"]["venueCode"] = venue or None
+
+    r = requests.post(HKJC_LIVEODDS_ENDPOINT, json=payload, headers=JSON_HEADERS, timeout=REQUEST_TIMEOUT)
+    if r.status_code != 200:
+        raise RuntimeError(f"Request failed: {r.status_code} - {r.text}")
+    meetings = r.json().get("data", {}).get("raceMeetings", []) or []
+    if not meetings:
+        return pl.DataFrame()
+
+    meeting = meetings[0]
+    for m in meetings:
+        if m.get("venueCode") in ("HV", "ST"):
+            meeting = m
+            break
+
+    df = _parse_jackpots(meeting)
+    if df.height:
+        df = df.with_columns([
+            pl.lit(meeting.get("date")).alias("date"),
+            pl.lit(meeting.get("venueCode")).alias("venue"),
+        ])
+        if jackpot_only:
+            df = df.filter(pl.col("pool").is_in(JACKPOT_POOLS))
+    return df
 
 
 def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str] = ['WIN', 'PLA', 'QPL', 'QIN']) -> dict:

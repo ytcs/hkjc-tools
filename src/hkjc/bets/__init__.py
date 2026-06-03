@@ -11,6 +11,13 @@ It computes **no probabilities itself** and embeds **no strategy** — it compos
 the simulator's events and applies arithmetic. Per-pool takeout lives in the
 betting-rules doc, not here.
 """
+from . import carryover
+from .carryover import (
+    CarryoverFlag,
+    aggregate_edge,
+    effective_takeout,
+    flag_carryover,
+)
 from .pools import (
     POOL_PRICERS,
     parse_combination,
@@ -22,6 +29,7 @@ from .pools import (
 )
 
 __all__ = [
+    "carryover", "CarryoverFlag", "aggregate_edge", "effective_takeout", "flag_carryover",
     "POOL_PRICERS", "parse_combination", "pool_prob", "price_dividends",
     "quinella_prob", "quinella_place_prob", "trio_prob",
 ]

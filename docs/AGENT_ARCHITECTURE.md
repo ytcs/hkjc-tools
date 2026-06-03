@@ -345,8 +345,11 @@ Foundations before self-improvement. Steps 1–2 are the spine; without them the
    the step-2 harness; `strengths()` feeds `PlackettLuceModel` for Place/Quinella.
    Validated: beats uniform ~37% on multiclass log-loss out-of-sample. *(Next: add
    real fundamentals + market feature and run vs the market baseline on live data.)*
-5. ⬜ **Memory + orchestrator + carryover detector.** Memory shipped early
-   (`hkjc.ledger`); still need the orchestrator and the jackpot-carryover detector.
+5. 🟡 **Memory + orchestrator + carryover detector.** Memory shipped
+   (`hkjc.ledger`). Carryover detector shipped (`hkjc.bets.carryover` +
+   `hkjc.data.live.live_jackpots`); the **Jackpot Carryover Harvester** is the
+   chosen first strategy (see `docs/CARRYOVER_STRATEGY.md`, journal 0012). Still
+   need: live-capture logging, the Flexi cover layer, and the orchestrator.
 6. ⬜ **Heavy data:** Chinese alt-data pipeline (§5.3) and video mining (§5.2), each
    onboarded through the §5 protocol and judged by the §3 harness.
 
