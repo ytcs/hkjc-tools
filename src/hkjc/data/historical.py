@@ -15,6 +15,14 @@ HKJC_HORSE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Ho
 incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
              'UR', 'VOID', 'WR', 'WV', 'WV-A', 'WX', 'WX-A', 'WXNR']
 
+# Map the result page's dividend-pool labels to the pool codes used elsewhere.
+DIVIDEND_POOL_CODES = {
+    "WIN": "WIN", "PLACE": "PLA", "QUINELLA": "QIN", "QUINELLA PLACE": "QPL",
+    "FORECAST": "FCT", "TIERCE": "TCE", "TRIO": "TRI", "FIRST 4": "FF",
+    "QUARTET": "QTT", "DOUBLE": "DBL", "TREBLE": "TBL", "DOUBLE TRIO": "DT",
+    "TRIPLE TRIO": "TT", "SIX UP": "6UP",
+}
+
 REQUEST_TIMEOUT = 10
 
 HTML_HEADERS = {
@@ -223,3 +231,66 @@ def _extract_race_data(date: str, venue_code: str, race_number: int) -> pl.DataF
 def get_race_data(date: str, venue_code: str, race_number: int) -> pl.DataFrame:
     df = _extract_race_data(date, venue_code, race_number)
     return _clean_race_data(df)
+
+
+def _parse_dividend_value(s: str):
+    s = s.replace(",", "").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _parse_dividend_table(table) -> pl.DataFrame:
+    """Parse a result page's dividend table into tidy rows (pure; testable).
+
+    Pools that pay several combinations (PLACE, QUINELLA PLACE) use a row-spanned
+    pool cell, so continuation rows carry only (combination, dividend) — the pool
+    label is forward-filled.
+    """
+    rows = []
+    current_pool = None
+    for tr in table.find_all('tr'):
+        cells = [td.get_text(" ", strip=True) for td in tr.find_all(['td', 'th'])]
+        if len(cells) >= 3:
+            pool, combo, val = cells[0], cells[1], cells[2]
+            if pool.upper() in ('POOL', 'DIVIDEND') or combo.lower().startswith('winning'):
+                continue
+            current_pool = pool
+        elif len(cells) == 2 and current_pool is not None:
+            pool, combo, val = current_pool, cells[0], cells[1]
+        else:
+            continue
+        rows.append({
+            "pool_name": pool,
+            "pool": DIVIDEND_POOL_CODES.get(pool.upper(), pool.upper()),
+            "combination": combo,
+            "dividend": _parse_dividend_value(val),
+        })
+    df = pl.DataFrame(rows)
+    if df.height:
+        df = df.with_columns((pl.col("dividend") / 10.0).alias("decimal"))  # HK$ per $10 unit
+    return df
+
+
+def get_race_dividends(date: str, venue_code: str, race_number: int) -> pl.DataFrame:
+    """Scrape the declared dividends (payouts) for a finished race.
+
+    Returns tidy rows: ``pool_name``/``pool`` (code), ``combination`` (winning
+    selection string), ``dividend`` (HK$ per HK$10 unit) and ``decimal``
+    (= dividend / 10, the decimal payout). Covers WIN, PLACE, QUINELLA, QUINELLA
+    PLACE, FORECAST, TIERCE, TRIO, FIRST 4, QUARTET (and multi-race pools when
+    shown). This is the realized payout side for exotic backtests.
+    """
+    soup = _soupify_race_page(date, venue_code, race_number)
+    div = soup.find('div', class_='dividend_tab')
+    if div is None or div.find('table') is None:
+        raise AttributeError("no dividend table on page (non-race date or not yet declared)")
+    df = _parse_dividend_table(div.find('table'))
+    if df.height:
+        df = df.with_columns([
+            pl.lit(date).alias("date"),
+            pl.lit(venue_code).alias("venue"),
+            pl.lit(int(race_number)).alias("race_no"),
+        ])
+    return df
