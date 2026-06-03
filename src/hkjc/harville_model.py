@@ -18,6 +18,7 @@ Example:
 import numpy as np
 import itertools
 import collections
+from functools import lru_cache
 
 from scipy.optimize import minimize
 from numba import njit
@@ -41,128 +42,144 @@ def _popcount(mask: int) -> int:
 
 
 @njit(cache=True)
-def _precompute_mask_info(n: int) -> Tuple[np.ndarray, np.ndarray]:
+def _build_mask_tables(n: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Precompute the subset-lattice structure that depends only on ``n``.
+
+    Returns:
+        mask_popcount: number of set bits in each mask, shape (2**n,).
+        low_bit_index: index of the lowest set bit in each mask (-1 for mask 0),
+            used to fill subset strengths incrementally without an (2**n, n) matmul.
+        order: all masks sorted ascending by popcount, shape (2**n,).
+        pop_offsets: offsets into ``order`` for each popcount, shape (n + 2,);
+            masks of popcount k are ``order[pop_offsets[k]:pop_offsets[k + 1]]``.
+    """
     max_mask = 1 << n
-    mask_strength_coef = np.zeros((max_mask, n), dtype=np.float64)
-    mask_popcount = np.zeros(max_mask, dtype=np.int32)
+    mask_popcount = np.zeros(max_mask, dtype=np.int64)
+    low_bit_index = np.full(max_mask, -1, dtype=np.int64)
 
     for mask in range(max_mask):
         mask_popcount[mask] = _popcount(mask)
         for i in range(n):
             if mask & (1 << i):
-                mask_strength_coef[mask, i] = 1.0
+                low_bit_index[mask] = i
+                break
 
-    return mask_strength_coef, mask_popcount
+    # Counting sort of masks by popcount.
+    pop_offsets = np.zeros(n + 2, dtype=np.int64)
+    for mask in range(max_mask):
+        pop_offsets[mask_popcount[mask] + 1] += 1
+    for k in range(n + 1):
+        pop_offsets[k + 1] += pop_offsets[k]
+
+    order = np.zeros(max_mask, dtype=np.int64)
+    cursor = pop_offsets.copy()
+    for mask in range(max_mask):
+        k = mask_popcount[mask]
+        order[cursor[k]] = mask
+        cursor[k] += 1
+
+    return mask_popcount, low_bit_index, order, pop_offsets
+
+
+@lru_cache(maxsize=24)
+def _mask_tables(n: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Cache the N-only mask tables so they are built once per field size."""
+    return _build_mask_tables(n)
 
 
 @njit(cache=True)
-def _compute_dp_vectorized(theta: np.ndarray, k_max: int) -> np.ndarray:
+def _compute_probabilities_kernel(
+    theta: np.ndarray,
+    low_bit_index: np.ndarray,
+    order: np.ndarray,
+    pop_offsets: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Harville DP given precomputed mask tables. Hot path (called per loss eval).
+
+    All work here depends on ``theta``; everything that depends only on ``n`` is
+    passed in via the precomputed tables, so nothing is rebuilt across the
+    hundreds of evaluations a single fit performs.
+    """
     n = len(theta)
     max_mask = 1 << n
 
-    mask_strength_coef, mask_popcount = _precompute_mask_info(n)
-    mask_strength = mask_strength_coef @ theta
+    # Subset strengths via the lowest-set-bit recurrence: a mask's strength is
+    # its lowest member's strength plus the strength of the remaining subset
+    # (already computed, since that subset is a smaller integer).
+    mask_strength = np.zeros(max_mask)
+    for mask in range(1, max_mask):
+        lb = low_bit_index[mask]
+        mask_strength[mask] = mask_strength[mask & (mask - 1)] + theta[lb]
 
-    dp = np.zeros((k_max + 1, max_mask))
+    dp = np.zeros((n + 1, max_mask))
     dp[0, 0] = 1.0
 
-    for k in range(k_max):
-        valid_masks = np.where(mask_popcount == k)[0]
-
-        for mask in valid_masks:
-            if dp[k, mask] == 0:
+    for k in range(n):
+        for idx in range(pop_offsets[k], pop_offsets[k + 1]):
+            mask = order[idx]
+            prob_current = dp[k, mask]
+            if prob_current == 0:
                 continue
 
-            s_mask = mask_strength[mask]
-            remaining = 1.0 - s_mask
-
+            remaining = 1.0 - mask_strength[mask]
             if remaining < 1e-12:
                 continue
 
-            prob_current = dp[k, mask]
-
             for i in range(n):
                 if not (mask & (1 << i)):
-                    next_mask = mask | (1 << i)
-                    dp[k + 1, next_mask] += prob_current * theta[i] / remaining
+                    dp[k + 1, mask | (1 << i)] += prob_current * theta[i] / remaining
 
-    return dp
-
-
-@njit(cache=True)
-def _extract_pair_in_top_k(dp: np.ndarray, n: int, k: int) -> np.ndarray:
-    M = np.zeros((n, n))
-    max_mask = 1 << n
-
-    mask_popcount = np.zeros(max_mask, dtype=np.int32)
-    for mask in range(max_mask):
-        mask_popcount[mask] = _popcount(mask)
-
-    masks_size_k = np.where(mask_popcount == k)[0]
-
-    for mask in masks_size_k:
-        prob = dp[k, mask]
-        if prob == 0:
-            continue
-
-        horses = np.empty(k, dtype=np.int32)
-        idx = 0
-        for i in range(n):
-            if mask & (1 << i):
-                horses[idx] = i
-                idx += 1
-
-        for i in range(k):
-            for j in range(k):
-                if horses[i] != horses[j]:
-                    M[horses[i], horses[j]] += prob
-
-    return M
-
-
-@njit(cache=True)
-def _extract_top_k_probs(dp: np.ndarray, n: int, k_max: int) -> np.ndarray:
-    T = np.zeros((n, k_max + 1))
-    max_mask = 1 << n
-
-    mask_popcount = np.zeros(max_mask, dtype=np.int32)
-    for mask in range(max_mask):
-        mask_popcount[mask] = _popcount(mask)
-
-    for k in range(1, k_max + 1):
-        masks_size_k = np.where(mask_popcount == k)[0]
-
-        for mask in masks_size_k:
+    # T[i, k] = P(horse i is among the top k finishers).
+    T = np.zeros((n, n + 1))
+    for k in range(1, n + 1):
+        for idx in range(pop_offsets[k], pop_offsets[k + 1]):
+            mask = order[idx]
             prob = dp[k, mask]
             if prob == 0:
                 continue
-
             for i in range(n):
                 if mask & (1 << i):
                     T[i, k] += prob
 
-    return T
-
-
-@njit(cache=True)
-def _compute_probabilities(theta: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    n = len(theta)
-
-    dp = _compute_dp_vectorized(theta, n)
-
-    T = _extract_top_k_probs(dp, n, n)
-
+    # P[i, j] = P(horse i finishes exactly in position j) = T[i, j+1] - T[i, j].
     P = np.zeros((n, n))
     for i in range(n):
         for j in range(n):
             P[i, j] = T[i, j + 1] - T[i, j]
 
-    W = P[:, 0]
-    Qin = _extract_pair_in_top_k(dp, n, 2)
-    Q = _extract_pair_in_top_k(dp, n, 3)
-    b = T[:, 3]
+    # Pair-in-top-k matrices for Qin (top 2) and Quinella place (top 3).
+    Qin = np.zeros((n, n))
+    Q = np.zeros((n, n))
+    for k, M in ((2, Qin), (3, Q)):
+        for idx in range(pop_offsets[k], pop_offsets[k + 1]):
+            mask = order[idx]
+            prob = dp[k, mask]
+            if prob == 0:
+                continue
+            horses = np.empty(k, dtype=np.int64)
+            count = 0
+            for i in range(n):
+                if mask & (1 << i):
+                    horses[count] = i
+                    count += 1
+            for a in range(k):
+                for b_ in range(k):
+                    if horses[a] != horses[b_]:
+                        M[horses[a], horses[b_]] += prob
+
+    W = P[:, 0].copy()
+    b = T[:, 3].copy()
 
     return W, Qin, Q, b, P
+
+
+def _compute_probabilities(theta: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compute Harville outcome probabilities for a strength vector ``theta``.
+
+    Thin wrapper that supplies cached N-only mask tables to the JIT kernel.
+    """
+    _, low_bit_index, order, pop_offsets = _mask_tables(len(theta))
+    return _compute_probabilities_kernel(theta, low_bit_index, order, pop_offsets)
 
 
 @njit(cache=True)
