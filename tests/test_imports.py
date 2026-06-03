@@ -7,8 +7,8 @@ def test_top_level_api():
         "data", "live", "historical", "speedpro", "features",
         "harville_model", "model", "simulation", "eval", "ledger",
         "RaceModel", "PlackettLuceModel", "RaceSimulator", "OddsTickStore",
-        "Ledger", "pareto_filter", "speedpro_energy", "speedmap",
-        "generate_historical_data",
+        "FeatureStore", "DataSource", "Ledger", "pareto_filter",
+        "speedpro_energy", "speedmap", "generate_historical_data",
     ]:
         assert hasattr(hkjc, name), f"hkjc.{name} missing"
 
@@ -19,6 +19,8 @@ def test_canonical_data_paths():
     import hkjc.data.speedpro
     import hkjc.data.odds_ticks
     import hkjc.data.processing
+    import hkjc.data.source
+    import hkjc.data.feature_store
     assert hkjc.live is hkjc.data.live
 
 

@@ -334,11 +334,15 @@ Foundations before self-improvement. Steps 1–2 are the spine; without them the
    *(Harness Layers 1 & 3.)* — shipped: `hkjc.eval.{calibration,walkforward,
    selection,harness}`. *(Layer-3 bankroll P&L still to wire once stake-sizing is
    decided — see §9.)*
-3. ⬜ **`DataSource` protocol + feature store**, with the `languages` field and
-   per-language coverage reporting. The uniform seam for the data axis.
+3. ✅ **`DataSource` protocol + feature store**, with the `languages` field and
+   per-language coverage reporting. The uniform seam for the data axis. — shipped:
+   `hkjc.data.source` (protocol), `hkjc.data.feature_store` (`FeatureStore`,
+   per-source + per-language coverage, the **Win/Place/Quinella outcome schema**).
+   Concrete feature-source adapters grow alongside step 4.
 4. ⬜ **Results-trained `RaceModel`.** Break the circularity (§0.1); the first
-   candidate that can structurally beat the Harville-on-odds baseline. Plugs into
-   the step-2 harness as a `fit_predict`.
+   candidate that can structurally beat the Harville-on-odds baseline. Targets
+   **Win/Place/Quinella** (scope decision); plugs into the step-2 harness as a
+   `fit_predict`.
 5. ⬜ **Memory + orchestrator + carryover detector.** Memory shipped early
    (`hkjc.ledger`); still need the orchestrator and the jackpot-carryover detector.
 6. ⬜ **Heavy data:** Chinese alt-data pipeline (§5.3) and video mining (§5.2), each

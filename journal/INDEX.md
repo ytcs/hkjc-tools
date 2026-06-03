@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-7 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+9 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -8,6 +8,8 @@
 - **0002-clv-is-the-north-star-leading-indicator** (open) [CLV is the north-star leading indicator](entries/0002-clv-is-the-north-star-leading-indicator.md) — _clv, evaluation, odds-ticks_
 - **0005-language-parity-is-a-first-class-measured-requir** (open) [Language parity is a first-class, measured requirement](entries/0005-language-parity-is-a-first-class-measured-requir.md) — _data, language-parity, alt-data_
 - **0006-evaluation-harness-is-the-objective-function-bui** (open) [Evaluation harness is the objective function — build it before optimizing](entries/0006-evaluation-harness-is-the-objective-function-bui.md) — _evaluation, harness, walk-forward, lockbox, fdr_
+- **0008-first-modelling-target-win-place-quinella-sim-st** (open) [First modelling target: Win/Place/Quinella; sim stays sizing-agnostic](entries/0008-first-modelling-target-win-place-quinella-sim-st.md) — _scope, pools, win-place-quinella, staking_
+- **0009-feature-store-datasource-seam-w-p-q-outcome-sche** (open) [Feature store: DataSource seam + W/P/Q outcome schema + language coverage](entries/0009-feature-store-datasource-seam-w-p-q-outcome-sche.md) — _feature-store, datasource, outcome-schema, language-parity_
 
 ## gotcha
 

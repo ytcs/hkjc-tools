@@ -25,8 +25,8 @@ __all__ = [
     "data", "live", "historical", "speedpro", "features",
     "harville_model", "model", "simulation", "eval", "ledger",
     "RaceModel", "PlackettLuceModel", "RaceSimulator", "OddsTickStore",
-    "Ledger", "pareto_filter", "speedpro_energy", "speedmap",
-    "generate_historical_data",
+    "FeatureStore", "DataSource", "Ledger", "pareto_filter",
+    "speedpro_energy", "speedmap", "generate_historical_data",
 ]
 
 try:
@@ -35,7 +35,7 @@ except Exception:  # pragma: no cover - best-effort version resolution
     __version__ = "0.0.0"
 
 from . import data, features, harville_model, model, simulation, eval, ledger
-from .data import live, historical, speedpro, OddsTickStore
+from .data import live, historical, speedpro, OddsTickStore, FeatureStore, DataSource
 from .data.processing import generate_historical_data
 from .data.speedpro import speedmap, speedpro_energy
 from .model import RaceModel, PlackettLuceModel
