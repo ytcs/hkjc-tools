@@ -1,7 +1,7 @@
 [project]
 name = "hkjc"
-version = "1.4.0"
-description = "Library for scraping HKJC data and performing basic analysis"
+version = "1.5.0"
+description = "Data, modelling and simulation bedrock for an automated HKJC betting research agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -24,7 +24,23 @@ build-backend = "hatchling.build"
 deploy = [
     "modal>=1.4.3",
 ]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.15.15",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "N"]
+ignore = ["E501"]   # long lines (mostly docstrings / GraphQL payloads) aren't worth churning
+
+[tool.ruff.lint.per-file-ignores]
+# Numerical / ML kernels use mathematical notation (X, N, P, W_obs, G, ...).
+"src/hkjc/harville_model.py" = ["N803", "N806"]
+"src/hkjc/model/conditional_logit.py" = ["N803", "N806"]
+"tests/test_conditional_logit.py" = ["N806"]   # X = design matrix, mirrors the kernel

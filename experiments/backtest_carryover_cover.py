@@ -20,7 +20,7 @@ import sys
 import numpy as np
 import polars as pl
 
-from hkjc.bets.carryover_cover import leg_horses_by_place, top3_coverage
+from hkjc.bets.carryover_cover import leg_horses_by_place
 from hkjc.data.historical import get_race_data
 from hkjc.data.jackpot_history import scan_jackpot_history
 from hkjc.model import PlackettLuceModel

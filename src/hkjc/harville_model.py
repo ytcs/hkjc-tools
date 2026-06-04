@@ -10,19 +10,17 @@ Suitable for races with up to ~20 horses.
 
 Example:
     >>> optimizer = HarvilleOptimizer(n_horses=14)
-    >>> results = optimizer.fit(W_obs=win_odds, Qin_obs=qin_odds, 
+    >>> results = optimizer.fit(W_obs=win_odds, Qin_obs=qin_odds,
     ...                          Q_obs=quinella_odds, b_obs=banker_odds)
     >>> print(results['theta'])  # Fitted strength parameters
 """
 
 import numpy as np
-import itertools
-import collections
 from functools import lru_cache
 
 from scipy.optimize import minimize
 from numba import njit
-from typing import Tuple, List, Optional
+from typing import Tuple, Optional
 
 LAMBDA_DEFAULTS = {
     'WIN': 1.0,
@@ -205,12 +203,12 @@ class HarvilleModel:
     Fits Harville race model to betting market odds using dynamic programming.
 
     The Harville model assigns each horse a latent strength parameter theta_i, where
-    the probability of finishing next among remaining horses is proportional to 
+    the probability of finishing next among remaining horses is proportional to
     relative strength. This optimizer estimates theta from observed betting odds
     across multiple pool types.
 
-    Default lambda weights reflect that early Win odds are biased by informed 
-    traders waiting until closing, while exotic pools provide more stable 
+    Default lambda weights reflect that early Win odds are biased by informed
+    traders waiting until closing, while exotic pools provide more stable
     signals for ensemble estimation.
 
     Attributes:
@@ -352,7 +350,7 @@ class HarvilleModel:
                      i,j finish 1st-2nd in any order
             Q_obs: Quinella probabilities, shape (n, n). Q_obs[i,j] = prob horses
                    i,j both finish in top 3
-            b_obs: Banker probabilities, shape (n,). b_obs[i] = prob horse i 
+            b_obs: Banker probabilities, shape (n,). b_obs[i] = prob horse i
                    finishes in top 3
             theta_init: Initial strength guess (default: W_obs if available, else uniform)
             method: Scipy optimizer ('L-BFGS-B' or 'SLSQP')
@@ -369,7 +367,7 @@ class HarvilleModel:
                     - Qin: Qin probabilities (n, n)
                     - Q: Quinella probabilities (n, n)
                     - b: Banker probabilities (n,)
-                    - P: Full place probability matrix (n, n), P[i,j] = 
+                    - P: Full place probability matrix (n, n), P[i,j] =
                          prob horse i finishes in position j
                 - odds_fit: Dictionary of fitted market odds (directly comparable to observed)
                     - WIN: Win odds (n,)
@@ -499,7 +497,7 @@ def fit_harville_to_odds(odds: dict[str, np.ndarray], lambdas: dict[str, float] 
                 - Qin: Qin probabilities (n, n)
                 - Q: Quinella probabilities (n, n)
                 - b: Banker probabilities (n,)
-                - P: Full place probability matrix (n, n), P[i,j] = 
+                - P: Full place probability matrix (n, n), P[i,j] =
                      prob horse i finishes in position j
             - odds_fit: Dictionary of fitted market odds (directly comparable to observed)
                 - WIN: Win odds (n,)
@@ -562,119 +560,3 @@ def fit_harville_to_odds(odds: dict[str, np.ndarray], lambdas: dict[str, float] 
     )
     result = ho.fit(W_obs=W_obs, Qin_obs=Qin_obs, Q_obs=Q_obs, b_obs=b_obs)
     return result
-
-
-def find_top_outcomes(p: np.ndarray, k: int, m: int, ordered: bool = True) -> Tuple[List, List]:
-    """
-    Calculates the k most likely outcomes for the first m places given a
-    probability matrix using optimized NumPy operations.
-
-    Args:
-        p (np.ndarray): An (N, N) NumPy array where p[i, j] is the probability
-                        of runner i (0-indexed) finishing in j-th place (0-indexed).
-        k (int): The number of top outcomes to return.
-        m (int): The number of top places to consider (e.g., 4 for first 4 places).
-        ordered (bool): If True (default), calculates for ordered permutations
-                        (e.g., [1, 2] is different from [2, 1]).
-                        If False, calculates for unordered combinations
-                        (e.g., [1, 2] and [2, 1] are summed).
-
-    Returns:
-        Tuple[List, List]: A tuple containing two lists:
-            - top_outcomes (List[List[int]]): 
-              A list of the top k outcomes (e.g., [[5, 1, 9, 2], ...]).
-              Runner indices are 0-indexed.
-            - top_probabilities (List[float]): 
-              A list of the corresponding probabilities for each outcome.
-
-    Raises:
-        ValueError: If p is not a 2D square NumPy array, if k or m are non-positive,
-                    or if N < m.
-    """
-    # --- 1. Input Validation ---
-    if not isinstance(p, np.ndarray) or p.ndim != 2:
-        raise ValueError("Input 'p' must be a 2D NumPy array.")
-
-    if p.shape[0] != p.shape[1]:
-        raise ValueError(
-            f"Input matrix 'p' must be square (N, N), but has shape {p.shape}.")
-
-    N = p.shape[0]
-
-    if N < m:
-        raise ValueError(
-            f"Input matrix 'p' must have N >= m, but N={N} and m={m}.")
-
-    if not isinstance(k, int) or k <= 0:
-        raise ValueError(f"Input 'k' must be a positive integer, but got {k}.")
-
-    if not isinstance(m, int) or m <= 0:
-        raise ValueError(f"Input 'm' must be a positive integer, but got {m}.")
-
-    # --- 2. Generate All Permutations ---
-    runner_indices = range(N)
-    # We are finding permutations for the first 'm' places
-    permutations_iter = itertools.permutations(runner_indices, m)
-
-    # Convert iterator to a NumPy array for vectorized operations
-    permutations = np.array(list(permutations_iter), dtype=np.uint16)
-    num_outcomes = permutations.shape[0]
-
-    # --- 3. Vectorized Probability Calculation ---
-    # Calculate: p[r1, 0] * p[r2, 1] * ... * p[rm, m-1] for each permutation
-
-    # Initialize probabilities
-    all_probs = np.ones(num_outcomes, dtype=np.float64)
-
-    # Multiply probabilities for each place
-    for j in range(m):
-        all_probs *= p[permutations[:, j], j]
-
-    # --- 4. Branch Logic based on 'ordered' ---
-    if ordered:
-        # --- 4a. Efficiently Find Top K Ordered ---
-        k_clamped = min(k, num_outcomes)
-
-        # Use np.argpartition to find the k largest elements without a full sort
-        top_k_indices_unsorted = np.argpartition(
-            all_probs, -k_clamped)[-k_clamped:]
-
-        # Sort just the top k elements by probability
-        top_k_probs = all_probs[top_k_indices_unsorted]
-        sort_order = np.argsort(top_k_probs)[::-1]  # Descending order
-        top_k_indices = top_k_indices_unsorted[sort_order]
-
-        # --- 5a. Extract and Format Ordered Results ---
-        top_outcomes_np = permutations[top_k_indices]+1 # switch to 1-index
-        top_probabilities = all_probs[top_k_indices]
-
-        return top_outcomes_np.astype(int).tolist(), top_probabilities.tolist()
-
-    else:
-        # --- 4b. Group by Unordered Combination ---
-        # We group all permutations by their content, summing their probabilities.
-        # A sorted tuple (e.g., (1, 2, 5, 9)) is used as the key.
-        grouped_probs = collections.defaultdict(float)
-        for i in range(num_outcomes):
-            # Sort the runners to create a unique key for the combination
-            key = tuple(np.sort(permutations[i]))
-            grouped_probs[key] += all_probs[i]
-
-        # --- 5b. Sort Unordered Groups and Format ---
-
-        # Convert dict to list of (probability, outcome_tuple)
-        all_unordered = [(prob, outcome)
-                         for outcome, prob in grouped_probs.items()]
-
-        # Sort by probability (descending)
-        all_unordered.sort(key=lambda x: x[0], reverse=True)
-
-        # Get the top k
-        k_clamped = min(k, len(all_unordered))
-        top_k_unordered = all_unordered[:k_clamped]
-
-        top_outcomes = [[int(runner)+1 for runner in outcome]
-                        for prob, outcome in top_k_unordered]
-        top_probabilities = [prob for prob, outcome in top_k_unordered]
-
-        return top_outcomes, top_probabilities

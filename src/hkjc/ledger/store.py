@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_ROOT = Path(os.environ.get("HKJC_JOURNAL", str(_REPO_ROOT / "journal")))

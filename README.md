@@ -37,26 +37,26 @@ betting strategy — the agent composes her own bets on top. See
 [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) for the full design.
 
 ```
-   data         ->   model   ->   sim          eval        ledger
-   live/             harville_     RaceSimulator (judges     (durable,
-   historical/       model +       (P/EV of ANY  models &    indexed
-   speedpro/         RaceModel     bet you        strategies) findings)
-   odds_ticks                      compose)
+   data         ->   model   ->   sim          bets / eval        ledger
+   live/             harville_     RaceSimulator (price pools,      (durable,
+   historical/       model +       (P/EV of ANY  carryover cover;   indexed
+   racecard/         RaceModel     bet you        judge models)     findings)
+   sectional/                      compose)
 ```
 
 | Module | Layer | Purpose |
 | --- | --- | --- |
-| `hkjc.data.live` | data | Live race cards and live odds via the HKJC GraphQL endpoint. |
-| `hkjc.data.historical` | data | Past race results and per-horse form, scraped from HKJC results pages. |
-| `hkjc.data.speedpro` | data | SpeedPro energy/fitness figures and speed maps for the current meeting. |
-| `hkjc.data.odds_ticks` | data | `OddsTickStore`: capture & persist the live-odds time series (Parquet). |
-| `hkjc.data.processing` | data | Build historical datasets across a date range. |
-| `hkjc.harville_model` | model | Fits latent horse strengths to odds via DP (Numba); yields a full place-probability matrix. The default odds→strengths fitter. |
-| `hkjc.model` | model | `RaceModel` interface (swappable); `PlackettLuceModel` (Harville-on-odds baseline); `ConditionalLogit` results-trained win model (breaks the odds-fitting circularity) + market/uniform baselines. |
+| `hkjc.data.live` | data | Live race cards, live odds, and live jackpot pools via the HKJC GraphQL endpoint. |
+| `hkjc.data.historical` | data | Past race results, dividends and per-horse form, scraped from HKJC pages. |
+| `hkjc.data.racecard` | data | Pre-race racecard (ratings, gear, weights, days-since-run, pedigree). |
+| `hkjc.data.sectional` | data | Per-horse sectional split times and running positions. |
+| `hkjc.data.odds_ticks` / `jackpot_ticks` / `carryover_ledger` | data | The capture flywheel: odds + jackpot time series and the carryover event ledger. |
+| `hkjc.harville_model` | model | Fits latent horse strengths to odds via DP (Numba); yields a full place-probability matrix. |
+| `hkjc.model` | model | `RaceModel` interface; `PlackettLuceModel` (Harville-on-odds baseline); `ConditionalLogit` results-trained win model + market/uniform baselines. |
 | `hkjc.simulation` | sim | `RaceSimulator`: draw finishing orders from any model and estimate the probability/EV of arbitrary bets. |
-| `hkjc.eval` | eval | The harness: `clv` (closing-line value), `calibration` (log-loss/Brier/ECE/RPS), `walkforward` (folds + sealed `Lockbox`), `selection` (BH-FDR, Deflated Sharpe), `harness` (fit-on-train/score-on-test). |
+| `hkjc.bets` | bets | Price any HKJC pool from a model; the carryover detector (`effective_takeout`) and Flexi-cover optimizer. |
+| `hkjc.eval` | eval | The harness: `clv`, `calibration` (log-loss/Brier/ECE/RPS), `walkforward` (folds + sealed `Lockbox`), `selection` (BH-FDR, Deflated Sharpe), `harness`. |
 | `hkjc.ledger` | memory | `Ledger`: durable, indexed Markdown journal of findings (`record` / `search` / `recent`). |
-| `hkjc.features` | — | Polars feature expressions (rating gap, front-runner share, ...). |
 | `hkjc.utils` | — | Parsing helpers and a generic Pareto filter. |
 
 Data-access modules live under `hkjc.data` (`hkjc.data.live`, `hkjc.data.racecard`,

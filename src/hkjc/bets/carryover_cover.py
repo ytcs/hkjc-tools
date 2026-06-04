@@ -69,9 +69,9 @@ def evaluate_cover(
     n_combos = 1
     hit = 1.0
     coverage = []
-    for sim, S in zip(leg_sims, leg_sets):
-        n_combos *= comb(len(S), 3)
-        c = top3_coverage(sim, S)
+    for sim, horse_set in zip(leg_sims, leg_sets):
+        n_combos *= comb(len(horse_set), 3)
+        c = top3_coverage(sim, horse_set)
         coverage.append(c)
         hit *= c
     cost = n_combos * stake

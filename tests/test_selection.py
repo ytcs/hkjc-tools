@@ -1,5 +1,4 @@
 """Tests for multiple-testing control."""
-import numpy as np
 
 from hkjc.eval import selection as sel
 

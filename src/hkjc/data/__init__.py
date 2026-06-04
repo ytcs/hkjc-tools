@@ -7,13 +7,15 @@ except shared parsing helpers in :mod:`hkjc.utils`.
 
 - :mod:`~hkjc.data.live` — live race cards and live odds via the GraphQL endpoint.
 - :mod:`~hkjc.data.historical` — past results and per-horse form (HTML scrape).
-- :mod:`~hkjc.data.speedpro` — SpeedPro energy/fitness figures and speed maps.
+- :mod:`~hkjc.data.racecard` — pre-race racecard (ratings, gear, weights, …).
+- :mod:`~hkjc.data.sectional` — per-horse sectional split times.
 - :mod:`~hkjc.data.processing` — build historical datasets across a date range.
 - :mod:`~hkjc.data.odds_ticks` — capture and persist the live-odds time series.
+- :mod:`~hkjc.data.jackpot_ticks` / `~hkjc.data.carryover_ledger` — the carryover flywheel.
 - :mod:`~hkjc.data.source` — the ``DataSource`` protocol (uniform input seam).
 - :mod:`~hkjc.data.feature_store` — assemble sources into a modelling frame.
 """
-from . import (live, historical, speedpro, processing, odds_ticks, source,
+from . import (live, historical, processing, odds_ticks, source,
                feature_store, jackpot_ticks, carryover_ledger, capture,
                jackpot_history, sectional, racecard)
 from .odds_ticks import OddsTickStore
@@ -24,9 +26,9 @@ from .source import DataSource, CallableSource, KEY_COLUMNS
 from .feature_store import FeatureStore
 
 __all__ = [
-    "live", "historical", "speedpro", "processing", "odds_ticks",
+    "live", "historical", "racecard", "sectional", "processing", "odds_ticks",
     "source", "feature_store", "jackpot_ticks", "carryover_ledger", "capture",
-    "jackpot_history", "sectional", "racecard",
+    "jackpot_history",
     "OddsTickStore", "JackpotCaptureStore", "CarryoverLedger",
     "capture_once", "settle_meeting", "settle_recent",
     "DataSource", "CallableSource", "FeatureStore", "KEY_COLUMNS",

@@ -7,15 +7,15 @@ import re
 def _try_int(value: str) -> int:
     try:
         return int(value)
-    except:
+    except (ValueError, TypeError):
         return 0
-    
+
 def _try_float(value: str) -> float:
     try:
         return float(value)
-    except:
+    except (ValueError, TypeError):
         return float('nan')
-    
+
 
 def _validate_date(date_str: str) -> bool:
     # validate date format

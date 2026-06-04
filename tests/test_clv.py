@@ -31,8 +31,10 @@ def _ticks() -> pl.DataFrame:
             date="2026-06-03", venue="HV", race=1, pool="WIN",
             selection=sel, odds=odds, last_update="x"))
 
-    add(0, "1", 6.0); add(30, "1", 4.0)   # shortened (steam)
-    add(0, "2", 3.0); add(30, "2", 3.5)   # drifted out
+    add(0, "1", 6.0)
+    add(30, "1", 4.0)   # shortened (steam)
+    add(0, "2", 3.0)
+    add(30, "2", 3.5)   # drifted out
     return pl.DataFrame(rows)
 
 

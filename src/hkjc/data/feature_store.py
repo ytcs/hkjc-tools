@@ -15,7 +15,7 @@ a one-liner kept local on purpose, rather than importing ``eval.clv``.)
 """
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 import polars as pl
 

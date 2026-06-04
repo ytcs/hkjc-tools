@@ -15,7 +15,6 @@ import datetime as dt
 import time
 from pathlib import Path
 
-import numpy as np
 import polars as pl
 
 from hkjc.data.feature_store import results_to_features, results_to_outcomes

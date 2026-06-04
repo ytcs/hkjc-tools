@@ -3,9 +3,9 @@
 The library is organised by concern, with a single direction of dependency
 (``data`` ← ``model`` ← ``sim``; ``eval`` and ``ledger`` sit to the side):
 
-- **Data access** (`data`: `live`, `historical`, `speedpro`, `odds_ticks`,
-  `processing`): fetch, parse and persist race cards, odds, results, form, SpeedPro
-  figures, and the live-odds time series. Acquisition/persistence only.
+- **Data access** (`data`: `live`, `historical`, `racecard`, `sectional`,
+  `odds_ticks`, the carryover flywheel): fetch, parse and persist race cards, odds,
+  results, form, sectionals, and the live-odds/jackpot time series.
 - **Model** (`model`, `harville_model`): turn inputs into a swappable
   :class:`~hkjc.model.RaceModel` that generates finishing orders. Harville /
   Plackett-Luce is the reference implementation; bring your own by subclassing.
@@ -23,10 +23,10 @@ Canonical import paths live under their concern, e.g. ``hkjc.data.live``,
 from importlib.metadata import version as _version
 
 __all__ = [
-    "data", "features", "harville_model", "model", "simulation", "bets", "eval", "ledger",
+    "data", "harville_model", "model", "simulation", "bets", "eval", "ledger",
     "RaceModel", "PlackettLuceModel", "ConditionalLogit", "RaceSimulator",
     "OddsTickStore", "FeatureStore", "DataSource", "Ledger", "pareto_filter",
-    "speedpro_energy", "speedmap", "generate_historical_data",
+    "generate_historical_data",
 ]
 
 try:
@@ -34,10 +34,9 @@ try:
 except Exception:  # pragma: no cover - best-effort version resolution
     __version__ = "0.0.0"
 
-from . import data, features, harville_model, model, simulation, bets, eval, ledger
+from . import data, harville_model, model, simulation, bets, eval, ledger
 from .data import OddsTickStore, FeatureStore, DataSource
 from .data.processing import generate_historical_data
-from .data.speedpro import speedmap, speedpro_energy
 from .model import RaceModel, PlackettLuceModel, ConditionalLogit
 from .simulation import RaceSimulator
 from .ledger import Ledger

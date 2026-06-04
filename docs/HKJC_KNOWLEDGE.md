@@ -69,7 +69,10 @@ https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseNo={cod
 `HorseNo`/`HorseID` from both the live card and the results table. Form table is
 `table.bigborder`.
 
-### 1.4 SpeedPro — JSON  *(used by `hkjc.speedpro`)*
+### 1.4 SpeedPro — JSON  *(connector removed — deprioritized)*
+
+> The `hkjc.speedpro` module was removed (judged unlikely to produce edge given the
+> market-efficiency results). The endpoint is documented here in case it's revisited.
 
 ```
 https://racing.hkjc.com/racing/speedpro/assets/json/speedguide/race_{n}.json
@@ -201,13 +204,15 @@ self-consistent joint model — i.e. candidate mispricings to bet into.
 
 ---
 
-## 4. Feature hypotheses & ranking — *falsifiable priors*
+## 4. Feature hypotheses & ranking — *priors, now mostly FALSIFIED*
 
-> **Everything in this section is a prior belief, not a result.** These are the
-> features we *thought* mattered and the crude way we combined them. They were
-> never properly backtested. The research agent should treat each as a hypothesis
-> to confirm, reweight, or discard — not as ground truth. They are recorded so the
-> agent starts from accumulated intuition rather than a blank slate.
+> **Update — these were tested and do NOT beat the market.** The standard
+> fundamentals below (market odds, draw, weight, **official rating**, **recent
+> form**) were run through the walk-forward harness and add nothing over the
+> closing win line — form even *hurts* (journal 0011 & 0023). The win market is
+> efficient w.r.t. all of these. Kept as a record of what was tried and ruled out;
+> a model edge must come from information the market lacks (sectionals/trajectory,
+> trip comments, alt-data), not from re-weighting these.
 
 ### 4.1 The features we watched, and the "good" direction
 

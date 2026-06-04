@@ -16,11 +16,11 @@ inside the things it evaluates.
 - :mod:`~hkjc.eval.harness` — fit-on-train / score-on-test walk-forward evaluation.
 """
 from . import clv, calibration, walkforward, selection, harness
-from .walkforward import Fold, Lockbox, LockboxBreach, walk_forward_folds, split_lockbox
+from .walkforward import Fold, Lockbox, LockboxBreachError, walk_forward_folds, split_lockbox
 from .harness import walk_forward_evaluate, score_predictions, aggregate
 
 __all__ = [
     "clv", "calibration", "walkforward", "selection", "harness",
-    "Fold", "Lockbox", "LockboxBreach", "walk_forward_folds", "split_lockbox",
+    "Fold", "Lockbox", "LockboxBreachError", "walk_forward_folds", "split_lockbox",
     "walk_forward_evaluate", "score_predictions", "aggregate",
 ]

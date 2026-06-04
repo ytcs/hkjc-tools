@@ -18,7 +18,6 @@ This module is pure: tick/odds frames in, scored frames out. No I/O, no network.
 """
 from __future__ import annotations
 
-from typing import Optional
 
 import numpy as np
 import polars as pl

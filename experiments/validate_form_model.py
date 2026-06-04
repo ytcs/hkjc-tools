@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import polars as pl
 
 from hkjc.data.feature_store import trailing_form_features

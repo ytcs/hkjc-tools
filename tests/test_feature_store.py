@@ -113,7 +113,8 @@ def _src(name, languages, provides, rows, role="feature"):
 
 
 def test_assemble_joins_sources_on_runner_keys():
-    keys = lambda r: {"date": "d", "venue": "ST", "race_no": 1, "runner": r}
+    def keys(r):
+        return {"date": "d", "venue": "ST", "race_no": 1, "runner": r}
     outcomes = _src("results", ["en-us"], ["won"],
                     [{**keys(1), "won": 1}, {**keys(2), "won": 0}], role="outcome")
     market = _src("market", ["en-us"], ["market_win_prob"],
@@ -130,7 +131,8 @@ def test_assemble_joins_sources_on_runner_keys():
 
 
 def test_coverage_reports_per_source_and_language():
-    keys = lambda r: {"date": "d", "venue": "ST", "race_no": 1, "runner": r}
+    def keys(r):
+        return {"date": "d", "venue": "ST", "race_no": 1, "runner": r}
     market = _src("market", ["en-us"], ["market_win_prob"],
                   [{**keys(1), "market_win_prob": 0.6}, {**keys(2), "market_win_prob": 0.4}])
     cn = _src("tipsters_zh", ["zh-hk"], ["tip_score"],

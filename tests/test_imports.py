@@ -4,10 +4,10 @@ import hkjc
 
 def test_top_level_api():
     for name in [
-        "data", "features", "harville_model", "model", "simulation", "bets",
+        "data", "harville_model", "model", "simulation", "bets",
         "eval", "ledger", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
         "RaceSimulator", "OddsTickStore", "FeatureStore", "DataSource", "Ledger",
-        "pareto_filter", "speedpro_energy", "speedmap", "generate_historical_data",
+        "pareto_filter", "generate_historical_data",
     ]:
         assert hasattr(hkjc, name), f"hkjc.{name} missing"
 
@@ -15,7 +15,6 @@ def test_top_level_api():
 def test_canonical_data_paths():
     import hkjc.data.live
     import hkjc.data.historical
-    import hkjc.data.speedpro
     import hkjc.data.odds_ticks
     import hkjc.data.processing
     import hkjc.data.source

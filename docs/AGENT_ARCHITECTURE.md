@@ -101,8 +101,8 @@ rediscovering. Crossing from research to real money is a separate, gated step.
 | Loop component | Built on | Status |
 | --- | --- | --- |
 | Probabilistic engine | `harville_model`, `model.RaceModel`, `simulation.RaceSimulator` | **exists** (bedrock) |
-| Data access | `live`, `historical`, `speedpro` | **exists** |
-| Feature definitions | `features` (Polars expressions) | **exists, thin** |
+| Data access | `data.live/historical/racecard/sectional/...` | **exists** |
+| Feature assembly | `data.feature_store` (`DataSource` + outcome schema) | **exists** |
 | Odds tick store + CLV | — | **to build (step 1)** |
 | Evaluation harness | — | **to build (step 2)** |
 | `DataSource` protocol + feature store | extends data layer | **to build (step 3)** |
@@ -205,10 +205,11 @@ candidate models/fitters/features, each auto-scored by Layer 1 then Layers 2–3
 - **New fitters:** the headline change — replace "fit θ to odds" with "**fit θ to
   results**, with market odds as a *prior/feature*." This is §0.1 in code and the
   first candidate that can structurally beat the market.
-- **New features** (`hkjc.features` Polars expressions): each is a cheap,
-  independently-scorable unit — ideal granularity for a parallel fan-out. The
-  existing falsifiable priors (`HKJC_KNOWLEDGE.md` §4) are the seed hypotheses:
-  confirm, reweight, or discard each; add interactions (draw × style × pace,
+- **New features** (`DataSource`s feeding `data.feature_store`): each is a cheap,
+  independently-scorable unit — ideal granularity for a parallel fan-out. NB the
+  standard-fundamentals priors (`HKJC_KNOWLEDGE.md` §4) were **tested and do not
+  beat the market** (journal 0011/0023); the open hope is interactions and
+  information the market lacks (sectionals, trip notes) — add interactions
   energy × distance) the old equal-weight voting scheme couldn't express.
 - **Selection:** candidates compete on the walk-forward leaderboard, FDR-corrected;
   promotion needs lockbox confirmation. The agent reads leaderboard + ledger to

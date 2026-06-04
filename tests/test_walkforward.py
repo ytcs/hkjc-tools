@@ -2,7 +2,7 @@
 import pytest
 
 from hkjc.eval import walkforward as wf
-from hkjc.eval.walkforward import Lockbox, LockboxBreach
+from hkjc.eval.walkforward import Lockbox, LockboxBreachError
 
 
 DATES = [f"2026-01-{d:02d}" for d in range(1, 13)]   # 12 meeting-dates
@@ -55,7 +55,7 @@ def test_lockbox_opens_once(tmp_path):
     assert dates == ["2026-02-01", "2026-02-02"]
 
     # a second open is a breach...
-    with pytest.raises(LockboxBreach):
+    with pytest.raises(LockboxBreachError):
         Lockbox(path).open(reason="oops")
     # ...unless explicitly forced (and the breach is logged)
     Lockbox(path).open(reason="harness fixed", force=True)

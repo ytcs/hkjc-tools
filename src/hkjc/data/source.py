@@ -1,6 +1,6 @@
 """The ``DataSource`` seam — a uniform contract for every input the agent adds.
 
-Onboarding a new data source (odds ticks, results, SpeedPro, a Chinese tipster
+Onboarding a new data source (odds ticks, results, sectionals, a Chinese tipster
 feed, video-derived trip notes) should be the *same* shape of engineering job. A
 ``DataSource`` produces **runner-keyed records** for a meeting; the
 :class:`~hkjc.data.feature_store.FeatureStore` joins them into one modelling frame.
@@ -20,7 +20,7 @@ hidden in an id):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, List, Protocol, Sequence, runtime_checkable
 
 import polars as pl

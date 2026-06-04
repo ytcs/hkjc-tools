@@ -276,7 +276,7 @@ def _fetch_live_races(date: str = None, venue_code: str = None) -> dict:
     data = r.json()['data']['raceMeetings'] # list of all meetings
 
     # Prioritize first local race, if not continue with the first race (default 0)
-    index = 0 
+    index = 0
     for i, entry in enumerate(data):
         if entry['venueCode'] in ['HV', 'ST']:
             index = i
@@ -445,10 +445,10 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
     Returns:
         dict: Dictionary with keys as odds types and values as numpy arrays containing the odds.
             If odds_type is 'WIN','PLA', returns a 1D array of place odds.
-            If odds_type is 'QIN','QPL', returns a 2D array of quinella place odds. 
+            If odds_type is 'QIN','QPL', returns a 2D array of quinella place odds.
     """
     race_info = _fetch_live_races(date, venue_code)
-    N = len(race_info['Races'][race_number]['Runners'])
+    n = len(race_info['Races'][race_number]['Runners'])
 
     if (race_info['Date'] != date) or (race_info['Venue'] != venue_code):
         print(
@@ -459,10 +459,10 @@ def live_odds(date: str, venue_code: str, race_number: int, odds_type: List[str]
     data = _fetch_live_odds(date, venue_code, race_number,
                             odds_type=tuple(odds_type))
 
-    odds = {'WIN': np.full(N, np.nan, dtype=float),
-            'PLA': np.full(N, np.nan, dtype=float),
-            'QIN': np.full((N, N), np.nan, dtype=float),
-            'QPL': np.full((N, N), np.nan, dtype=float)}
+    odds = {'WIN': np.full(n, np.nan, dtype=float),
+            'PLA': np.full(n, np.nan, dtype=float),
+            'QIN': np.full((n, n), np.nan, dtype=float),
+            'QPL': np.full((n, n), np.nan, dtype=float)}
 
     for entry in data:
         if entry["Type"] in ["QIN", "QPL"]:

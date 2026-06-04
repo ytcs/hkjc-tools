@@ -19,7 +19,7 @@ fitted model also yields per-runner ``strengths`` that drop straight into
 """
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 import polars as pl

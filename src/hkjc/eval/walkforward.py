@@ -15,7 +15,7 @@ self-deception (``docs/AGENT_ARCHITECTURE.md`` §3.4):
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, Union
@@ -101,7 +101,7 @@ def split_lockbox(
     return uniq[: d - k], uniq[d - k:]
 
 
-class LockboxBreach(RuntimeError):
+class LockboxBreachError(RuntimeError):
     """Raised when sealed lockbox data is opened more than once without ``force``."""
 
 
@@ -170,7 +170,7 @@ class Lockbox:
         still logged) — e.g. a sanctioned re-evaluation after a harness fix.
         """
         if self.is_opened and not force:
-            raise LockboxBreach(
+            raise LockboxBreachError(
                 f"lockbox {self.path} already opened {len(self._state['opens'])}x "
                 f"(first: {self._state['opens'][0]['reason']!r}); "
                 "pass force=True to override and log a breach")
