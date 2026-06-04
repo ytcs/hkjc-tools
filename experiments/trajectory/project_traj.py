@@ -97,7 +97,7 @@ def inner_rail_polyline(img, foot_pts):
     best_i = cand[0][1]
     yy, xx = np.where(lab == best_i)
     # fit along the dominant axis
-    if xx.ptp() >= yy.ptp():
+    if np.ptp(xx) >= np.ptp(yy):
         order = np.argsort(xx)
         t = xx[order]; u = yy[order]
         coef = np.polyfit(t, u, 2)
@@ -193,20 +193,25 @@ def main():
                               (int(x2 + pad), int(y2 + pad)), 0, -1)
                 cv2.rectangle(prev_mask, (int(x1 - pad), int(y1 - pad)),
                               (int(x2 + pad), int(y2 + pad)), 0, -1)
-            p0 = cv2.goodFeaturesToTrack(prev_gray, maxCorners=300, qualityLevel=0.01,
+            p0 = cv2.goodFeaturesToTrack(prev_gray, maxCorners=400, qualityLevel=0.01,
                                          minDistance=12, mask=prev_mask)
             if p0 is not None and len(p0) > 8:
+                # large window: the follow-shot pans the static background by ~60-150 px/step
                 p1, st, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, p0, None,
-                                                     winSize=(21, 21), maxLevel=3)
+                                                     winSize=(31, 31), maxLevel=4)
                 good0 = p0[st.flatten() == 1].reshape(-1, 2)
                 good1 = p1[st.flatten() == 1].reshape(-1, 2)
                 if len(good0) > 8:
                     flow = good1 - good0
-                    # keep static-scene corners only (drop outliers via median)
+                    # the camera pan is the DOMINANT motion of static corners: take the
+                    # median flow VECTOR, then the pan magnitude is its norm. (Reject corners
+                    # far from the median vector as non-static / on the field.)
                     med = np.median(flow, axis=0)
-                    keep = np.hypot(*(flow - med).T) < 6
-                    pan = np.median(np.hypot(*flow[keep].T)) if keep.sum() else np.hypot(*med)
-                    pan_px_by_frame[idx] = (prev_fidx, float(pan))
+                    keep = np.hypot(*(flow - med).T) < 20
+                    if keep.sum() >= 8:
+                        med = np.median(flow[keep], axis=0)
+                    pan = float(np.hypot(*med))
+                    pan_px_by_frame[idx] = (prev_fidx, pan)
         prev_gray = gray
         prev_mask = np.full(gray.shape, 255, np.uint8)
         prev_fidx = idx
