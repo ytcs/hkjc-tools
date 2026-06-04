@@ -24,11 +24,8 @@ DATA = "/data"
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install(
-        "beautifulsoup4>=4.14", "cachetools>=6.2", "numba>=0.62", "numpy>=2.3",
-        "polars>=1.33", "pyarrow>=21", "requests>=2.32", "scipy>=1.16", "tqdm>=4.67",
-    )
-    .add_local_dir("src/hkjc", remote_path="/root/hkjc")  # makes `import hkjc` work
+    .pip_install_from_pyproject("pyproject.toml")   # deps stay in sync with the project
+    .add_local_python_source("hkjc")                # ship the local package source
 )
 
 

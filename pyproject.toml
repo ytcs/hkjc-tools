@@ -21,6 +21,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
+deploy = [
+    "modal>=1.4.3",
+]
 dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
