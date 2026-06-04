@@ -28,11 +28,12 @@ from hkjc.model.traffic_jax import win_probs
 from hkjc.track import track_for
 
 CACHE = Path("data_cache")
-# Dataset files are env-overridable so the full-history panels (energetics_dataset_full /
-# wpq_dataset_full, 3248 races) can be swapped in for the 3-month defaults (161 races) without
-# touching call sites: ENERGETICS_FILE=energetics_dataset_full.parquet WPQ_FILE=wpq_dataset_full.parquet
-ENERGETICS = os.environ.get("ENERGETICS_FILE", "energetics_dataset.parquet")
-WPQ = os.environ.get("WPQ_FILE", "wpq_dataset.parquet")
+# Full-history panels (3248 races / 5 seasons) are the DEFAULT — the 20x data over the old 3-month
+# build (161 races) lifted the ST ABM from ~38% to 43.7% of market with zero modeling change.
+# Rebuild them with build_energetics_full.py + build_wpq_full.py. Env vars still allow overriding
+# back to the 3-month panels (energetics_dataset.parquet / wpq_dataset.parquet) for comparison.
+ENERGETICS = os.environ.get("ENERGETICS_FILE", "energetics_dataset_full.parquet")
+WPQ = os.environ.get("WPQ_FILE", "wpq_dataset_full.parquet")
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))
 BEND = CALIBRATED_BEND_CURVATURE["ST"]
 # Form is a far stronger ability measurement than sectional v_c (18% vs 5% of market

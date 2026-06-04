@@ -113,6 +113,40 @@ def main():
     line("stack: ABM + EW + jockey", skill(["z_lp_abm", "z_ewf", "z_jky_sr"]))
     line("MARKET (ceiling)", market)
 
+    # paired-bootstrap the two pivotal contrasts on per-race loss (positive = first is better)
+    def race_losses(fp):
+        out = {}
+        for fold in folds:
+            tr = d.filter(pl.col("dt").is_in(fold.train)); te = d.filter(pl.col("dt").is_in(fold.test))
+            if te.is_empty():
+                continue
+            pred = fp(tr, te)
+            for rid, g in pred.group_by("race_id"):
+                q = np.clip(g["q"].to_numpy().astype(float), 1e-12, None); q = q / q.sum()
+                won = g["won"].to_numpy().astype(bool)
+                if won.any():
+                    out[rid[0]] = -np.log(q[won][0])
+        return out
+
+    def logit_losses(feats):
+        return race_losses(conditional_logit_fit_predict(feats, race_keys=["race_id"], prob_col="q"))
+    abm_losses = race_losses(lambda tr, te: te.with_columns(
+        (pl.col("abm_p") / pl.col("abm_p").sum().over("race_id")).alias("q")))
+    ewj = logit_losses(["z_ewf", "z_jky_sr"])
+    full = logit_losses(["z_lp_abm", "z_ewf", "z_jky_sr"])
+    rng = np.random.default_rng(0)
+
+    def boot(a, b, label):  # mean(a - b); positive = a better (lower loss)
+        ks = sorted(set(a) & set(b))
+        diff = np.array([a[k] - b[k] for k in ks])
+        bs = np.array([rng.choice(diff, diff.size, replace=True).mean() for _ in range(5000)])
+        lo, hi = np.percentile(bs, [2.5, 97.5])
+        print(f"  {label:42s} Δ {diff.mean():+.4f} [{lo:+.4f},{hi:+.4f}] P={ (bs>0).mean():.1%}")
+
+    print("\n  paired bootstrap (Δ = second − first per-race loss; positive ⇒ FIRST model better):")
+    boot(abm_losses, ewj, "ABM raw  vs  EW+jockey logit")
+    boot(full, ewj, "ABM+EW+jockey  vs  EW+jockey  (does ABM add?)")
+
 
 if __name__ == "__main__":
     main()

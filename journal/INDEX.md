@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-55 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+57 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -45,6 +45,8 @@
 - **0053-recency-form-8pp-in-logit-but-subsumed-by-rating** (open) [Recency form: +8pp in logit, but SUBSUMED by rating in the ABM (nonlinear channel)](entries/0053-recency-form-8pp-in-logit-but-subsumed-by-rating.md) — _form, recency, rating, ABM, featurization_
 - **0054-public-data-logit-ew-form-jockey-hits-41-of-mark** (open) [Public-data logit (EW form + jockey) hits 41%% of market, BEATS standalone ABM (~38%%)](entries/0054-public-data-logit-ew-form-jockey-hits-41-of-mark.md) — _benchmark, logit, ABM, hybrid, strategy, standing-order_
 - **0055-hybrid-stack-validated-abm-recency-44-and-found** (open) [Hybrid stack validated (ABM+recency = 44%%) AND found the ABM 20x data bottleneck](entries/0055-hybrid-stack-validated-abm-recency-44-and-found.md) — _hybrid, ABM, data, bottleneck, standing-order, energetics_
+- **0056-unblocking-the-data-cap-lifted-the-abm-from-38-t** (open) [Unblocking the data cap lifted the ABM from ~38%% to 43.7%% of market (20x more races)](entries/0056-unblocking-the-data-cap-lifted-the-abm-from-38-t.md) — _ABM, data, energetics, market-share, standing-order_
+- **0057-at-scale-a-2-feature-logit-recency-form-jockey-5** (open) [At scale, a 2-feature logit (recency form + jockey) = 53%% of market and the ABM adds NOTHING](entries/0057-at-scale-a-2-feature-logit-recency-form-jockey-5.md) — _ABM, logit, featurization, strategy, standing-order, breakthrough_
 
 ## gotcha
 
