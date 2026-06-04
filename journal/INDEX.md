@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-48 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+49 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -70,3 +70,4 @@
 - **0026-sectional-physics-features-do-not-beat-the-marke** (open) [Sectional physics features do NOT beat the market (3rd consecutive negative)](entries/0026-sectional-physics-features-do-not-beat-the-marke.md) — _trajectory, sectional, physics, market-efficiency, negative-result_
 - **0029-first-principles-energetics-model-also-fails-to** (open) [First-principles energetics model also fails to beat the market (5th negative)](entries/0029-first-principles-energetics-model-also-fails-to.md) — _energetics, first-principles, market-efficiency, model-edge-closed_
 - **0031-tier-a-traffic-model-built-geometric-draw-bias-e** (open) [Tier-A traffic model built; geometric draw bias EMERGES (needs calibration)](entries/0031-tier-a-traffic-model-built-geometric-draw-bias-e.md) — _traffic-model, tier-a, draw-bias, emergent, needs-calibration_
+- **0049-jockey-confirmed-in-the-abm-7pp-of-market-skill** (open) [Jockey CONFIRMED in the ABM: +7pp of market skill, baked (29%->38%)](entries/0049-jockey-confirmed-in-the-abm-7pp-of-market-skill.md) — _jockey, backtest, form, breakthrough_

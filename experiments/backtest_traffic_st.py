@@ -87,6 +87,29 @@ def current_form_table() -> pl.DataFrame:
 PACE_GAIN = float(os.environ.get("PACE_GAIN", "0.0"))
 
 
+# Jockey couples like form — a measurement of the effective critical velocity the horse
+# realises (part better-trip, part the private info that a fancied horse gets a top rider).
+# CONFIRMED in the ABM: paired Δ +0.030 nats/race at gain 3 (P=99.2%), interior optimum
+# ~3-6 (gain 15 over-couples and hurts), lifting the model ~29%→~38% of market skill — the
+# +7pp the at-scale regression predicted (signal_eval_rich). Baked at the plateau centre.
+# JOCKEY_GAIN = m/s of v_c per unit of jockey strike-rate above the field-neutral mean.
+JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "5.0"))
+JKY_MEAN = 0.0  # set in load_st to the data mean, for centering
+
+
+def jockey_table() -> pl.DataFrame:
+    """Leak-free trailing strike rate of the jockey riding each horse, keyed (date, horse_id)."""
+    rr = (pl.read_parquet(CACHE / "results_rich.parquet")
+          .with_columns(pl.col("date").cast(pl.Utf8).alias("date"),
+                        (pl.col("Pla").cast(pl.Int64, strict=False) == 1).cast(pl.Int8).alias("w"),
+                        pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"))
+          .sort(["Jockey", "d"]))
+    rr = rr.with_columns(((pl.col("w").cum_sum().over("Jockey") - pl.col("w"))
+                          / (pl.col("w").cum_count().over("Jockey") - 1)).alias("jky_sr"))
+    return rr.select("date", pl.col("HorseID").alias("horse_id"),
+                     pl.when(pl.col("jky_sr").is_finite()).then(pl.col("jky_sr")).alias("jky_sr"))
+
+
 def running_style_table() -> pl.DataFrame:
     """Leak-free trailing mean rel_early per horse (front-runner ↑, closer ↓)."""
     s = (pl.read_parquet(CACHE / "sectional_dataset.parquet")
@@ -136,6 +159,11 @@ def load_st() -> pl.DataFrame:
     # running-style state (leak-free trailing early speed); unknown → field-neutral
     df = df.join(running_style_table(), on=["date", "venue", "race_no", "runner"], how="left")
     df = df.with_columns(pl.col("style").fill_null(pl.col("style").mean()))
+    # jockey trip/ability measurement (leak-free trailing strike rate); unknown → field-neutral
+    global JKY_MEAN
+    df = df.join(jockey_table(), on=["date", "horse_id"], how="left")
+    JKY_MEAN = float(df["jky_sr"].mean())
+    df = df.with_columns(pl.col("jky_sr").fill_null(JKY_MEAN))
     return df.with_columns((pl.col("date") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("race_id"))
 
 
@@ -174,12 +202,14 @@ def fit_predict_traffic(train: pl.DataFrame, test: pl.DataFrame) -> pl.DataFrame
         dist = int(g["distance"][0])
         rtg = g["rtg"].to_numpy().astype(float)
         form = g["form"].to_numpy().astype(float)
+        jky = g["jky_sr"].to_numpy().astype(float)
         band = distance_band(dist)
         vc, wp = [], []
         for i, h in enumerate(g["horse_id"].to_list()):
             n, u_vc, u_w = res.get(h, (0, 0.0, 0.0))
-            # effective critical velocity = sectional EB estimate + the form measurement
-            vc.append(pop.v_c.fixed(band, rtg[i]) + lam_vc(n) * u_vc + FORM_GAIN * (form[i] - 0.5))
+            # effective critical velocity = sectional EB estimate + form + jockey measurements
+            vc.append(pop.v_c.fixed(band, rtg[i]) + lam_vc(n) * u_vc + FORM_GAIN * (form[i] - 0.5)
+                      + JOCKEY_GAIN * (jky[i] - JKY_MEAN))
             wp.append(pop.w_prime.fixed(band, rtg[i]) + lam_w(n) * u_w)
         geom = track_for("ST", dist, _surface(dist))
         course = g["course"][0] if "course" in g.columns else "A"
