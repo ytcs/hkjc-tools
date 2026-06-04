@@ -6,6 +6,10 @@ The library is organised by concern, with a single direction of dependency
 - **Data access** (`data`: `live`, `historical`, `racecard`, `sectional`,
   `odds_ticks`, the carryover flywheel): fetch, parse and persist race cards, odds,
   results, form, sectionals, and the live-odds/jackpot time series.
+- **Geometry & domain** (`track`, `race`): :class:`~hkjc.track.TrackGeometry` is the
+  per-venue/surface/course physical substrate (resolved by ``track_for``); the
+  canonical :class:`~hkjc.race.Race` bundles runners + geometry + conditions and
+  builds any model from itself — the agent-based-modelling seam.
 - **Model** (`model`, `harville_model`): turn inputs into a swappable
   :class:`~hkjc.model.RaceModel` that generates finishing orders. Harville /
   Plackett-Luce is the reference implementation; bring your own by subclassing.
@@ -24,7 +28,9 @@ from importlib.metadata import version as _version
 
 __all__ = [
     "data", "harville_model", "model", "simulation", "bets", "eval", "ledger",
+    "track", "race", "calibration",
     "RaceModel", "PlackettLuceModel", "ConditionalLogit", "RaceSimulator",
+    "Race", "Runner", "TrackGeometry", "track_for", "TRACKS",
     "OddsTickStore", "FeatureStore", "DataSource", "Ledger", "pareto_filter",
     "generate_historical_data",
 ]
@@ -34,10 +40,12 @@ try:
 except Exception:  # pragma: no cover - best-effort version resolution
     __version__ = "0.0.0"
 
-from . import data, harville_model, model, simulation, bets, eval, ledger
+from . import data, harville_model, model, simulation, bets, eval, ledger, track, race, calibration
 from .data import OddsTickStore, FeatureStore, DataSource
 from .data.processing import generate_historical_data
 from .model import RaceModel, PlackettLuceModel, ConditionalLogit
 from .simulation import RaceSimulator
+from .race import Race, Runner
+from .track import TrackGeometry, track_for, TRACKS
 from .ledger import Ledger
 from .utils import pareto_filter

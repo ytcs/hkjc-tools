@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..track import HAPPY_VALLEY, TrackGeometry
 from .base import RaceModel
-from .track import HAPPY_VALLEY, TrackGeometry
 
 
 class TrafficRaceModel(RaceModel):
@@ -43,6 +43,7 @@ class TrafficRaceModel(RaceModel):
         lane_change_prob: float = 0.3,
         lane_step: float = 1.2,       # m shifted outward per lane-change
         bend_curvature: float = 1.0 / 120.0,  # extra ground per m off-rail on a bend
+        speed_noise: float = 0.02,    # per-horse race-day speed sd (frac of v_target)
         max_steps: int = 220,
     ):
         v_c = np.asarray(v_c, float)
@@ -56,6 +57,7 @@ class TrafficRaceModel(RaceModel):
         self.dt, self.follow_gap, self.lane_band = dt, follow_gap, lane_band
         self.lane_change_prob, self.lane_step = lane_change_prob, lane_step
         self.bend_curvature, self.max_steps = bend_curvature, max_steps
+        self.speed_noise = speed_noise
         self._bends = np.array(track.bend_segments, float)
         self._circ = track.circumference
 
@@ -70,7 +72,7 @@ class TrafficRaceModel(RaceModel):
         n, dist, dt = self.n, self.distance, self.dt
         s = np.zeros((size, n))                              # finish-progress (m)
         off = np.tile(self.off0, (size, 1)).astype(float)    # lateral offset (m)
-        vt = np.tile(self.v_target, (size, 1)) * (1.0 + 0.02 * rng.standard_normal((size, n)))
+        vt = np.tile(self.v_target, (size, 1)) * (1.0 + self.speed_noise * rng.standard_normal((size, n)))
         finish_t = np.full((size, n), np.inf)
         t = 0.0
         for _ in range(self.max_steps):
