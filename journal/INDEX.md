@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-27 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+28 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -20,6 +20,7 @@
 ## finding
 
 - **0022-hkjc-en-us-site-catalog-racecard-27-cols-corunni** (open) [HKJC en-us site catalog: racecard (27 cols), corunning, vet/trackwork/stewards, aerial replay](entries/0022-hkjc-en-us-site-catalog-racecard-27-cols-corunni.md) — _data-catalog, racecard, corunning, aerial-replay, exploration_
+- **0028-video-feasibility-probe-aerial-tracking-data-ren** (open) [Video feasibility probe: aerial = tracking-data RENDER; CV-extractable but low-EV](entries/0028-video-feasibility-probe-aerial-tracking-data-ren.md) — _video, aerial, tracking-data, feasibility, cv_
 
 ## gotcha
 
