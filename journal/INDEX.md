@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-49 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+50 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -46,6 +46,7 @@
 - **0003-pool-takeout-is-not-uniform-0-175-is-win-pla-qin** (open) [Pool takeout is NOT uniform — 0.175 is WIN/PLA/QIN/QPL only](entries/0003-pool-takeout-is-not-uniform-0-175-is-win-pla-qin.md) — _takeout, betting-rules, ev_
 - **0007-deflated-sharpe-needs-an-honest-trial-count** (open) [Deflated Sharpe needs an HONEST trial count](entries/0007-deflated-sharpe-needs-an-honest-trial-count.md) — _selection, overfitting, fdr, trial-count_
 - **0019-sectional-split-time-data-not-accessible-via-the** (superseded) [Sectional split-time data not accessible via the SPA (this env); RunningPosition is the partial](entries/0019-sectional-split-time-data-not-accessible-via-the.md) — _trajectory, sectional, data-blocked, spa_
+- **0050-anti-pattern-do-not-presume-the-gap-to-market-is** (open) [ANTI-PATTERN: do NOT presume the gap to market is unclosable private info](entries/0050-anti-pattern-do-not-presume-the-gap-to-market-is.md) — _methodology, anti-pattern, market-gap, defeatism, standing-order_
 
 ## hypothesis
 
