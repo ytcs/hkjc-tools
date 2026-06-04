@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-54 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+55 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -44,6 +44,7 @@
 - **0052-speed-figure-margin-form-does-not-beat-ordinal-r** (open) [Speed-figure / margin form does NOT beat ordinal rank form (null result)](entries/0052-speed-figure-margin-form-does-not-beat-ordinal-r.md) — _form, speed-figure, margin, null-result, featurization_
 - **0053-recency-form-8pp-in-logit-but-subsumed-by-rating** (open) [Recency form: +8pp in logit, but SUBSUMED by rating in the ABM (nonlinear channel)](entries/0053-recency-form-8pp-in-logit-but-subsumed-by-rating.md) — _form, recency, rating, ABM, featurization_
 - **0054-public-data-logit-ew-form-jockey-hits-41-of-mark** (open) [Public-data logit (EW form + jockey) hits 41%% of market, BEATS standalone ABM (~38%%)](entries/0054-public-data-logit-ew-form-jockey-hits-41-of-mark.md) — _benchmark, logit, ABM, hybrid, strategy, standing-order_
+- **0055-hybrid-stack-validated-abm-recency-44-and-found** (open) [Hybrid stack validated (ABM+recency = 44%%) AND found the ABM 20x data bottleneck](entries/0055-hybrid-stack-validated-abm-recency-44-and-found.md) — _hybrid, ABM, data, bottleneck, standing-order, energetics_
 
 ## gotcha
 
