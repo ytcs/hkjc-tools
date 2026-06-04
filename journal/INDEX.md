@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-47 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+48 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -39,6 +39,7 @@
 - **0045-litmus-after-course-fix-draw-still-not-captured** (open) [Litmus after course fix: draw STILL not captured (dLL 1.04->1.13m). Geometry was never the issue - draw residual is pace-tactics + noise. Predictive-edge door is closed across all avenues.](entries/0045-litmus-after-course-fix-draw-still-not-captured.md) — _litmus, draw, course, market-efficiency, synthesis, policy, conclusion_
 - **0046-breakthrough-form-relative-finish-ability-calibr** (open) [BREAKTHROUGH: form (relative-finish ability) + calibrated race-day noise nearly triples model win-skill (11%->29% of market); gap 9x -> 3.4x](entries/0046-breakthrough-form-relative-finish-ability-calibr.md) — _breakthrough, form, ability, calibration, speed-noise, gap-closing, model, handicap_
 - **0047-signal-exploration-map-form-is-the-dominant-abil** (open) [Signal-exploration map: form is the dominant ability signal (23% ceiling); jockey/mkt-rel-form add ~+3pp each; field-strength weighting + Elo HURT (data-starved)](entries/0047-signal-exploration-map-form-is-the-dominant-abil.md) — _form, elo, jockey, ability, ceiling, diminishing-returns, strength-of-field_
+- **0048-jockey-is-the-2-signal-after-form-7pp-of-market** (open) [Jockey is the #2 signal after form (+7pp of market skill at scale)](entries/0048-jockey-is-the-2-signal-after-form-7pp-of-market.md) — _jockey, signals, form, walk-forward_
 
 ## gotcha
 
