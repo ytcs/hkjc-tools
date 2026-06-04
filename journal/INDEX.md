@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-30 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+31 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -46,3 +46,4 @@
 - **0025-flywheel-deployed-modal-jackpot-capture-is-live** (open) [Flywheel DEPLOYED: Modal jackpot capture is live (stevenytc workspace)](entries/0025-flywheel-deployed-modal-jackpot-capture-is-live.md) — _flywheel, deployed, modal, jackpot-carryover, live-data_
 - **0026-sectional-physics-features-do-not-beat-the-marke** (open) [Sectional physics features do NOT beat the market (3rd consecutive negative)](entries/0026-sectional-physics-features-do-not-beat-the-marke.md) — _trajectory, sectional, physics, market-efficiency, negative-result_
 - **0029-first-principles-energetics-model-also-fails-to** (open) [First-principles energetics model also fails to beat the market (5th negative)](entries/0029-first-principles-energetics-model-also-fails-to.md) — _energetics, first-principles, market-efficiency, model-edge-closed_
+- **0031-tier-a-traffic-model-built-geometric-draw-bias-e** (open) [Tier-A traffic model built; geometric draw bias EMERGES (needs calibration)](entries/0031-tier-a-traffic-model-built-geometric-draw-bias-e.md) — _traffic-model, tier-a, draw-bias, emergent, needs-calibration_
