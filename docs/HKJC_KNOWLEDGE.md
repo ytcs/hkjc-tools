@@ -124,8 +124,29 @@ https://racing.hkjc.com/racing/English/tipsindex/tips_index.asp?RaceNo={n}
 ### 2.1 Tracks, courses, going
 
 - **Track types:** `Turf` and `AWT` (All Weather Track).
-- **Course (turf rail position):** `A`, `A+3`, `B`, `B+2`, `C`, `C+3` — the
-  letter+offset of the running rail; affects pace/bias. AWT has a single course.
+- **Movable running rail (the `Course`):** the turf rail is shifted out
+  meeting-to-meeting to spread wear, which **changes the usable width and the
+  draw-bias geometry per race** — geometry is *not* fixed per venue. The `Course`
+  field (`A`, `A+2`, `B`, `B+2`, `B+3`, `C`, `C+3`) sets the rail position.
+  Official HKJC widths (encoded in `hkjc.model.track`):
+
+  | Course | Sha Tin width | Happy Valley width |
+  | --- | --- | --- |
+  | A | 30.5m | 30.5m |
+  | A+2 | 28.5m | 28.5m |
+  | B | 26.0m | 26.5m |
+  | B+2 | 24.0m | 24.5m |
+  | C | 21.3m | 22.5m |
+  | C+3 | 18.3m | 19.5m |
+
+  Home straight: **Sha Tin 430m**, **Happy Valley ~300–338m** (course-dependent).
+  Sha Tin circumference ~1900m (one long back straight + a home bend); **Happy
+  Valley 1,450m, right-handed (clockwise), bend-dominated** — home straight only
+  ~0–300m, then Sanatorium/Crescent/"The Rock" bends (~300–770m), back straight
+  (~770–920m), HKFC/Stable bends + top turn (~920m+). HV's near-continuous turning
+  is why its draw bias is the strongest in HK (low draws hold the short inner path).
+  Distances: HV 1000/1200/1650/1800/2200m. Draw bias is most acute at the 1000m and
+  1200m starts. See the official course page and `DrawStatistics` for realised bias.
 - **Going codes** (string → short code), as used to filter form by surface:
 
   Turf: `FIRM→F, GOOD TO FIRM→GF, GOOD→G, GOOD TO YIELDING→GY, YIELDING→Y,

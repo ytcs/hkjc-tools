@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-29 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+30 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -16,6 +16,7 @@
 - **0016-trajectory-physics-line-parallel-data-blocked-se** (open) [Trajectory/physics line: parallel & data-blocked; sectional source is a JS SPA](entries/0016-trajectory-physics-line-parallel-data-blocked-se.md) — _trajectory, physics-model, sectional, data-blocked, parallel-line_
 - **0018-cloud-capture-modal-python-native-cron-claude-sc** (open) [Cloud capture: Modal (Python-native cron); Claude scheduling can't run when machine is off](entries/0018-cloud-capture-modal-python-native-cron-claude-sc.md) — _cloud, modal, scheduling, ops, jackpot-carryover_
 - **0027-trip-trouble-gate-negative-video-not-justified-c** (open) [Trip-trouble gate NEGATIVE -> video NOT justified; close the model-edge line](entries/0027-trip-trouble-gate-negative-video-not-justified-c.md) — _trouble, video-gate, market-efficiency, model-edge-closed, strategy_
+- **0030-tier-a-traffic-model-focus-happy-valley-track-ge** (open) [Tier-A traffic model: focus Happy Valley; track geometry + movable rail captured](entries/0030-tier-a-traffic-model-focus-happy-valley-track-ge.md) — _traffic-model, tier-a, happy-valley, track-geometry, movable-rail, draw-bias_
 
 ## finding
 
