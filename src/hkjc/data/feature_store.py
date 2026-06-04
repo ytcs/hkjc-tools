@@ -257,6 +257,39 @@ class FeatureStore:
 
 
 # ------------------------------------------------------------- source builders
+_RACECARD_FEATURES = [
+    "draw", "rtg", "intl_rtg", "rtg_change", "carried_wt", "decl_horse_wt",
+    "wt_change", "best_time", "age", "days_since_last_run", "season_stakes",
+    "jockey_allowance", "gear",
+]
+
+
+def racecard_feature_source(races: Sequence[int] = range(1, 12), languages=("en-us",)) -> CallableSource:
+    """A `DataSource` of pre-race racecard features (ratings, gear, weight, …).
+
+    Forward-looking (racecards are served only for upcoming meetings). Thin glue
+    over :func:`hkjc.data.racecard.get_racecard`; loops the card's races.
+    """
+    from .racecard import get_racecard
+
+    def fn(date: str, venue: str) -> pl.DataFrame:
+        frames = []
+        for r in races:
+            try:
+                rc = get_racecard(date, venue, r)
+            except Exception:
+                if r == races[0]:
+                    return pl.DataFrame()
+                break
+            if rc.height:
+                keep = KEY_COLUMNS + [c for c in _RACECARD_FEATURES if c in rc.columns]
+                frames.append(rc.select(keep))
+        return pl.concat(frames) if frames else pl.DataFrame()
+
+    return CallableSource(name="racecard", languages=list(languages),
+                          provides=list(_RACECARD_FEATURES), fetch_fn=fn, role="feature")
+
+
 def results_outcome_source(races: Sequence[int] = range(1, 12), languages=("en-us",)) -> CallableSource:
     """A `DataSource` (role=outcome) of Win/Place labels from HKJC results pages.
 
