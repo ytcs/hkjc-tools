@@ -67,7 +67,7 @@ class TrafficRaceModel(RaceModel):
         return out
 
     def sample_orders(self, size: int, rng: np.random.Generator) -> np.ndarray:
-        n, D, dt = self.n, self.distance, self.dt
+        n, dist, dt = self.n, self.distance, self.dt
         s = np.zeros((size, n))                              # finish-progress (m)
         off = np.tile(self.off0, (size, 1)).astype(float)    # lateral offset (m)
         vt = np.tile(self.v_target, (size, 1)) * (1.0 + 0.02 * rng.standard_normal((size, n)))
@@ -78,7 +78,7 @@ class TrafficRaceModel(RaceModel):
             live = finish_t == np.inf
             if not live.any():
                 break
-            on_bend = self._is_bend(D - s)
+            on_bend = self._is_bend(dist - s)
             # car-following: cap to the slowest horse ahead within the lane band
             si, sj = s[:, :, None], s[:, None, :]
             oi, oj = off[:, :, None], off[:, None, :]
@@ -97,11 +97,11 @@ class TrafficRaceModel(RaceModel):
             ground_factor = 1.0 + off * self.bend_curvature * on_bend
             ds = np.where(live, v * dt / ground_factor, 0.0)
             s_new = s + ds
-            crossed = live & (s_new >= D)
+            crossed = live & (s_new >= dist)
             # interpolate crossing time within the step
-            frac = np.where(crossed, (D - s) / np.maximum(ds, 1e-9), 1.0)
+            frac = np.where(crossed, (dist - s) / np.maximum(ds, 1e-9), 1.0)
             finish_t = np.where(crossed, t - dt + frac * dt, finish_t)
-            s = np.minimum(s_new, D)
+            s = np.minimum(s_new, dist)
         # any non-finishers: rank by progress (slower than finishers)
         finish_t = np.where(finish_t == np.inf, t + (D - s), finish_t)
         return np.argsort(finish_t, axis=1).astype(np.int64)
