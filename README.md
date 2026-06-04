@@ -23,6 +23,8 @@ Docs:
   research line**: the Jackpot Carryover Harvester (build map + research questions).
 - [`docs/CARRYOVER_STRATEGY.md`](docs/CARRYOVER_STRATEGY.md) — strategy rationale,
   the structural-edge math, and why model-edge exotics are look-ahead traps.
+- [`docs/TRAJECTORY_RESEARCH_PLAN.md`](docs/TRAJECTORY_RESEARCH_PLAN.md) — parallel
+  line: dense sectional/video data + a physics (energetics) model.
 
 ## Architecture
 
