@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-16 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+19 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -14,11 +14,13 @@
 - **0013-promoted-jackpot-carryover-harvester-is-the-main** (open) [PROMOTED: Jackpot Carryover Harvester is the main research direction](entries/0013-promoted-jackpot-carryover-harvester-is-the-main.md) — _jackpot-carryover, research-plan, main-direction, dilution_
 - **0015-jackpot-capture-scheduling-self-gating-loop-in-h** (open) [Jackpot capture scheduling: self-gating loop in HK time; Claude cron is not the season tool](entries/0015-jackpot-capture-scheduling-self-gating-loop-in-h.md) — _scheduling, ops, timezone, jackpot-carryover, M1_
 - **0016-trajectory-physics-line-parallel-data-blocked-se** (open) [Trajectory/physics line: parallel & data-blocked; sectional source is a JS SPA](entries/0016-trajectory-physics-line-parallel-data-blocked-se.md) — _trajectory, physics-model, sectional, data-blocked, parallel-line_
+- **0018-cloud-capture-modal-python-native-cron-claude-sc** (open) [Cloud capture: Modal (Python-native cron); Claude scheduling can't run when machine is off](entries/0018-cloud-capture-modal-python-native-cron-claude-sc.md) — _cloud, modal, scheduling, ops, jackpot-carryover_
 
 ## gotcha
 
 - **0003-pool-takeout-is-not-uniform-0-175-is-win-pla-qin** (open) [Pool takeout is NOT uniform — 0.175 is WIN/PLA/QIN/QPL only](entries/0003-pool-takeout-is-not-uniform-0-175-is-win-pla-qin.md) — _takeout, betting-rules, ev_
 - **0007-deflated-sharpe-needs-an-honest-trial-count** (open) [Deflated Sharpe needs an HONEST trial count](entries/0007-deflated-sharpe-needs-an-honest-trial-count.md) — _selection, overfitting, fdr, trial-count_
+- **0019-sectional-split-time-data-not-accessible-via-the** (open) [Sectional split-time data not accessible via the SPA (this env); RunningPosition is the partial](entries/0019-sectional-split-time-data-not-accessible-via-the.md) — _trajectory, sectional, data-blocked, spa_
 
 ## hypothesis
 
@@ -29,3 +31,4 @@
 - **0010-results-trained-conditional-logit-model-breaks-t** (open) [Results-trained conditional-logit model breaks the circularity (works)](entries/0010-results-trained-conditional-logit-model-breaks-t.md) — _model, conditional-logit, circularity, win-prediction_
 - **0011-first-real-backtest-crude-model-does-not-beat-th** (open) [First real backtest: crude model does NOT beat the HKJC win market (efficient)](entries/0011-first-real-backtest-crude-model-does-not-beat-th.md) — _backtest, market-efficiency, win, negative-result, benter_
 - **0014-m1-shipped-jackpot-capture-store-carryover-ledge** (open) [M1 shipped: jackpot capture store + carryover ledger (data flywheel)](entries/0014-m1-shipped-jackpot-capture-store-carryover-ledge.md) — _jackpot-carryover, M1, data-flywheel, capture_
+- **0017-gate-1-passed-carryover-windows-are-frequent-and** (open) [Gate 1 PASSED: carryover windows are frequent and large enough (target the modest ones)](entries/0017-gate-1-passed-carryover-windows-are-frequent-and.md) — _jackpot-carryover, gate-1, frequency, chase-money, backfill_

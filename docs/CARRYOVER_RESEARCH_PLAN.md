@@ -159,7 +159,12 @@ Status: ✅ done · 🟡 partial · ⬜ todo.
 
 - **M1 — Start the data flywheel (immediately).** B1 + B2 + B3 running every
   meeting; B13 backfill in parallel. → answers **Theme A**.
-  **Gate 1:** enough +EV windows/season to justify continuing? If no → shelve.
+  **Gate 1: ✅ PASSED** (journal 0017) — TT/Six-Up roll over frequently; fresh
+  pools ~HK$2M vs carries HK$3–30M ⇒ C/G regularly ≥ 0.15 (often ≥ 1). **Refinement
+  for Gate 2: target *modest, under-publicized* carryovers** — chase money floods
+  headline HK$60M+ jackpots and erodes the edge. Cloud capture (Modal) deployable;
+  see `cloud/`. Remaining: deploy + accumulate, and the full B13 scrape (Racing
+  News announcements for C; localresults-by-date for won/carried).
 - **M2 — Make EV computable.** B8 (settlement) + B4 (EV v2) + B5 (leg model
   calibration). → **Theme E**, partial **C**.
 - **M3 — Crack dilution.** B6 from accumulated captures. → **Theme B**.

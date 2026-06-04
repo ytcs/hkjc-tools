@@ -32,10 +32,14 @@ Data-source problem (🟡): the "Sectional Time & Position" page is a **JS SPA**
 (`racing.hkjc.com/en-us/.../displaysectionaltime`); the legacy `.aspx` 302-redirects
 to it and serves no server-side table. No obvious data XHR fired on first load
 (only analytics), and some races show "released shortly".
-- **Action S1:** browser spike (chrome-devtools MCP) — load a race with published
-  sectionals, **wait for and capture the deferred data XHR / GraphQL query** that
-  populates the table; identify the endpoint + payload. Likely the same
-  `info.cld.hkjc.com/graphql` backend used for odds, or a content REST.
+- **Action S1 (attempted — blocked here, journal 0019):** browser spike found the
+  sectional page is a JS SPA that renders "Information will be released shortly" and
+  fires **no data XHR** (only analytics) across multiple races/dates; the legacy
+  `.aspx` 302s to it with no server-side table. So the split-time source is not
+  accessible in this environment. **Fallback signal available now:** result pages'
+  `RunningPosition` (sectional *positions* per call) + `FinishTime`, already
+  scraped. Revisit the sectional API later (deferred GraphQL call / may be
+  unprovisioned here); otherwise prioritise the video/CV path for true density.
 - **Action S2:** build a `SectionalSource` (`DataSource`) → per-(race, runner)
   split times + positions, joined on our canonical keys.
 - **Action S3 (cheap kill/confirm):** derive 1–2 sectional features (finishing-
