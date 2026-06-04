@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-22 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+24 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -38,3 +38,5 @@
 - **0017-gate-1-passed-carryover-windows-are-frequent-and** (open) [Gate 1 PASSED: carryover windows are frequent and large enough (target the modest ones)](entries/0017-gate-1-passed-carryover-windows-are-frequent-and.md) — _jackpot-carryover, gate-1, frequency, chase-money, backfill_
 - **0020-sectional-data-unblocked-url-format-was-the-bug** (open) [Sectional data UNBLOCKED: URL format was the bug; now server-rendered & scraped](entries/0020-sectional-data-unblocked-url-format-was-the-bug.md) — _trajectory, sectional, unblocked, scraper_
 - **0021-b13-jackpot-won-events-scraper-built-results-sid** (open) [B13 jackpot won-events scraper built (results side)](entries/0021-b13-jackpot-won-events-scraper-built-results-sid.md) — _jackpot-carryover, B13, scraper, frequency_
+- **0023-rating-form-do-not-beat-the-win-market-efficient** (open) [Rating + form do NOT beat the win market (efficient w.r.t. fundamentals)](entries/0023-rating-form-do-not-beat-the-win-market-efficient.md) — _model, market-efficiency, rating, form, negative-result_
+- **0024-tt-cover-backtest-naive-top-5-box-is-unprofitabl** (open) [TT cover backtest: naive top-5 box is unprofitable & hit-rate-bound (and dark)](entries/0024-tt-cover-backtest-naive-top-5-box-is-unprofitabl.md) — _jackpot-carryover, backtest, cover, hit-rate, statistically-dark_
