@@ -15,6 +15,8 @@ Requires Python >= 3.11.
 Docs:
 - [`docs/HKJC_KNOWLEDGE.md`](docs/HKJC_KNOWLEDGE.md) — field guide to HKJC's data
   sources, endpoints, domain conventions, feature priors and gotchas.
+- [`docs/HKJC_DATA_CATALOG.md`](docs/HKJC_DATA_CATALOG.md) — catalog of the modern
+  `en-us` site (racecard, comments, sectionals, vet/trackwork, aerial replay …).
 - [`docs/HKJC_BETTING_RULES.md`](docs/HKJC_BETTING_RULES.md) — full pool catalogue,
   per-pool takeout, dividend mechanics, and jackpot/carryover special payouts.
 - [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) — design for the

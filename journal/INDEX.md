@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-19 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+22 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -15,6 +15,10 @@
 - **0015-jackpot-capture-scheduling-self-gating-loop-in-h** (open) [Jackpot capture scheduling: self-gating loop in HK time; Claude cron is not the season tool](entries/0015-jackpot-capture-scheduling-self-gating-loop-in-h.md) — _scheduling, ops, timezone, jackpot-carryover, M1_
 - **0016-trajectory-physics-line-parallel-data-blocked-se** (open) [Trajectory/physics line: parallel & data-blocked; sectional source is a JS SPA](entries/0016-trajectory-physics-line-parallel-data-blocked-se.md) — _trajectory, physics-model, sectional, data-blocked, parallel-line_
 - **0018-cloud-capture-modal-python-native-cron-claude-sc** (open) [Cloud capture: Modal (Python-native cron); Claude scheduling can't run when machine is off](entries/0018-cloud-capture-modal-python-native-cron-claude-sc.md) — _cloud, modal, scheduling, ops, jackpot-carryover_
+
+## finding
+
+- **0022-hkjc-en-us-site-catalog-racecard-27-cols-corunni** (open) [HKJC en-us site catalog: racecard (27 cols), corunning, vet/trackwork/stewards, aerial replay](entries/0022-hkjc-en-us-site-catalog-racecard-27-cols-corunni.md) — _data-catalog, racecard, corunning, aerial-replay, exploration_
 
 ## gotcha
 
@@ -32,3 +36,5 @@
 - **0011-first-real-backtest-crude-model-does-not-beat-th** (open) [First real backtest: crude model does NOT beat the HKJC win market (efficient)](entries/0011-first-real-backtest-crude-model-does-not-beat-th.md) — _backtest, market-efficiency, win, negative-result, benter_
 - **0014-m1-shipped-jackpot-capture-store-carryover-ledge** (open) [M1 shipped: jackpot capture store + carryover ledger (data flywheel)](entries/0014-m1-shipped-jackpot-capture-store-carryover-ledge.md) — _jackpot-carryover, M1, data-flywheel, capture_
 - **0017-gate-1-passed-carryover-windows-are-frequent-and** (open) [Gate 1 PASSED: carryover windows are frequent and large enough (target the modest ones)](entries/0017-gate-1-passed-carryover-windows-are-frequent-and.md) — _jackpot-carryover, gate-1, frequency, chase-money, backfill_
+- **0020-sectional-data-unblocked-url-format-was-the-bug** (open) [Sectional data UNBLOCKED: URL format was the bug; now server-rendered & scraped](entries/0020-sectional-data-unblocked-url-format-was-the-bug.md) — _trajectory, sectional, unblocked, scraper_
+- **0021-b13-jackpot-won-events-scraper-built-results-sid** (open) [B13 jackpot won-events scraper built (results side)](entries/0021-b13-jackpot-won-events-scraper-built-results-sid.md) — _jackpot-carryover, B13, scraper, frequency_

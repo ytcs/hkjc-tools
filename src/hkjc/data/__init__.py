@@ -14,7 +14,8 @@ except shared parsing helpers in :mod:`hkjc.utils`.
 - :mod:`~hkjc.data.feature_store` — assemble sources into a modelling frame.
 """
 from . import (live, historical, speedpro, processing, odds_ticks, source,
-               feature_store, jackpot_ticks, carryover_ledger, capture)
+               feature_store, jackpot_ticks, carryover_ledger, capture,
+               jackpot_history, sectional)
 from .odds_ticks import OddsTickStore
 from .jackpot_ticks import JackpotCaptureStore
 from .carryover_ledger import CarryoverLedger
@@ -25,6 +26,7 @@ from .feature_store import FeatureStore
 __all__ = [
     "live", "historical", "speedpro", "processing", "odds_ticks",
     "source", "feature_store", "jackpot_ticks", "carryover_ledger", "capture",
+    "jackpot_history", "sectional",
     "OddsTickStore", "JackpotCaptureStore", "CarryoverLedger",
     "capture_once", "settle_meeting", "settle_recent",
     "DataSource", "CallableSource", "FeatureStore", "KEY_COLUMNS",
