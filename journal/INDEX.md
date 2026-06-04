@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-24 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+25 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -40,3 +40,4 @@
 - **0021-b13-jackpot-won-events-scraper-built-results-sid** (open) [B13 jackpot won-events scraper built (results side)](entries/0021-b13-jackpot-won-events-scraper-built-results-sid.md) — _jackpot-carryover, B13, scraper, frequency_
 - **0023-rating-form-do-not-beat-the-win-market-efficient** (open) [Rating + form do NOT beat the win market (efficient w.r.t. fundamentals)](entries/0023-rating-form-do-not-beat-the-win-market-efficient.md) — _model, market-efficiency, rating, form, negative-result_
 - **0024-tt-cover-backtest-naive-top-5-box-is-unprofitabl** (open) [TT cover backtest: naive top-5 box is unprofitable & hit-rate-bound (and dark)](entries/0024-tt-cover-backtest-naive-top-5-box-is-unprofitabl.md) — _jackpot-carryover, backtest, cover, hit-rate, statistically-dark_
+- **0025-flywheel-deployed-modal-jackpot-capture-is-live** (open) [Flywheel DEPLOYED: Modal jackpot capture is live (stevenytc workspace)](entries/0025-flywheel-deployed-modal-jackpot-capture-is-live.md) — _flywheel, deployed, modal, jackpot-carryover, live-data_
