@@ -1,6 +1,6 @@
 [project]
 name = "hkjc"
-version = "1.1.0"
+version = "1.2.0"
 description = "Library for scraping HKJC data and performing basic analysis"
 readme = "README.md"
 requires-python = ">=3.11"

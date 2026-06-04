@@ -50,16 +50,18 @@ exactly where you hit. Most of the research weight is here.
 Status: ✅ done · 🟡 partial · ⬜ todo.
 
 **Data acquisition**
-- **B1 ⬜ Live jackpot capture store** — poll `live_jackpots()` (C, G(t),
-  estimatedDividend(t)) **and** per-leg WIN-odds **and** pool investment across the
-  betting window, every meeting; persist a time series (extend the `OddsTickStore`
-  pattern). The trajectory is what lets us measure late-money dilution.
-- **B2 ⬜ Settled-result joiner** — after each meeting, scrape `get_race_dividends`
-  for DT/TT/6UP (won / not-won, settled dividend, winning combo) and join to the
-  pre-close capture → one ledger row per jackpot event.
-- **B3 ⬜ Carryover ledger** — durable accumulating dataset of jackpot events
-  (date, pool, C, G_close, estimatedDividend, won?, settled_dividend, implied
-  winning-unit count, field sizes, …). Backbone for all research.
+- **B1 ✅ Live jackpot capture store** — `data.jackpot_ticks.JackpotCaptureStore`
+  polls `live_jackpots()` (C, G(t), estimatedDividend(t)) across the betting window
+  and persists the time series; the runner also captures per-leg WIN odds via
+  `OddsTickStore`. The trajectory is what lets us measure late-money dilution.
+- **B2 ✅ Settled-result joiner** — `data.carryover_ledger.settled_jackpot_result`
+  + `build_carryover_rows`: after a meeting, join `get_race_dividends` (won /
+  not-won, settled dividend, winning combo) to the last pre-close capture.
+- **B3 ✅ Carryover ledger** — `data.carryover_ledger.CarryoverLedger`: durable,
+  upserting dataset of jackpot events (C, G_close, est dividend, eff_takeout, edge,
+  won?, settled dividend). Runner: `experiments/capture_jackpots.py` (capture /
+  settle). Still ⬜: wire into a scheduler (part of B11) + implied winning-unit
+  count (needs B6).
 - **B13 ⬜ Historical backfill (research-grade)** — scrape HKJC Racing News
   carryover/estimated-dividend announcements (and any jackpot-history pages) to
   estimate event **frequency and magnitude** without waiting a full season. Coarse

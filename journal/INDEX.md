@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-13 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+14 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -26,3 +26,4 @@
 
 - **0010-results-trained-conditional-logit-model-breaks-t** (open) [Results-trained conditional-logit model breaks the circularity (works)](entries/0010-results-trained-conditional-logit-model-breaks-t.md) — _model, conditional-logit, circularity, win-prediction_
 - **0011-first-real-backtest-crude-model-does-not-beat-th** (open) [First real backtest: crude model does NOT beat the HKJC win market (efficient)](entries/0011-first-real-backtest-crude-model-does-not-beat-th.md) — _backtest, market-efficiency, win, negative-result, benter_
+- **0014-m1-shipped-jackpot-capture-store-carryover-ledge** (open) [M1 shipped: jackpot capture store + carryover ledger (data flywheel)](entries/0014-m1-shipped-jackpot-capture-store-carryover-ledge.md) — _jackpot-carryover, M1, data-flywheel, capture_
