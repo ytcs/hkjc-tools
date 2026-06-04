@@ -49,20 +49,35 @@ to it and serves no server-side table. No obvious data XHR fired on first load
   speed, sustained-speed split, a crude `v_c`) and run through the existing harness
   — *do sectional features beat the market baseline where draw+weight couldn't?*
 
-### Tier 2 — Video trajectory extraction  *(high effort, high ceiling)*
+### Tier 2 — Video trajectory extraction  *(high ceiling — but the data may already exist upstream)*
 What we want: per-frame `(x, y)` track position per horse → full kinematics
-(velocity, acceleration, **actual distance travelled**, path width, drafting).
+(velocity, acceleration, **actual distance travelled**, lateral path/lane, drafting).
 
-Data-source problem (⬜): race replays are archived (the old form table had a
-`VideoReplay` column we drop; morning track-work has the known `twstarter` mp4
-URL pattern). Need the **race-replay stream URLs** (find via the replay page's
-network panel) and a download path.
-- **Action V1:** browser recon of the replay page → capture the video stream URL
-  pattern (HLS/mp4); confirm archive depth.
-- **Action V2:** CV pipeline scope — detect horses → multi-object tracking (handle
-  occlusion) → **camera→track homography** (broadcast pan/zoom to ground
-  coordinates; the hard part) → runner identification (saddlecloth/silks). A real
-  CV project; gate it behind a **single-race proof-of-concept** before committing.
+**Key finding (2026-06, from inspecting `aerial_sample.mp4`):** HKJC publishes an
+**"Aerial Virtual View"** — a *synthetic 3D render* of the race, not drone footage.
+Its own disclaimer ("accuracy may be affected by mobile-phone signal interference
+at the racecourses; refer to Real Replay for actual results") reveals it is rendered
+from an **RF/GPS horse-positioning system**. So the dense per-horse `(x, y)`
+trajectory data **already exists at HKJC** and the hard real-footage CV problem
+(moving broadcast camera, occlusion, re-ID) is already solved upstream — we just need
+the positions. This reorders the plan:
+
+- **Action V1 (do first, cheap):** browser/network recon of the Aerial-Virtual-View
+  page — look for the **underlying position feed** (JSON/websocket of `(x,y)` per
+  horse per tick, analogous to the live-odds GraphQL we already tap). If it exists,
+  we get dense, ~25 Hz, lateral+longitudinal trajectories with **no CV at all** — the
+  maximal-granularity outcome. This is the single highest-leverage data check.
+- **Action V2 (fallback CV, only if no feed):** the virtual view is far more tractable
+  than broadcast footage — clean rendered silk-icons (distinct colours), a schematic
+  track with rail lines and **distance markers (e.g. 420M, 920M)** for calibration,
+  and a saddlecloth/silks legend for ID. The remaining hard part is per-frame
+  **camera→track homography** (the render uses a *moving 3D camera* that pans/zooms),
+  recoverable from the rail/markers. Gate behind a single-race PoC. Note the virtual
+  view is *lossy* (RF noise) — good enough for lateral-lane / ground-loss calibration,
+  not for sub-metre ground truth.
+- **Gate:** build either only after the energetics residual (the one live signal —
+  faint `v_c` edge, strongest at middle distances; journal 0035) is confirmed worth
+  sharpening. Don't build a trajectory pipeline for a ~zero signal.
 
 ---
 

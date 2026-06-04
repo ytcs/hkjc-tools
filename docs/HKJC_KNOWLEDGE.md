@@ -128,7 +128,7 @@ https://racing.hkjc.com/racing/English/tipsindex/tips_index.asp?RaceNo={n}
   meeting-to-meeting to spread wear, which **changes the usable width and the
   draw-bias geometry per race** — geometry is *not* fixed per venue. The `Course`
   field (`A`, `A+2`, `B`, `B+2`, `B+3`, `C`, `C+3`) sets the rail position.
-  Official HKJC widths (encoded in `hkjc.model.track`):
+  Official HKJC widths (encoded in `hkjc.track`):
 
   | Course | Sha Tin width | Happy Valley width |
   | --- | --- | --- |
@@ -139,14 +139,33 @@ https://racing.hkjc.com/racing/English/tipsindex/tips_index.asp?RaceNo={n}
   | C | 21.3m | 22.5m |
   | C+3 | 18.3m | 19.5m |
 
-  Home straight: **Sha Tin 430m**, **Happy Valley ~300–338m** (course-dependent).
-  Sha Tin circumference ~1900m (one long back straight + a home bend); **Happy
-  Valley 1,450m, right-handed (clockwise), bend-dominated** — home straight only
-  ~0–300m, then Sanatorium/Crescent/"The Rock" bends (~300–770m), back straight
-  (~770–920m), HKFC/Stable bends + top turn (~920m+). HV's near-continuous turning
-  is why its draw bias is the strongest in HK (low draws hold the short inner path).
-  Distances: HV 1000/1200/1650/1800/2200m. Draw bias is most acute at the 1000m and
-  1200m starts. See the official course page and `DrawStatistics` for realised bias.
+- **Geometry is reference data, resolved per race.** `hkjc.track` holds a
+  `TrackGeometry` per *venue × surface × configuration* and a resolver
+  `track_for(venue, distance, surface)`. The canonical `Race` object
+  (`hkjc.race`) carries `(venue, distance, surface, course, going, runners)` and
+  exposes `.geometry`, `.width`, `.bend_fraction`, and one-call model builders
+  (`.traffic_model()`, `.energetics_model()`, `.plackett_luce()`) — the agent-based
+  modelling seam. The four encoded geometries:
+  - **Happy Valley** (`HAPPY_VALLEY`): turf, 1,450m, right-handed, **bend-dominated**
+    — home straight ~[0,300]; Sanatorium/Crescent/"The Rock" bends ~[300,770]; back
+    straight ~[770,920]; HKFC/Stable bends + top turn ~[920,1450] (bend map from the
+    sectional sampling points). Near-continuous turning ⇒ the **strongest draw bias
+    in HK** (low draws hold the short inner path). Distances 1000/1200/1650/1800/2200m.
+  - **Sha Tin turf** (`SHA_TIN_TURF`): 1,900m galloping oval, right-handed, 430m home
+    straight. Long straights ⇒ a **weaker** geometric draw bias than HV (the model
+    reproduces this: `bend_fraction` is lower). Bend boundaries are a two-turn
+    reconstruction from circumference + home straight (approximate; the straight/turn
+    split and total are firm).
+  - **Sha Tin straight 1000m** (`SHA_TIN_STRAIGHT`): a separate sprint **chute with no
+    bends** ⇒ **no bend-geometry draw bias** at all (only the cross-track watering/going
+    gradient, which the geometry deliberately does not model). `track_for("ST",1000)`
+    returns this, not the oval.
+  - **Sha Tin all-weather** (`SHA_TIN_AWT`): dirt, 1,560m, right-handed, 365m home
+    straight, **fixed single rail** (uniform 22.8m). Surface inferred from the
+    "ALL WEATHER TRACK" label (going codes alone are ambiguous — both scales have GOOD).
+
+  Draw bias is most acute at HV and the short ST turf trips; flat on the ST 1000m
+  chute. See the official course page and `DrawStatistics` for realised bias.
 - **Going codes** (string → short code), as used to filter form by surface:
 
   Turf: `FIRM→F, GOOD TO FIRM→GF, GOOD→G, GOOD TO YIELDING→GY, YIELDING→Y,
