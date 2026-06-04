@@ -11,19 +11,19 @@ The library is organised by concern, with a single direction of dependency
   Plackett-Luce is the reference implementation; bring your own by subclassing.
 - **Simulation** (`simulation`): draw finishing orders from a model and estimate
   the probability and EV of arbitrary bets you compose yourself.
-- **Evaluation** (`eval`): the harness that judges models/strategies — currently
-  closing-line value (`eval.clv`).
+- **Bets** (`bets`): price HKJC pools from a model and the carryover detector/cover.
+- **Evaluation** (`eval`): the harness that judges models/strategies (calibration,
+  CLV, walk-forward, selection).
 - **Memory** (`ledger`): durable, indexed journal of findings the research loop
   accumulates (see :mod:`hkjc.ledger`).
 
-Submodules keep their old import names re-exported here (``hkjc.live`` etc.); the
-canonical paths now live under their concern (``hkjc.data.live``).
+Canonical import paths live under their concern, e.g. ``hkjc.data.live``,
+``hkjc.data.racecard``, ``hkjc.bets.carryover``.
 """
 from importlib.metadata import version as _version
 
 __all__ = [
-    "data", "live", "historical", "speedpro", "features",
-    "harville_model", "model", "simulation", "bets", "eval", "ledger",
+    "data", "features", "harville_model", "model", "simulation", "bets", "eval", "ledger",
     "RaceModel", "PlackettLuceModel", "ConditionalLogit", "RaceSimulator",
     "OddsTickStore", "FeatureStore", "DataSource", "Ledger", "pareto_filter",
     "speedpro_energy", "speedmap", "generate_historical_data",
@@ -35,7 +35,7 @@ except Exception:  # pragma: no cover - best-effort version resolution
     __version__ = "0.0.0"
 
 from . import data, features, harville_model, model, simulation, bets, eval, ledger
-from .data import live, historical, speedpro, OddsTickStore, FeatureStore, DataSource
+from .data import OddsTickStore, FeatureStore, DataSource
 from .data.processing import generate_historical_data
 from .data.speedpro import speedmap, speedpro_energy
 from .model import RaceModel, PlackettLuceModel, ConditionalLogit

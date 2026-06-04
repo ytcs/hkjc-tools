@@ -59,8 +59,8 @@ betting strategy — the agent composes her own bets on top. See
 | `hkjc.features` | — | Polars feature expressions (rating gap, front-runner share, ...). |
 | `hkjc.utils` | — | Parsing helpers and a generic Pareto filter. |
 
-The old flat names (`hkjc.live`, `hkjc.historical`, `hkjc.speedpro`) remain
-re-exported for convenience; the canonical paths are under `hkjc.data`.
+Data-access modules live under `hkjc.data` (`hkjc.data.live`, `hkjc.data.racecard`,
+`hkjc.data.sectional`, …).
 
 ### Bring your own model
 
