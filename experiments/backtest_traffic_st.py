@@ -51,6 +51,12 @@ def _norm(col):
     return pl.col(col).cast(pl.Utf8).str.replace_all("/", "-")
 
 
+# Recency note: an EXP-WEIGHTED (half-life ~2 race) form is +8pp of market over the career mean
+# in a bare-form conditional logit (conditional_form.py: 28%->36%). But it does NOT transfer to
+# the ABM: at each form's own best FORM_GAIN, EW is +0.0025 nats/race WORSE than the career mean
+# (form_gain_recency_sweep.py, P(EW better)=26%). The recency the market prices is already carried
+# in the ABM by the official rating, which enters NONLINEARLY via v_c.fixed(band, rtg) — a channel
+# the bare logit lacks. So the career mean stays here; recency lives in the rating layer.
 def current_form_table() -> pl.DataFrame:
     """Leak-free expanding mean of prior relative-finish per horse (all venues count).
 
@@ -58,7 +64,7 @@ def current_form_table() -> pl.DataFrame:
     mean over a horse's STRICTLY PRIOR runs is a far stronger ability measurement than
     sectional v_c (corr with winning ~0.15 vs ~0.13), and it survives the handicap (a
     horse beating its mark keeps finishing well). Returns (date, venue, race_no, runner,
-    form) keyed for joining; form is null on debut.
+    form) keyed for joining; form is null on debut. (Recency weighting tested, see note above.)
     """
     e = pl.read_parquet(CACHE / "energetics_dataset.parquet").with_columns(_norm("date").alias("date"))
     w = pl.read_parquet(CACHE / "wpq_dataset.parquet").with_columns(_norm("date").alias("date"))
