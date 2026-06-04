@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-31 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+47 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -18,10 +18,27 @@
 - **0027-trip-trouble-gate-negative-video-not-justified-c** (open) [Trip-trouble gate NEGATIVE -> video NOT justified; close the model-edge line](entries/0027-trip-trouble-gate-negative-video-not-justified-c.md) — _trouble, video-gate, market-efficiency, model-edge-closed, strategy_
 - **0030-tier-a-traffic-model-focus-happy-valley-track-ge** (open) [Tier-A traffic model: focus Happy Valley; track geometry + movable rail captured](entries/0030-tier-a-traffic-model-focus-happy-valley-track-ge.md) — _traffic-model, tier-a, happy-valley, track-geometry, movable-rail, draw-bias_
 
+## design
+
+- **0039-model-enrichment-principle-mechanistic-coupling** (open) [Model-enrichment principle: mechanistic coupling only - upgrade kinematic core to a power-balance EOM (mass+drag+drafting); two entry points (state, policy)](entries/0039-model-enrichment-principle-mechanistic-coupling.md) — _enrichment, physics, energetics, jockey, fitness, mechanistic, roadmap_
+
 ## finding
 
 - **0022-hkjc-en-us-site-catalog-racecard-27-cols-corunni** (open) [HKJC en-us site catalog: racecard (27 cols), corunning, vet/trackwork/stewards, aerial replay](entries/0022-hkjc-en-us-site-catalog-racecard-27-cols-corunni.md) — _data-catalog, racecard, corunning, aerial-replay, exploration_
 - **0028-video-feasibility-probe-aerial-tracking-data-ren** (open) [Video feasibility probe: aerial = tracking-data RENDER; CV-extractable but low-EV](entries/0028-video-feasibility-probe-aerial-tracking-data-ren.md) — _video, aerial, tracking-data, feasibility, cv_
+- **0033-calibrated-the-traffic-model-empirical-hierarchi** (open) [Calibrated the traffic model: empirical/hierarchical Bayes energetics + per-venue bend_curvature](entries/0033-calibrated-the-traffic-model-empirical-hierarchi.md) — _calibration, traffic-model, empirical-bayes, hierarchical-bayes, numpyro, jax, draw-bias, rating_
+- **0034-st-walk-forward-backtest-calibrated-traffic-mode** (open) [ST walk-forward backtest: calibrated traffic model is well-calibrated but ~0.40 nats/race short of the market](entries/0034-st-walk-forward-backtest-calibrated-traffic-mode.md) — _backtest, walk-forward, traffic-model, sha-tin, market, calibration, leakage-audit_
+- **0035-st-residual-eda-market-is-right-on-every-disagre** (open) [ST residual EDA: market is right on every disagreement; only faint residual is energetics (v_c), strongest at middle distances](entries/0035-st-residual-eda-market-is-right-on-every-disagre.md) — _eda, residuals, traffic-model, sha-tin, market-efficiency, energetics, draw, incremental-edge_
+- **0036-place-is-a-modestly-better-target-than-win-for-t** (open) [Place is a modestly better target than win for the structural model (17% vs 12% of market skill); still far behind](entries/0036-place-is-a-modestly-better-target-than-win-for-t.md) — _backtest, place, exotics, traffic-model, sha-tin, robustness_
+- **0037-aerial-replay-is-a-virtual-view-rendered-from-hk** (open) [Aerial replay is a VIRTUAL VIEW rendered from HKJC RF/GPS positioning; dense trajectory data exists upstream - hunt the feed before CV](entries/0037-aerial-replay-is-a-virtual-view-rendered-from-hk.md) — _video, trajectory, tier-b, data-acquisition, energetics_
+- **0038-exotic-pool-backtest-at-st-no-edge-market-prices** (open) [Exotic-pool backtest at ST: no edge - market prices quinella/trio well too; trio ROI +58% is a 5-hit small-sample artifact](entries/0038-exotic-pool-backtest-at-st-no-edge-market-prices.md) — _backtest, exotics, quinella, trio, sha-tin, market-efficiency, dividends_
+- **0040-factor-triage-top-residual-info-our-model-misses** (open) [Factor triage: top residual info our model misses is recent-form/ability (state) and jockey (policy); trainer ~0, rating absorbed](entries/0040-factor-triage-top-residual-info-our-model-misses.md) — _triage, residual, jockey, energetics, fitness, enrichment, priorities_
+- **0042-why-draw-is-under-captured-despite-the-traffic-m** (open) [Why draw is under-captured despite the traffic model targeting it: rail position sets draw bias (course B edge +0.15 vs C+3 +0.01), modelled as fixed course-A; plus draw is pace-contingent](entries/0042-why-draw-is-under-captured-despite-the-traffic-m.md) — _draw, traffic-model, rail-position, course, track-bias, diagnostics, policy_
+- **0043-breakthrough-hunt-mass-recency-falsified-the-onl** (open) [Breakthrough hunt: mass + recency falsified; the only over-market signal is a course-B inner-draw mispricing (~+11pp), now validating on multi-season data](entries/0043-breakthrough-hunt-mass-recency-falsified-the-onl.md) — _breakthrough, draw, rail-position, course-b, market-mispricing, mass, form, edge-hunt_
+- **0044-course-b-draw-edge-falsified-on-1911-races-5-sea** (closed) [Course-B draw edge FALSIFIED on 1911 races / 5 seasons: it was a 22-race 2026 fluke; market prices draw correctly across ALL rail positions](entries/0044-course-b-draw-edge-falsified-on-1911-races-5-sea.md) — _draw, rail-position, course, market-efficiency, falsified, validation, overfitting_
+- **0045-litmus-after-course-fix-draw-still-not-captured** (open) [Litmus after course fix: draw STILL not captured (dLL 1.04->1.13m). Geometry was never the issue - draw residual is pace-tactics + noise. Predictive-edge door is closed across all avenues.](entries/0045-litmus-after-course-fix-draw-still-not-captured.md) — _litmus, draw, course, market-efficiency, synthesis, policy, conclusion_
+- **0046-breakthrough-form-relative-finish-ability-calibr** (open) [BREAKTHROUGH: form (relative-finish ability) + calibrated race-day noise nearly triples model win-skill (11%->29% of market); gap 9x -> 3.4x](entries/0046-breakthrough-form-relative-finish-ability-calibr.md) — _breakthrough, form, ability, calibration, speed-noise, gap-closing, model, handicap_
+- **0047-signal-exploration-map-form-is-the-dominant-abil** (open) [Signal-exploration map: form is the dominant ability signal (23% ceiling); jockey/mkt-rel-form add ~+3pp each; field-strength weighting + Elo HURT (data-starved)](entries/0047-signal-exploration-map-form-is-the-dominant-abil.md) — _form, elo, jockey, ability, ceiling, diminishing-returns, strength-of-field_
 
 ## gotcha
 
@@ -32,6 +49,11 @@
 ## hypothesis
 
 - **0004-jackpot-carryover-windows-can-be-structurally-ev** (open) [Jackpot carryover windows can be structurally +EV](entries/0004-jackpot-carryover-windows-can-be-structurally-ev.md) — _jackpot, triple-trio, six-up, +ev_
+
+## infrastructure
+
+- **0032-consolidated-geometry-canonical-race-domain-obje** (open) [Consolidated geometry + canonical Race domain object for agent-based modelling](entries/0032-consolidated-geometry-canonical-race-domain-obje.md) — _geometry, traffic-model, refactor, sha-tin, happy-valley, abm_
+- **0041-built-the-power-balance-eom-core-dynamicsracemod** (open) [Built the power-balance EOM core (DynamicsRaceModel): mass/drag/drafting/reserve are now real terms; reduces to kinematic model with drag off](entries/0041-built-the-power-balance-eom-core-dynamicsracemod.md) — _dynamics, physics, energetics, eom, mechanistic, mass, drafting, model_
 
 ## result
 
