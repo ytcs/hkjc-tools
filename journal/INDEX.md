@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-26 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+27 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -15,6 +15,7 @@
 - **0015-jackpot-capture-scheduling-self-gating-loop-in-h** (open) [Jackpot capture scheduling: self-gating loop in HK time; Claude cron is not the season tool](entries/0015-jackpot-capture-scheduling-self-gating-loop-in-h.md) — _scheduling, ops, timezone, jackpot-carryover, M1_
 - **0016-trajectory-physics-line-parallel-data-blocked-se** (open) [Trajectory/physics line: parallel & data-blocked; sectional source is a JS SPA](entries/0016-trajectory-physics-line-parallel-data-blocked-se.md) — _trajectory, physics-model, sectional, data-blocked, parallel-line_
 - **0018-cloud-capture-modal-python-native-cron-claude-sc** (open) [Cloud capture: Modal (Python-native cron); Claude scheduling can't run when machine is off](entries/0018-cloud-capture-modal-python-native-cron-claude-sc.md) — _cloud, modal, scheduling, ops, jackpot-carryover_
+- **0027-trip-trouble-gate-negative-video-not-justified-c** (open) [Trip-trouble gate NEGATIVE -> video NOT justified; close the model-edge line](entries/0027-trip-trouble-gate-negative-video-not-justified-c.md) — _trouble, video-gate, market-efficiency, model-edge-closed, strategy_
 
 ## finding
 
