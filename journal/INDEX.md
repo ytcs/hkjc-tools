@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-59 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+60 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -65,6 +65,10 @@
 
 - **0032-consolidated-geometry-canonical-race-domain-obje** (open) [Consolidated geometry + canonical Race domain object for agent-based modelling](entries/0032-consolidated-geometry-canonical-race-domain-obje.md) — _geometry, traffic-model, refactor, sha-tin, happy-valley, abm_
 - **0041-built-the-power-balance-eom-core-dynamicsracemod** (open) [Built the power-balance EOM core (DynamicsRaceModel): mass/drag/drafting/reserve are now real terms; reduces to kinematic model with drag off](entries/0041-built-the-power-balance-eom-core-dynamicsracemod.md) — _dynamics, physics, energetics, eom, mechanistic, mass, drafting, model_
+
+## milestone
+
+- **0060-session-state-roadmap-develop-the-physics-game-t** (open) [SESSION STATE + ROADMAP: develop the physics+game-theory ABM, NOT statistical models](entries/0060-session-state-roadmap-develop-the-physics-game-t.md) — _roadmap, ABM, game-theory, policy, standing-order, session-state, direction_
 
 ## result
 
