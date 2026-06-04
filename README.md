@@ -19,6 +19,10 @@ Docs:
   per-pool takeout, dividend mechanics, and jackpot/carryover special payouts.
 - [`docs/AGENT_ARCHITECTURE.md`](docs/AGENT_ARCHITECTURE.md) — design for the
   closed-loop, self-improving research agent built on this bedrock.
+- [`docs/CARRYOVER_RESEARCH_PLAN.md`](docs/CARRYOVER_RESEARCH_PLAN.md) — **the main
+  research line**: the Jackpot Carryover Harvester (build map + research questions).
+- [`docs/CARRYOVER_STRATEGY.md`](docs/CARRYOVER_STRATEGY.md) — strategy rationale,
+  the structural-edge math, and why model-edge exotics are look-ahead traps.
 
 ## Architecture
 

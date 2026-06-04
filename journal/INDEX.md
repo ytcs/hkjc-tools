@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-12 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+13 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -11,6 +11,7 @@
 - **0008-first-modelling-target-win-place-quinella-sim-st** (open) [First modelling target: Win/Place/Quinella; sim stays sizing-agnostic](entries/0008-first-modelling-target-win-place-quinella-sim-st.md) — _scope, pools, win-place-quinella, staking_
 - **0009-feature-store-datasource-seam-w-p-q-outcome-sche** (open) [Feature store: DataSource seam + W/P/Q outcome schema + language coverage](entries/0009-feature-store-datasource-seam-w-p-q-outcome-sche.md) — _feature-store, datasource, outcome-schema, language-parity_
 - **0012-quant-team-verdict-build-the-jackpot-carryover-h** (open) [Quant team verdict: build the Jackpot Carryover Harvester; model-edge exotics are look-ahead traps](entries/0012-quant-team-verdict-build-the-jackpot-carryover-h.md) — _strategy, jackpot-carryover, exotics, look-ahead, workflow_
+- **0013-promoted-jackpot-carryover-harvester-is-the-main** (open) [PROMOTED: Jackpot Carryover Harvester is the main research direction](entries/0013-promoted-jackpot-carryover-harvester-is-the-main.md) — _jackpot-carryover, research-plan, main-direction, dilution_
 
 ## gotcha
 
