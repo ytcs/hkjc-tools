@@ -28,6 +28,11 @@ from hkjc.model.traffic_jax import win_probs
 from hkjc.track import track_for
 
 CACHE = Path("data_cache")
+# Dataset files are env-overridable so the full-history panels (energetics_dataset_full /
+# wpq_dataset_full, 3248 races) can be swapped in for the 3-month defaults (161 races) without
+# touching call sites: ENERGETICS_FILE=energetics_dataset_full.parquet WPQ_FILE=wpq_dataset_full.parquet
+ENERGETICS = os.environ.get("ENERGETICS_FILE", "energetics_dataset.parquet")
+WPQ = os.environ.get("WPQ_FILE", "wpq_dataset.parquet")
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))
 BEND = CALIBRATED_BEND_CURVATURE["ST"]
 # Form is a far stronger ability measurement than sectional v_c (18% vs 5% of market
@@ -66,8 +71,8 @@ def current_form_table() -> pl.DataFrame:
     horse beating its mark keeps finishing well). Returns (date, venue, race_no, runner,
     form) keyed for joining; form is null on debut. (Recency weighting tested, see note above.)
     """
-    e = pl.read_parquet(CACHE / "energetics_dataset.parquet").with_columns(_norm("date").alias("date"))
-    w = pl.read_parquet(CACHE / "wpq_dataset.parquet").with_columns(_norm("date").alias("date"))
+    e = pl.read_parquet(CACHE / ENERGETICS).with_columns(_norm("date").alias("date"))
+    w = pl.read_parquet(CACHE / WPQ).with_columns(_norm("date").alias("date"))
     h = (e.select("date", "venue", "race_no", "runner", "horse_id")
          .join(w.select("date", "venue", "race_no", "runner", "finish_pos", "field_size"),
                on=["date", "venue", "race_no", "runner"])
@@ -130,8 +135,8 @@ def running_style_table() -> pl.DataFrame:
 
 
 def load_st() -> pl.DataFrame:
-    e = pl.read_parquet(CACHE / "energetics_dataset.parquet").with_columns(_norm("date").alias("date"))
-    w = pl.read_parquet(CACHE / "wpq_dataset.parquet").with_columns(_norm("date").alias("date"))
+    e = pl.read_parquet(CACHE / ENERGETICS).with_columns(_norm("date").alias("date"))
+    w = pl.read_parquet(CACHE / WPQ).with_columns(_norm("date").alias("date"))
     r = (pl.read_parquet(CACHE / "rating_dataset.parquet")
          .with_columns(_norm("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"),
                        pl.col("rtg").cast(pl.Float64))
