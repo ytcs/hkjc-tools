@@ -103,5 +103,5 @@ class TrafficRaceModel(RaceModel):
             finish_t = np.where(crossed, t - dt + frac * dt, finish_t)
             s = np.minimum(s_new, dist)
         # any non-finishers: rank by progress (slower than finishers)
-        finish_t = np.where(finish_t == np.inf, t + (D - s), finish_t)
+        finish_t = np.where(finish_t == np.inf, t + (dist - s), finish_t)
         return np.argsort(finish_t, axis=1).astype(np.int64)
