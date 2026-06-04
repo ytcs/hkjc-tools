@@ -76,6 +76,41 @@ def _parse_sectional_table(table) -> list[dict]:
     return out
 
 
+def sectional_run_features(sec: pl.DataFrame) -> pl.DataFrame:
+    """Physics-inspired per-horse run features from ONE race's sectionals.
+
+    Turns the per-section velocity profile into stable, **field-relative** (so they
+    are comparable across races/distances/going) descriptors of how the horse spent
+    its energy:
+
+    - ``rel_early`` / ``rel_finish`` — the horse's 1st / last section time minus the
+      field mean for that section (negative = faster than the field then).
+    - ``fade`` — ``last_section / best_section`` (≥1; >1 means the horse slowed at
+      the end, i.e. hit its stamina limit — the CP–W' "tank empty" signature).
+    - ``best_section`` — the horse's fastest single section (raw speed ceiling).
+
+    These are computed per run; trailing per-horse averages of them (leakage
+    controlled, from *prior* runs) are the model features.
+    """
+    sec = sec.filter(pl.col("section_time").is_not_null())
+    if sec.height == 0:
+        return pl.DataFrame()
+    max_sec = int(sec["section"].max())
+    sec = sec.with_columns(
+        (pl.col("section_time") - pl.col("section_time").mean().over(["date", "race_no", "section"]))
+        .alias("rel_section")
+    )
+    keys = ["date", "race_no", "runner", "horse_id", "finish_order", "total_time"]
+    g = sec.group_by(keys, maintain_order=True).agg([
+        pl.col("section").max().alias("n_sections"),
+        pl.col("section_time").min().alias("best_section"),
+        pl.col("section_time").filter(pl.col("section") == max_sec).first().alias("last_section"),
+        pl.col("rel_section").filter(pl.col("section") == 1).first().alias("rel_early"),
+        pl.col("rel_section").filter(pl.col("section") == max_sec).first().alias("rel_finish"),
+    ])
+    return g.with_columns((pl.col("last_section") / pl.col("best_section")).alias("fade"))
+
+
 def get_sectional_times(date: str, race_no: int) -> pl.DataFrame:
     """Per-horse, per-section running position + section time for one race.
 

@@ -1,7 +1,13 @@
 """Offline test for the sectional-time parser (mirrors the real table layout)."""
+import polars as pl
 from bs4 import BeautifulSoup
 
-from hkjc.data.sectional import _parse_sectional_table, _to_ddmmyyyy, _time_to_sec
+from hkjc.data.sectional import (
+    _parse_sectional_table,
+    _time_to_sec,
+    _to_ddmmyyyy,
+    sectional_run_features,
+)
 
 HTML = """
 <table>
@@ -41,3 +47,27 @@ def test_parse_per_horse_sections():
     # the closer started further back (position 5 in section 1)
     closer = [r for r in rows if r["runner"] == 3 and r["section"] == 1][0]
     assert closer["position"] == 5 and closer["section_time"] == 14.10
+
+
+def test_sectional_run_features_fade_and_relatives():
+    rows = []
+
+    def add(runner, hid, fo, total, secs):
+        for i, t in enumerate(secs, start=1):
+            rows.append(dict(date="d", race_no=1, runner=runner, horse_id=hid,
+                             finish_order=fo, total_time=total, section=i,
+                             section_time=t, position=fo))
+
+    add(1, "A", 1, 72.0, [24.0, 24.0, 24.0])   # steady
+    add(2, "B", 2, 74.0, [23.0, 23.0, 28.0])   # fast early, big fade
+
+    out = sectional_run_features(pl.DataFrame(rows))
+    a = out.filter(pl.col("horse_id") == "A").row(0, named=True)
+    b = out.filter(pl.col("horse_id") == "B").row(0, named=True)
+    # fade = last/best: A steady ~1.0, B fades (28/23 ~ 1.22)
+    assert abs(a["fade"] - 1.0) < 1e-9 and b["fade"] > 1.2
+    # last-section field mean = 26 -> A faster (-2), B slower (+2)
+    assert a["rel_finish"] < 0 and b["rel_finish"] > 0
+    # first-section field mean = 23.5 -> A slower early (+0.5), B faster early (-0.5)
+    assert a["rel_early"] > 0 and b["rel_early"] < 0
+    assert a["n_sections"] == 3
