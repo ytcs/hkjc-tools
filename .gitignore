@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-*.parquetdata_cache/
+*.parquet
+data_cache/
 *.mp4
