@@ -23,10 +23,11 @@ from hkjc.track import track_for
 
 import backtest_traffic_st as bt
 from backtest_traffic_st import (CACHE, _horse_residuals, _norm, current_form_table,
-                                 running_style_table)
+                                 jockey_table, running_style_table)
 
 BEND = CALIBRATED_BEND_CURVATURE["HV"]
 bt.N_SAMPLES = 4000
+JKY_MEAN_HV = 0.0  # set in load_hv
 
 
 def load_hv() -> pl.DataFrame:
@@ -47,6 +48,10 @@ def load_hv() -> pl.DataFrame:
     df = df.join(current_form_table(), on=keys, how="left").with_columns(pl.col("form").fill_null(0.5))
     df = df.join(running_style_table(), on=keys, how="left")
     df = df.with_columns(pl.col("style").fill_null(pl.col("style").mean()))
+    global JKY_MEAN_HV
+    df = df.join(jockey_table(), on=["date", "horse_id"], how="left")
+    JKY_MEAN_HV = float(df["jky_sr"].mean())
+    df = df.with_columns(pl.col("jky_sr").fill_null(JKY_MEAN_HV))
     return df.with_columns((pl.col("date") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("race_id"))
 
 
@@ -61,11 +66,13 @@ def fit_predict_hv(train: pl.DataFrame, test: pl.DataFrame) -> pl.DataFrame:
         dist = int(g["distance"][0])
         rtg = g["rtg"].to_numpy().astype(float)
         form = g["form"].to_numpy().astype(float)
+        jky = g["jky_sr"].to_numpy().astype(float)
         band = distance_band(dist)
         vc, wp = [], []
         for i, h in enumerate(g["horse_id"].to_list()):
             n, u_vc, u_w = res.get(h, (0, 0.0, 0.0))
-            vc.append(pop.v_c.fixed(band, rtg[i]) + lam_vc(n) * u_vc + bt.FORM_GAIN * (form[i] - 0.5))
+            vc.append(pop.v_c.fixed(band, rtg[i]) + lam_vc(n) * u_vc + bt.FORM_GAIN * (form[i] - 0.5)
+                      + bt.JOCKEY_GAIN * (jky[i] - JKY_MEAN_HV))
             wp.append(pop.w_prime.fixed(band, rtg[i]) + lam_w(n) * u_w)
         geom = track_for("HV", dist, "turf")
         style = g["style"].to_numpy().astype(float)

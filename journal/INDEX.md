@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-50 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+52 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -40,6 +40,8 @@
 - **0046-breakthrough-form-relative-finish-ability-calibr** (open) [BREAKTHROUGH: form (relative-finish ability) + calibrated race-day noise nearly triples model win-skill (11%->29% of market); gap 9x -> 3.4x](entries/0046-breakthrough-form-relative-finish-ability-calibr.md) — _breakthrough, form, ability, calibration, speed-noise, gap-closing, model, handicap_
 - **0047-signal-exploration-map-form-is-the-dominant-abil** (open) [Signal-exploration map: form is the dominant ability signal (23% ceiling); jockey/mkt-rel-form add ~+3pp each; field-strength weighting + Elo HURT (data-starved)](entries/0047-signal-exploration-map-form-is-the-dominant-abil.md) — _form, elo, jockey, ability, ceiling, diminishing-returns, strength-of-field_
 - **0048-jockey-is-the-2-signal-after-form-7pp-of-market** (open) [Jockey is the #2 signal after form (+7pp of market skill at scale)](entries/0048-jockey-is-the-2-signal-after-form-7pp-of-market.md) — _jockey, signals, form, walk-forward_
+- **0051-jockey-confirmed-at-happy-valley-9pp-replicates** (open) [Jockey confirmed at Happy Valley (+9pp, replicates Sha Tin)](entries/0051-jockey-confirmed-at-happy-valley-9pp-replicates.md) — _jockey, happy-valley, backtest, signal, confirmed_
+- **0052-speed-figure-margin-form-does-not-beat-ordinal-r** (open) [Speed-figure / margin form does NOT beat ordinal rank form (null result)](entries/0052-speed-figure-margin-form-does-not-beat-ordinal-r.md) — _form, speed-figure, margin, null-result, featurization_
 
 ## gotcha
 

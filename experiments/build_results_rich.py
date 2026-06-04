@@ -22,7 +22,7 @@ CACHE = Path("data_cache")
 START, END = dt.date(2022, 9, 1), dt.date(2026, 6, 1)
 KEEP = ["Date", "Venue", "RaceNumber", "HorseNo", "HorseID", "Jockey", "Trainer",
         "ActWt", "DeclarHorseWt", "Dr", "Pla", "WinOdds", "RunningPosition",
-        "Going", "Course", "RaceDistance", "RaceClass"]
+        "LBW", "FinishTime", "Going", "Course", "RaceDistance", "RaceClass"]
 
 
 def fetch_meeting(date: dt.date):
