@@ -169,4 +169,21 @@ ALLOMETRIC_B_BY_VENUE = {"ST": 1.1, "HV": 1.0}
 # and the denser prior helps NON-debutees too; training gallops would extend the same fusion. fit per-venue.
 TRIAL_GAIN = float(os.environ.get("TRIAL_GAIN", "0.0"))
 TRIAL_GAIN_BY_VENUE = {"ST": 1.5, "HV": 1.0}
+
+# COLLAT_GAIN: collateral-form coupling (m/s of effective v_c per unit of the opponent-adjusted
+# collateral rating, within-race centred). Competition is RELATIONAL, not scalar (THEORY §3b): a
+# horse's ability is estimated by propagating beaten-margins through the field it ran, the fields
+# those rivals ran, … — a Massey relative-velocity rating expressed in velocity units (m/s vs a
+# (going,distance) par), solved ONLINE in date order so it is strictly leak-free. This adds OVER the
+# already-priced official rating + recency form because it carries collateral OPPONENT-STRENGTH
+# information neither has: it credits a margin posted against a strong field more than the same margin
+# against a weak one. The collateral propagation (κ=1 in collateral_form_table) is load-bearing — at
+# HV κ=0 (plain field margin, no opponent adjustment) gives only ~half the gain of κ=1. A scalar
+# Elo failed (collinear with rtg); this RELATIONAL velocity rating converts. PER-VENUE: HV wants a
+# much stronger coupling (2.5) than ST (1.0) — HV is the tighter, more tactical track where field
+# strength is mispriced and the model trails most. PAIRED full-scale (PYTHONHASHSEED=0): ST 60.0→60.4%
+# (cg=1.0; broad peak 1.0–1.5), HV 54.1→56.4% (cg=2.5; flat-topped 2.0–3.0, ECE 0.0070→0.0051). |cg|
+# beyond the plateau over-couples and degrades. fit resolves per-venue unless collat_gain is passed.
+COLLAT_GAIN = float(os.environ.get("COLLAT_GAIN", "0.0"))
+COLLAT_GAIN_BY_VENUE = {"ST": 1.0, "HV": 2.5}
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))

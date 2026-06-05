@@ -1,9 +1,10 @@
 """The extracted leak-free ability features compute strictly-prior means (no leakage)."""
 import polars as pl
 
-from hkjc.model.features import (barrier_trial_table, early_position_table, form_table,
-                                 jockey_table, prior_starts_table, recency_form_table,
-                                 style_table, trainer_table)
+from hkjc.model.features import (barrier_trial_table, collateral_form_table,
+                                 early_position_table, form_table, jockey_table,
+                                 prior_starts_table, recency_form_table, style_table,
+                                 trainer_table)
 
 
 def test_form_is_strictly_prior_expanding_mean():
@@ -64,6 +65,27 @@ def test_barrier_trial_fig_expanding_mean_and_brand_key():
     par = sum(v) / 3
     assert abs(a["trial_fig"][0] - (v[0] - par)) < 1e-9                 # first trial: itself
     assert abs(a["trial_fig"][1] - ((v[0] - par) + (v[1] - par)) / 2) < 1e-9   # expanding mean
+
+
+def test_collateral_form_is_strictly_prior_and_propagates():
+    # Two horses meet in race 1, then H1 runs solo in race 2. The rating H1 carries INTO race 2
+    # must be its observation FROM race 1 only (strictly prior). With κ=1 that observation is
+    # (margin vs field) + (field's prior rating); in race 1 the field is all-debut so field_r=0,
+    # so H1's race-1 obs = its within-race velocity margin.
+    rr = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-01", "2025-01-08"],
+        "Venue": ["ST", "ST", "ST"], "RaceNumber": [1, 1, 2], "HorseNo": [1, 2, 1],
+        "HorseID": ["H1", "H2", "H1"],
+        "RaceDistance": [1000.0, 1000.0, 1000.0],
+        "FinishTime": [60.0, 62.0, 61.0],
+        "Going": ["GOOD", "GOOD", "GOOD"],
+    })
+    out = collateral_form_table(rr, kappa=1.0).sort(["date", "runner"])
+    vals = out["collat_form"].to_list()
+    assert vals[0] is None and vals[1] is None      # both race-1 rows are debuts -> null
+    v1, v2 = 1000.0 / 60.0, 1000.0 / 62.0
+    expected = v1 - (v1 + v2) / 2.0                  # race-2 H1 rating = its race-1 within-field margin
+    assert vals[2] is not None and abs(vals[2] - expected) < 1e-9
 
 
 def test_jockey_strike_rate_is_prior_only():

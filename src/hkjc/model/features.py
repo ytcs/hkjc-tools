@@ -202,6 +202,82 @@ def barrier_trial_table(barrier_trials: pl.DataFrame) -> pl.DataFrame:
     return bt.select("horse_id", "d", "trial_fig")
 
 
+def collateral_form_table(results_rich: pl.DataFrame, kappa: float = 1.0) -> pl.DataFrame:
+    """Leak-free **collateral-form** ability rating — opponent-adjusted, in velocity units (m/s).
+
+    THEORY.md §3b: competition is RELATIONAL, not scalar. Races link horses into a directed
+    graph of relative velocities (A ran ``s_A`` against a field, that field ran against other
+    fields, …). A horse's ability is the fixed point that propagates these collateral links:
+    not just *how fast it ran* (that is :func:`speed_figure_table`), but *how fast it ran
+    relative to a field whose own strength is known*. Beating a strong field is worth more than
+    the same time against a weak one — the opponent-adjusted (Massey) refinement of the raw figure.
+
+    Construction (a Massey-style relative-velocity rating, solved ONLINE so it is strictly
+    leak-free). Each run's par-relative velocity is ``s_i = dist/time − par(going,dist)`` (m/s, the
+    same condition-normalised kinematic figure as :func:`speed_figure_table`). Races are processed
+    in date order; the field strength of race R is the mean *prior* collateral rating ``R̄`` of its
+    runners (unrated newcomers count as neutral 0). A runner's observation from race R is
+
+        obs_i = (s_i − mean_R s) + κ·R̄          (its margin vs the field it ran + the field's strength)
+
+    and a horse's rating is the expanding mean of its ``obs`` over its STRICTLY PRIOR runs. The
+    ``κ·R̄`` term is the collateral propagation: a margin posted against a strong field inherits
+    that strength (one Gauss–Seidel sweep of the Massey least-squares system in date order). κ=1
+    is the least-squares value; κ<1 damps the propagation. The rating emitted FOR a race uses only
+    runs BEFORE it — the per-horse running mean is updated only AFTER the race is emitted — so it
+    cannot see the current or any later result (same strictly-prior guarantee as :func:`form_table`).
+    ``par`` is a race-condition constant (not the horse's own outcome), so the full panel is leak-free.
+
+    Returns (date, venue, race_no, runner, collat_form); ``collat_form`` is null on debut.
+    """
+    rr = results_rich.with_columns(
+        pl.col("date").cast(pl.Utf8).str.replace_all("/", "-").alias("date"),
+        pl.col("RaceDistance").cast(pl.Float64, strict=False).alias("dist_m"),
+        pl.col("FinishTime").cast(pl.Float64, strict=False).alias("ftime"),
+        pl.col("Going").cast(pl.Utf8).alias("going"),
+        pl.col("HorseNo").cast(pl.Int64, strict=False).alias("runner"),
+        pl.col("RaceNumber").cast(pl.Int64, strict=False).alias("race_no"),
+        pl.col("Venue").cast(pl.Utf8).alias("venue"),
+    )
+    rr = rr.filter((pl.col("ftime") > 0) & pl.col("dist_m").is_not_null())
+    rr = rr.with_columns((pl.col("dist_m") / pl.col("ftime")).alias("v_run"))
+    rr = rr.with_columns(pl.col("v_run").mean().over(["going", "dist_m"]).alias("par"))
+    rr = rr.with_columns(
+        (pl.col("v_run") - pl.col("par")).alias("s"),
+        pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"))
+    rr = rr.with_columns(
+        (pl.col("date") + "_" + pl.col("venue") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("rid"))
+    rr = rr.sort("d")
+    sums: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    dates_, venues_, raceno_, runner_, val_ = [], [], [], [], []
+    for (_rid,), g in rr.group_by("rid", maintain_order=True):
+        hs = g["HorseID"].to_list()
+        ss = g["s"].to_numpy()
+        d0 = g["date"][0]
+        v0 = g["venue"][0]
+        rn0 = int(g["race_no"][0])
+        rns = g["runner"].to_list()
+        # strictly-prior rating each horse carries INTO this race (None = no prior run)
+        cur = [(sums[h] / counts[h]) if counts.get(h, 0) > 0 else None for h in hs]
+        known = [c for c in cur if c is not None]
+        field_r = sum(known) / len(known) if known else 0.0
+        for rn, c in zip(rns, cur):
+            dates_.append(d0)
+            venues_.append(v0)
+            raceno_.append(rn0)
+            runner_.append(rn)
+            val_.append(c)
+        smean = float(ss.mean())
+        # UPDATE the running per-horse mean AFTER emitting -> preserves the strictly-prior guarantee
+        for h, si in zip(hs, ss):
+            obs = (float(si) - smean) + kappa * field_r
+            sums[h] = sums.get(h, 0.0) + obs
+            counts[h] = counts.get(h, 0) + 1
+    return pl.DataFrame(
+        {"date": dates_, "venue": venues_, "race_no": raceno_, "runner": runner_, "collat_form": val_})
+
+
 def speed_figure_table(results_rich: pl.DataFrame) -> pl.DataFrame:
     """Leak-free trailing SPEED FIGURE per horse — a velocity-based ability signal (m/s).
 

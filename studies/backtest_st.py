@@ -18,9 +18,10 @@ from pathlib import Path
 import polars as pl
 
 from hkjc.backtesting import harness, walk_forward_folds
-from hkjc.model.features import (barrier_trial_table, early_position_table, form_table,
-                                 jockey_table, prior_starts_table, recency_form_table,
-                                 speed_figure_table, style_table, trainer_table)
+from hkjc.model.features import (barrier_trial_table, collateral_form_table,
+                                 early_position_table, form_table, jockey_table,
+                                 prior_starts_table, recency_form_table, speed_figure_table,
+                                 style_table, trainer_table)
 from hkjc.model.constants import FORM_HALF_LIFE
 from hkjc.model.fit import fit_predict_traffic
 
@@ -100,6 +101,9 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     # velocity-based speed figure (leak-free trailing); neutral 0 when unknown
     df = df.join(speed_figure_table(rr), on=["date", "venue", "race_no", "runner"], how="left")
     df = df.with_columns(pl.col("speedfig").fill_null(0.0))
+    # collateral-form ability rating (opponent-adjusted velocity, leak-free strictly-prior); 0 = no prior
+    df = df.join(collateral_form_table(rr), on=["date", "venue", "race_no", "runner"], how="left")
+    df = df.with_columns(pl.col("collat_form").fill_null(0.0))
     # barrier-trial speed figure (the only prior on-track form for DEBUTANTS); leak-free as-of join
     # on horse brand. trial date strictly precedes the race (mornings vs race days). 0 = no prior trial.
     btq = CACHE / "barrier_trials.parquet"
@@ -136,10 +140,12 @@ def main():
     dfs = float(_dfs) if _dfs is not None else None
     _tg = os.environ.get("TRIAL_GAIN")  # barrier-trial debut signal; None -> per-venue TRIAL_GAIN_BY_VENUE
     tg = float(_tg) if _tg is not None else None
+    _cg = os.environ.get("COLLAT_GAIN")  # opponent-adjusted collateral-form; None -> per-venue baked
+    cg = float(_cg) if _cg is not None else None
 
     def _model(train, test):
         return fit_predict_traffic(train, test, jky_mean=jky_mean, w_prime_gain=wpg, sim=sim,
-                                   allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg)
+                                   allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg, collat_gain=cg)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

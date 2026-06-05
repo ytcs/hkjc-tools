@@ -29,7 +29,8 @@ from ..core.hkjc_facts import AWT_DISTANCE
 from ..core.track import track_for
 from .calibration import (EnergeticsPopulation, distance_band,
                           fit_energetics_population)
-from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, DRAW_FS_GAIN,
+from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, COLLAT_GAIN,
+                        COLLAT_GAIN_BY_VENUE, DRAW_FS_GAIN,
                         DRAW_FS_GAIN_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
                         DRAW_GAIN_BY_VENUE, FORM_GAIN, FORM_GAIN_BY_VENUE, JOCKEY_GAIN,
                         N_SAMPLES, POS_FADE_GAIN, SHRINK_MULT, SIM, TRIAL_GAIN,
@@ -70,6 +71,7 @@ def fit_predict_traffic(
     trainer_gain: float = 0.0,
     speedfig_gain: float = 0.0,
     trial_gain: float | None = None,
+    collat_gain: float | None = None,
     pos_fade_gain: float = POS_FADE_GAIN,
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
@@ -101,6 +103,8 @@ def fit_predict_traffic(
         fg = form_gain if form_gain is not None else FORM_GAIN_BY_VENUE.get(venue, FORM_GAIN)
         # barrier-trial debut signal is PER-VENUE (HV benefits more); explicit arg overrides (sweeps)
         tg_v = trial_gain if trial_gain is not None else TRIAL_GAIN_BY_VENUE.get(venue, TRIAL_GAIN)
+        # collateral-form (opponent-adjusted) coupling is PER-VENUE (HV wants ~2.5x ST); arg overrides
+        cg = collat_gain if collat_gain is not None else COLLAT_GAIN_BY_VENUE.get(venue, COLLAT_GAIN)
         rtg = g["rtg"].to_numpy().astype(float)
         form = g["form"].to_numpy().astype(float)
         jky = g["jky_sr"].to_numpy().astype(float)
@@ -108,6 +112,9 @@ def fit_predict_traffic(
         sfig = g["speedfig"].to_numpy().astype(float) if "speedfig" in g.columns else np.zeros(g.height)
         # barrier-trial speed figure (m/s vs trial par) — the only prior on-track form for debutants
         tfig = g["trial_fig"].to_numpy().astype(float) if "trial_fig" in g.columns else np.zeros(g.height)
+        # collateral-form opponent-adjusted rating (m/s), within-race centred (field-mean shift cancels)
+        cfm = g["collat_form"].to_numpy().astype(float) if "collat_form" in g.columns else np.zeros(g.height)
+        cfm = cfm - np.nanmean(cfm)
         # trainer strike rate, within-race centred (a constant field shift cancels in win prob)
         trn = g["trn_sr"].to_numpy().astype(float) if "trn_sr" in g.columns else np.zeros(g.height)
         trn = trn - np.nanmean(trn)
@@ -122,7 +129,7 @@ def fit_predict_traffic(
             vc.append(pop.v_c.fixed(band, rtg[i]) + shrink_mult * lam_vc(n) * u_vc
                       + fg * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
                       + speedfig_gain * sfig[i] + trainer_gain * trn[i]
-                      + tg_v * tfig[i] + pos_fade_gain * epos[i])
+                      + tg_v * tfig[i] + cg * cfm[i] + pos_fade_gain * epos[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
             # stamina analogue of form_gain (market under-weights W' at gain 1.0).
             wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)
