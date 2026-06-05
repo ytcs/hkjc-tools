@@ -8,3 +8,4 @@ yolov8*.pt
 
 # agent worktrees + local settings
 .claude/
+studies/newdata_samples/
