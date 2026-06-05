@@ -38,11 +38,30 @@ challenge). The library parses `WIN, PLA, QIN, QPL` — **the rest are unextract
 **Rich fields exposed but NOT yet extracted** (a roadmap):
 - `winOdds`, `finalPosition`, `deadHeat` — live result as it lands.
 - `jockey`, `trainer`, `gearInfo`, `last6run`, `currentRating`, `internationalRating`,
-  `allowance`, `trainerPreference`, `trumpCard`.
-- `changeHistories` — **scratchings / jockey & weight changes** (top 3).
-- `penetrometerReadings`, `hammerReadings` — **turf firmness measurements**.
+  `allowance`, **`trainerPreference`** (the trainer's own ranking of their runners — intent),
+  **`trumpCard`** (bool stable-confidence flag). Both confirmed **populated pre-race** — these
+  are a zero-extra-fetch intent signal, just extract them.
+- `changeHistories(filters:["top3"])` — **scratchings / jockey & weight changes**; returns a
+  *current/latest* feed (ignores the `date` param — same records for any past date queried).
+- `penetrometerReadings`, `hammerReadings` — turf firmness, but observed **empty** on upcoming
+  AND recent-past meetings (only populated transiently raceday morning). **Unreliable — prefer
+  the `weather` op's soil-moisture fields (§1.1) for firmness.**
 - `jpEsts` / jackpots and `estimatedDividend` per pool ✅ (via `live.live_jackpots`).
 - `totalInvestment`, per-pool `investment` — **pool sizes → liquidity signal** ✅.
+
+### 1.1 `weather` operation — wind + soil moisture (NEW, the ENVIRONMENT feed) ⬜
+Same endpoint, `operationName: Weather`, `variables: null`, `Origin: https://racing.hkjc.com`.
+The server **whitelists by exact query body** (any field-set change → `WHITELIST_ERROR`).
+Returns **both ST & HV**, `max-age=15`. Per racecourse:
+- `sectional[]` — **four anemometers (A/B/C/D)** around the track, each with
+  `avgCorrectedWindDirection` (compass, e.g. `N80W`), `avgCorrectedWindSpeed`, gust dir/speed,
+  `gpsPosition` (lat:lon:elev). → the **real per-straight wind vector** (head/tail/cross),
+  projectable onto each straight's heading via the GPS — fills THEORY §2.5 (wind), reshapes draft.
+- `weatherStation` (loc E) — the above wind fields **plus** `temperature`, `relativeHumidity`,
+  `pressure`, `solarRadiation`, `sunshineHour`, daily max/min, `rainPrecipitationDailyTotal`,
+  **`soilVolumeticWaterContent`**, **`soilMoistureLoss{1Min,DailyTotal,24H}}`**. → a **continuous
+  going/firmness proxy** far richer than the categorical going string (going-affinity was found
+  noise-limited by soft-going *sparsity*; a continuous firmness covariate sidesteps that).
 
 ## 2. Historical / info: server-rendered HTML (`racing.hkjc.com`)
 
@@ -67,15 +86,28 @@ challenge). The library parses `WIN, PLA, QIN, QPL` — **the rest are unextract
 | **Horse page** | `horse?horseid=HK_2023_J183` | record, location (Conghua/ST), import; tabs: Form, Rating/Wt/Placing, **Performance by Distance**, **Trackwork**, **Veterinary**, Movement, Pre-import, **Pedigree** + replay links | 🟡 (legacy `Horse.aspx` ✅) |
 
 ### Per-runner "angle" pages (server-rendered, all ⬜ — the buried gold)
-- **`exceptionalfactors`** — Out of Handicap, WFA, **Gear / Tongue-Tie / Bit change**,
-  days-since-run, **new trainer**, date returned from Conghua. First-time-gear angles.
-- **`veterinaryrecord`** — vet/soundness flags per horse (health dimension).
-- **`localtrackwork`** — Barrier Trial / Gallop / Swimming / Treadmill / Aqua-Walker /
-  Spelling work-load (fitness/condition dimension).
-- **`btresult`** — **barrier-trial results** (surface/dist/going/time, comment) — direct
-  fitness read **before a debut or return**, when form is silent.
-- **`draw`** — barrier **W%/P% over last 3 seasons** for the course/distance — realised
-  draw-bias features (vs the modelled geometry).
+> **Pre-race window caveat (important):** these pages are SSR-fetchable with plain `requests.get`,
+> but populated **only for the imminent upcoming meeting** — for *past* meetings they serve
+> "…available shortly", for *future* "No information". The "0 tables" you'd otherwise see is a
+> stale-date artifact, **not** JS-rendering. Scrape them in the pre-race window with the upcoming date.
+- **`exceptionalfactors`** — per horse: `Out of Handicap, WFA, Gear, Tongue Tie, Bit Change
+  From/To, Rtg, Dist, Days since Last Run, New Trainer, Date returned from Conghua`, **plus a
+  `Trainer | Multi Entries` table** (which stable saddles 2+ runners — pair with `trainerPreference`).
+  Concentrated INTENT signals (§2.3/§2.7).
+- **`veterinaryrecord`** (alt `overecord?horseid=…`) — per horse: dated `Date, Details (free
+  text: "Lame right front…", "Throat surgery…"), Passed On` (cleared-to-race date). The **HEALTH
+  cell** (§2.1) — recency of last issue + injury class via NLP.
+- **`localtrackwork`** — per horse, dated logs across `Barrier Trial / Gallop / Trotting /
+  Swimming / Equine Treadmill / Aqua Walker / Spelling`; **gallops carry split/total TIMES** and
+  **CONGHUA vs SHA TIN location** (training-base movement). Fitness-cycle (§2.1).
+- **`btresult?Date=DD/MM/YYYY`** (note `Date=`, day-first) — **barrier trials with batch
+  `Time`+`Sectional Time`** and per-horse `Draw, Gear, LBW, Running Position, Time, Result, Comment`
+  — direct fitness read **before a debut/return**, when form is silent; feeds `v_c`/`W′` priors.
+- **`formline`** — groups today's runners by a **shared past race**; per rival: `Wt, Rtg, Draw,
+  Jockey, Last Jockey, Placing, Time, Margin, Win Odds, Weight Carried +/-, Rating +/-`. **The
+  pre-assembled OPPONENT-LINKAGE / collateral-form graph** — raw material for the competition axis (§2.6).
+- **`draw`** — barrier **W%/P%/F% over last 3 seasons** for the exact course/distance + a
+  Favourites strike-rate row — realised draw-bias (validate/residual-correct the modelled geometry).
 - **`racereportext`** / **`racereportfull`** — per-horse past incident history / full
   stewards report (panel, going, per-race incidents).
 - **`latestonhorse`** — late declared-starter changes / scratchings feed.
@@ -163,14 +195,25 @@ Morning track-work clips: `…/twstarter/{YYYY}/{YYYYMMDD}/{RR}/novo/twstarter_�
 
 ## 7. Mining priority (highest unrealised value first)
 
-1. **`racecard`** — the 27-field pre-race card (ratings + **rating moves** + gear +
-   **body-weight deltas** + days-since-run + pedigree). Biggest single fetch; feeds every
-   model. Maps onto the physiology/competition dimensions directly.
-2. **`corunning`** — running comments → **trip/trouble NLP** features (the stochasticity/
-   racing-luck dimension the model can't see mechanistically).
-3. **`exceptionalfactors` + `veterinaryrecord` + `localtrackwork` + `btresult`** —
-   gear/first-time/vet/work-load/barrier-trial **condition & intent** angles.
-4. **`draw` stats** — realised W%/P% by course-distance, to validate/replace the modelled
-   draw geometry.
-5. **Full exotic dividends + `investment`/`jpEsts`** — pool sizes & carryover (strategist).
-6. **Sectionals → energetics**, then CV trajectory **only if** sectionals confirm signal.
+1. **`weather` GraphQL op** (§1.1) — per-section **wind vectors** + **soil-moisture** firmness.
+   Fills the model's single weakest cell (ENVIRONMENT), same endpoint already wired, plain-HTTP.
+   Highest leverage, lowest integration cost.
+2. **`racecard`** — the 27-field pre-race card (ratings + **rating moves** + gear +
+   **body-weight deltas** + days-since-run + pedigree). Biggest single fetch; feeds every model.
+3. **`trainerPreference` + `trumpCard`** (GraphQL, already in our query body) — zero extra fetch;
+   extract two runner fields = stable-intent ranking + confidence flag.
+4. **`formline`** — the pre-assembled opponent-linkage / collateral-form graph → the competition
+   axis (§2.6). The simplistic Elo/relative-form treatments failed; this is the raw data for a
+   deeper game-theoretic treatment.
+5. **`exceptionalfactors` + `veterinaryrecord` + `localtrackwork` + `btresult`** —
+   gear/first-time/vet/work-load/barrier-trial **condition, health & intent** angles.
+6. **`corunning`** — running comments → **trip/trouble NLP** (the stochasticity/racing-luck cell).
+7. **`draw` stats** — realised W%/P%/F% by course-distance, to validate the modelled draw geometry.
+8. **Full exotic dividends + `investment`/`jpEsts`** — pool sizes & carryover (strategist).
+9. **Sectionals → energetics**; CV trajectory only for place/exotics, and only if it ever pays.
+
+### New routes found (beyond the above) — mostly Next.js (browser or backing GraphQL needed)
+`…/local/info/windtracker` (UI for the `weather` op) · `…/local/page/conghua-movement-records`
+(training-base moves) · `…/local/page/jtcombo-debutants-statistics` (jockey/trainer-combo + debutant
+strike rates) · `…/local/page/last-run-reminder` (layoff/first-up) · `…/local/page/racing-course-time`
+(course standard/record times — distance/surface benchmarks) · `…/local/info/changes` (scratchings).

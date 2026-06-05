@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-21 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+22 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -25,3 +25,4 @@
 - **0021-breakthrough-re-added-bend-ground-loss-to-the-wa** →all (research/confirmed) [BREAKTHROUGH: re-added bend ground-loss to the wald drift (DRAW_GAIN=0.003) -> ST 56->58% of market](entries/0021-breakthrough-re-added-bend-ground-loss-to-the-wa.md) — _draw, bend-ground-loss, wald, breakthrough, interaction, abm, re-diagnosis, first-principles_
 - **0022-bodywt-re-checked-on-the-production-wald-path-re** →all (research/confirmed) [bodywt re-checked on the production wald path: real but SMALL (~0.8pp) -- not a needle-mover, parked](entries/0022-bodywt-re-checked-on-the-production-wald-path-re.md) — _bodywt, mass, wald, parked, low-leverage, structural, ability-model, next-direction_
 - **0023-research-round-6-parallel-dimension-probes-hv-is** →all (research/open) [Research round (6 parallel dimension probes): HV is broken (#1 lever, ~10pp); pace + rest-days are real medium leads](entries/0023-research-round-6-parallel-dimension-probes-hv-is.md) — _research-round, per-venue, HV, draw, pace, lone-leader, days-since-run, opponent-adjusted, interactions, sectionals, headroom_
+- **0024-research-round-2-4-agents-pace-positional-fade-i** →all (research/open) [Research round 2 (4 agents): pace POSITIONAL-FADE is the next clean lever; data-mining goldmine (weather/formline/vet); going=noise; drone=defer](entries/0024-research-round-2-4-agents-pace-positional-fade-i.md) — _research-round-2, per-venue, HV, pace, positional-fade, data-mining, weather, wind, formline, veterinary, going, drone, cv, competition, game-theory, theory-first_
