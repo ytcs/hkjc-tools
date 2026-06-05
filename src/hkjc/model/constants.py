@@ -63,4 +63,22 @@ SPEED_NOISE = float(os.environ.get("SPEED_NOISE", "0.12"))
 JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "5.0"))
 PACE_GAIN = float(os.environ.get("PACE_GAIN", "0.0"))
 W_PRIME_GAIN = float(os.environ.get("W_PRIME_GAIN", "2.0"))
+# SIM selects the win-probability simulator:
+#   "kinematic" — the calibrated traffic_jax sim (v = min(target, traffic cap)); no mass term.
+#   "eom"       — the power-balance EOM (hkjc.model.eom): mass enters every term via Newton's law
+#                 (locomotion cost, inertia, reserve energy, drag), the most first-principles path.
+# Default kinematic (the 49%-of-market production calibration); "eom" is the physics migration.
+SIM = os.environ.get("SIM", "kinematic")
+
+# ALLOMETRIC_B: the body-mass power exponent b in p_c = κ·m^b — the ONE physiological constant for
+# how aerobic power scales with muscle mass. Derived from the EOM, not a free gain: v_c =
+# p_c/(K_LOCO·m·g) ⟹ at steady state v_c ∝ m^(b−1). The kinematic (production) path applies exactly
+# that analytic law as a field-relative factor v_c *= (m/m̄)^(b−1); the SIM="eom" path instead lets
+# mass act through the full Newton's-law dynamics (inertia/fade/drag too). The residual diagnosis
+# showed the market backs heavier horses MORE (bodywt residual t=+8.6) and a probe confirmed it is
+# REAL mass (partial t=+8.8 controlling for rating+class; monotone; survives within-class) ⟹ b>1
+# (power scales super-linearly with mass). b=1.0 = no mass effect; calibrate upward. NOTE: the full
+# SIM="eom" path currently underperforms the kinematic sim (see journal) — production uses the
+# steady-state law. Declared weight is pre-race, so leak-free. 1.0 until calibrated.
+ALLOMETRIC_B = float(os.environ.get("ALLOMETRIC_B", "1.0"))
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))

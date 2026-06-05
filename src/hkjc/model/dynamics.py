@@ -118,3 +118,34 @@ class DynamicsRaceModel(RaceModel):
             lane_change_prob=self.lane_change_prob, lane_step=self.lane_step,
             bend_curvature=self.bend_curvature, bend_lo=self._bend_lo,
             bend_hi=self._bend_hi, circ=self._circ, dt=self.dt, max_steps=self.max_steps)
+
+
+def win_probs(v_c, w_prime, mass, draw, distance, *, allometric_b: float = 1.0,
+              track: TrackGeometry = HAPPY_VALLEY, course: str = "A", size: int = 4000,
+              speed_noise: float = 0.05, seed: int = 0, dt: float = 1.0, max_steps: int = 260,
+              cda: float = 0.5, draft: float = 0.4, **kw) -> np.ndarray:
+    """P(each horse wins) from the power-balance EOM — mass enters every term via Newton's law.
+
+    First-principles mass coupling (no tacked-on v_c gain): declared body mass sets the
+    locomotion cost ``K_LOCO·m·g``, the inertia ``m·dv/dt`` (so heavier horses accelerate the
+    late kick more slowly), the anaerobic reserve energy ``W'(J)=K_LOCO·m·g·w'``, and — through
+    the one physiological constant, the allometric exponent ``b`` in ``p_c=κ·m^b`` — the aerobic
+    power. Power is built as ``p_c = K_LOCO·m·g·v_c·(m/m̄_field)^(b−1)``: at ``b=1`` mass cancels in
+    the steady state (pure dynamics), ``b>1`` gives heavier horses a power surplus (super-linear
+    scaling, the market's "heavier = faster"). ``v_c`` is the ability estimate (m/s), ``w_prime``
+    the anaerobic distance reserve (m); both at the field's masses. Laplace-smoothed, sums to 1.
+    """
+    v_c = np.asarray(v_c, float)
+    mass = np.asarray(mass, float)
+    w_prime = np.asarray(w_prime, float)
+    ref = float(np.exp(np.nanmean(np.log(mass))))            # field geometric-mean mass
+    floco = K_LOCO * mass * G
+    p_c = floco * v_c * (mass / ref) ** (allometric_b - 1.0)
+    model = DynamicsRaceModel(
+        p_c=p_c, w_reserve=floco * w_prime, mass=mass, draw=draw, distance=distance,
+        track=track, course=course, speed_noise=speed_noise, dt=dt, max_steps=max_steps,
+        cda=cda, draft=draft, **kw)
+    ft = model.finish_times(size, np.random.default_rng(seed))
+    n = ft.shape[1]
+    counts = np.bincount(np.argmin(ft, axis=1), minlength=n).astype(float)
+    return (counts + 1.0) / (ft.shape[0] + n)

@@ -70,3 +70,39 @@ def style_table(sectional: pl.DataFrame) -> pl.DataFrame:
          .with_columns(pl.col("d").dt.strftime("%Y-%m-%d").alias("date")))
     return s.select("date", "venue", "race_no", "runner",
                     pl.when(pl.col("style").is_finite()).then(pl.col("style")).alias("style"))
+
+
+def speed_figure_table(results_rich: pl.DataFrame) -> pl.DataFrame:
+    """Leak-free trailing SPEED FIGURE per horse — a velocity-based ability signal (m/s).
+
+    Unlike rank-based form (which censors the winning margin), this is grounded in kinematics:
+    a run's average velocity ``v_run = RaceDistance / FinishTime`` (m/s), expressed relative to
+    a condition standard ``par(going, distance)`` so runs across trips/going are comparable:
+
+        speed_fig = v_run − par(going, distance)        (m/s above/below the standard)
+
+    Then the strictly-prior expanding mean per horse — a trait in real velocity units, so it
+    couples to v_c with a kinematic coefficient ≈1 rather than a free gain. ``par`` is a
+    race-condition constant (not the horse's own outcome), so using the full panel for it is
+    leak-free; the per-horse mean is over prior runs only.
+    """
+    rr = results_rich.with_columns(
+        pl.col("date").cast(pl.Utf8).str.replace_all("/", "-").alias("date"),
+        pl.col("RaceDistance").cast(pl.Float64, strict=False).alias("dist_m"),
+        pl.col("FinishTime").cast(pl.Float64, strict=False).alias("ftime"),
+        pl.col("Going").cast(pl.Utf8).alias("going"),
+        pl.col("HorseNo").cast(pl.Int64, strict=False).alias("runner"),
+        pl.col("RaceNumber").cast(pl.Int64, strict=False).alias("race_no"),
+        pl.col("Venue").cast(pl.Utf8).alias("venue"),
+    )
+    rr = rr.filter((pl.col("ftime") > 0) & pl.col("dist_m").is_not_null())
+    rr = rr.with_columns((pl.col("dist_m") / pl.col("ftime")).alias("v_run"))
+    # condition standard: mean race velocity per (going, distance)
+    rr = rr.with_columns(pl.col("v_run").mean().over(["going", "dist_m"]).alias("par"))
+    rr = rr.with_columns((pl.col("v_run") - pl.col("par")).alias("sf"),
+                         pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"))
+    rr = rr.sort(["HorseID", "d"]).with_columns(
+        ((pl.col("sf").cum_sum().over("HorseID") - pl.col("sf"))
+         / (pl.col("sf").cum_count().over("HorseID") - 1)).alias("speedfig"))
+    return rr.select("date", "venue", "race_no", "runner",
+                     pl.when(pl.col("speedfig").is_finite()).then(pl.col("speedfig")).alias("speedfig"))

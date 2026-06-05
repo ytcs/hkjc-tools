@@ -18,7 +18,7 @@ from pathlib import Path
 import polars as pl
 
 from hkjc.backtesting import harness, walk_forward_folds
-from hkjc.model.features import form_table, jockey_table, style_table
+from hkjc.model.features import form_table, jockey_table, speed_figure_table, style_table
 from hkjc.model.fit import fit_predict_traffic
 
 CACHE = Path("data_cache")
@@ -69,6 +69,17 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     df = df.join(jockey_table(rr), on=["date", "horse_id"], how="left")
     jky_mean = float(df["jky_sr"].mean())
     df = df.with_columns(pl.col("jky_sr").fill_null(jky_mean))
+    # declared horse weight (published pre-race -> leak-free), keyed by runner
+    bw = (rr.with_columns(pl.col("date").cast(pl.Utf8).str.replace_all("/", "-"),
+                          pl.col("HorseNo").cast(pl.Int64, strict=False).alias("runner"),
+                          pl.col("RaceNumber").cast(pl.Int64, strict=False).alias("race_no"),
+                          pl.col("Venue").cast(pl.Utf8).alias("venue"),
+                          pl.col("DeclarHorseWt").cast(pl.Float64, strict=False).alias("bodywt"))
+          .select("date", "venue", "race_no", "runner", "bodywt"))
+    df = df.join(bw, on=["date", "venue", "race_no", "runner"], how="left")
+    # velocity-based speed figure (leak-free trailing); neutral 0 when unknown
+    df = df.join(speed_figure_table(rr), on=["date", "venue", "race_no", "runner"], how="left")
+    df = df.with_columns(pl.col("speedfig").fill_null(0.0))
     df = df.with_columns((pl.col("date") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("race_id"))
     return df, jky_mean
 
@@ -90,10 +101,13 @@ def main():
 
     bend = os.environ.get("BEND")
     bend = float(bend) if bend is not None else None
-    wpg = float(os.environ.get("W_PRIME_GAIN", "1.0"))
+    wpg = float(os.environ.get("W_PRIME_GAIN", "2.0"))
+    sim = os.environ.get("SIM", "kinematic")
+    ab = float(os.environ.get("ALLOMETRIC_B", "1.0"))
 
     def _model(train, test):
-        return fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend, w_prime_gain=wpg)
+        return fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend,
+                                   w_prime_gain=wpg, sim=sim, allometric_b=ab)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-5 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+9 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -9,3 +9,7 @@
 - **0003-refactor-acceptance-st-47-7-of-market-reproduced** →all (research/confirmed) [Refactor acceptance: ST 47.7% of market reproduced on the new library](entries/0003-refactor-acceptance-st-47-7-of-market-reproduced.md) — _acceptance, refactor, goodness-of-fit_
 - **0004-bend-curvature-recalibration-falsified-draw-resi** →all (research/confirmed) [Bend_curvature recalibration FALSIFIED -- draw residual is low-leverage](entries/0004-bend-curvature-recalibration-falsified-draw-resi.md) — _calibration, bend_curvature, draw, negative-result, residual-queue_
 - **0005-w-prime-gain-recalibrated-1-0-2-0-anaerobic-rese** →all (research/confirmed) [W_PRIME_GAIN recalibrated 1.0 -> 2.0 (anaerobic reserve under-weighted)](entries/0005-w-prime-gain-recalibrated-1-0-2-0-anaerobic-rese.md) — _calibration, w_prime_gain, goodness-of-fit, reserve_
+- **0006-bodywt-residual-is-real-body-mass-not-a-class-pr** →all (research/confirmed) [Bodywt residual is REAL body mass, not a class proxy (confirmed)](entries/0006-bodywt-residual-is-real-body-mass-not-a-class-pr.md) — _residual-queue, mass, bodywt, mechanism-validation_
+- **0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go** →all (research/open) [Scrutiny of v_c regressors: form is lossy (rank), going is a blind spot](entries/0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go.md) — _scrutiny, form, speed-figure, going, critical-power, methodology, v_c_
+- **0008-full-power-balance-eom-underperforms-kinematic-b** →all (research/open) [Full power-balance EOM underperforms kinematic by ~1.4 nats/race (win-prob)](entries/0008-full-power-balance-eom-underperforms-kinematic-b.md) — _eom, mass, allometric, negative-result, physics-migration, steady-state_
+- **0009-mass-coupling-parked-real-residual-but-low-lever** →all (research/confirmed) [Mass coupling PARKED -- real residual but low-leverage (b=1 isometric optimal)](entries/0009-mass-coupling-parked-real-residual-but-low-lever.md) — _mass, allometric, parsimony, low-leverage, negative-result_

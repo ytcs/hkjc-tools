@@ -25,7 +25,9 @@ from ..core.hkjc_facts import AWT_DISTANCE
 from ..core.track import track_for
 from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
                           distance_band, fit_energetics_population)
-from .constants import FORM_GAIN, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN, SPEED_NOISE, W_PRIME_GAIN
+from . import dynamics
+from .constants import (ALLOMETRIC_B, FORM_GAIN, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN,
+                        SIM, SPEED_NOISE, W_PRIME_GAIN)
 from .traffic_jax import win_probs
 
 
@@ -60,9 +62,12 @@ def fit_predict_traffic(
     form_gain: float = FORM_GAIN,
     jockey_gain: float = JOCKEY_GAIN,
     w_prime_gain: float = W_PRIME_GAIN,
+    speedfig_gain: float = 0.0,
     speed_noise: float = SPEED_NOISE,
     pace_gain: float = PACE_GAIN,
     bend: float | None = None,
+    sim: str = SIM,
+    allometric_b: float = ALLOMETRIC_B,
 ) -> pl.DataFrame:
     """Fit ability on ``train``, predict win probabilities for each race in ``test``.
 
@@ -83,26 +88,47 @@ def fit_predict_traffic(
         rtg = g["rtg"].to_numpy().astype(float)
         form = g["form"].to_numpy().astype(float)
         jky = g["jky_sr"].to_numpy().astype(float)
+        # speed figure is already a velocity (m/s vs condition par) -> kinematic coefficient ≈1
+        sfig = g["speedfig"].to_numpy().astype(float) if "speedfig" in g.columns else np.zeros(g.height)
         band = distance_band(dist)
         vc, wp = [], []
         for i, h in enumerate(g["horse_id"].to_list()):
             n, u_vc, u_w = res.get(h, (0, 0.0, 0.0))
             vc.append(pop.v_c.fixed(band, rtg[i]) + lam_vc(n) * u_vc
-                      + form_gain * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean))
+                      + form_gain * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
+                      + speedfig_gain * sfig[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
             # stamina analogue of form_gain (market under-weights W' at gain 1.0).
             wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)
+        vc = np.array(vc)
         geom = track_for(venue, dist, _surface(dist))
         course = g["course"][0] if "course" in g.columns else "A"
-        # within-race style z-score → pace policy (front-runners take position, closers wait)
-        style = g["style"].to_numpy().astype(float)
-        sd = style.std()
-        pace_bias = (style - style.mean()) / sd if sd > 1e-9 else np.zeros_like(style)
+        draw = g["draw"].to_numpy().astype(float)
         bend_curv = bend if bend is not None else CALIBRATED_BEND_CURVATURE.get(venue, 1.0 / 120.0)
-        p = win_probs(np.array(vc), np.array(wp), g["draw"].to_numpy().astype(float), dist,
-                      track=geom, course=course, size=n_samples, bend_curvature=bend_curv,
-                      speed_noise=speed_noise, pace_bias=pace_bias, pace_gain=pace_gain,
-                      seed=abs(hash(race_id[0])) % (2**31))
+        seed = abs(hash(race_id[0])) % (2**31)
+        mass = g["bodywt"].to_numpy().astype(float) if "bodywt" in g.columns else np.full(g.height, 500.0)
+        mass = np.where(np.isnan(mass), np.nanmean(mass), mass)
+        if sim == "eom":
+            # power-balance EOM: declared body mass enters every term (locomotion, inertia,
+            # reserve energy, drag); aerobic power p_c = κ·m^b via the one allometric constant.
+            # (Recorded future path — currently underperforms the kinematic sim; see journal.)
+            p = dynamics.win_probs(vc, np.array(wp), mass, draw, dist, allometric_b=allometric_b,
+                                   track=geom, course=course, size=n_samples,
+                                   bend_curvature=bend_curv, speed_noise=speed_noise, seed=seed)
+        else:
+            # mass enters via the EOM's STEADY-STATE law v_c ∝ m^(b−1) (its analytic solution of
+            # v_c = p_c/(K_LOCO·m·g) with allometric p_c = κ·m^b) — first-principles, field-relative.
+            if allometric_b != 1.0:
+                ref = float(np.exp(np.nanmean(np.log(mass))))
+                vc = vc * (mass / ref) ** (allometric_b - 1.0)
+            # within-race style z-score → pace policy (front-runners take position, closers wait)
+            style = g["style"].to_numpy().astype(float)
+            sd = style.std()
+            pace_bias = (style - style.mean()) / sd if sd > 1e-9 else np.zeros_like(style)
+            p = win_probs(vc, np.array(wp), draw, dist,
+                          track=geom, course=course, size=n_samples, bend_curvature=bend_curv,
+                          speed_noise=speed_noise, pace_bias=pace_bias, pace_gain=pace_gain,
+                          seed=seed)
         preds.append(g.with_columns(pl.Series("p", p), pl.Series("v_c_eb", vc),
                                     pl.Series("w_prime_eb", wp)))
     return pl.concat(preds)
