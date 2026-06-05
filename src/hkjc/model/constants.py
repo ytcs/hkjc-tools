@@ -96,6 +96,11 @@ DRAW_GAIN = float(os.environ.get("DRAW_GAIN", "0.003"))
 # The ST straight 1000m chute (no bends) gets draw_gain ZEROED in fit_predict_traffic (geometry, not a
 # constant) — there the residual draw effect is a reverse watering/going gradient, not bend ground-loss.
 DRAW_GAIN_BY_VENUE = {"ST": 0.003, "HV": 0.008}
+# AWT (Sha Tin dirt, 1650m) has a STRONGER rail bias than turf (dirt kickback, no watering gradient):
+# draw 1 wins ~14% vs draw 8 ~1%. The turf-calibrated 0.003 under-penalises it; the AWT-only sweep peaks
+# ~0.008 (HV-like), lifting AWT ~43%→49% of market at zero cost to turf. The AWT betting market is itself
+# ~33% softer than turf (a more reachable benchmark). fit resolves this by SURFACE, overriding the venue.
+DRAW_GAIN_AWT = float(os.environ.get("DRAW_GAIN_AWT", "0.008"))
 
 # POS_FADE_GAIN: positional-fade coupling (m/s of effective v_c per unit habitual-early-position above
 # the field mean). The production drift-diffusion is NON-interacting, so it over-rates habitual front-
@@ -142,6 +147,11 @@ SIM = os.environ.get("SIM", "wald")
 # REAL mass (partial t=+8.8 controlling for rating+class; monotone; survives within-class) ⟹ b>1
 # (power scales super-linearly with mass). b=1.0 = no mass effect; calibrate upward. NOTE: the full
 # SIM="eom" path currently underperforms the kinematic sim (see journal) — production uses the
-# steady-state law. Declared weight is pre-race, so leak-free. 1.0 until calibrated.
+# steady-state law. Declared weight is pre-race, so leak-free. Now applied on the WALD path too.
 ALLOMETRIC_B = float(os.environ.get("ALLOMETRIC_B", "1.0"))
+# PER-VENUE: the allometric mass effect is REAL and the #1 ST residual (bodywt t≈+8), but converts to
+# %market only at ST (b≈1.2, +0.5pp; the persistent mass residual). At HV the coupling does NOT convert
+# (b=1.0 best — like several HV residuals it's collinear with what's already priced there), so mass is
+# ST-only. fit resolves per-venue unless allometric_b is passed explicitly (for sweeps). b=1 = isometric.
+ALLOMETRIC_B_BY_VENUE = {"ST": 1.2, "HV": 1.0}
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))

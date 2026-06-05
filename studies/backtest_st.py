@@ -120,7 +120,8 @@ def main():
     bend = float(bend) if bend is not None else None
     wpg = float(os.environ.get("W_PRIME_GAIN", "2.0"))
     sim = os.environ.get("SIM", "wald")
-    ab = float(os.environ.get("ALLOMETRIC_B", "1.0"))
+    _ab = os.environ.get("ALLOMETRIC_B")
+    ab = float(_ab) if _ab is not None else None  # None -> per-venue ALLOMETRIC_B_BY_VENUE
 
     def _model(train, test):
         return fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend,

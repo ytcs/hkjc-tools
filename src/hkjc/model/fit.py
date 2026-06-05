@@ -26,9 +26,10 @@ from ..core.track import track_for
 from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
                           distance_band, fit_energetics_population)
 from . import dynamics
-from .constants import (ALLOMETRIC_B, DRAW_GAIN, DRAW_GAIN_BY_VENUE, FORM_GAIN,
-                        FORM_GAIN_BY_VENUE, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN,
-                        POS_FADE_GAIN, SHRINK_MULT, SIM, SPEED_NOISE, W_PRIME_GAIN)
+from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
+                        DRAW_GAIN_BY_VENUE, FORM_GAIN, FORM_GAIN_BY_VENUE, JOCKEY_GAIN,
+                        N_SAMPLES, PACE_GAIN, POS_FADE_GAIN, SHRINK_MULT, SIM,
+                        SPEED_NOISE, W_PRIME_GAIN)
 from .traffic_jax import win_probs
 
 
@@ -76,7 +77,7 @@ def fit_predict_traffic(
     pace_gain: float = PACE_GAIN,
     bend: float | None = None,
     sim: str = SIM,
-    allometric_b: float = ALLOMETRIC_B,
+    allometric_b: float | None = None,
 ) -> pl.DataFrame:
     """Fit ability on ``train``, predict win probabilities for each race in ``test``.
 
@@ -128,18 +129,35 @@ def fit_predict_traffic(
         # explicit draw_gain arg overrides (sweeps), else the venue value. On a no-bend course (the ST
         # straight 1000m chute) there is no arc to lose, so zero it — the residual draw effect there is a
         # reverse watering/going gradient, not ground-loss, and applying the penalty has the wrong sign.
-        draw_g = draw_gain if draw_gain is not None else DRAW_GAIN_BY_VENUE.get(venue, DRAW_GAIN)
+        if draw_gain is not None:
+            draw_g = draw_gain
+        elif _surface(dist) == "awt":
+            draw_g = DRAW_GAIN_AWT          # dirt has a stronger rail bias than turf (surface overrides venue)
+        else:
+            draw_g = DRAW_GAIN_BY_VENUE.get(venue, DRAW_GAIN)
         if geom.bend_fraction(dist) < 0.05:
             draw_g = 0.0
         bend_curv = bend if bend is not None else CALIBRATED_BEND_CURVATURE.get(venue, 1.0 / 120.0)
         seed = abs(hash(race_id[0])) % (2**31)
         mass = g["bodywt"].to_numpy().astype(float) if "bodywt" in g.columns else np.full(g.height, 500.0)
         mass = np.where(np.isnan(mass), np.nanmean(mass), mass)
+        # ALLOMETRIC mass coupling (first-principles): steady-state v_c ∝ m^(b−1) — the analytic solution
+        # of v_c = p_c/(K_LOCO·m·g) with allometric aerobic power p_c = κ·m^b. b>1 ⇒ heavier horses sustain
+        # more speed (power scales super-linearly with muscle mass), b=1 = isometric (off). Field-relative
+        # (centred on the race's geometric-mean mass). Applies to the statistical sims (pl/wald/kinematic);
+        # the eom path instead lets mass act through the full Newton's-law dynamics, so skip it there.
+        # PER-VENUE: an explicit allometric_b arg overrides (sweeps), else the venue value (mass converts
+        # only at ST). The eom path uses the global ALLOMETRIC_B for its full dynamics.
+        ab = allometric_b if allometric_b is not None else ALLOMETRIC_B_BY_VENUE.get(venue, ALLOMETRIC_B)
+        if sim != "eom" and ab != 1.0:
+            ref = float(np.exp(np.nanmean(np.log(mass))))
+            vc = vc * (mass / ref) ** (ab - 1.0)
         if sim == "eom":
             # power-balance EOM: declared body mass enters every term (locomotion, inertia,
             # reserve energy, drag); aerobic power p_c = κ·m^b via the one allometric constant.
             # (Recorded future path — currently underperforms the kinematic sim; see journal.)
-            p = dynamics.win_probs(vc, np.array(wp), mass, draw, dist, allometric_b=allometric_b,
+            p = dynamics.win_probs(vc, np.array(wp), mass, draw, dist,
+                                   allometric_b=(allometric_b if allometric_b is not None else ALLOMETRIC_B),
                                    track=geom, course=course, size=n_samples,
                                    bend_curvature=bend_curv, speed_noise=speed_noise, seed=seed)
         elif sim == "pl":
@@ -173,11 +191,7 @@ def fit_predict_traffic(
             counts = np.bincount(t.argmin(axis=1), minlength=g.height).astype(float)
             p = (counts + 1.0) / (n_samples + g.height)
         else:
-            # mass enters via the EOM's STEADY-STATE law v_c ∝ m^(b−1) (its analytic solution of
-            # v_c = p_c/(K_LOCO·m·g) with allometric p_c = κ·m^b) — first-principles, field-relative.
-            if allometric_b != 1.0:
-                ref = float(np.exp(np.nanmean(np.log(mass))))
-                vc = vc * (mass / ref) ** (allometric_b - 1.0)
+            # (mass already applied above via the allometric law for this path)
             # within-race style z-score → pace policy (front-runners take position, closers wait)
             style = g["style"].to_numpy().astype(float)
             sd = style.std()
