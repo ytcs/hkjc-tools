@@ -32,8 +32,9 @@ from .calibration import (EnergeticsPopulation, distance_band,
 from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, COLLAT_GAIN,
                         COLLAT_GAIN_BY_VENUE, DRAW_FS_GAIN,
                         DRAW_FS_GAIN_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
-                        DRAW_GAIN_BY_VENUE, FORM_GAIN, FORM_GAIN_BY_VENUE, JOCKEY_GAIN,
-                        N_SAMPLES, POS_FADE_GAIN, SHRINK_MULT, SIM, TRIAL_GAIN,
+                        DRAW_GAIN_BY_VENUE, FADE_GAIN, FORM_GAIN, FORM_GAIN_BY_VENUE,
+                        JOCKEY_GAIN, N_SAMPLES, PEAKGAP_GAIN, PEAKGAP_GAIN_BY_VENUE,
+                        POS_FADE_GAIN, SHRINK_MULT, SIM, SUSTAIN_GAIN, TRIAL_GAIN,
                         TRIAL_GAIN_BY_VENUE, W_PRIME_GAIN)
 
 
@@ -72,6 +73,9 @@ def fit_predict_traffic(
     speedfig_gain: float = 0.0,
     trial_gain: float | None = None,
     collat_gain: float | None = None,
+    sustain_gain: float = SUSTAIN_GAIN,
+    fade_gain: float = FADE_GAIN,
+    rtg_peakgap_gain: float | None = None,
     pos_fade_gain: float = POS_FADE_GAIN,
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
@@ -115,6 +119,15 @@ def fit_predict_traffic(
         # collateral-form opponent-adjusted rating (m/s), within-race centred (field-mean shift cancels)
         cfm = g["collat_form"].to_numpy().astype(float) if "collat_form" in g.columns else np.zeros(g.height)
         cfm = cfm - np.nanmean(cfm)
+        # trajectory-shape z-traits (sustained-speed, fade-resistance), within-race centred
+        sustain = g["traj_sustain"].to_numpy().astype(float) if "traj_sustain" in g.columns else np.zeros(g.height)
+        sustain = sustain - np.nanmean(sustain)
+        fade = g["traj_fade"].to_numpy().astype(float) if "traj_fade" in g.columns else np.zeros(g.height)
+        fade = fade - np.nanmean(fade)
+        # rating-trajectory PROCESS feature: own-peak deficit (≤0), within-race centred. PER-VENUE.
+        pgap = g["rtg_peakgap"].to_numpy().astype(float) if "rtg_peakgap" in g.columns else np.zeros(g.height)
+        pgap = pgap - np.nanmean(pgap)
+        pgg = rtg_peakgap_gain if rtg_peakgap_gain is not None else PEAKGAP_GAIN_BY_VENUE.get(venue, PEAKGAP_GAIN)
         # trainer strike rate, within-race centred (a constant field shift cancels in win prob)
         trn = g["trn_sr"].to_numpy().astype(float) if "trn_sr" in g.columns else np.zeros(g.height)
         trn = trn - np.nanmean(trn)
@@ -129,7 +142,8 @@ def fit_predict_traffic(
             vc.append(pop.v_c.fixed(band, rtg[i]) + shrink_mult * lam_vc(n) * u_vc
                       + fg * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
                       + speedfig_gain * sfig[i] + trainer_gain * trn[i]
-                      + tg_v * tfig[i] + cg * cfm[i] + pos_fade_gain * epos[i])
+                      + tg_v * tfig[i] + cg * cfm[i] + pos_fade_gain * epos[i]
+                      + sustain_gain * sustain[i] + fade_gain * fade[i] + pgg * pgap[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
             # stamina analogue of form_gain (market under-weights W' at gain 1.0).
             wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)

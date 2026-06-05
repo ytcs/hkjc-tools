@@ -186,4 +186,31 @@ TRIAL_GAIN_BY_VENUE = {"ST": 1.5, "HV": 1.0}
 # beyond the plateau over-couples and degrades. fit resolves per-venue unless collat_gain is passed.
 COLLAT_GAIN = float(os.environ.get("COLLAT_GAIN", "0.0"))
 COLLAT_GAIN_BY_VENUE = {"ST": 1.0, "HV": 2.5}
+
+# SUSTAIN_GAIN / FADE_GAIN: trajectory-shape couplings (m/s of effective v_c per unit of the leak-free
+# prior trajectory z-trait). The sectional v_c / speed-figure channels read a run's AVERAGE energetics;
+# the per-section velocity PATH (trajectory_dataset_full) exposes the SHAPE — sustained-speed ability
+# (mean/peak velocity held through the body of the race) and FADE RESISTANCE (final-section vs peak
+# velocity, the kinematic signature of the W′ reserve emptying in the closing stages). Both are strictly-
+# prior expanding means of a within-race-standardized run trait (leak-free, like the speed figure — the
+# within-race z is a contemporaneous condition normaliser, not the horse's own outcome). See
+# features.trajectory_trait_table.
+#   - FADE_GAIN = 0.1 BAKES (positive ⇒ the model UNDER-rated horses that hold speed to the line; the
+#     non-interacting drift-diffusion's W′ channel under-credits late-race reserve relative to the market).
+#     Clean SHARED-sign broad ridge at BOTH venues (gain 0.05–0.2 all convert) — the signature of a real
+#     mean-field constant: ST 60.0→60.2% (+0.2pp), HV 54.1→54.4% (+0.3pp); HV ECE improves 0.0070→0.0057.
+#   - SUSTAIN_GAIN = 0.0 (DON'T BAKE). The more orthogonal trait but does NOT convert (no shared sign; loses
+#     full-scale at both venues) — already carried by form + v_c. Wiring kept off (re-probe if channels change).
+SUSTAIN_GAIN = float(os.environ.get("SUSTAIN_GAIN", "0.0"))
+FADE_GAIN = float(os.environ.get("FADE_GAIN", "0.1"))
+
+# PEAKGAP_GAIN: rating-TRAJECTORY (process, not point) coupling — the horse's current rating minus its
+# own prior PEAK rating (rtg_peakgap ≤ 0; within-race centred). A PROCESS feature: it carries an ABSOLUTE
+# career landmark the point rating cannot express (how far a horse has declined from its best). The lesson
+# from the rating-trajectory probe: trajectory pays ONLY where it adds such a landmark — rating velocity /
+# acceleration did NOT convert (they merely restate recent form, collinear with the form channel). PER-VENUE
+# (HV the standout): paired full-scale ST +0.3pp, HV +2.6pp (measured pre-stacking — re-confirm on the
+# current base). features.rating_trajectory_table / attach_rating_trajectory. fit resolves per-venue.
+PEAKGAP_GAIN = float(os.environ.get("PEAKGAP_GAIN", "0.0"))
+PEAKGAP_GAIN_BY_VENUE = {"ST": -0.015, "HV": -0.025}
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))

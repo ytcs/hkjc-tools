@@ -278,6 +278,98 @@ def collateral_form_table(results_rich: pl.DataFrame, kappa: float = 1.0) -> pl.
         {"date": dates_, "venue": venues_, "race_no": raceno_, "runner": runner_, "collat_form": val_})
 
 
+def trajectory_trait_table(trajectory: pl.DataFrame) -> pl.DataFrame:
+    """Leak-free per-horse TRAJECTORY-SHAPE traits from the per-section velocity path (m/s).
+
+    The sectional v_c / speed-figure channels read a run's *average* energetics; the trajectory
+    dataset (``trajectory_dataset_full``) carries the per-section velocity profile, which exposes
+    the SHAPE of how a horse runs — mechanics the average hides. Two physically-grounded traits,
+    each measured per run then made into a strictly-prior per-horse trait:
+
+    - ``traj_sustain`` — **sustained-speed ability**: mean section velocity / peak section velocity
+      (∈(0,1], 1 = perfectly flat cruise). Distinct from peak speed and from positional fade.
+    - ``traj_fade`` — **fade resistance**: final-section velocity − peak velocity (≤0, 0 = no late
+      deceleration). The kinematic signature of the W′ reserve emptying in the closing stages.
+
+    Leak-free construction (same discipline as :func:`speed_figure_table`): each run's raw trait uses
+    only that run's own sections; it is within-race standardized (z-score across the race's runners — a
+    contemporaneous condition normaliser, not the horse's outcome); the per-horse value is the
+    strictly-prior expanding mean of that z-trait over prior runs. Both null on debut.
+    """
+    df = trajectory.with_columns(_norm_date().alias("date")).sort(
+        "date", "venue", "race_no", "runner", "section")
+    run = ["date", "venue", "race_no", "runner", "horse_id", "distance"]
+    df = df.with_columns(
+        pl.col("velocity").max().over(run).alias("_vmax"),
+        pl.col("velocity").mean().over(run).alias("_vmean"),
+        pl.col("velocity").last().over(run).alias("_vlast"))
+    g = (df.group_by(run, maintain_order=True)
+         .agg(pl.col("_vmax").first(), pl.col("_vmean").first(), pl.col("_vlast").first()))
+    g = g.with_columns(
+        (pl.col("_vmean") / pl.col("_vmax")).alias("sustain"),
+        (pl.col("_vlast") - pl.col("_vmax")).alias("fade"))
+    rid = ["date", "venue", "race_no"]
+    for c in ("sustain", "fade"):
+        g = g.with_columns(
+            ((pl.col(c) - pl.col(c).mean().over(rid))
+             / (pl.col(c).std().over(rid) + 1e-9)).alias(c + "_z"))
+    g = g.with_columns(
+        pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d")).sort(
+        "horse_id", "d")
+    out_cols = {"sustain_z": "traj_sustain", "fade_z": "traj_fade"}
+    for src, dst in out_cols.items():
+        g = g.with_columns(
+            ((pl.col(src).cum_sum().over("horse_id") - pl.col(src))
+             / (pl.col(src).cum_count().over("horse_id") - 1)).alias(dst))
+    return g.select(
+        "date", "venue", "race_no", "runner",
+        *[pl.when(pl.col(dst).is_finite()).then(pl.col(dst)).alias(dst) for dst in out_cols.values()])
+
+
+def rating_trajectory_table(rating: pl.DataFrame, k: int = 4) -> pl.DataFrame:
+    """Leak-free rating-TRAJECTORY (process) features — the career-cycle shape per horse.
+
+    The official handicap rating is a TIME SERIES per horse, not just the latest POINT. Its
+    trajectory encodes the career cycle the point misses. From the per-horse dated rating series
+    (``rating_dataset``: ``horse_id, date, rtg``), per rating update:
+
+      - ``rtg_peakgap`` — current rtg − the horse's own prior PEAK rtg (≤0): how far below its own
+        best. The one trajectory feature that CONVERTS — it carries an ABSOLUTE career landmark the
+        point cannot express (a declining horse runs below what its lagging point rating says); see
+        ``PEAKGAP_GAIN_BY_VENUE``. ``rtg_vel`` (Δrtg/k) and ``rtg_accel`` did NOT convert — they merely
+        restate recent form (collinear with the form channel); ``rtg_nupd`` (maturity) kept for diagnosis.
+
+    LEAK-FREE: each row summarises the rating history up to and *including* that update; the consumer
+    as-of-joins it backward with ``allow_exact_matches=False``, so a race on date ``d`` only sees
+    updates strictly before ``d`` (the point ``rtg`` for race ``d`` is the separate join already in the
+    frame; the trajectory excludes it).
+    """
+    r = (rating
+         .with_columns(pl.col("date").cast(pl.Date).alias("d"), pl.col("rtg").cast(pl.Float64))
+         .drop_nulls(["d", "rtg"]).unique(["horse_id", "d"]).sort(["horse_id", "d"]))
+    r = r.with_columns(
+        pl.col("rtg").shift(k).over("horse_id").alias("_lag_k"),
+        pl.col("rtg").shift(2 * k).over("horse_id").alias("_lag_2k"),
+        pl.col("rtg").cum_max().over("horse_id").alias("_peak"),
+        pl.col("rtg").cum_count().over("horse_id").alias("_nupd"))
+    r = r.with_columns(
+        ((pl.col("rtg") - pl.col("_lag_k")) / k).alias("rtg_vel"),
+        (((pl.col("rtg") - pl.col("_lag_k")) - (pl.col("_lag_k") - pl.col("_lag_2k"))) / k).alias("rtg_accel"),
+        (pl.col("rtg") - pl.col("_peak")).alias("rtg_peakgap"),
+        pl.col("_nupd").cast(pl.Float64).alias("rtg_nupd"))
+    return r.select("horse_id", "d", "rtg_vel", "rtg_accel", "rtg_peakgap", "rtg_nupd")
+
+
+def attach_rating_trajectory(df: pl.DataFrame, rating: pl.DataFrame, k: int = 4) -> pl.DataFrame:
+    """Strict backward as-of join the trajectory features onto a race frame (needs a ``d`` Date col)."""
+    traj = rating_trajectory_table(rating, k=k).sort(["horse_id", "d"])
+    out = df.sort(["horse_id", "d"]).join_asof(
+        traj, on="d", by="horse_id", strategy="backward", allow_exact_matches=False)
+    return out.with_columns(
+        pl.col("rtg_vel").fill_null(0.0), pl.col("rtg_accel").fill_null(0.0),
+        pl.col("rtg_peakgap").fill_null(0.0), pl.col("rtg_nupd").fill_null(0.0))
+
+
 def speed_figure_table(results_rich: pl.DataFrame) -> pl.DataFrame:
     """Leak-free trailing SPEED FIGURE per horse — a velocity-based ability signal (m/s).
 

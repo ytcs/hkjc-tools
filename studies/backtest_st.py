@@ -18,11 +18,12 @@ from pathlib import Path
 import polars as pl
 
 from hkjc.backtesting import harness, walk_forward_folds
-from hkjc.model.features import (barrier_trial_table, collateral_form_table,
-                                 early_position_table, form_table, jockey_table,
-                                 prior_starts_table, recency_form_table, speed_figure_table,
-                                 style_table, trainer_table)
-from hkjc.model.constants import FORM_HALF_LIFE
+from hkjc.model.features import (attach_rating_trajectory, barrier_trial_table,
+                                 collateral_form_table, early_position_table, form_table,
+                                 jockey_table, prior_starts_table, recency_form_table,
+                                 speed_figure_table, style_table, trainer_table,
+                                 trajectory_trait_table)
+from hkjc.model.constants import FADE_GAIN, FORM_HALF_LIFE
 from hkjc.model.fit import fit_predict_traffic
 
 CACHE = Path("data_cache")
@@ -104,6 +105,14 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     # collateral-form ability rating (opponent-adjusted velocity, leak-free strictly-prior); 0 = no prior
     df = df.join(collateral_form_table(rr), on=["date", "venue", "race_no", "runner"], how="left")
     df = df.with_columns(pl.col("collat_form").fill_null(0.0))
+    # trajectory-shape traits (sustained-speed, fade-resistance) from per-section velocity path; 0 = unknown
+    trajq = CACHE / "trajectory_dataset_full.parquet"
+    if trajq.exists():
+        df = df.join(trajectory_trait_table(pl.read_parquet(trajq)),
+                     on=["date", "venue", "race_no", "runner"], how="left")
+        df = df.with_columns(pl.col("traj_sustain").fill_null(0.0), pl.col("traj_fade").fill_null(0.0))
+    else:
+        df = df.with_columns(pl.lit(0.0).alias("traj_sustain"), pl.lit(0.0).alias("traj_fade"))
     # barrier-trial speed figure (the only prior on-track form for DEBUTANTS); leak-free as-of join
     # on horse brand. trial date strictly precedes the race (mornings vs race days). 0 = no prior trial.
     btq = CACHE / "barrier_trials.parquet"
@@ -113,6 +122,8 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
         df = df.with_columns(pl.col("trial_fig").fill_null(0.0))
     else:
         df = df.with_columns(pl.lit(0.0).alias("trial_fig"))
+    # rating-trajectory PROCESS feature (own-peak deficit); strict backward as-of (no same-day leak)
+    df = attach_rating_trajectory(df, r)
     df = df.with_columns((pl.col("date") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("race_id"))
     return df, jky_mean
 
@@ -142,10 +153,15 @@ def main():
     tg = float(_tg) if _tg is not None else None
     _cg = os.environ.get("COLLAT_GAIN")  # opponent-adjusted collateral-form; None -> per-venue baked
     cg = float(_cg) if _cg is not None else None
+    _fg = os.environ.get("FADE_GAIN")  # trajectory fade-resistance; None -> baked default
+    fg2 = float(_fg) if _fg is not None else FADE_GAIN
+    _pgg = os.environ.get("PEAKGAP_GAIN")  # rating-trajectory own-peak deficit; None -> per-venue baked
+    pgg = float(_pgg) if _pgg is not None else None
 
     def _model(train, test):
         return fit_predict_traffic(train, test, jky_mean=jky_mean, w_prime_gain=wpg, sim=sim,
-                                   allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg, collat_gain=cg)
+                                   allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg, collat_gain=cg,
+                                   fade_gain=fg2, rtg_peakgap_gain=pgg)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():
