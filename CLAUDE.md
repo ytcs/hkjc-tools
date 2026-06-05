@@ -68,11 +68,13 @@ On session start, an agent reads its inbox (`Journal.inbox("<name>")`) and its l
 
 Authoritative state: `journal/state/MODEL_STATE.md` (constants table + the lever queue + the
 refuted list — read it before any modelling work). Current production (`SIM=wald`, per-venue
-calibration): fit ≈ **60.0% of market (ST) / 54.1% (HV)** (from ~48% at project start), model ECE
-~0.005. The cheap per-horse mean-field levers are **saturated**: the next real gain needs NEW DATA
-(barrier trials for debuts — build underway), not more mean-field terms. The interaction axis yields
-exactly one convertible mean-field term (`DRAW_FS_GAIN`, crowding draw, HV-only); the full ABM was
-deprecated.
+calibration): fit ≈ **62.6% of market (ST) / 59.3% (HV)** (from ~48% at project start), model ECE
+~0.005. The path past the mean-field plateau is **NEW DATA + STRUCTURAL signal**, proven by the
+2026-06 fan-out: barrier trials (`TRIAL_GAIN`, debut/lightly-raced form), collateral-form
+(`COLLAT_GAIN`, relational opponent-strength — a scalar Elo had failed), rating-peakgap
+(`PEAKGAP_GAIN`, a process/career-landmark feature), trajectory fade (`FADE_GAIN`). Next: fold trials
+(then training gallops) into the EB ability posterior coherently; geometry×control (THEORY §3c). The
+interaction ABM was deprecated (physics in THEORY.md Appendix).
 
 The method is the loop: **diagnose** (market-residual regression, race-clustered SEs) →
 **recalibrate** (a mechanism-grounded constant) → **bake** (`hkjc.model.constants`) →
