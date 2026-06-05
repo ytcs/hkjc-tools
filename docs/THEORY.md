@@ -284,6 +284,275 @@ mechanism is a priori correct — but it still has to earn its place.
 
 ---
 
+## 3c. The geometry × control game — draw as a boundary condition on the jockey policy
+
+§3b developed the competition game in the **longitudinal** (along-track, effort/pace)
+direction and showed the positional fade is its mean-field shadow. This section develops
+the **lateral** (across-track) direction — the part the scalar draw terms (`DRAW_GAIN`,
+`DRAW_FS_GAIN`) only shadow. The thesis (journal `0027`): **draw is not a static
+geometric covariate. Its effect is a functional of the jockey's control policy** — how the
+gate is used to take up position, which lateral path is chosen round the bends (save ground
+on the rail vs. go wide for clear air), and when the anaerobic reserve is spent to win or
+hold position. The right object is a **two-dimensional differential / mean-field game of
+jockeys navigating the real track geometry, with the draw as the initial lateral boundary
+condition**. The scalar terms capture only the *first moment* of that game's resolution;
+this section writes the game down, identifies its equilibrium structure, and — crucially —
+derives the **leak-free observables it predicts** from the data we actually hold.
+
+### 1. State, action, dynamics, payoff (the plant + the control)
+
+**Geometry (the arena).** Encoded in `hkjc.core.track.TrackGeometry`. A horse runs from
+`d = distance` (metres-from-finish) down to `d = 0`. The arena is parameterised by
+*venue × surface × Course*: the movable running rail (A / A+2 / B / … / C+3, read from
+`results_rich.Course` / `st_history.Course`) sets the usable **width** `w(course)` and the
+home-straight length. The bend map `bend_segments` partitions the lap into **turns** and
+**straights**; on a turn a horse `off` metres off the rail runs extra arc
+`≈ off · κ(d) · ds` where `κ(d)` is the local curvature (≈ `1/R`, larger at HV — the
+tightest HK circuit, hence its strongest draw bias; ≈ 0 on the ST-1000m straight chute,
+which is why `fit.py` zeroes the draw term there). HV is bend-dominated (≈ 470 m + 530 m of
+turn in 1450 m); ST is a galloping oval with two ~495 m bends and long straights.
+
+**Agent state.** Each horse-jockey `i` is an agent with state
+
+```
+s_i(t) = ( x_i,        # along-track position (metres covered)
+           y_i,        # lateral offset from the current inner rail  ∈ [0, w(course)]
+           W'_i,       # remaining anaerobic reserve  (≥ 0)
+           v_i )       # current speed
+```
+
+**Action / control policy.** The jockey chooses `a_i(t) = π_i(s_i, s_{-i}; θ_i)`, a map from
+own state and the field state `s_{-i}` to two controls:
+
+```
+u_i(t) ≥ 0    # effort above the aerobic ceiling  (depletes W'_i)
+ẏ_i(t)        # lateral steering rate  (the path: hug rail vs. peel out for clear air)
+```
+
+`θ_i` parameterises the **policy type** — a jockey/horse's habitual style (front-runner vs.
+closer, ground-saving rail-hugger vs. wide-and-clear), the object that makes control
+*heterogeneous* and therefore *predictable* from past running lines.
+
+**Equations of motion (the plant — same physics as the §2.2 EOM and the deprecated sim,
+now 2-D).**
+
+```
+ẋ_i = v_i
+m_i v̇_i = P_c,i + u_i       (metabolic power)                      [longitudinal]
+        − K_LOCO m_i g                                              (locomotion)
+        − ½ ρ c_d A v_i² (1 − draft_i(s_{-i}))                      (aero, cut behind cover)
+        − χ · 𝟙[bend] · κ(x_i) · v_i² · y_i / R                     (bend ground-loss ∝ lateral offset)
+Ẇ'_i = − u_i                  (reserve depletes above ceiling; u_i>0 only when v_i>v_{c,i})
+ẏ_i = steering, subject to the EXCLUSION constraint:
+      y_i may not coincide with y_j for a horse j with x_j ≈ x_i   (cannot occupy a rival's lane)
+```
+
+The **lateral channel is where draw lives**: the start fixes `y_i(0) = y_0(Dr_i)` (a wide
+draw starts wide). To save ground a wide-drawn horse must *cross* — spend `ẏ_i < 0` early —
+but crossing is contested: the rail is a scarce resource and the exclusion constraint
+(a TASEP-like single-file occupancy in each lateral band) means a horse can only take the
+rail if a gap opens. So a wide draw imposes a **control dilemma**: (a) commit reserve early
+to cross to the rail and save bend-ground, paying a `W'` tax up front and risking being
+shuffled back if the gap doesn't come; or (b) stay wide, concede the arc-length penalty but
+keep clear air and reserve. The *cost of the draw is whichever horn the equilibrium forces*
+— it is **not** a fixed `DRAW_GAIN·(Dr−1)` arc penalty.
+
+**Payoff.** A tournament: only finishing **order** pays. Agent `i` maximises
+
+```
+J_i = E[ − T_i ]   or   E[ R(rank_i) ],   T_i = ∫_0^{distance} dx / v_i(t),
+```
+
+i.e. a closed-loop best response that trades the bend-ground integral
+`∫ χ κ(x) v² y_i dx` (minimised by hugging the rail) against the **clear-air / draft / reserve**
+terms (which can favour going wide), under the budget `∫ u_i dt ≤ W'_i` and the lateral
+exclusion constraint coupling `i` to the field.
+
+### 2. Why it is a (mean-field) game, and where DRAW enters
+
+Each jockey's optimal `(u_i, ẏ_i)` is a **best response to `{π_j}`**: the value of crossing
+to the rail depends on whether rivals leave a gap; the value of leading depends on who else
+contests the lead (the §3b pace duel); the draft you get depends on who sits where laterally.
+The profile `{π_i}` is therefore a **Nash equilibrium of a differential game** with state
+constraints (exclusion) — formally an open-loop/feedback Nash solution of the coupled
+Pontryagin/HJB–Isaacs system, one adjoint per agent for `(x, y, W')`. With many runners the
+rivals enter only through **aggregate fields** — the *along-track* pace density `ρ(x,t)` and
+the *lateral* occupancy density `m(x,y,t)` (how crowded each lane is at each point of the
+trip). The large-field limit is a **mean-field game (MFG)**: the HJB for each agent's value
+`V_i(s)` is driven by the population densities `(ρ, m)`, which are in turn the Kolmogorov-
+forward push-forward of the agents' own optimal controls — a fixed point in
+*(pace × lateral-occupancy)* space. The exclusion constraint makes the lateral marginal a
+**congestion MFG** (cost of a lane rises with its occupancy `m`), the cleanest formal home
+for "a wide draw costs more in a crowded field."
+
+**Draw is the initial/boundary condition, its cost mediated by the equilibrium.** `Dr` sets
+`y_i(0)`; the realised draw cost is the equilibrium value-gap
+`ΔV_i = V_i(y_0=rail) − V_i(y_0=wide)`, which is **not** a constant — it is a functional of:
+
+- **the rail/curvature** `κ, w(course)` — more arc to lose on a tight track (HV ≫ ST; ≈ 0 on
+  the straight chute). This the scalar `DRAW_GAIN_BY_VENUE` already captures (its *zeroth* moment).
+- **the field's lateral congestion** `m` — a crowded field (`N` large) means fewer gaps to
+  cross, so the wide horse is *trapped* wide → larger cost. This is the **first interaction
+  moment**; `DRAW_FS_GAIN` (crowding × draw, HV-only) is its scalar shadow — and an interim
+  stopgap, per §Appendix.
+- **own and rivals' policy types** `{θ_j}` — a wide horse drawn outside a wall of
+  front-runners cannot cross and must go wider still; the *same* wide horse with closers
+  inside it can angle down early and save the ground. **Identical draw, opposite cost,
+  decided by the style-composition of the neighbours** — exactly the relational quantity a
+  scalar cannot encode, and the reason the four scalar pace probes (journal `0024`, `0026`)
+  did not convert.
+
+So the equilibrium **mediates** draw: `cost(Dr) = f(Dr; κ, course, N, {θ_j}, θ_i)`. The
+production scalar is `cost ≈ DRAW_GAIN·(Dr−1)` — the projection onto the first two arguments
+at field-mean policy. The open gain is the **policy-conditioned** correction.
+
+### 3. Testable, leak-free observables it predicts (ranked by tractability)
+
+The binding data constraint (verified on the panels): **we have no lateral coordinate.** No
+panel stores `y_i(t)`; the only across-track datum is the *starting* offset `Dr`
+(`results_rich.Dr`). What we *do* have is the **longitudinal rank trajectory** — `RunningPosition`
+(rank at 3–6 call points, e.g. `"9 9 7 1"` = 9th→9th→7th→1st), per-section `velocity` +
+`position` in `trajectory_dataset_full` (400 m sections), and the already-derived policy
+panel `run_policy_dataset` (`early_pos_norm`, `late_pos_norm`, `pos_gain`, `fade`,
+`kick_frac_obs`, `effort_dtg`, `depleted`, each with leak-free `trail_*` trailing means).
+The lateral path and ground-saved are therefore **latent — inferred from the rank trajectory
+× draw × geometry, never observed.** Every observable below respects this and is leak-free
+(a runner's value uses only its STRICTLY PRIOR runs, the `features.py` discipline; the
+contemporaneous geometry/draw/field-composition inputs are all pre-race public).
+
+**O1 — Draw × Course (rail position) interaction. [most tractable]**
+The arc-length penalty scales with curvature, and the movable rail (`Course`) changes both
+`κ`-exposure and width. Predict: the draw gradient is *steeper on tighter Course settings*
+(C/C+3, narrower) than wide (A). Operationalise as a **draw × course** (or draw × `w(course)`,
+or draw × bend-fraction) modulation of `DRAW_GAIN`, i.e. `L_eff = dist·(1 + g(course)·(Dr−1))`.
+Data: `results_rich.Course` + `track_for(...).width/bend_fraction`. Pure pre-race geometry —
+no trajectory, no leak surface, single new constant per course family. **Lowest risk, build first.**
+
+**O2 — Draw × field-pace-makeup (relational congestion). [high value]**
+The wide-draw cost rises with lateral congestion, which the *style composition* of the field
+proxies: many habitual front-runners + a full field ⇒ a wall the wide horse cannot cross ⇒
+larger cost; a field of closers ⇒ the wide horse angles down cheaply. Operationalise:
+per-race **pace-pressure / wall scalars** built from the leak-free `early_position_table`
+(EB-shrunk prior `early_pos`) — e.g. `n_FR` (count of prior-front-runners), the fraction of
+the field drawn *inside* `i` that are front-runners, and `N`. Feature: `DRAW_GAIN × Φ(Dr,
+inside-front-runner-count, N)`. This is the relational generalisation `DRAW_FS_GAIN` only
+shadows (it uses bare `N`); the prediction is that *conditioning the crowding on who is
+inside* converts where bare `N` plateaued. Data: `run_policy`/`early_position_table` + `Dr`.
+
+**O3 — Control-quality / ground-saved signal from the rank trajectory. [medium]**
+The equilibrium predicts a measurable **path-efficiency** type: a horse/jockey that
+habitually *gains rank without a velocity premium* is saving ground (taking the rail, getting
+the gaps) — good control; one that *needs a velocity premium to hold rank* is running wide /
+fighting traffic — costly control. Construct a leak-free per-(horse,jockey) trailing index
+from `trajectory_dataset_full`: regress section-to-section **rank gain** on the horse's
+**relative section velocity**; the residual (rank gained *per unit speed*, i.e. ground-saved
+efficiency) averaged over prior runs is a clean control-quality feature. Cross-check against
+`run_policy.pos_gain` net of `fade`. Couple it as a per-horse `v_c`/trip bump (it is a real,
+stable jockeyship latent, like `early_pos`). Heavier (needs the trajectory join + a
+within-race regression) but mechanism-faithful and convertible as a main-effect first.
+
+**O4 — Jockey policy types (the `θ` partition). [medium, enabling]**
+Cluster jockeys (and horse×jockey pairs) by their leak-free `trail_*` policy vector
+(`trail_early_pos_norm`, `trail_kick_frac_obs`, `trail_fade`, `trail_effort_dtg`, the O3
+ground-saved index) into types — e.g. *ground-saver*, *wide-and-clear*, *late-committer*,
+*pace-presser*. Not a standalone win feature so much as the **input that makes O2/O3
+relational** (the `{θ_j}` the draw cost depends on) and a candidate `DRAW_GAIN` modulator
+(a ground-saver suffers a wide draw less). Tractability: the clustering is cheap; its *value*
+is realised only through O2/O3, so build after them.
+
+**O5 — Draw × pace × position joint term (the full many-body cell). [least tractable]**
+The genuine two-body lateral term — an inside front-runner controls rail+tempo; a wide one
+must burn reserve to cross — i.e. `cost(Dr) × pace-pressure × own-style`. This is the
+agent-based sim's domain (a 2-D MFG Monte-Carlo with the exclusion constraint), reserved for
+place/exotic pricing where whole-field ordering matters more than the knife-edge for first.
+Highest ceiling, heaviest build; only after O1–O3 confirm the mechanism converts at all.
+
+**Ranking (tractability × leak-safety, descending): O1 ≻ O2 ≻ O3 ≻ O4 ≻ O5.** O1 is pure
+pre-race geometry (one constant); O2 reuses an already-converting leak-free table; O3/O4 add
+the trajectory join and a latent index; O5 is the full sim.
+
+### 4. The minimal next experiment (hand-off to a future modelling agent)
+
+**Build O1: a draw × Course (curvature/width) modulation of `DRAW_GAIN`.** It is the single
+most tractable convertible step — pure pre-race geometry, one constant family, zero leak
+surface, and it directly tests the central claim (the draw cost is *geometry-mediated* before
+it is control-mediated) without yet needing the harder control inference.
+
+Concretely: (i) in `fit.py`'s wald drift, replace the per-venue scalar
+`L_eff = dist·(1 + DRAW_GAIN·(Dr−1))` with `g(course) = DRAW_GAIN · h(bend_fraction(course),
+w(course))` resolved from `track_for(venue, distance, surface)` + `results_rich.Course`
+(width and bend-fraction are already on `TrackGeometry`); (ii) scout the shape of
+`g(course)` on the residual (`market_residual_diagnosis.py`, draw × course buckets, race-
+clustered SEs) to set direction; (iii) **confirm with the PAIRED fixed-seed full-scale
+backtest** (`PYTHONHASHSEED=0`, both venues + ECE) — the quick_eval over-states draw-knobs
+~4× (the `DRAW_FS_GAIN` lesson), so the t-stat is only a scout; the %market conversion is the
+gate. **Decision rule:** if the draw gradient is materially steeper on the tight Course
+settings *and* the modulation converts OOS, the geometry-mediation half of the thesis is
+confirmed and O2 (relational congestion) is greenlit; if it is flat, the venue scalar already
+saturates the geometry moment and the gain is purely in the **control** channel (skip to O2/O3
+and the relational/policy terms). Either outcome advances the geometry × control program —
+this experiment is designed to *partition* the remaining draw signal into its geometry vs.
+control shares.
+
+---
+
+## 4. What the additive-statistical approach already ruled out
+
+History worth keeping (so it isn't re-litigated). Run through a leak-free walk-forward,
+the **flat fundamentals** — draw, carried weight, official rating, and *crude* recent
+form, voted/weighted as static covariates — **add little or nothing over the closing win
+line**; the win market is efficient w.r.t. all of them. The lesson is not "these don't
+matter" but "the market already prices the *main effects*." Gains have come only from:
+- **measuring a latent better** (recency-weighted form ≫ career mean: the single biggest
+  lever), and
+- **adding a missing *mechanism* to the production model** (bend ground-loss re-added to
+  the diffusion drift: the second biggest).
+Both are mechanism/measurement upgrades, not re-weightings — which is exactly what the
+theory predicts.
+
+---
+
+## 5. Where the model sits (scorecard)
+
+| dimension | in the model | gap |
+|---|---|---|
+| physics — kinematics | `v_c`/`W′` drift-diffusion (Wald) ✓ | — |
+| physics — geometry | bend ground-loss in the drift ✓ | — |
+| physics — surface | AWT = more diffusive ✓ | turf↔AWT ability transfer |
+| **physiology — ability** | recency form + sectional + rating | **not opponent-adjusted** |
+| physiology — condition/health | ✗ | fitness cycle, days-since-run, trials, vet |
+| physiology — body/mass | tested; ~null on win | real but small lever |
+| strategy — pace/policy | infrastructure present, gain off | game-theoretic equilibrium |
+| interaction | mean-field draw only; ABM reserved | the many-body coupling |
+| **environment** | going partly | **wind / track bias / course bias unused** |
+| **competition / handicap** | rating-conditioned mean | **relative / opponent structure** |
+| market / information | the fit target | intent signals (gear/vet/trials) unused |
+| stochasticity | diffusion noise ✓ | the start + incidents not explicit |
+
+The two highest-leverage, currently-weakest cells: **opponent-adjusted ability**
+(§2.6 — physiology measured through the competition lens) and **environment**
+(§2.5 — exogenous signal we currently discard).
+
+---
+
+## 6. The research programme (sketch)
+
+1. **Measure the latents better** — opponent-adjusted / relative ability (a coherent
+   rating); sharper energetics from sectionals; then trajectory if it pays.
+2. **Add missing mechanisms to the production (diffusion) model** — one term at a time,
+   each with a physical derivation and an OOS %-market + ECE check.
+3. **Let the agent-based sim carry the couplings** — traffic/blocking (exclusion
+   processes), drafting (active matter), pace policy (mean-field games) — the
+   "interacting Plackett-Luce" with PL as the free theory. Reserved for place/exotics
+   and the interaction residual the mean-field surrogate cannot reach.
+4. **Bring in exogenous environment** — wind, track bias, course geometry.
+
+Parsimony gates all of it: a term must be **physics/ game-theory-derivable AND move the
+needle**. First-principles grounding lets us rely less on statistics — a derived
+mechanism is a priori correct — but it still has to earn its place.
+
+---
+
 ## Appendix: lessons from the deprecated agent-based sims
 
 The project began as a literal **agent-based model** — interacting horses simulated step-by-step
