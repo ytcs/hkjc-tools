@@ -122,7 +122,10 @@ FORM_GAIN = float(os.environ.get("FORM_GAIN", "5.0"))
 # passed explicitly (for sweeps). Falls back to FORM_GAIN for an unknown venue.
 FORM_GAIN_BY_VENUE = {"ST": 5.0, "HV": 4.0}
 SPEED_NOISE = float(os.environ.get("SPEED_NOISE", "0.12"))
-JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "5.0"))
+# JOCKEY_GAIN 5->6: re-swept after the mass/pos-fade/per-venue bakes; jg=6 is a clean shared optimum at
+# BOTH venues (ST +0.4pp, HV +0.35pp; 7 ties, 8 falls off). The jockey signal absorbs trip/positioning
+# quality the sectional EB v_c misses — slightly more leverage now that the other channels are sharper.
+JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "6.0"))
 PACE_GAIN = float(os.environ.get("PACE_GAIN", "0.0"))
 W_PRIME_GAIN = float(os.environ.get("W_PRIME_GAIN", "1.0"))
 # SIM selects the win-probability model:

@@ -142,6 +142,91 @@ latents better (sectionals/trajectory) and *relatively* (the handicap lens).
 
 ---
 
+## 3b. The competition game, developed — the race as a differential / mean-field game
+
+The competition axis is not a scalar add-on to ability; it is the **structure that
+generates the running of the race**. The first attempt to capture it — an Elo /
+relative-form rating — failed not because competition is irrelevant but because that
+object is the *wrong* object: it is collinear (~0.70) with the official rating the
+market already prices, and it discards the only thing competition actually does, which
+is to make outcomes **relational**.
+
+**The differential game.** Fix a trip of length `L`. Each horse `i` carries a finite
+anaerobic reserve `W′_i` above a sustainable critical velocity `v_{c,i}`. A jockey
+chooses an **effort/pace policy** `π_i(t)` (a velocity / reserve-depletion profile over
+the trip) to minimise own finishing time `T_i = ∫ ds/v_i(t)`, subject to the **budget**
+`∫_{v_i>v_c}(v_i−v_{c,i})dt ≤ W′_i/k` and the position dynamics `dx_i = v_i dt`. State =
+`(x_i, W′_i^rem)` + the field's positions (traffic/draft); action = `π_i(t)` (effort and,
+discretely, *when to kick*); payoff = `−T_i` (a tournament — only the *order* pays);
+coupling = drag/draft and traffic make `v_i` depend on `{x_j(t)}`. The optimal `π_i` is a
+**best response to `{π_j}`** → the field's tactics are a **Nash equilibrium**. With many
+runners the rivals enter only through the aggregate **pace**, so the large-field limit is
+a **mean-field game**: each horse best-responds to the field's pace distribution, which
+is itself the aggregate of those responses — a fixed point in pace-policy space.
+
+**Why competition is relational, not scalar.** A horse's effective finishing time
+depends on its **style/ability matchup against this field's composition**, not on a
+context-free number. A front-runner among closers steals an uncontested lead, dictates a
+soft pace, arrives with reserve unspent; the *same* front-runner among other
+front-runners is forced into a contested early duel that burns `W′` against the air with
+no draft, and fades. Identical horse, different equilibrium. A scalar rating cannot
+represent a quantity that is a *function of the opponent set*. The correct generative
+object is an **interacting Plackett-Luce**: PL (independent finishing times → argmin) is
+the **free / non-interacting theory**; the competition couplings bend PL's per-horse
+utilities by *who else is in the race*. Our production Wald/PL surrogate **is** that free
+theory — which is exactly why bolt-on scalar ratings vanish into it, and why the live
+signal must be a *composition interaction*, not a main effect.
+
+**Two levels: the handicapper (Stackelberg) and the pace game.** Running styles are
+**public** (read off past running lines — our `early_pos` feature is the EB-shrunk mean
+of normalised early field position). Jockeys observe them and set up the pace
+accordingly — best-response on *observable* information, so modellable from form alone.
+Above the tactical game sits the **handicapper as a Stackelberg leader**: anticipating
+the equilibrium, they assign weight to **compress ability** and engineer a blanket
+finish. So competition enters twice — the handicapper compresses the **mean** (already
+priced, hence tight win probabilities and an efficient rating channel), but the pace
+equilibrium reshuffles the **conditional** outcome by style-composition (*not* fully
+priced — our opening).
+
+**The positional fade is the mean-field shadow of this equilibrium.** The production
+drift-diffusion is the *non-interacting* theory: context-free drifts, collisionless,
+draftless. It therefore over-rates habitual front-runners (never charged for the
+contested-pace reserve burn) and under-rates closers (never credited the reserve they
+conserve). The confirmed `POS_FADE_GAIN = −1.0` term — front horses win ~1pp *less* than
+the physics predicts, closers ~1pp *more*, residual `t ≈ −7` at **both** venues,
+surviving form/`v_c`/`W′` controls — is exactly this bias, measured. The shared
+sign-and-magnitude across venues is the signature of a **mean-field constant**: the
+field-averaged shadow of the pace equilibrium projected onto one per-horse scalar. We
+have captured only its **zeroth moment** (the field-mean style offset); the equilibrium's
+*interaction* structure — how the fade depends on *who else* is in the race — is
+untouched. That is the next layer, and it converts the theory into testable predictions.
+
+**Testable predictions (ranked; all inputs pre-race & public ⇒ leak-free):**
+1. **Front-runner penalty scales with the count of rival front-runners** (pace
+   contestedness `n_FR`): the fade *grows* with `n_FR`, *vanishes/reverses* at `n_FR=1`.
+   Implement as `POS_FADE × contestedness` on the already-paying scalar — lowest-risk,
+   highest-information. **Top priority.**
+2. **Lone-leader pace-control bonus** (`n_FR=1`): a sign *flip* of the fade. The robust
+   form is the *interaction* with `n_FR` (1+2 tested jointly), not the threshold-fragile
+   standalone lone-leader cell that was already rejected.
+3. **Closer-favoring in contested-pace fields**: closers' bonus scales with `n_FR` — a
+   field-level reshuffle the non-interacting model cannot produce.
+4. **Field pace-shape modulator**: summarise the `early_pos` distribution into one
+   pace-pressure scalar per race modulating the fade gain (generalises 1–3).
+5. **Pairwise matchup / collateral-form terms** (interacting-PL): use HKJC `formline`
+   (who-met-whom + rating/weight deltas) as *relational* utility bumps — the object the
+   scalar Elo groped for, but as an interaction (should survive the collinearity that
+   killed Elo). Highest ceiling, heaviest build — after 1–4 confirm the mechanism.
+6. **Draw × pace** (inside front-runner controls rail+tempo; wide one burns reserve to
+   cross): a genuine many-body term — the agent-based sim's domain, lowest near-term.
+
+Predictions 1–3 are one mechanism (the equilibrium's first moment: fade-scaling-with-
+contestedness) from three angles, all a single `contestedness`-modulated extension of
+`POS_FADE_GAIN` — cheap, leak-free, on-data. Land those before the heavier `formline`
+relational build (5).
+
+---
+
 ## 4. What the additive-statistical approach already ruled out
 
 History worth keeping (so it isn't re-litigated). Run through a leak-free walk-forward,
