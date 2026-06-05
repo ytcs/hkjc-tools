@@ -88,8 +88,11 @@ def main():
     folds = walk_forward_folds(dates, n_folds=5, embargo=1, min_train=1)
     print(f"{VENUE}: {df['race_id'].n_unique()} races, {df.height} runners, {len(folds)} folds")
 
+    bend = os.environ.get("BEND")
+    bend = float(bend) if bend is not None else None
+
     def _model(train, test):
-        return fit_predict_traffic(train, test, jky_mean=jky_mean)
+        return fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():
