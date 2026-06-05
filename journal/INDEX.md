@@ -1,6 +1,6 @@
 # Research Journal — Index
 
-60 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
+65 entries. Generated; do not edit by hand (rebuilt by `Ledger.reindex`).
 
 ## decision
 
@@ -17,6 +17,7 @@
 - **0018-cloud-capture-modal-python-native-cron-claude-sc** (open) [Cloud capture: Modal (Python-native cron); Claude scheduling can't run when machine is off](entries/0018-cloud-capture-modal-python-native-cron-claude-sc.md) — _cloud, modal, scheduling, ops, jackpot-carryover_
 - **0027-trip-trouble-gate-negative-video-not-justified-c** (open) [Trip-trouble gate NEGATIVE -> video NOT justified; close the model-edge line](entries/0027-trip-trouble-gate-negative-video-not-justified-c.md) — _trouble, video-gate, market-efficiency, model-edge-closed, strategy_
 - **0030-tier-a-traffic-model-focus-happy-valley-track-ge** (open) [Tier-A traffic model: focus Happy Valley; track geometry + movable rail captured](entries/0030-tier-a-traffic-model-focus-happy-valley-track-ge.md) — _traffic-model, tier-a, happy-valley, track-geometry, movable-rail, draw-bias_
+- **0065-residual-queue-persisted-to-model-state-md-carry** (open) [Residual queue persisted to MODEL_STATE.md (carry-forward for refactor)](entries/0065-residual-queue-persisted-to-model-state-md-carry.md) — _model, calibration, residual-queue, refactor, carry-forward_
 
 ## design
 
@@ -85,3 +86,7 @@
 - **0029-first-principles-energetics-model-also-fails-to** (open) [First-principles energetics model also fails to beat the market (5th negative)](entries/0029-first-principles-energetics-model-also-fails-to.md) — _energetics, first-principles, market-efficiency, model-edge-closed_
 - **0031-tier-a-traffic-model-built-geometric-draw-bias-e** (open) [Tier-A traffic model built; geometric draw bias EMERGES (needs calibration)](entries/0031-tier-a-traffic-model-built-geometric-draw-bias-e.md) — _traffic-model, tier-a, draw-bias, emergent, needs-calibration_
 - **0049-jockey-confirmed-in-the-abm-7pp-of-market-skill** (open) [Jockey CONFIRMED in the ABM: +7pp of market skill, baked (29%->38%)](entries/0049-jockey-confirmed-in-the-abm-7pp-of-market-skill.md) — _jockey, backtest, form, breakthrough_
+- **0061-trajectory-dataset-policy-w-depletion-measured-p** (open) [Trajectory dataset + policy/W-depletion measured; pace-mispricing probe: cannibalisation right-sign but underpowered](entries/0061-trajectory-dataset-policy-w-depletion-measured-p.md) — _trajectory, policy, W-prime, depletion, epistemic-arbitrage, pace, mispricing, market-residual, standing-order, roadmap_
+- **0062-market-residual-diagnosis-abm-is-under-confident** (open) [Market-residual diagnosis: ABM is under-confident on ability (form t=32); mass is the next missing mechanism](entries/0062-market-residual-diagnosis-abm-is-under-confident.md) — _goodness-of-fit, market-residual, calibration, form-gain, speed-noise, under-confident, mass, diagnosis, standing-order_
+- **0063-form-gain-recalibrated-2-4-residual-diagnosis-dr** (open) [FORM_GAIN recalibrated 2->4 (residual-diagnosis driven): ST 43.3%->48.2% of market, HV 39%->43%, baked](entries/0063-form-gain-recalibrated-2-4-residual-diagnosis-dr.md) — _goodness-of-fit, calibration, form-gain, milestone, market-fit, diagnose-recalibrate-loop, standing-order_
+- **0064-re-diagnosis-at-fg-4-ability-fixed-draw-over-wei** (open) [Re-diagnosis at FG=4: ability fixed; DRAW over-weight (t=-17) is now the #1 miss, then W-prime under-weight (t=+13), then bodywt/mass](entries/0064-re-diagnosis-at-fg-4-ability-fixed-draw-over-wei.md) — _goodness-of-fit, market-residual, re-diagnosis, draw, bend-curvature, w-prime, mass, diagnose-recalibrate-loop, standing-order_

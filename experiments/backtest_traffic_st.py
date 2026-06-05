@@ -40,10 +40,18 @@ BEND = CALIBRATED_BEND_CURVATURE["ST"]
 # skill) and survives the handicap. It maps to an effective critical velocity — a horse
 # that consistently beats its field runs effectively faster than its sectional estimate.
 # FORM_GAIN is m/s of v_c per unit form-deviation from the neutral 0.5.
-FORM_GAIN = float(os.environ.get("FORM_GAIN", "2.0"))
+# RECALIBRATED 2.0 -> 4.0 (market_residual_diagnosis showed the ABM under-weighted ability:
+# market - model residual slope on form t=+32, i.e. the market concentrates more probability
+# on strong horses than the model did). The ability_spread_sweep then confirmed an interior
+# optimum at 4.0 (6.0 worse, 8.0 much worse) lifting ST 43.3% -> 48.2% of market at full scale,
+# with ECE 0.0081 -> 0.0069 (now matching the market's own calibration). Note the sweep also
+# showed LOWERING speed_noise hurts at every gain: the fix was amplifying the GOOD signal (form),
+# not global sharpening — cutting noise sharpens the noisy sectional v_c too and overfits.
+FORM_GAIN = float(os.environ.get("FORM_GAIN", "4.0"))
 # Race-day unpredictability — must be CALIBRATED to the ability spread, else the sim is
 # overconfident. With a real ability signal (form) the win is mostly unpredictable, so
 # this is large; the old 0.02 only "worked" because heavy shrinkage made abilities equal.
+# Sweep-confirmed: 0.12 is the optimum; 0.09/0.06 monotonically worse at the calibrated gain.
 SPEED_NOISE = float(os.environ.get("SPEED_NOISE", "0.12"))
 # Freshness (days-since-last-race) was explored as an engine-tune signal and DROPPED for
 # parsimony: the only robust, form-orthogonal effect was the long-layoff penalty, but
