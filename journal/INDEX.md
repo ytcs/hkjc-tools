@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-19 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+20 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -11,7 +11,7 @@
 - **0006-bodywt-residual-is-real-body-mass-not-a-class-pr** →all (research/confirmed) [Bodywt residual is REAL body mass, not a class proxy (confirmed)](entries/0006-bodywt-residual-is-real-body-mass-not-a-class-pr.md) — _residual-queue, mass, bodywt, mechanism-validation_
 - **0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go** →all (research/open) [Scrutiny of v_c regressors: form is lossy (rank), going is a blind spot](entries/0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go.md) — _scrutiny, form, speed-figure, going, critical-power, methodology, v_c_
 - **0008-full-power-balance-eom-underperforms-kinematic-b** →all (research/confirmed) [Full power-balance EOM underperforms kinematic by ~1.4 nats/race (win-prob)](entries/0008-full-power-balance-eom-underperforms-kinematic-b.md) — _eom, mass, allometric, negative-result, physics-migration, steady-state_
-- **0009-mass-coupling-parked-real-residual-but-low-lever** →all (research/confirmed) [Mass coupling PARKED -- real residual but low-leverage (b=1 isometric optimal)](entries/0009-mass-coupling-parked-real-residual-but-low-lever.md) — _mass, allometric, parsimony, low-leverage, negative-result_
+- **0009-mass-coupling-parked-real-residual-but-low-lever** →all (research/superseded) [Mass coupling PARKED -- real residual but low-leverage (b=1 isometric optimal)](entries/0009-mass-coupling-parked-real-residual-but-low-lever.md) — _mass, allometric, parsimony, low-leverage, negative-result_
 - **0010-speed-figure-form-parked-rank-form-s-pace-class** →all (research/confirmed) [Speed-figure form PARKED; rank-form's pace/class invariance is the feature](entries/0010-speed-figure-form-parked-rank-form-s-pace-class.md) — _speed-figure, form, parsimony, negative-result_
 - **0011-probit-reduction-beats-the-traffic-sim-for-win-p** →all (research/superseded) [PROBIT reduction beats the traffic sim for WIN (prelim, +6pp, 35x faster) -- confound check pending](entries/0011-probit-reduction-beats-the-traffic-sim-for-win-p.md) — _probit, architecture, parsimony, speed, sim_
 - **0012-confirmed-probit-matches-the-traffic-sim-for-win** →all (research/confirmed) [CONFIRMED: probit matches the traffic sim for WIN (48.1% full-scale), 35x faster](entries/0012-confirmed-probit-matches-the-traffic-sim-for-win.md) — _probit, architecture, parsimony, speed, win-model, calibration_
@@ -23,3 +23,4 @@
 - **0019-model-lineup-drop-probit-velocity-mult-wald-diff** →all (research/confirmed) [Model lineup: drop probit (velocity-mult); Wald (diffusion) is production, PL the fast probe](entries/0019-model-lineup-drop-probit-velocity-mult-wald-diff.md) — _wald, diffusion, probit, plackett-luce, model-lineup, jax, n_samples, first-principles_
 - **0020-re-diagnosis-at-the-recency-56-baseline-rebalanc** →all (research/confirmed) [Re-diagnosis at the recency (56%) baseline rebalanced the ability gains: FORM_GAIN 4->5, W_PRIME_GAIN 2->1](entries/0020-re-diagnosis-at-the-recency-56-baseline-rebalanc.md) — _recalibration, form-gain, w-prime-gain, re-diagnosis, recency, wald, parsimony_
 - **0021-breakthrough-re-added-bend-ground-loss-to-the-wa** →all (research/confirmed) [BREAKTHROUGH: re-added bend ground-loss to the wald drift (DRAW_GAIN=0.003) -> ST 56->58% of market](entries/0021-breakthrough-re-added-bend-ground-loss-to-the-wa.md) — _draw, bend-ground-loss, wald, breakthrough, interaction, abm, re-diagnosis, first-principles_
+- **0022-bodywt-re-checked-on-the-production-wald-path-re** →all (research/confirmed) [bodywt re-checked on the production wald path: real but SMALL (~0.8pp) -- not a needle-mover, parked](entries/0022-bodywt-re-checked-on-the-production-wald-path-re.md) — _bodywt, mass, wald, parked, low-leverage, structural, ability-model, next-direction_
