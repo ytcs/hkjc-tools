@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-25 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+26 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -29,3 +29,4 @@
 - **0025-milestone-st-crossed-60-of-market-banked-pos-fad** →all (research/confirmed) [MILESTONE: ST crossed 60% of market. Banked pos-fade/mass/AWT/jockey; mean-field surrogate now saturating](entries/0025-milestone-st-crossed-60-of-market-banked-pos-fad.md) — _milestone, 60-percent, pos-fade, mass, allometric, awt, jockey, per-venue, saturation, conversion-test, interaction-layer, new-data, debut, game-theory_
 - **0026-three-front-push-kinematic-abm-dead-premise-over** →all (research/confirmed) [Three-front push: kinematic-ABM-dead premise overturned, DRAW_FS (HV +0.3pp) banked, pace-interaction + debut-RTG refuted; barrier-trial backfill underway](entries/0026-three-front-push-kinematic-abm-dead-premise-over.md) — _abm, interaction, draw-fs, crowding, pace-pressure, refuted, conversion-test, paired-seed, method, debut, prior-starts, barrier-trials, new-data, saturation, hv_
 - **0027-draw-the-interaction-axis-are-deferred-not-rejec** →all (research/confirmed) [Draw & the interaction axis are DEFERRED not rejected: draw is geometry × CONTROL coupled (needs a joint jockey-policy game, not a regression term)](entries/0027-draw-the-interaction-axis-are-deferred-not-rejec.md) — _draw, control, geometry, interaction, deferred, theory, game-theory, jockey-policy, competition, mean-field, abm-deprecation_
+- **0028-milestone-st-62-6-hv-59-3-new-data-structural-fa** →all (research/confirmed) [MILESTONE: ST 62.6% / HV 59.3% — new-data + structural fan-out (barrier trials, collateral-form, rating-peakgap, fade) breaks the mean-field saturation](entries/0028-milestone-st-62-6-hv-59-3-new-data-structural-fa.md) — _milestone, barrier-trials, new-data, collateral-form, competition, massey, peakgap, process-feature, trajectory, fade, fan-out, conversion-test, coherent-bayes, training-load, 70-percent-push_

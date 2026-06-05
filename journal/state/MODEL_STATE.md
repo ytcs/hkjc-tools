@@ -39,25 +39,25 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | **`ALLOMETRIC_B_BY_VENUE`** | **ST 1.1 / HV 1.0** | `hkjc.model.constants` | Allometric mass law `v_c ∝ m^(b−1)`, now applied on the wald path. The persistent #1 ST residual; converts only at ST (+0.5pp; HV 1.0 = off). |
 | **`DRAW_GAIN_AWT`** | **0.008** | `hkjc.model.constants` | Per-SURFACE draw: AWT dirt has a stronger rail bias than turf (overrides the venue value). AWT 43→49%. |
 | **`DRAW_FS_GAIN_BY_VENUE`** | **HV 0.25 / ST 0.0** | `hkjc.model.constants` | **Crowding-amplified draw — the ONE convertible INTERACTION term (the ABM motivation as a mean-field shadow): `dg = draw_g·max(0, 1+gain·(N−12))`, a wide draw costs more in a crowded field (boxed-in), clamped ≥0 (never reverses). HV-only: PAIRED full-scale test converts only at HV (53.8→54.1%, +0.3pp; collision physics dominates the tightest track), FLAT at ST. `fit.py` wald branch.** |
+| **`TRIAL_GAIN_BY_VENUE`** | **ST 1.5 / HV 1.0** | `hkjc.model.constants` | **FIRST NEW-DATA lever. Barrier-trial speed figure (trial v_c vs going×dist par) — the only on-track form a DEBUTANT has; market otherwise efficient on debuts. Full 4-yr panel (94.8% debut coverage): ST 60.0→61.9% (+1.9pp, biggest lever since recency form), HV +0.6pp. Needs `data_cache/barrier_trials.parquet`. `features.barrier_trial_table` (as-of on short stable brand).** |
+| **`COLLAT_GAIN_BY_VENUE`** | **ST 1.0 / HV 2.5** | `hkjc.model.constants` | **Competition axis CRACKED. Relational opponent-adjusted (Massey) velocity rating — credits a margin vs a STRONG field more; propagated online (leak-free). A scalar Elo FAILED (collinear w/ rtg); this RELATIONAL form converts. HV +2.3pp (+ECE improves) — closes ⅓ of the ST-HV gap. `features.collateral_form_table`.** |
+| **`PEAKGAP_GAIN_BY_VENUE`** | **ST −0.015 / HV −0.025** | `hkjc.model.constants` | **PROCESS feature (not point): current rtg − own prior PEAK rtg (≤0). Carries an ABSOLUTE career landmark the point can't express (a declining horse runs below its lagging rating). Marginal +0.4pp ST / +2.4pp HV (does NOT overlap collateral). Rating velocity/accel did NOT convert (restate form). `features.rating_trajectory_table`.** |
+| **`FADE_GAIN`** | **0.1** | `hkjc.model.constants` | Trajectory-shape: final-vs-peak section velocity (W′ emptying late); the drift under-credits horses that hold speed. Shared-sign mean-field const, +0.2/0.1pp. (sustained-speed DON'T-BAKE — priced.) `features.trajectory_trait_table`. |
 | `SPEED_NOISE` | 0.12 | `hkjc.model.constants` | Velocity-noise (= log-normal time). Diffusion `diff_coef≈170` ties it (`sim="wald"`). |
 | `awt_diff_mult` | 2.0 | `fit.py` (sim="wald") | AWT is 2× as diffusive as turf (surface-dependent D) — fixes AWT over-confidence (12.7%→23.7%). |
-| `bend_curvature` (ST/HV) | 0.0037 / 0.0023 | `hkjc.model.calibration` | Geometric draw bias. Confirmed near-optimal; draw is low-leverage (parked). |
 
-Current fit: **ST ≈ 60.0% / HV ≈ 54.1% of market** (wald, full-scale; HV +0.3pp from the new crowding×draw
-interaction term). MILESTONE: ST crossed 60% (project
-start ~48%). Levers since the recency-form era, in order: **per-venue DRAW/FORM** (HV 47.6→52.5%, +4.9pp
-— the model had been ST-calibrated and applied globally; DRAW_GAIN ST 0.003/HV 0.008, FORM ST 5/HV 4);
-**positional-fade** POS_FADE_GAIN=−1.0 (+0.5/0.6pp, the pace-equilibrium shadow); **allometric mass** on
-wald (ST b=1.1, +0.5pp; the persistent #1 ST residual; HV b=1.0 — doesn't convert there); **AWT
-per-surface draw** 0.008 (AWT 43→49%, the AWT market is ~33% softer); **JOCKEY_GAIN 5→6** (+0.4/0.3pp).
-HV still trails ST ~6pp (diffuse gap, not one mechanism). The ST-1000m straight chute zeroes the draw term.
+Current fit: **ST ≈ 62.6% / HV ≈ 59.3% of market** (wald, full-scale paired). This push (60.0/54.1 → 62.6/59.3:
+ST +2.6pp, HV +5.2pp) was driven ENTIRELY by NEW DATA + new STRUCTURAL signal — barrier trials (debut/lightly-
+raced form), collateral-form (opponent strength), rating-peakgap (career decline), trajectory fade — none of
+which is a reweighting of priced features. The HV gap to ST closed from ~6pp to ~3pp (collateral + peakgap both
+hit HV hardest — the tactical track where field-strength + career-phase are most mispriced).
 
-**SATURATION NOTE (important for the next agent):** the mean-field-surrogate levers are now saturating.
-A growing list of real market residuals do NOT convert to %market when coupled (they're collinear with
-priced signals or too noisy per-horse): opponent-strength/Elo, carried-weight (actwt), rest-days
-(days-since-RACE), weight-trajectory (bw_dev, won-corr~0), the contestedness×pos_fade interaction.
-**The conversion test (quick_eval), not the residual t-stat, is the real gate.** Beyond ~60% the gains
-need either the INTERACTION layer (the ABM — theory predictions below) or NEW DATA (below), not more
+**THE PATH IS NEW DATA + NEW STRUCTURE, not more mean-field (this push proved it).** The earlier "saturation"
+was a saturation of *mean-field terms on the existing race panel* — every per-horse residual was collinear with
+the priced ability channel. The break came from (a) NEW DATA the market prices but the model never saw (barrier
+trials) and (b) STRUCTURAL signals (relational opponent-strength; the process/career-landmark of peakgap). The
+conversion test (paired fixed-seed full-scale — quick_eval over-states ~4×), NOT the residual t-stat, remains the
+gate. Refuted-as-mean-field-term but NOT as an axis (need new data/structure): see the deferred + refuted lists.
 mean-field terms.
 
 ## ARCHITECTURE (audit findings — the model is a prototype, not gospel)
@@ -88,10 +88,10 @@ sn0.12) all sit at interior optima under the surrogate too.
 processes (TASEP) for blocking, active matter for drafting, mean-field games for jockey policy; an
 "interacting Plackett-Luce" with PL as the free theory. See journal 0015.
 
-## NEXT LEVERS (post-60% — the mean-field surrogate is saturating)
+## NEXT LEVERS (post-60% — NEW DATA + NEW STRUCTURE is the path; proven this push)
 
-The cheap per-horse mean-field terms are largely banked or refuted. After a full three-front push
-(2026-06-05: ABM revamp + data + debut), the picture sharpened decisively:
+The 2026-06 fan-out (barrier trials, competition, trajectory, physiology, rating-trajectory, theory) lifted
+ST 60.0→62.6 / HV 54.1→59.3 entirely via new data + structural signal. The forward levers, ranked:
 
 **A. The INTERACTION layer — the first-attempt ABM code was deprecated, but the axis is DEFERRED, not dead.**
 The kinematic sim is gone as production: the old "kinematic BEATS wald at HV +2-3pp" claim was STALE (it
@@ -114,26 +114,41 @@ draw as a boundary condition. **DEFER, don't reject:** keep the draw + interacti
 baked draw terms as interim until geometry + control are modelled together. This is the most promising piece
 of deep theory-building left — but it is a theory build, not a regression probe.
 
-**B. NEW DATA is the genuine remaining lever — and barrier trials are #1 (build IN PROGRESS).** Both the
-data-mining and debut work converge: **debutants need NEW signal, not a reweighting of existing features.**
-The debut RTG-suppression quick-win was built and tested end-to-end and does NOT convert (see refuted list).
-The data agent verified the sources LIVE (prototype `studies/newdata_probe.py`, samples in
-`studies/newdata_samples/`): **barrier trials** (`btresult`, SSR HTML `?Date=DD/MM/YYYY`) are the clear #1 —
-clean `horse_id` join, history queryable to 2018, inherently pre-race, and the trial field is DOMINATED by
-debutants (11/19 in a sample were unraced foals). A trial gives a debutant a real `v_c`/W′ velocity prior
-(trial_time + 3 sectionals + lbw) — the same energetics machinery. **A historical backfill (2022-2026) is
-running** → `data_cache/barrier_trials.parquet`; next step is a leak-free trial-form feature + conversion
-test (esp. on the debut subset). Secondary sources: **weather** (GraphQL `Weather` op — continuous
-soil-moisture going proxy + wind; needs poll-and-log, no history) and **formline** (reconstruct the
-collateral-form graph from our existing `localresults` for full depth). See HKJC_DATA.md.
+**B. BANKED this push (all committed; the proof that new data/structure is the path):**
+- **Barrier trials** (`TRIAL_GAIN`, `features.barrier_trial_table`) — full 4-yr panel `data_cache/barrier_trials.parquet`
+  (27,909 trials, 94.8% debut coverage). ST +1.9pp. Debutants/lightly-raced need NEW form, not reweighting.
+- **Collateral-form** (`COLLAT_GAIN`, `features.collateral_form_table`) — relational opponent-strength (Massey
+  velocity rating, NOT scalar Elo). HV +2.3pp, ECE improves. The competition axis, cracked.
+- **Rating-peakgap** (`PEAKGAP_GAIN`, `features.rating_trajectory_table`) — PROCESS feature, own-peak deficit.
+  HV +2.4pp. Pays because it adds an absolute career landmark the point rating can't express.
+- **Trajectory fade** (`FADE_GAIN`, `features.trajectory_trait_table`) — late-velocity hold, +0.2/0.1pp.
 
-**Refuted this session (do NOT re-litigate — residual signal that does NOT convert as a simple term):**
-opponent-strength/Elo (collinear with rtg), carried-weight actwt, rest-days (days-since-race proxy),
-weight-trajectory bw_dev (won-corr~0), HV form-by-distance (marginal), and the **debut RTG-suppression /
-debut-jockey-gain** (premise real — fab. RTG corr −0.04 — but rating slope is tiny (~0.04 m/s over the debut
-spread vs FORM's ~2 m/s), the model is already calibrated on debuts (mean p 0.065 vs actual 0.068), and ~35%
-of "debutants" carry a REAL handicapper rating, so suppression discards signal; the debut-jockey gain HURT,
-HV 33→28%). The CONVERSION test (quick_eval %market), not the residual t-stat, is the gate.
+**C. THE FORWARD PLAN (ranked; user-steered):**
+1. **Coherent Bayesian fusion of all velocity observations (the next architecture).** The additive `TRIAL_GAIN`
+   is a crude proxy — it over-weights trials for established horses, under-weights green ones. Fold barrier
+   trials (then training gallops) into the SAME empirical-Bayes ability posterior as official runs, DOWN-WEIGHTED,
+   so the shrinkage `lam(n_eff)` handles the debut→established gradient and the denser prior tightens v_c/W′ for
+   ALL lightly-raced horses, not just debutants. Touches `calibration.fit_energetics_population` + `fit.horse_residuals`
+   (weight trials as a fraction of a race; put trial v_c on the race v_c scale via trial sectionals `batch_sect`).
+2. **Training-load as the densest prior layer.** `localtrackwork` (daily dated timed gallops, ~3 wk pre-race) +
+   `veterinaryrecord` are CONFIRMED historically scrapeable & leak-free (physiology agent). The real fitness signal
+   race-history can't give (race-derived condition features are fully collinear — refuted). Backfill → fuse (per #1).
+3. **CV / vision (longer horizon).** Video path extraction from race replays (`hkjc.vision`) to "watch" past races
+   for dynamics section-times miss; gait analysis for biomechanical condition (esp. debut barrier-trial video).
+4. **Geometry × control theory (deferred, THEORY §3c).** The draw axis. Minimal next experiment = O1: replace the
+   scalar per-venue `DRAW_GAIN·(Dr−1)` with a `g(Course)` geometry modulation — partitions draw into geometry vs
+   control shares. Then O2 (draw × #front-runners-drawn-inside) and O3 (ground-saved control quality from trajectory).
+5. **Other new data:** weather (continuous soil-moisture going + wind; poll-and-log, no history); formline (the
+   collateral graph could go deeper / directed). See HKJC_DATA.md.
+
+**Refuted this session as a SIMPLE TERM (do NOT re-litigate as-is — but several are alive with new data/structure):**
+carried-weight actwt, rest-days (days-since-race — blind to training; alive via #2), weight-trajectory bw_dev,
+**physiology-from-race-history** (layoff/Banister/own-weight all collapse to ~0 partial corr — a race outcome is
+itself a coarse training proxy; alive only via real training-load #2), **sustained-speed** trajectory trait (priced),
+**rating velocity/acceleration** (restate recent form — only the peakgap LANDMARK converts), the **debut
+RTG-suppression** (rating slope tiny, market already calibrated on debuts — the trial PRIOR is the right fix, not
+reweighting). NOTE: scalar Elo / opponent-strength was "refuted" earlier but the RELATIONAL collateral-form CONVERTS
+(+2.3pp HV) — "a dead first attempt ≠ a dead axis". The CONVERSION test (paired full-scale), not the t-stat, is the gate.
 
 **DEFERRED (NOT refuted — real mechanism, wrong tool):** the draw / pace / competition INTERACTION axis. The
 simple regression/mean-field treatments (contestedness×pos_fade, relational pace-pressure) don't convert
