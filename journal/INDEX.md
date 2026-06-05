@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-23 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+24 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -27,3 +27,4 @@
 - **0023-research-round-6-parallel-dimension-probes-hv-is** →all (research/open) [Research round (6 parallel dimension probes): HV is broken (#1 lever, ~10pp); pace + rest-days are real medium leads](entries/0023-research-round-6-parallel-dimension-probes-hv-is.md) — _research-round, per-venue, HV, draw, pace, lone-leader, days-since-run, opponent-adjusted, interactions, sectionals, headroom_
 - **0024-research-round-2-4-agents-pace-positional-fade-i** →all (research/open) [Research round 2 (4 agents): pace POSITIONAL-FADE is the next clean lever; data-mining goldmine (weather/formline/vet); going=noise; drone=defer](entries/0024-research-round-2-4-agents-pace-positional-fade-i.md) — _research-round-2, per-venue, HV, pace, positional-fade, data-mining, weather, wind, formline, veterinary, going, drone, cv, competition, game-theory, theory-first_
 - **0025-milestone-st-crossed-60-of-market-banked-pos-fad** →all (research/confirmed) [MILESTONE: ST crossed 60% of market. Banked pos-fade/mass/AWT/jockey; mean-field surrogate now saturating](entries/0025-milestone-st-crossed-60-of-market-banked-pos-fad.md) — _milestone, 60-percent, pos-fade, mass, allometric, awt, jockey, per-venue, saturation, conversion-test, interaction-layer, new-data, debut, game-theory_
+- **0026-three-front-push-kinematic-abm-dead-premise-over** →all (research/confirmed) [Three-front push: kinematic-ABM-dead premise overturned, DRAW_FS (HV +0.3pp) banked, pace-interaction + debut-RTG refuted; barrier-trial backfill underway](entries/0026-three-front-push-kinematic-abm-dead-premise-over.md) — _abm, interaction, draw-fs, crowding, pace-pressure, refuted, conversion-test, paired-seed, method, debut, prior-starts, barrier-trials, new-data, saturation, hv_

@@ -3,7 +3,7 @@
 > Self-contained snapshot of where the ABM calibration stands, the methodology, and the
 > open residual queue. This is the modelling agent's working memory. After the refactor it
 > should become the seed entries of the modelling agent's journal channel.
-> Last updated: 2026-06-04.
+> Last updated: 2026-06-05.
 
 ## Objective (do not lose this framing)
 
@@ -38,11 +38,13 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | **`POS_FADE_GAIN`** | **−1.0** | `hkjc.model.constants` | Positional-fade: `v_c += gain·(early_pos−field_mean)`. Non-interacting physics over-rates front-runners / under-rates closers — the mean-field shadow of the pace equilibrium (see THEORY §3b). Clean shared optimum both venues. `features.early_position_table`. |
 | **`ALLOMETRIC_B_BY_VENUE`** | **ST 1.1 / HV 1.0** | `hkjc.model.constants` | Allometric mass law `v_c ∝ m^(b−1)`, now applied on the wald path. The persistent #1 ST residual; converts only at ST (+0.5pp; HV 1.0 = off). |
 | **`DRAW_GAIN_AWT`** | **0.008** | `hkjc.model.constants` | Per-SURFACE draw: AWT dirt has a stronger rail bias than turf (overrides the venue value). AWT 43→49%. |
+| **`DRAW_FS_GAIN_BY_VENUE`** | **HV 0.25 / ST 0.0** | `hkjc.model.constants` | **Crowding-amplified draw — the ONE convertible INTERACTION term (the ABM motivation as a mean-field shadow): `dg = draw_g·max(0, 1+gain·(N−12))`, a wide draw costs more in a crowded field (boxed-in), clamped ≥0 (never reverses). HV-only: PAIRED full-scale test converts only at HV (53.8→54.1%, +0.3pp; collision physics dominates the tightest track), FLAT at ST. `fit.py` wald branch.** |
 | `SPEED_NOISE` | 0.12 | `hkjc.model.constants` | Velocity-noise (= log-normal time). Diffusion `diff_coef≈170` ties it (`sim="wald"`). |
 | `awt_diff_mult` | 2.0 | `fit.py` (sim="wald") | AWT is 2× as diffusive as turf (surface-dependent D) — fixes AWT over-confidence (12.7%→23.7%). |
 | `bend_curvature` (ST/HV) | 0.0037 / 0.0023 | `hkjc.model.calibration` | Geometric draw bias. Confirmed near-optimal; draw is low-leverage (parked). |
 
-Current fit: **ST ≈ 60.0% / HV ≈ 54% of market** (wald, full-scale). MILESTONE: ST crossed 60% (project
+Current fit: **ST ≈ 60.0% / HV ≈ 54.1% of market** (wald, full-scale; HV +0.3pp from the new crowding×draw
+interaction term). MILESTONE: ST crossed 60% (project
 start ~48%). Levers since the recency-form era, in order: **per-venue DRAW/FORM** (HV 47.6→52.5%, +4.9pp
 — the model had been ST-calibrated and applied globally; DRAW_GAIN ST 0.003/HV 0.008, FORM ST 5/HV 4);
 **positional-fade** POS_FADE_GAIN=−1.0 (+0.5/0.6pp, the pace-equilibrium shadow); **allometric mass** on
@@ -88,33 +90,42 @@ processes (TASEP) for blocking, active matter for drafting, mean-field games for
 
 ## NEXT LEVERS (post-60% — the mean-field surrogate is saturating)
 
-The cheap per-horse mean-field terms are largely banked or refuted. The remaining headroom is in two
-buckets, both bigger investments — this is the strategic fork for the push toward 70%:
+The cheap per-horse mean-field terms are largely banked or refuted. After a full three-front push
+(2026-06-05: ABM revamp + data + debut), the picture sharpened decisively:
 
-**A. The INTERACTION layer (the ABM / theory predictions — no new data).** THEORY §3b develops the race as
-a differential / mean-field game and lists ranked, leak-free testable predictions. The mean-field shadow
-(POS_FADE) pays; its *interaction* structure is untouched. NOTE: the simplest test — contestedness×pos_fade
-(prediction #1) via an `early_pos>0.85` count — did NOT convert (the mean-field term absorbs it / the proxy
-is crude). The richer interactions likely need the kinematic ABM, which BEATS wald at HV (+2-3pp) but loses
-on ST — so the ABM is the natural HV win model and the substrate for the pace/draw×style couplings. Highest
-ceiling; reserve for place/exotics too.
+**A. The INTERACTION layer — the kinematic ABM is DEAD as a production win model (premise overturned).**
+The old "kinematic BEATS wald at HV +2-3pp" claim is STALE — it predated the per-venue wald bakes. At the
+current baseline the kinematic sim LOSES to wald at HV by **−4.1pp** (48.8% vs 52.9%, paired quick_eval):
+the per-venue DRAW 0.008 / FORM 4.0 / pos_fade / mass bakes superseded its uncalibrated emergent-geometry
+draw. So do NOT try to promote the slow JAX sim to production. The interaction axis instead pays as
+**mean-field shadow terms on the fast wald path** (the ABM is a *theory generator*, like pos_fade was):
+- **DRAW_FS_GAIN (crowding×draw) CONVERTS** — HV +0.3pp (baked, HV-only). The one win from the whole pass.
+- **Relational pace-pressure does NOT convert** — a front-runner's W′-burn scaling with rival front-runner
+  count (THEORY §3b #1), driven by the converting `early_pos` signal, formulated as a clean symmetric
+  interaction (contested→front fade, lone leader steals it, closers boosted): HV +0.12pp (noise), ST flat.
+  This is the **4th flat result on the pace-interaction axis** (PACE_GAIN, contestedness×pos_fade, the eom,
+  now pace_press). `pos_fade` already absorbs the convertible pace signal. The pace axis is closed for now.
 
-**B. NEW DATA (scraping builds — the data-mining round found these, all in HKJC_DATA.md).** Each opens a
-data-starved dimension: **barrier-trial times** (`btresult`) → the only pre-race fitness signal for DEBUTANTS
-(the debut market is genuinely soft — winner-rank 0.44 vs 0.68 — and our model is currently WORSE than the
-market there, partly because RTG is *anti-predictive* for fill-null debut ratings); **training-load**
-(`localtrackwork` timed gallops) → the right substrate for the rest/fitness-fatigue axis (days-since-RACE
-is blind to daily training, which is why rest-days didn't convert); **weather** (NEW GraphQL op) → wind +
-a *continuous* soil-moisture going proxy (the environment dimension); **formline** → the relational
-opponent-linkage for the competition interaction (THEORY §3b pred #5).
-
-**Quick wins still on the table (existing data, no big build):** a DEBUT-specific fix — suppress the
-anti-predictive RTG for fill-null debut ratings + lean on jockey (the strongest debut signal, t=5.3);
-needs a `prior_starts` feature. Bounded (~0.3-0.5pp global) but a real correctness fix.
+**B. NEW DATA is the genuine remaining lever — and barrier trials are #1 (build IN PROGRESS).** Both the
+data-mining and debut work converge: **debutants need NEW signal, not a reweighting of existing features.**
+The debut RTG-suppression quick-win was built and tested end-to-end and does NOT convert (see refuted list).
+The data agent verified the sources LIVE (prototype `studies/newdata_probe.py`, samples in
+`studies/newdata_samples/`): **barrier trials** (`btresult`, SSR HTML `?Date=DD/MM/YYYY`) are the clear #1 —
+clean `horse_id` join, history queryable to 2018, inherently pre-race, and the trial field is DOMINATED by
+debutants (11/19 in a sample were unraced foals). A trial gives a debutant a real `v_c`/W′ velocity prior
+(trial_time + 3 sectionals + lbw) — the same energetics machinery. **A historical backfill (2022-2026) is
+running** → `data_cache/barrier_trials.parquet`; next step is a leak-free trial-form feature + conversion
+test (esp. on the debut subset). Secondary sources: **weather** (GraphQL `Weather` op — continuous
+soil-moisture going proxy + wind; needs poll-and-log, no history) and **formline** (reconstruct the
+collateral-form graph from our existing `localresults` for full depth). See HKJC_DATA.md.
 
 **Refuted/parked this session (do NOT re-litigate — residual signal that does NOT convert):** opponent-
 strength/Elo (collinear with rtg), carried-weight actwt, rest-days (days-since-race proxy), weight-trajectory
-bw_dev (won-corr~0), contestedness×pos_fade, HV form-by-distance (marginal +0.2-0.4pp). The CONVERSION test
+bw_dev (won-corr~0), contestedness×pos_fade AND the richer relational pace-pressure (pace axis closed),
+HV form-by-distance (marginal), and the **debut RTG-suppression / debut-jockey-gain** (premise real — fab.
+RTG corr −0.04 — but rating slope is tiny (~0.04 m/s over the debut spread vs FORM's ~2 m/s), the model is
+already calibrated on debuts (mean p 0.065 vs actual 0.068), and ~35% of "debutants" carry a REAL handicapper
+rating, so suppression discards signal; the debut-jockey gain HURT, HV 33→28%). The CONVERSION test
 (quick_eval %market), not the residual t-stat, is the gate — many high-|t| residuals are already priced.
 
 ### Parked — tested, do NOT re-litigate (real signal but low-leverage / redundant on WIN)
@@ -131,6 +142,13 @@ items against the CURRENT production path before trusting "low-leverage". `bodyw
 
 ## Methodology caveats
 
+- **PAIRED fixed-seed full-scale is the real gate (NEW, 2026-06-05).** The 150-race subsampled `quick_eval`
+  WILDLY over-states a knob: `draw_fs_gain` read +1.0–1.6pp on quick_eval but only **+0.3pp HV / 0.0pp ST**
+  at full scale — a ~4× overstatement. AND the full backtest's per-race MC seed is `hash(race_id)`, which is
+  PYTHONHASHSEED-salted → ~±0.3-0.5pp run-to-run noise, so a single-run +0.3pp is indistinguishable from
+  noise. FIX: run base and candidate with **`PYTHONHASHSEED=0` fixed** so they share identical per-race MC
+  seeds — a paired comparison where the delta is purely the mechanism, not seed noise. Use quick_eval only to
+  scout direction/sign; confirm every bake with the paired full-scale test (both venues + ECE).
 - Going/class categorical residual test is **uninformative** under race-normalization (race-level
   constants vanish). To check condition calibration, use a calibration-by-condition test (ECE within
   each going/class bucket), not mean-resid-by-level.
