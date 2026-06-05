@@ -34,6 +34,14 @@ bayes = [
     "numpyro>=0.15",
     "jax>=0.4.34",
 ]
+# Computer-vision stack for the video trajectory pipeline (very heavy; opt-in). The
+# hkjc.vision package imports cleanly without these — they are lazy-loaded inside the
+# detect/track/homography stages only when you actually run the pipeline.
+vision = [
+    "opencv-python>=4.10",
+    "ultralytics>=8.3",
+    "av>=12",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

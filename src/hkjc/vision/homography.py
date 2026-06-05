@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .schema import Detection, Homography, RaceContext
+from .schema import Homography, RaceContext
 
 
 def world_references(ctx: RaceContext) -> list[tuple[float, float, str]]:

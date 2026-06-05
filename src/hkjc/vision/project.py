@@ -7,10 +7,9 @@ uniform grid and RTS-smooth to clean speed/accel without killing the accel signa
 """
 from __future__ import annotations
 
-from typing import Optional
 
 from .schema import (
-    Detection, Homography, RaceContext, RunnerTrajectory, TrajPoint, TrafficEvent,
+    Detection, Homography, RaceContext, RunnerTrajectory, TrafficEvent,
 )
 
 

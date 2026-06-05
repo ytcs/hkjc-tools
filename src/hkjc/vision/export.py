@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from .schema import RaceTrajectory, RunnerTrajectory
+from .schema import RaceTrajectory
 
 
 def to_jsonl(race: RaceTrajectory, path: str) -> None:
