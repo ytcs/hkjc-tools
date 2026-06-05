@@ -58,17 +58,37 @@ from __future__ import annotations
 
 import os
 
+# FORM_HALF_LIFE: races. The production form is RECENCY-weighted (exp-weighted relative-finish)
+# with this half-life, NOT the career expanding mean. Discovered in the knob scan: recency lifts ST
+# 48% -> 56% of market (+7.8pp) — the biggest single lever. Half-life sweep is a clean interior
+# optimum at ~2 (career = hl→∞ is worst). Career-average form goes stale over HK's long careers
+# (horses improve/decline/change class); recency tracks CURRENT ability and matches how the market
+# weights recent runs. See hkjc.model.features.recency_form_table.
+FORM_HALF_LIFE = float(os.environ.get("FORM_HALF_LIFE", "2.0"))
+
+# SHRINK_MULT: multiplier on the per-horse sectional v_c empirical-Bayes residual. The knob scan
+# showed the sectional v_c is slightly OVER-trusted at 1.0; 0.5 is the peak (career and recency
+# scans agree), 0.0 (dropping it) costs only ~0.8pp — the sectional energetics barely earns its
+# keep for win once form+rating are in. Baked 0.5.
+SHRINK_MULT = float(os.environ.get("SHRINK_MULT", "0.5"))
+
 FORM_GAIN = float(os.environ.get("FORM_GAIN", "4.0"))
 SPEED_NOISE = float(os.environ.get("SPEED_NOISE", "0.12"))
 JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "5.0"))
 PACE_GAIN = float(os.environ.get("PACE_GAIN", "0.0"))
 W_PRIME_GAIN = float(os.environ.get("W_PRIME_GAIN", "2.0"))
-# SIM selects the win-probability simulator:
-#   "kinematic" — the calibrated traffic_jax sim (v = min(target, traffic cap)); no mass term.
-#   "eom"       — the power-balance EOM (hkjc.model.eom): mass enters every term via Newton's law
-#                 (locomotion cost, inertia, reserve energy, drag), the most first-principles path.
-# Default kinematic (the 49%-of-market production calibration); "eom" is the physics migration.
-SIM = os.environ.get("SIM", "kinematic")
+# SIM selects the win-probability model:
+#   "wald"      — DEFAULT, the production win model. Finishing time = first-passage of a drift-diffusion
+#                 (Inverse-Gaussian); the principled, first-principles noise law. One physical parameter
+#                 (the diffusion coefficient D); surface-dependent (AWT 2x). ~56% of market.
+#   "pl"        — fast-and-dirty closed-form probe (Plackett-Luce / Gumbel softmax); instant, no sampling.
+#                 Use for wide parameter sweeps; slightly less accurate than wald.
+#   "kinematic" — the JAX traffic sim (car-following + draw geometry). For INTERACTIONS / place+exotic
+#                 pricing only — traffic is low-leverage for WIN, where wald matches it ~35x faster.
+#   "eom"       — the power-balance EOM (inert recorded infra; underperforms for win — see journal).
+# The velocity-multiplicative "probit" mode was dropped (an odd in-between: noise on velocity, not the
+# physical finishing-time observable, and a one-shot draw rather than a diffusion).
+SIM = os.environ.get("SIM", "wald")
 
 # ALLOMETRIC_B: the body-mass power exponent b in p_c = κ·m^b — the ONE physiological constant for
 # how aerobic power scales with muscle mass. Derived from the EOM, not a free gain: v_c =

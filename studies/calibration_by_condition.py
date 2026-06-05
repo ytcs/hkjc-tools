@@ -27,7 +27,7 @@ from hkjc.backtesting.scoring import race_win_log_loss
 from hkjc.model.fit import fit_predict_traffic
 
 CACHE = Path("data_cache")
-SIM = os.environ.get("SIM", "probit")
+SIM = os.environ.get("SIM", "wald")
 SIGMA_T = float(os.environ.get("SIGMA_T", "2.5"))
 
 

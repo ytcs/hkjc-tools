@@ -15,7 +15,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -45,7 +44,7 @@ def collect(df, jky, **kw):
         tr = df.filter(pl.col("date").is_in(fold.train))
         te = df.filter(pl.col("date").is_in(fold.test))
         if tr.height and te.height:
-            parts.append(fit_predict_traffic(tr, te, jky_mean=jky, sim="probit", n_samples=20000, **kw))
+            parts.append(fit_predict_traffic(tr, te, jky_mean=jky, sim="wald", n_samples=20000, **kw))
     return pl.concat(parts)
 
 

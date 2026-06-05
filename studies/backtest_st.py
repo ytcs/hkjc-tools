@@ -18,7 +18,9 @@ from pathlib import Path
 import polars as pl
 
 from hkjc.backtesting import harness, walk_forward_folds
-from hkjc.model.features import form_table, jockey_table, speed_figure_table, style_table
+from hkjc.model.features import (form_table, jockey_table, recency_form_table,
+                                 speed_figure_table, style_table, trainer_table)
+from hkjc.model.constants import FORM_HALF_LIFE
 from hkjc.model.fit import fit_predict_traffic
 
 CACHE = Path("data_cache")
@@ -61,7 +63,12 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
         df = df.with_columns(pl.lit(None, dtype=pl.Utf8).alias("course"))
     df = df.with_columns(pl.col("course").fill_null("A"))
     # leak-free ability features from the library
-    df = df.join(form_table(e, w), on=keys, how="left").with_columns(pl.col("form").fill_null(0.5))
+    # production form = RECENCY (exp-weighted, half-life ~2 races): 48% -> 56% of market over the
+    # career mean. Career form kept as `form_career` for diagnosis/comparison only.
+    df = df.join(form_table(e, w).rename({"form": "form_career"}), on=keys, how="left")
+    df = df.with_columns(pl.col("form_career").fill_null(0.5))
+    df = df.join(recency_form_table(e, w, half_life=FORM_HALF_LIFE).rename({"form_rec": "form"}),
+                 on=keys, how="left").with_columns(pl.col("form").fill_null(0.5))
     sect = pl.read_parquet(CACHE / "sectional_dataset.parquet")
     df = df.join(style_table(sect), on=keys, how="left")
     df = df.with_columns(pl.col("style").fill_null(pl.col("style").mean()))
@@ -69,6 +76,8 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     df = df.join(jockey_table(rr), on=["date", "horse_id"], how="left")
     jky_mean = float(df["jky_sr"].mean())
     df = df.with_columns(pl.col("jky_sr").fill_null(jky_mean))
+    df = df.join(trainer_table(rr), on=["date", "horse_id"], how="left")
+    df = df.with_columns(pl.col("trn_sr").fill_null(float(df["trn_sr"].mean())))
     # declared horse weight (published pre-race -> leak-free), keyed by runner
     bw = (rr.with_columns(pl.col("date").cast(pl.Utf8).str.replace_all("/", "-"),
                           pl.col("HorseNo").cast(pl.Int64, strict=False).alias("runner"),
@@ -102,7 +111,7 @@ def main():
     bend = os.environ.get("BEND")
     bend = float(bend) if bend is not None else None
     wpg = float(os.environ.get("W_PRIME_GAIN", "2.0"))
-    sim = os.environ.get("SIM", "kinematic")
+    sim = os.environ.get("SIM", "wald")
     ab = float(os.environ.get("ALLOMETRIC_B", "1.0"))
 
     def _model(train, test):

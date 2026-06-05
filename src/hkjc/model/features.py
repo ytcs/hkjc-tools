@@ -46,6 +46,29 @@ def form_table(energetics: pl.DataFrame, wpq: pl.DataFrame) -> pl.DataFrame:
                     pl.when(pl.col("form").is_finite()).then(pl.col("form")).alias("form"))
 
 
+def recency_form_table(energetics: pl.DataFrame, wpq: pl.DataFrame,
+                       half_life: float = 2.0) -> pl.DataFrame:
+    """Leak-free EXP-WEIGHTED form (recency) — recent runs weighted more (half-life in races).
+
+    Same relative-finish signal as :func:`form_table` but an exponentially-weighted mean (strictly
+    prior) instead of the flat expanding mean. Tests whether recency adds over the career mean (it
+    helped a bare conditional logit but historically not the ABM, whose rating channel carries recency).
+    """
+    e = energetics.with_columns(_norm_date().alias("date"))
+    w = wpq.with_columns(_norm_date().alias("date"))
+    h = (e.select("date", "venue", "race_no", "runner", "horse_id")
+         .join(w.select("date", "venue", "race_no", "runner", "finish_pos", "field_size"),
+               on=["date", "venue", "race_no", "runner"])
+         .with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"),
+                       (1.0 - (pl.col("finish_pos") - 1) / (pl.col("field_size") - 1)).alias("rf"))
+         .sort(["horse_id", "d"]))
+    h = h.with_columns(
+        pl.col("rf").ewm_mean(half_life=half_life, ignore_nulls=True).over("horse_id").alias("_ewm"))
+    h = h.with_columns(pl.col("_ewm").shift(1).over("horse_id").alias("form_rec"))
+    return h.select("date", "venue", "race_no", "runner",
+                    pl.when(pl.col("form_rec").is_finite()).then(pl.col("form_rec")).alias("form_rec"))
+
+
 def jockey_table(results_rich: pl.DataFrame) -> pl.DataFrame:
     """Leak-free trailing win strike-rate of the jockey riding each horse, keyed (date, horse_id)."""
     rr = (results_rich
@@ -57,6 +80,23 @@ def jockey_table(results_rich: pl.DataFrame) -> pl.DataFrame:
                           / (pl.col("w").cum_count().over("Jockey") - 1)).alias("jky_sr"))
     return rr.select("date", pl.col("HorseID").alias("horse_id"),
                      pl.when(pl.col("jky_sr").is_finite()).then(pl.col("jky_sr")).alias("jky_sr"))
+
+
+def trainer_table(results_rich: pl.DataFrame) -> pl.DataFrame:
+    """Leak-free trailing win strike-rate of the TRAINER of each horse, keyed (date, horse_id).
+
+    The trainer analogue of :func:`jockey_table` — stable form / intent signal (a yard in form,
+    a horse placed to win). Strictly-prior expanding strike rate per trainer.
+    """
+    rr = (results_rich
+          .with_columns(pl.col("date").cast(pl.Utf8).alias("date"),
+                        (pl.col("Pla").cast(pl.Int64, strict=False) == 1).cast(pl.Int8).alias("w"),
+                        pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"))
+          .sort(["Trainer", "d"]))
+    rr = rr.with_columns(((pl.col("w").cum_sum().over("Trainer") - pl.col("w"))
+                          / (pl.col("w").cum_count().over("Trainer") - 1)).alias("trn_sr"))
+    return rr.select("date", pl.col("HorseID").alias("horse_id"),
+                     pl.when(pl.col("trn_sr").is_finite()).then(pl.col("trn_sr")).alias("trn_sr"))
 
 
 def style_table(sectional: pl.DataFrame) -> pl.DataFrame:
