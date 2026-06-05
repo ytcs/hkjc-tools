@@ -5,8 +5,8 @@ import hkjc
 def test_top_level_api():
     for name in [
         "core", "data", "model", "betting",
-        "backtesting", "ledger", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
-        "RaceSimulator", "OddsTickStore", "FeatureStore", "DataSource", "Ledger",
+        "backtesting", "agents", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
+        "RaceSimulator", "OddsTickStore", "FeatureStore", "DataSource", "Journal",
         "pareto_filter", "generate_historical_data",
     ]:
         assert hasattr(hkjc, name), f"hkjc.{name} missing"
@@ -34,9 +34,9 @@ def test_canonical_data_paths():
     assert hkjc.data.live.live_odds is not None
 
 
-def test_eval_and_ledger_modules():
+def test_betting_and_journal_modules():
     import hkjc.betting.clv  # noqa: F401
-    import hkjc.ledger.store  # noqa: F401
+    import hkjc.agents.journal.store  # noqa: F401
 
 
 def test_model_package_paths():
