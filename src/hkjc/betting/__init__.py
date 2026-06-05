@@ -13,7 +13,7 @@ concerns:
 - :mod:`~hkjc.betting.strategy` — the :class:`Strategy` seam: model probs + market →
   stakes. The strategist designs against it; the trading agent executes it.
 
-Per-pool takeout is in :mod:`hkjc.core.hkjc_facts` (and ``docs/HKJC_BETTING_RULES.md``).
+Per-pool takeout is in :mod:`hkjc.core.hkjc_facts` (and ``docs/HKJC_SPECS.md``).
 """
 from . import carryover, carryover_cover, clv, pools, strategy
 from .carryover import (

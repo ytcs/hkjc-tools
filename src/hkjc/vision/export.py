@@ -2,7 +2,7 @@
 
 Export to Parquet (plays with the existing pandas/feature-store stack) + a JSONL
 RaceTrajectory summary. QA's primary check is recovered section times vs HKJC
-published sectionals (already scraped per TRAJECTORY_RESEARCH_PLAN). pandas/pyarrow
+published sectionals (already scraped; see docs/HKJC_DATA.md § trajectory). pandas/pyarrow
 imported lazily; JSON export is stdlib-only.
 """
 from __future__ import annotations

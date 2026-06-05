@@ -2,7 +2,7 @@
 
 This is the control flow only — every stage call lands in a NotImplementedError
 stub. It documents the intended data flow and is import-safe (no heavy deps at
-module load). Run order and recommendation follow docs/trajectory/CV_PIPELINE.md:
+module load). Run order and recommendation follow docs/HKJC_DATA.md (§ trajectory):
 ALWAYS try the upstream position feed first; build CV (Mode B first) only if not.
 """
 from __future__ import annotations

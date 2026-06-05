@@ -39,13 +39,10 @@ Seven packages, one-way dependency graph (each imports only from those below it;
 | `hkjc.vision` | The opt-in, heavy CV trajectory pipeline (lazy deps). |
 | `hkjc.agents` | Orchestration: the three agent prompts (modelling / strategist / trading) and the cross-session `Journal` they communicate through, plus the paper-trade `OpsLog`. |
 
-Docs (the field guides — kept authoritative):
-- [`docs/HKJC_KNOWLEDGE.md`](docs/HKJC_KNOWLEDGE.md) — HKJC data sources, endpoints, gotchas.
-- [`docs/HKJC_DATA_CATALOG.md`](docs/HKJC_DATA_CATALOG.md) — the modern `en-us` site catalog.
-- [`docs/HKJC_BETTING_RULES.md`](docs/HKJC_BETTING_RULES.md) — pools, per-pool takeout, dividends.
-- [`docs/CARRYOVER_RESEARCH_PLAN.md`](docs/CARRYOVER_RESEARCH_PLAN.md) / [`CARRYOVER_STRATEGY.md`](docs/CARRYOVER_STRATEGY.md) — the carryover structural-edge line.
-- [`docs/TRAJECTORY_RESEARCH_PLAN.md`](docs/TRAJECTORY_RESEARCH_PLAN.md) — the video/physics line.
-- [`REFACTOR_PLAN.md`](REFACTOR_PLAN.md) — the package design + migration record.
+Docs (three authoritative field guides):
+- [`docs/THEORY.md`](docs/THEORY.md) — the theory of horse racing: the problem's dimensions (physics, physiology, strategy, interaction, environment, competition, market, stochasticity), how they couple, and where the model sits. The seed of the eventual thesis.
+- [`docs/HKJC_SPECS.md`](docs/HKJC_SPECS.md) — tracks & geometry, going scales, the handicap/competition system, and every betting pool with its takeout, dividend & jackpot/carryover mechanics.
+- [`docs/HKJC_DATA.md`](docs/HKJC_DATA.md) — the complete data surface: GraphQL + server-rendered HTML, every page/feed, the deeply-buried data we don't yet mine, the trajectory verdict, and scraping discipline.
 
 The machine-readable model state (calibration constants + the open residual queue) lives in
 `journal/state/MODEL_STATE.md`.
@@ -104,7 +101,7 @@ j.inbox("strategist")                               # what the strategist should
 prompts.load("modelling")                           # the modelling agent's system prompt
 ```
 
-## Live-data caveats (the hard-won ones; full guide in `docs/HKJC_KNOWLEDGE.md`)
+## Live-data caveats (the hard-won ones; full guide in `docs/HKJC_DATA.md`)
 
 The machine-readable mirror of these is `hkjc.core.hkjc_facts`:
 

@@ -2,8 +2,8 @@
 
 This module is the hard-won "tribal knowledge" about the HKJC data surface and betting
 rules, in one place so a refactor (or a new agent) cannot silently lose it. Prose field
-guides live in ``docs/HKJC_KNOWLEDGE.md`` / ``docs/HKJC_DATA_CATALOG.md`` /
-``docs/HKJC_BETTING_RULES.md``; this file is their executable mirror — import the
+guides live in ``docs/HKJC_SPECS.md`` (tracks/rules/pools) and ``docs/HKJC_DATA.md``
+(the data surface); this file is their executable mirror — import the
 constant instead of hard-coding the magic value at the call site.
 
 Every entry below is a real, verified gotcha that cost time to discover. Read the
@@ -71,7 +71,7 @@ def places_paid(field_size: int) -> int:
 # ----------------------------------------------------------------- pool takeout
 # Takeout is NOT uniform across pools — netting EV against the wrong rate is a real trap.
 # Standard pools ~17.5%; exotics run materially higher (~19.5-25%). Verify against
-# docs/HKJC_BETTING_RULES.md for the authoritative per-pool schedule before sizing bets.
+# docs/HKJC_SPECS.md for the authoritative per-pool schedule before sizing bets.
 TAKEOUT = {
     "WIN": 0.175, "PLA": 0.175, "QIN": 0.175, "QPL": 0.175,
     "FCT": 0.205, "TCE": 0.205, "TRI": 0.250, "FF": 0.250, "QTT": 0.250,

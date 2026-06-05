@@ -2,7 +2,7 @@
 
 Extract per-horse dense track trajectories (d = metres-from-finish, off = lateral
 metres from the inner rail, speed) from race video pixels, to feed the physics
-energetics model (v_c, W'). Design doc: ``docs/trajectory/CV_PIPELINE.md``.
+energetics model (v_c, W'). Design doc: ``docs/HKJC_DATA.md (§ trajectory)``.
 
 Stages: ingest -> detect -> track -> identify -> homography -> project -> export(+qa).
 

@@ -5,7 +5,7 @@ right params: ``racedate`` as **DD/MM/YYYY** and ``RaceNo`` (no ``Racecourse``;
 the date selects the meeting). The wrong format yields an empty "released shortly"
 page. This turns each horse's run from one number (finish time) into a dense
 per-section velocity profile — the foundation for the energetics model (see
-docs/TRAJECTORY_RESEARCH_PLAN.md).
+docs/docs/HKJC_DATA.md).
 
 Output is tidy and keyed to join our canonical (date, race_no, runner) keys.
 Per-section parsing extracts the running **position** and **section time** from
