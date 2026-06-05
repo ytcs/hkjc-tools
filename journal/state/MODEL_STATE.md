@@ -37,30 +37,45 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 
 Current fit: **ST ≈ 49% of market** (49.1% at N=3000 after the W′ bake; was 47.7%). HV not yet re-confirmed at W_PRIME_GAIN=2.0 — **follow-up: run `VENUE=HV studies/backtest_st.py`.** mean |resid| 0.0426.
 
-## ARCHITECTURE (audit finding — the model is a prototype, not gospel)
+## ARCHITECTURE (audit findings — the model is a prototype, not gospel)
 
-**The win model is a PROBIT on log effective-velocity.** Analytically the kinematic sim's winner =
-`argmax(v_target·(1+ε))`, `ε~N(0, speed_noise)` — a probit choice model, temperature = speed_noise.
-A direct probit (`sim="probit"` in `fit.py`, pure numpy) **matches the full traffic sim** for win:
-48.1% full-scale vs the sim's 47.7–49%, at **~35× speed** (full-scale 1932 races in 28s, no geometry
-recompile). The traffic machinery (blocking, bend ground-loss, draw) is confirmed-inert weight for the
-WIN target — consistent with draw/mass/speed-figure all testing low-leverage. **Re-base the calibration
-loop on the probit** (use `studies/quick_eval.py sim="probit"`, full test set affordable); reserve the
-traffic sim for generative exotic pricing (place/trifecta, where ordering + traffic matter). Baked gains
-all sit at interior optima under the probit too (FG4, WPG2, JG5, sn0.12 confirmed).
+**The win model is a drift-diffusion / random-utility choice model.** Each horse is a particle
+`dx_i = v_i·dt + √(2D)·dW_i` (drift = ability v_target, diffusion = D). The winner is the first to reach
+the line — an order statistic of finishing times. Two practical consequences:
 
-## NEXT LEVERS (the saturated ability signals aren't it — structure is)
+- **Fast surrogate (no interactions):** independent finishing times → win probs by argmin. `fit.py`
+  exposes `sim` modes (all pure numpy, ~35× faster than the JAX sim, full test set in ~30s):
+  `probit` (velocity-multiplicative = log-normal time, the in-place model, 48.2%); `wald` (the proper
+  diffusion/first-passage Inverse-Gaussian, 47.7% — ties it); `pl` (closed-form Plackett-Luce / Gumbel,
+  46.4%, gives the full order distribution); `time` (additive Gaussian, worse). **Use the probit/wald
+  surrogate for the WIN-calibration loop** — interactions are confirmed low-leverage for win (draw, mass,
+  speed-figure, traffic all tested inert), so the surrogate matches the full sim (48.1% vs 47.7–49%).
+- **The agent-based sim is NOT replaced.** A purely statistical model (probit/PL/Wald) CANNOT
+  mechanistically represent interactions — blocking, real-time tactics, jockey policy. That is the sim's
+  reason to exist and the physics+game-theory core. The sim is the Monte-Carlo of the SAME many-body
+  drift-diffusion *with* interactions; reserve it for the policy layer and place/exotic pricing.
 
-1. **Noise-model structure — #1.** `speed_noise=0.12` is a single global constant but sets the ENTIRE
-   probability concentration (hence all calibration/ECE). From first principles it should vary: shrink
-   with distance (more sections average out), and depend on field size / going. Now a sub-second probit
-   sweep. Pair with a **calibration-by-condition** diagnostic (ECE within field-size/distance/going
-   buckets) — the residual regression is blind to race-level effects.
+**Noise model:** the in-place velocity-multiplicative noise = log-normal finishing time (correct: time>0);
+the diffusion law (Wald) ties it and is the more principled foundation (one physical diffusion coefficient,
+and the natural substrate for the interaction program). Distance-dependent noise does NOT help (flat best);
+the calibration-by-condition distance gradient was small-sample/AWT noise. Baked gains (FG4, WPG2, JG5,
+sn0.12) all sit at interior optima under the surrogate too.
+
+**Future direction (not now):** stat-mech / condensed-matter machinery for interactions — exclusion
+processes (TASEP) for blocking, active matter for drafting, mean-field games for jockey policy; an
+"interacting Plackett-Luce" with PL as the free theory. See journal 0015.
+
+## NEXT LEVERS (ability signals are saturated; noise/statistical structure is exhausted)
+
+1. **AWT (1650m) is badly miscalibrated — #1 concrete lever.** Calibration-by-condition: 1650m = 13% of
+   market (vs ~48% on turf), confidence ratio 1.92. The turf-calibrated ability/energetics model does not
+   transfer to the all-weather surface (119 ST races; HV has its own AWT volume). A surface-specific
+   calibration. The single clear, localized, high-leverage miss left.
 2. **Critical-power v_c estimator.** Backbone signal estimated crudely (`min` of last-two-section
    velocities, single race). The proper hyperbola `D = v_c·T + W′` across a horse's multi-distance runs
    gives a robust joint v_c/W′ + a per-horse distance curve. Foundational.
-3. **Going×horse affinity** — real physical mechanism, residual-loop-blind (race-level). Needs the
-   calibration-by-condition instrument, not the residual regression.
+3. **Going×horse affinity** — real physical mechanism, residual-loop-blind (race-level). Common goings
+   look ~calibrated; rare soft/wet too sparse to bucket. Lower priority.
 4. **Unused fundamentals (parsimony-gated):** barrier-trial times (direct fitness readout), gear changes,
    trainer form, sire distance/going aptitude. Add only if they move the needle.
 

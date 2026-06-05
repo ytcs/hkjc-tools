@@ -64,6 +64,8 @@ def fit_predict_traffic(
     w_prime_gain: float = W_PRIME_GAIN,
     speedfig_gain: float = 0.0,
     speed_noise: float = SPEED_NOISE,
+    sigma_t: float = 2.5,
+    diff_coef: float = 15.0,
     pace_gain: float = PACE_GAIN,
     bend: float | None = None,
     sim: str = SIM,
@@ -123,6 +125,34 @@ def fit_predict_traffic(
             rng = np.random.default_rng(seed)
             eff = v_target[None, :] * (1.0 + speed_noise * rng.standard_normal((n_samples, g.height)))
             counts = np.bincount(eff.argmax(axis=1), minlength=g.height).astype(float)
+            p = (counts + 1.0) / (n_samples + g.height)
+        elif sim in ("pl", "time"):
+            # Noise on FINISHING TIME (the observable), not velocity. mu_i = D/v_target_i (seconds);
+            # winner = argmin(T_i), T_i = mu_i + eps_i. Standard random-utility / order-statistic theory:
+            #   pl   — Gumbel eps -> Plackett-Luce / multinomial logit, CLOSED FORM softmax(-mu/sigma_t)
+            #          (also gives the full finishing-order distribution for place/exotics, no sim).
+            #   time — Gaussian eps -> Thurstone probit (sampled argmin of mu + sigma_t*Z).
+            # sigma_t is the finishing-time noise in SECONDS (physical/estimable). A fixed sigma_t makes
+            # longer races more decisive automatically (the D/v time-gap grows) — the distance gradient.
+            mu = dist / (vc * (1.0 + np.array(wp) / dist))
+            if sim == "pl":
+                s = np.exp(-(mu - mu.min()) / sigma_t)
+                p = s / s.sum()
+            else:
+                rng = np.random.default_rng(seed)
+                t = mu[None, :] + sigma_t * rng.standard_normal((n_samples, g.height))
+                counts = np.bincount(t.argmin(axis=1), minlength=g.height).astype(float)
+                p = (counts + 1.0) / (n_samples + g.height)
+        elif sim == "wald":
+            # DIFFUSION LAW (the correct standard theory): finishing time = first-passage time of a
+            # drift-diffusion dx = v·dt + √(2D)·dW, which is the INVERSE GAUSSIAN (Wald) distribution —
+            # strictly positive (time can't be negative), with Var(T)=2D·L/v³ (CV ∝ 1/√L) baked in.
+            # One physical parameter: the diffusion coefficient D (m²/s); IG shape λ = L²/(2D).
+            mu = dist / (vc * (1.0 + np.array(wp) / dist))
+            lam = dist * dist / (2.0 * diff_coef)
+            rng = np.random.default_rng(seed)
+            t = rng.wald(np.broadcast_to(mu, (n_samples, g.height)), lam)
+            counts = np.bincount(t.argmin(axis=1), minlength=g.height).astype(float)
             p = (counts + 1.0) / (n_samples + g.height)
         else:
             # mass enters via the EOM's STEADY-STATE law v_c ∝ m^(b−1) (its analytic solution of

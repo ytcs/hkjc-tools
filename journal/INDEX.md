@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-12 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+16 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -16,3 +16,7 @@
 - **0010-speed-figure-form-parked-rank-form-s-pace-class** →all (research/confirmed) [Speed-figure form PARKED; rank-form's pace/class invariance is the feature](entries/0010-speed-figure-form-parked-rank-form-s-pace-class.md) — _speed-figure, form, parsimony, negative-result_
 - **0011-probit-reduction-beats-the-traffic-sim-for-win-p** →all (research/superseded) [PROBIT reduction beats the traffic sim for WIN (prelim, +6pp, 35x faster) -- confound check pending](entries/0011-probit-reduction-beats-the-traffic-sim-for-win-p.md) — _probit, architecture, parsimony, speed, sim_
 - **0012-confirmed-probit-matches-the-traffic-sim-for-win** →all (research/confirmed) [CONFIRMED: probit matches the traffic sim for WIN (48.1% full-scale), 35x faster](entries/0012-confirmed-probit-matches-the-traffic-sim-for-win.md) — _probit, architecture, parsimony, speed, win-model, calibration_
+- **0013-calibration-by-condition-locates-the-next-levers** →all (research/open) [Calibration-by-condition LOCATES the next levers: distance-noise gradient + AWT broken](entries/0013-calibration-by-condition-locates-the-next-levers.md) — _calibration-by-condition, noise-model, distance, awt, diagnostic_
+- **0014-noise-framing-resolved-velocity-mult-log-normal** →all (research/confirmed) [Noise framing resolved: velocity-mult (=log-normal proportional time-noise) wins; statistical model can't do interactions](entries/0014-noise-framing-resolved-velocity-mult-log-normal.md) — _noise-model, finishing-time, plackett-luce, interactions, architecture, parsimony_
+- **0015-future-direction-stat-mech-condensed-matter-mach** →all (research/open) [FUTURE DIRECTION: stat-mech / condensed-matter machinery for the interaction layer](entries/0015-future-direction-stat-mech-condensed-matter-mach.md) — _future-direction, stat-mech, condensed-matter, interactions, mean-field-games, TASEP, plackett-luce, game-theory_
+- **0016-diffusion-law-inverse-gaussian-first-passage-tes** →all (research/confirmed) [Diffusion law (Inverse-Gaussian first-passage) tested: ties the in-place log-normal noise](entries/0016-diffusion-law-inverse-gaussian-first-passage-tes.md) — _diffusion, inverse-gaussian, wald, first-passage, noise-model, unification, foundation_
