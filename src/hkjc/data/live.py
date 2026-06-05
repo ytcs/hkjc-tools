@@ -363,7 +363,7 @@ def _parse_jackpots(meeting: dict) -> pl.DataFrame:
     pool leg) with ``poolInvs`` (today's ``investment`` = gross pool) on
     (oddsType, leg races). For the jackpot pools, ``jackpot`` is the carry-in ``C``
     and ``investment`` is today's gross ``G`` — exactly what the carryover detector
-    (:mod:`hkjc.bets.carryover`) needs.
+    (:mod:`hkjc.betting.carryover`) needs.
     """
     jp_index = {}
     for j in meeting.get("jpEsts") or []:

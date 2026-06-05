@@ -22,12 +22,14 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
+from ..core.hkjc_facts import DEFAULT_TAKEOUT
+
 _KEYS = ["date", "venue", "race", "pool", "selection"]
 
 
 # --------------------------------------------------------------------- implied
 def implied_probabilities(
-    odds, takeout: float = 0.175, normalize: bool = True
+    odds, takeout: float = DEFAULT_TAKEOUT, normalize: bool = True
 ):
     """Convert decimal odds to implied probabilities.
 

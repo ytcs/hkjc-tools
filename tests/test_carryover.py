@@ -1,7 +1,7 @@
 """Tests for the jackpot carryover detector and live jackpot parsing."""
 import math
 
-from hkjc.bets import carryover as co
+from hkjc.betting import carryover as co
 from hkjc.data.live import _parse_jackpots
 
 

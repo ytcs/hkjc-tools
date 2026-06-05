@@ -15,7 +15,7 @@ from typing import Dict, Optional, Union
 
 import polars as pl
 
-from ..bets import carryover as _co
+from ..betting import carryover as _co
 
 CARRYOVER_LEDGER_SCHEMA = {
     "date": pl.Utf8,

@@ -11,7 +11,7 @@ field-size-dependent paying-places rule, and the ``won`` / ``placed`` indicators
 
 Dependency direction: this is data-layer code — it does **not** import the model
 or eval layers, and it computes no edge. (The de-vig used in the market feature is
-a one-liner kept local on purpose, rather than importing ``eval.clv``.)
+a one-liner kept local on purpose, rather than importing ``betting.clv``.)
 """
 from __future__ import annotations
 

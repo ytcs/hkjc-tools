@@ -4,7 +4,7 @@ import hkjc
 
 def test_top_level_api():
     for name in [
-        "core", "data", "model", "bets",
+        "core", "data", "model", "betting",
         "eval", "ledger", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
         "RaceSimulator", "OddsTickStore", "FeatureStore", "DataSource", "Ledger",
         "pareto_filter", "generate_historical_data",
@@ -35,7 +35,7 @@ def test_canonical_data_paths():
 
 
 def test_eval_and_ledger_modules():
-    import hkjc.eval.clv  # noqa: F401
+    import hkjc.betting.clv  # noqa: F401
     import hkjc.ledger.store  # noqa: F401
 
 

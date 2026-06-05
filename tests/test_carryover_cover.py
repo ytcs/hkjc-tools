@@ -3,7 +3,7 @@ from math import comb
 
 import numpy as np
 
-from hkjc.bets import carryover_cover as cc
+from hkjc.betting import carryover_cover as cc
 from hkjc.model import PlackettLuceModel
 from hkjc.core.simulation import RaceSimulator
 

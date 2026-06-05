@@ -4,7 +4,7 @@ import datetime as dt
 import numpy as np
 import polars as pl
 
-from hkjc.eval import clv
+from hkjc.betting import clv
 
 
 def test_implied_probabilities_sum_to_one_and_devig():

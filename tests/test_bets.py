@@ -2,7 +2,7 @@
 import numpy as np
 import polars as pl
 
-from hkjc.bets import pools
+from hkjc.betting import pools
 from hkjc.model import PlackettLuceModel
 from hkjc.core.simulation import RaceSimulator
 
