@@ -37,24 +37,41 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 
 Current fit: **ST ≈ 49% of market** (49.1% at N=3000 after the W′ bake; was 47.7%). HV not yet re-confirmed at W_PRIME_GAIN=2.0 — **follow-up: run `VENUE=HV studies/backtest_st.py`.** mean |resid| 0.0426.
 
-## OPEN RESIDUAL QUEUE (re-measured at FORM_GAIN=4, W_PRIME_GAIN=2.0)
+## ARCHITECTURE (audit finding — the model is a prototype, not gospel)
 
-1. **`bodywt` (mass) UNDER-weighted — t = +8.6 — #1 actionable.**
-   Market prices body mass. The single-sourced EOM (`hkjc.model.eom`, used by `DynamicsRaceModel`)
-   now carries mass (`v_c = p_c/(K_LOCO·m·g)`) — but PRODUCTION (`fit.py` → `traffic_jax.win_probs`,
-   kinematic) does NOT. Next mechanism: wire race-day mass into the production win-prob path and
-   recalibrate. A real coupling, not a flat additive bodywt term. Verify it's mass, not a class proxy.
+**The win model is a PROBIT on log effective-velocity.** Analytically the kinematic sim's winner =
+`argmax(v_target·(1+ε))`, `ε~N(0, speed_noise)` — a probit choice model, temperature = speed_noise.
+A direct probit (`sim="probit"` in `fit.py`, pure numpy) **matches the full traffic sim** for win:
+48.1% full-scale vs the sim's 47.7–49%, at **~35× speed** (full-scale 1932 races in 28s, no geometry
+recompile). The traffic machinery (blocking, bend ground-loss, draw) is confirmed-inert weight for the
+WIN target — consistent with draw/mass/speed-figure all testing low-leverage. **Re-base the calibration
+loop on the probit** (use `studies/quick_eval.py sim="probit"`, full test set affordable); reserve the
+traffic sim for generative exotic pricing (place/trifecta, where ordering + traffic matter). Baked gains
+all sit at interior optima under the probit too (FG4, WPG2, JG5, sn0.12 confirmed).
 
-2. **`v_c` OVER- / `w_prime` UNDER- (t −7.0 / +6.4) — residual ability rebalance.**
-   The W′ bake halved this but didn't zero it. A further small W′ push or a slight FORM/v_c trim could
-   help — but diminishing returns and W′ is noisy. Lower priority than mass.
+## NEXT LEVERS (the saturated ability signals aren't it — structure is)
 
-### Falsified / low-leverage (do not re-litigate)
-- **`draw` OVER-weighted t≈−17.5 is NOT bend_curvature-fixable.** Subsample sweep nominated 0.0030 but
-  full-scale gave 47.9% vs 0.0037's 47.7% (within noise), ECE worse; %market is flat over bend in
-  [0.003,0.005]. The draw residual is real but **low-leverage** (it shifts mid-pack mass, not the
-  winner's prob, which dominates %market). A high |t| ≠ high leverage — prioritise by *winner* impact.
-  Possible real fix later: a draw×distance/field interaction, not the flat bend constant.
+1. **Noise-model structure — #1.** `speed_noise=0.12` is a single global constant but sets the ENTIRE
+   probability concentration (hence all calibration/ECE). From first principles it should vary: shrink
+   with distance (more sections average out), and depend on field size / going. Now a sub-second probit
+   sweep. Pair with a **calibration-by-condition** diagnostic (ECE within field-size/distance/going
+   buckets) — the residual regression is blind to race-level effects.
+2. **Critical-power v_c estimator.** Backbone signal estimated crudely (`min` of last-two-section
+   velocities, single race). The proper hyperbola `D = v_c·T + W′` across a horse's multi-distance runs
+   gives a robust joint v_c/W′ + a per-horse distance curve. Foundational.
+3. **Going×horse affinity** — real physical mechanism, residual-loop-blind (race-level). Needs the
+   calibration-by-condition instrument, not the residual regression.
+4. **Unused fundamentals (parsimony-gated):** barrier-trial times (direct fitness readout), gear changes,
+   trainer form, sire distance/going aptitude. Add only if they move the needle.
+
+### Parked — real residual but LOW-LEVERAGE (do not re-litigate)
+A high |t| residual ≠ a useful lever; what matters is impact on the WINNER's probability (which dominates
+%market). The high-leverage lever this session was W′ (+1.4pp). These are real but inert on win:
+- **`draw`** (t≈−17.5): not bend_curvature-fixable (full-scale 47.9% vs 47.7%, flat ridge, ECE worse).
+- **`bodywt`/mass** (t=+8.6, confirmed real, survives class/rating): steady-state allometric law
+  `v_c·(m/m̄)^(b−1)` — optimum b=1 (isometric, no net effect); coupling it only hurts. Full power-balance
+  EOM also underperforms the kinematic sim by ~1.4 nats (kept as inert `SIM="eom"` infra).
+- **speed-figure form** (velocity vs par): worse than rank-form, which already normalises pace+class.
 
 ## Methodology caveats
 

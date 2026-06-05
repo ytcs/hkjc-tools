@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-9 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+12 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -13,3 +13,6 @@
 - **0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go** →all (research/open) [Scrutiny of v_c regressors: form is lossy (rank), going is a blind spot](entries/0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go.md) — _scrutiny, form, speed-figure, going, critical-power, methodology, v_c_
 - **0008-full-power-balance-eom-underperforms-kinematic-b** →all (research/open) [Full power-balance EOM underperforms kinematic by ~1.4 nats/race (win-prob)](entries/0008-full-power-balance-eom-underperforms-kinematic-b.md) — _eom, mass, allometric, negative-result, physics-migration, steady-state_
 - **0009-mass-coupling-parked-real-residual-but-low-lever** →all (research/confirmed) [Mass coupling PARKED -- real residual but low-leverage (b=1 isometric optimal)](entries/0009-mass-coupling-parked-real-residual-but-low-lever.md) — _mass, allometric, parsimony, low-leverage, negative-result_
+- **0010-speed-figure-form-parked-rank-form-s-pace-class** →all (research/confirmed) [Speed-figure form PARKED; rank-form's pace/class invariance is the feature](entries/0010-speed-figure-form-parked-rank-form-s-pace-class.md) — _speed-figure, form, parsimony, negative-result_
+- **0011-probit-reduction-beats-the-traffic-sim-for-win-p** →all (research/superseded) [PROBIT reduction beats the traffic sim for WIN (prelim, +6pp, 35x faster) -- confound check pending](entries/0011-probit-reduction-beats-the-traffic-sim-for-win-p.md) — _probit, architecture, parsimony, speed, sim_
+- **0012-confirmed-probit-matches-the-traffic-sim-for-win** →all (research/confirmed) [CONFIRMED: probit matches the traffic sim for WIN (48.1% full-scale), 35x faster](entries/0012-confirmed-probit-matches-the-traffic-sim-for-win.md) — _probit, architecture, parsimony, speed, win-model, calibration_

@@ -115,6 +115,15 @@ def fit_predict_traffic(
             p = dynamics.win_probs(vc, np.array(wp), mass, draw, dist, allometric_b=allometric_b,
                                    track=geom, course=course, size=n_samples,
                                    bend_curvature=bend_curv, speed_noise=speed_noise, seed=seed)
+        elif sim == "probit":
+            # No-traffic reduction: winner = argmax(v_target·(1+ε)), ε~N(0, speed_noise). This is
+            # the probit choice model the kinematic sim reduces to once draw/traffic (low-leverage)
+            # are dropped — ~1000x faster. Tests whether the sim earns its keep for WIN prediction.
+            v_target = vc * (1.0 + np.array(wp) / dist)
+            rng = np.random.default_rng(seed)
+            eff = v_target[None, :] * (1.0 + speed_noise * rng.standard_normal((n_samples, g.height)))
+            counts = np.bincount(eff.argmax(axis=1), minlength=g.height).astype(float)
+            p = (counts + 1.0) / (n_samples + g.height)
         else:
             # mass enters via the EOM's STEADY-STATE law v_c ∝ m^(b−1) (its analytic solution of
             # v_c = p_c/(K_LOCO·m·g) with allometric p_c = κ·m^b) — first-principles, field-relative.
