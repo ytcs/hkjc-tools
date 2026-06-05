@@ -4,7 +4,7 @@ import hkjc
 
 def test_top_level_api():
     for name in [
-        "core", "data", "harville_model", "model", "bets",
+        "core", "data", "model", "bets",
         "eval", "ledger", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
         "RaceSimulator", "OddsTickStore", "FeatureStore", "DataSource", "Ledger",
         "pareto_filter", "generate_historical_data",
@@ -43,5 +43,8 @@ def test_model_package_paths():
     import hkjc.model.plackett_luce
     import hkjc.model.conditional_logit
     import hkjc.model.baselines
+    import hkjc.model.calibration
+    import hkjc.model.harville_model
+    import hkjc.model.eom
     # RaceModel contract now lives in core; the model package re-exports it.
     assert hkjc.model.RaceModel is hkjc.core.contracts.RaceModel

@@ -1,9 +1,16 @@
-"""Tests for the power-balance equation-of-motion core (mechanistic successor)."""
-import numpy as np
+"""Tests for the power-balance equation-of-motion core (mechanistic successor).
 
-from hkjc.model.dynamics import G, K_LOCO, DynamicsRaceModel
-from hkjc.core.simulation import RaceSimulator
-from hkjc.core.track import SHA_TIN_TURF
+The EOM integrates under JAX (the single canonical implementation), so these run only
+with the bayes stack: ``uv run --group bayes pytest``.
+"""
+import numpy as np
+import pytest
+
+pytest.importorskip("jax")
+
+from hkjc.model.dynamics import G, K_LOCO, DynamicsRaceModel  # noqa: E402
+from hkjc.core.simulation import RaceSimulator  # noqa: E402
+from hkjc.core.track import SHA_TIN_TURF  # noqa: E402
 
 
 def _rng():

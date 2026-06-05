@@ -1,6 +1,6 @@
 """Model layer — turn inputs into a swappable :class:`RaceModel`.
 
-- :class:`~hkjc.model.base.RaceModel` — the contract (``sample_orders``).
+- The :class:`RaceModel` contract (``sample_orders``) lives in :mod:`hkjc.core.contracts`.
 - :class:`~hkjc.model.plackett_luce.PlackettLuceModel` — reference impl; the
   Harville-on-odds *baseline to beat*.
 - :class:`~hkjc.model.conditional_logit.ConditionalLogit` — results-trained win
@@ -9,13 +9,18 @@
 - :mod:`~hkjc.model.baselines` — market / uniform predictors as honest references.
 - :mod:`~hkjc.model.energetics` — first-principles critical-velocity engine +
   generative `EnergeticsRaceModel`.
-- :mod:`~hkjc.model.traffic` — Tier-A interacting traffic-flow model (draw geometry
-  + car-following) over the :mod:`hkjc.track` geometry.
-- :mod:`~hkjc.model.dynamics` — the mechanistic core: a power-balance equation of
-  motion (mass, metabolic power, drag/drafting, reserve depletion) into which every
-  factor couples as a real term. Reduces to the energetics model when drag is off.
+- :mod:`~hkjc.model.eom` — the single canonical power-balance equation of motion (JAX);
+  mass, metabolic power, drag/drafting, reserve depletion as real terms.
+- :mod:`~hkjc.model.dynamics` — the :class:`DynamicsRaceModel` wrapper over the EOM.
+- :mod:`~hkjc.model.traffic` / :mod:`~hkjc.model.traffic_jax` — the calibrated kinematic
+  interacting traffic sim (draw geometry + car-following); the production win-prob sim.
+- :mod:`~hkjc.model.features` — leak-free ability features (form, jockey, style).
+- :mod:`~hkjc.model.fit` — the leak-free fit→predict pipeline (the production model).
+- :mod:`~hkjc.model.constants` — baked calibration gains (FORM_GAIN, SPEED_NOISE, …).
+- :mod:`~hkjc.model.calibration` — empirical-Bayes population fit + bend-curvature grid.
 """
 from ..core.contracts import RaceModel
+from . import constants, features, fit
 from .plackett_luce import PlackettLuceModel
 from .conditional_logit import ConditionalLogit, conditional_logit_fit_predict
 from .baselines import market_baseline_fit_predict, uniform_fit_predict
@@ -29,4 +34,5 @@ __all__ = [
     "market_baseline_fit_predict", "uniform_fit_predict",
     "EnergeticsRaceModel", "estimate_run_energetics", "section_distances",
     "TrafficRaceModel", "DynamicsRaceModel",
+    "constants", "features", "fit",
 ]

@@ -29,12 +29,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..core.track import HAPPY_VALLEY, TrackGeometry
 from ..core.contracts import RaceModel
-
-G = 9.81            # m/s²
-RHO = 1.2           # air density, kg/m³
-K_LOCO = 0.10       # cost-of-transport coefficient (net propulsive force per unit weight)
+from ..core.track import HAPPY_VALLEY, TrackGeometry
+from .eom import G, K_LOCO, RHO, integrate_jax  # noqa: F401  (G/K_LOCO/RHO re-exported for callers)
 
 
 class DynamicsRaceModel(RaceModel):
@@ -84,8 +81,10 @@ class DynamicsRaceModel(RaceModel):
         wdist = np.clip(self.w_reserve / self._floco, 0.0, 0.6 * self.distance)  # reserve as distance
         self.v_target = self.v_c / (1.0 - wdist / self.distance)   # even-pace optimum
         self.off0 = np.clip((draw - 1.0) * lane_sep, 0.0, max(track.width(course) - 1.0, lane_sep))
-        self._bends = np.array(track.bend_segments, float)
-        self._circ = track.circumference
+        bends = track.bend_segments or ()
+        self._bend_lo = tuple(float(a) for a, _ in bends)
+        self._bend_hi = tuple(float(b) for _, b in bends)
+        self._circ = float(track.circumference)
 
     @classmethod
     def from_kinematic(cls, v_c, w_prime, mass, draw, distance, **kw):
@@ -96,81 +95,26 @@ class DynamicsRaceModel(RaceModel):
         return cls(p_c=floco * v_c, w_reserve=floco * np.asarray(w_prime, float),
                    mass=mass, draw=draw, distance=distance, **kw)
 
-    def _is_bend(self, d_from_finish):
-        dm = np.mod(d_from_finish, self._circ)
-        out = np.zeros(dm.shape, bool)
-        for a, b in self._bends:
-            out |= (dm >= a) & (dm < b)
-        return out
-
     def sample_orders(self, size: int, rng: np.random.Generator) -> np.ndarray:
         return np.argsort(self.finish_times(size, rng), axis=1).astype(np.int64)
 
     def finish_times(self, size: int, rng: np.random.Generator) -> np.ndarray:
-        """Integrate the EOM for ``size`` samples; return finishing times ``(size, n)`` (s)."""
-        n, dist, dt = self.n, self.distance, self.dt
-        m = self.mass[None, :]
-        floco = self._floco[None, :]
-        p_c = self.p_c[None, :]
-        p_an_max = p_c                                              # anaerobic ≤ aerobic ceiling
-        v_tgt0 = np.tile(self.v_target, (size, 1)) * (1.0 + self.speed_noise * rng.standard_normal((size, n)))
-        pb = (self.pace_gain * self.pace_bias)[None, :]            # per-horse early/late tilt
-        if self.kick_frac is not None:                            # kick-policy hold/kick targets
-            _kn = 1.0 + self.speed_noise * rng.standard_normal((size, n))
-            v_hold = np.tile(self.v_c, (size, 1)) * _kn
-            v_kick = v_hold * (1.0 + self.kick_overspeed)
-            kf = self.kick_frac[None, :]
-        v = np.tile(self.v_c, (size, 1)).astype(float)             # break at sustainable speed
-        s = np.zeros((size, n))
-        off = np.tile(self.off0, (size, 1)).astype(float)
-        w_bal = np.tile(self.w_reserve, (size, 1)).astype(float)
-        finish_t = np.full((size, n), np.inf)
-        t = 0.0
-        for _ in range(self.max_steps):
-            t += dt
-            live = finish_t == np.inf
-            if not live.any():
-                break
-            on_bend = self._is_bend(dist - s)
-            if self.kick_frac is None:
-                # tactical tilt: front-load (>0) or conserve (<0) speed by race progress
-                v_tgt = v_tgt0 * (1.0 + pb * (1.0 - 2.0 * np.clip(s / dist, 0.0, 1.0)))
-            else:
-                # kick feedback: hold at v_c, then dump W′ inside kick_frac·D of the finish
-                v_tgt = np.where((dist - s) <= kf * dist, v_kick, v_hold)
-            # --- traffic: car-following velocity cap + drafting (drag relief) ---
-            si, sj = s[:, :, None], s[:, None, :]
-            oi, oj = off[:, :, None], off[:, None, :]
-            gap = sj - si
-            same_lane = np.abs(oj - oi) < self.lane_band
-            blocking = (gap > 0) & (gap < self.follow_gap) & same_lane
-            vj = np.broadcast_to(v[:, None, :], blocking.shape)
-            v_cap = np.where(blocking, vj, np.inf).min(axis=2)
-            drafting = blocking.any(axis=2)                        # someone just ahead in lane
-            v_goal = np.minimum(v_tgt, v_cap)
-            # --- power balance ---
-            draft_relief = np.where(drafting, self.draft, 0.0)
-            f_drag = 0.5 * RHO * self.cda * v * v * (1.0 - draft_relief)
-            a_des = (v_goal - v) / self.tau
-            p_need = (floco + f_drag + m * a_des) * np.maximum(v, 1.0)
-            p_avail = p_c + np.where(w_bal > 0, p_an_max, 0.0)
-            p = np.clip(p_need, 0.0, p_avail)
-            f_prop = p / np.maximum(v, 1.0)
-            a = (f_prop - floco - f_drag) / m
-            v = np.maximum(0.5, v + a * dt)
-            w_bal = np.maximum(0.0, w_bal - np.maximum(p - p_c, 0.0) * dt)
-            # --- lateral: blocked move out, else drift to rail ---
-            blocked = v_cap < v_tgt - 1e-9
-            move_out = blocked & (rng.random((size, n)) < self.lane_change_prob)
-            off = off + move_out * self.lane_step
-            drift_in = (~blocked) & (off > 0)
-            off = np.maximum(0.0, off - drift_in * 0.3 * self.lane_step)
-            # --- advance with bend ground-loss; interpolate finish ---
-            ground = 1.0 + off * self.bend_curvature * on_bend
-            ds = np.where(live, v * dt / ground, 0.0)
-            s_new = s + ds
-            crossed = live & (s_new >= dist)
-            frac = np.where(crossed, (dist - s) / np.maximum(ds, 1e-9), 1.0)
-            finish_t = np.where(crossed, t - dt + frac * dt, finish_t)
-            s = np.minimum(s_new, dist)
-        return np.where(finish_t == np.inf, t + (dist - s), finish_t)
+        """Integrate the canonical EOM for ``size`` samples; return finishing times ``(size, n)`` (s).
+
+        Delegates to :func:`hkjc.model.eom.integrate_jax` — the single source for the
+        mass-aware power-balance dynamics. ``rng`` only supplies the JAX PRNG seed (the
+        sampling itself runs under ``jax.random``), so results are reproducible per seed.
+        """
+        seed = int(rng.integers(0, 2**31 - 1))
+        return integrate_jax(
+            size, seed,
+            v_c=self.v_c, v_target=self.v_target, w_reserve=self.w_reserve,
+            p_c=self.p_c, floco=self._floco, mass=self.mass, off0=self.off0,
+            kick=self.kick_frac is not None, kick_frac=self.kick_frac,
+            kick_overspeed=self.kick_overspeed, pace_bias=self.pace_bias,
+            pace_gain=self.pace_gain, speed_noise=self.speed_noise,
+            cda=self.cda, draft=self.draft, tau=self.tau, dist=self.distance,
+            follow_gap=self.follow_gap, lane_band=self.lane_band,
+            lane_change_prob=self.lane_change_prob, lane_step=self.lane_step,
+            bend_curvature=self.bend_curvature, bend_lo=self._bend_lo,
+            bend_hi=self._bend_hi, circ=self._circ, dt=self.dt, max_steps=self.max_steps)

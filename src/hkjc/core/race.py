@@ -104,7 +104,7 @@ class Race:
         from the runners (sectional energetics) unless overridden, falling back to
         equal-ability defaults for a pure draw-geometry study.
         """
-        from ..calibration import CALIBRATED_BEND_CURVATURE
+        from ..model.calibration import CALIBRATED_BEND_CURVATURE
         from ..model.traffic import TrafficRaceModel
         if "bend_curvature" not in kwargs and self.venue in CALIBRATED_BEND_CURVATURE:
             kwargs["bend_curvature"] = CALIBRATED_BEND_CURVATURE[self.venue]

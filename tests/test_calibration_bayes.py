@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("numpyro")
 
-from hkjc.calibration_bayes import fit_energetics_bayes, horse_table_bayes  # noqa: E402
+from hkjc.model.calibration_bayes import fit_energetics_bayes, horse_table_bayes  # noqa: E402
 
 
 def _synth(n_horses=200, slope=0.03, tau=0.3, sigma=0.6, seed=0):

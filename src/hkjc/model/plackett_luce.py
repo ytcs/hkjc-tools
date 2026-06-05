@@ -45,7 +45,7 @@ class PlackettLuceModel(RaceModel):
 
     @classmethod
     def from_harville_fit(cls, fit: dict) -> "PlackettLuceModel":
-        """Build from the dict returned by :func:`hkjc.harville_model.fit_harville_to_odds`."""
+        """Build from the dict returned by :func:`hkjc.model.harville_model.fit_harville_to_odds`."""
         return cls(fit["prob_fit"]["theta"])
 
     @classmethod
@@ -55,13 +55,13 @@ class PlackettLuceModel(RaceModel):
         Args:
             odds: Dict of decimal-odds arrays keyed by pool type
                 (``'WIN'``, ``'PLA'``, ``'QIN'``, ``'QPL'``).
-            **fit_kwargs: Forwarded to :func:`hkjc.harville_model.fit_harville_to_odds`
+            **fit_kwargs: Forwarded to :func:`hkjc.model.harville_model.fit_harville_to_odds`
                 (e.g. ``lambdas``, ``takeout_rate``).
 
         Raises:
             RuntimeError: If the Harville fit fails to converge.
         """
-        from ..harville_model import fit_harville_to_odds
+        from .harville_model import fit_harville_to_odds
 
         fit = fit_harville_to_odds(odds, **fit_kwargs)
         if not fit["success"]:

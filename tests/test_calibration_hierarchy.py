@@ -2,7 +2,7 @@
 import numpy as np
 import polars as pl
 
-from hkjc.calibration import (RaceConfig, bend_posterior, distance_band,
+from hkjc.model.calibration import (RaceConfig, bend_posterior, distance_band,
                               empirical_draw_curve, fit_energetics_population,
                               fit_random_effects, horse_energetics,
                               horse_energetics_trailing)

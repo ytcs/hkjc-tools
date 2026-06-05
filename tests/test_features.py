@@ -1,0 +1,49 @@
+"""The extracted leak-free ability features compute strictly-prior means (no leakage)."""
+import polars as pl
+
+from hkjc.model.features import form_table, jockey_table, style_table
+
+
+def test_form_is_strictly_prior_expanding_mean():
+    # one horse, three dated runs: form on run k must use only runs < k.
+    e = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-08", "2025-01-15"],
+        "venue": ["ST"] * 3, "race_no": [1, 1, 1], "runner": [1, 1, 1],
+        "horse_id": ["H1"] * 3,
+    })
+    w = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-08", "2025-01-15"],
+        "venue": ["ST"] * 3, "race_no": [1, 1, 1], "runner": [1, 1, 1],
+        "finish_pos": [1, 5, 1], "field_size": [5, 5, 5],
+    })
+    out = form_table(e, w).sort("date")
+    forms = out["form"].to_list()
+    # rf = 1 - (pos-1)/(field-1): run1 rf=1.0, run2 rf=0.0, run3 rf=1.0
+    assert forms[0] is None                 # debut: no prior
+    assert abs(forms[1] - 1.0) < 1e-9       # prior = {run1 rf=1.0}
+    assert abs(forms[2] - 0.5) < 1e-9       # prior = mean(1.0, 0.0)
+
+
+def test_jockey_strike_rate_is_prior_only():
+    rr = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-08", "2025-01-15"],
+        "Jockey": ["J1"] * 3, "HorseID": ["H1", "H2", "H3"], "Pla": [1, 2, 1],
+    })
+    out = jockey_table(rr).sort("date")
+    sr = out["jky_sr"].to_list()
+    assert sr[0] is None                    # first ride: no prior
+    assert abs(sr[1] - 1.0) < 1e-9          # prior {win} -> 1.0
+    assert abs(sr[2] - 0.5) < 1e-9          # prior {win, loss} -> 0.5
+
+
+def test_style_trailing_mean_prior_only():
+    s = pl.DataFrame({
+        "date": ["01/01/2025", "08/01/2025", "15/01/2025"],
+        "venue": ["ST"] * 3, "race_no": [1, 1, 1], "runner": [1, 1, 1],
+        "horse_id": ["H1"] * 3, "rel_early": [0.2, 0.4, 0.9],
+    })
+    out = style_table(s).sort("date")
+    st = out["style"].to_list()
+    assert st[0] is None
+    assert abs(st[1] - 0.2) < 1e-9
+    assert abs(st[2] - 0.3) < 1e-9          # mean(0.2, 0.4)

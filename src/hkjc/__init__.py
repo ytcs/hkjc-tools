@@ -27,7 +27,7 @@ Canonical import paths live under their concern, e.g. ``hkjc.data.live``,
 from importlib.metadata import version as _version
 
 __all__ = [
-    "core", "data", "harville_model", "model", "bets", "eval", "ledger", "calibration",
+    "core", "data", "model", "bets", "eval", "ledger",
     "RaceModel", "PlackettLuceModel", "ConditionalLogit", "RaceSimulator",
     "Race", "Runner", "TrackGeometry", "track_for", "TRACKS",
     "OddsTickStore", "FeatureStore", "DataSource", "Ledger", "pareto_filter",
@@ -39,7 +39,7 @@ try:
 except Exception:  # pragma: no cover - best-effort version resolution
     __version__ = "0.0.0"
 
-from . import core, data, harville_model, model, bets, eval, ledger, calibration
+from . import core, data, model, bets, eval, ledger
 from .core import (Race, Runner, RaceModel, RaceSimulator, TrackGeometry,
                    track_for, TRACKS, DataSource, pareto_filter)
 from .data import OddsTickStore, FeatureStore

@@ -47,6 +47,6 @@ ignore = ["E501"]   # long lines (mostly docstrings / GraphQL payloads) aren't w
 
 [tool.ruff.lint.per-file-ignores]
 # Numerical / ML kernels use mathematical notation (X, N, P, W_obs, G, ...).
-"src/hkjc/harville_model.py" = ["N803", "N806"]
+"src/hkjc/model/harville_model.py" = ["N803", "N806"]
 "src/hkjc/model/conditional_logit.py" = ["N803", "N806"]
 "tests/test_conditional_logit.py" = ["N806"]   # X = design matrix, mirrors the kernel

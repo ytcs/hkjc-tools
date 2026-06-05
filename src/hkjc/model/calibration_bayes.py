@@ -1,6 +1,6 @@
 """Full hierarchical-Bayes energetics fit via NumPyro (the rigorous Layer-1 sibling).
 
-:mod:`hkjc.calibration` fits the energetics hierarchy in closed form (empirical Bayes:
+:mod:`hkjc.model.calibration` fits the energetics hierarchy in closed form (empirical Bayes:
 the variance components are point-estimated, then plugged in). This module fits the
 *same* model with NumPyro/NUTS — a proper hierarchical Bayesian regression that puts
 priors on the hyperparameters and returns full **posteriors** (so the rating slope,

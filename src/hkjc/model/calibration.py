@@ -274,8 +274,8 @@ class RaceConfig:
 def _p_winner(cfg: RaceConfig, bend_curvature: float, speed_noise: float,
               n_samples: int, rng: np.random.Generator) -> float:
     """Model probability the realised winner wins, at a candidate bend_curvature."""
-    from .model.traffic import TrafficRaceModel
-    from .core.track import track_for
+    from .traffic import TrafficRaceModel
+    from ..core.track import track_for
     geom = track_for(cfg.venue, cfg.distance, cfg.surface)
     m = TrafficRaceModel(cfg.v_c, cfg.w_prime, cfg.draws, cfg.distance,
                          track=geom, course=cfg.course,
@@ -296,8 +296,8 @@ def bend_loglik(configs: list[RaceConfig], bend_grid: np.ndarray,
     """
     bend_grid = np.asarray(bend_grid)
     if backend == "jax":
-        from .model.traffic_jax import win_prob_grid
-        from .core.track import track_for
+        from .traffic_jax import win_prob_grid
+        from ..core.track import track_for
         ll = np.zeros(len(bend_grid))
         for i, c in enumerate(configs):
             geom = track_for(c.venue, c.distance, c.surface)
