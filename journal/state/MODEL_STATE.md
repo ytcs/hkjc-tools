@@ -30,8 +30,8 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | Constant | Value | Where | Note |
 |---|---|---|---|
 | **`FORM_HALF_LIFE`** | **2.0 races** | `hkjc.model.constants` | **THE production form is RECENCY-weighted (exp), not the career mean. +7.8pp — the biggest single lever.** Clean half-life optimum at ~2 (career=∞ worst). Career form stale over long HK careers; recency tracks current ability + matches market weighting. `features.recency_form_table`. |
-| **`DRAW_GAIN`** | **0.003** | `hkjc.model.constants` | **Bend ground-loss re-added to the wald/pl drift: `L_eff = dist·(1+DRAW_GAIN·(draw−1))`. Production wald had NO draw term (it lived only in the kinematic sim, dropped at the wald switch) — re-diagnosis flagged draw as the #1 residual (t=−26.5). +1.9pp (56→58%); collapsed the residual to t=−1.5. Calibrated magnitude matches the geometric arc-length scale.** |
-| `FORM_GAIN` | **5.0** | `hkjc.model.constants` | Form coupling; RECALIBRATED 4→5 at the recency baseline (recency form is sharper/higher-variance than career, flipped form back to under-weighted t=+11.4). Clean optimum at 5 (+0.9pp); 6–7 fall off fast. |
+| **`DRAW_GAIN_BY_VENUE`** | **ST 0.003 / HV 0.008** | `hkjc.model.constants` | **Bend ground-loss in the wald/pl drift: `L_eff = dist·(1+DRAW_GAIN·(draw−1))`. Re-added to wald (+1.9pp ST) then made PER-VENUE: it's geometric, so HV (bend-dominated, strongest HK draw bias) wants ~2.7× ST. HV was massively UNDER-penalised by the global 0.003. fit.py ZEROES it on the ST-1000m straight chute (no bends). SIGN LESSON: a subagent read the HV residual as "over-weighted→set 0"; the sweep proved the opposite (0 craters HV to 41%) — always sweep.** |
+| **`FORM_GAIN_BY_VENUE`** | **ST 5.0 / HV 4.0** | `hkjc.model.constants` | Form coupling, now PER-VENUE. ST recalibrated 4→5 at the recency baseline (+0.9pp). HV wants LOWER (4.0) — HV form was over-weighted (residual t=−13.7 vs ST −8.4). Resolved per-race; an explicit `form_gain` arg overrides (for sweeps). |
 | `SHRINK_MULT` | **0.5** | `hkjc.model.constants` | Multiplier on the sectional v_c EB residual — it was OVER-trusted at 1.0 (peak 0.5 in both career+recency scans; dropping it, 0.0, costs only ~0.8pp — the sectional energetics barely earns its keep for win). |
 | `W_PRIME_GAIN` | **1.0** | `hkjc.model.constants` | Stamina coupling; REVERTED 2→1 at the recency baseline. Recency form ABSORBED the reserve signal — re-diagnosis flipped W′ to over-weighted (t=−8.95). Win-prob impact flat over 0–2 (W′ is a margin effect); parsimony + residual sign both say revert to the un-amplified EB estimate. |
 | `JOCKEY_GAIN` | 5.0 | `hkjc.model.constants` | Jockey trip/ability coupling. Held under recency. |
@@ -39,11 +39,11 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | `awt_diff_mult` | 2.0 | `fit.py` (sim="wald") | AWT is 2× as diffusive as turf (surface-dependent D) — fixes AWT over-confidence (12.7%→23.7%). |
 | `bend_curvature` (ST/HV) | 0.0037 / 0.0023 | `hkjc.model.calibration` | Geometric draw bias. Confirmed near-optimal; draw is low-leverage (parked). |
 
-Current fit: **ST ≈ 58% of market** (wald, full-scale; model ECE 0.0060 — better-calibrated than the
-market's 0.0069). Session arc: 55.3% → 58.2% via the re-diagnosis loop (FG 4→5 +0.9pp; WPG 2→1 revert;
-**DRAW_GAIN 0→0.003 +1.9pp — the big one**). HV not yet re-confirmed — **follow-up: `VENUE=HV
-studies/backtest_st.py`.** Re-diagnosis at the 58% baseline: draw NEUTRALIZED (t=−26.5→−1.5), form/W′/v_c
-all balanced; the new #1 residual is **bodywt t=+9.6 (UNDER-weighted)** — see NEXT LEVERS.
+Current fit: **ST ≈ 58.3% / HV ≈ 52.5% of market** (wald, full-scale). ST arc: 55.3→58.3% (recency-form
+re-diagnosis: FG 4→5, WPG 2→1, DRAW_GAIN 0→0.003). **HV arc: 47.6→52.5% (+4.9pp) via PER-VENUE
+calibration** (DRAW_GAIN ST 0.003→HV 0.008, FORM_GAIN ST 5→HV 4) — the model had been ST-calibrated and
+applied globally. HV still trails ST by ~6pp (more headroom there — see NEXT LEVERS). The ST-1000m
+straight chute now zeroes the (wrong-signed) draw ground-loss.
 
 ## ARCHITECTURE (audit findings — the model is a prototype, not gospel)
 

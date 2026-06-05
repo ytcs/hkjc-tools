@@ -26,8 +26,9 @@ from ..core.track import track_for
 from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
                           distance_band, fit_energetics_population)
 from . import dynamics
-from .constants import (ALLOMETRIC_B, DRAW_GAIN, FORM_GAIN, JOCKEY_GAIN, N_SAMPLES,
-                        PACE_GAIN, SHRINK_MULT, SIM, SPEED_NOISE, W_PRIME_GAIN)
+from .constants import (ALLOMETRIC_B, DRAW_GAIN, DRAW_GAIN_BY_VENUE, FORM_GAIN,
+                        FORM_GAIN_BY_VENUE, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN,
+                        SHRINK_MULT, SIM, SPEED_NOISE, W_PRIME_GAIN)
 from .traffic_jax import win_probs
 
 
@@ -59,13 +60,13 @@ def fit_predict_traffic(
     *,
     jky_mean: float = 0.0,
     n_samples: int = N_SAMPLES,
-    form_gain: float = FORM_GAIN,
+    form_gain: float | None = None,
     jockey_gain: float = JOCKEY_GAIN,
     w_prime_gain: float = W_PRIME_GAIN,
     trainer_gain: float = 0.0,
     speedfig_gain: float = 0.0,
     shrink_mult: float = SHRINK_MULT,
-    draw_gain: float = DRAW_GAIN,
+    draw_gain: float | None = None,
     draw_fs_gain: float = 0.0,
     speed_noise: float = SPEED_NOISE,
     sigma_t: float = 2.5,
@@ -92,6 +93,9 @@ def fit_predict_traffic(
         g = g.sort("runner")
         dist = int(g["distance"][0])
         venue = g["venue"][0]
+        # form coupling is PER-VENUE (HV wants a lower gain than ST); an explicit form_gain
+        # arg overrides (for sweeps), else the venue's calibrated value, else the ST fallback.
+        fg = form_gain if form_gain is not None else FORM_GAIN_BY_VENUE.get(venue, FORM_GAIN)
         rtg = g["rtg"].to_numpy().astype(float)
         form = g["form"].to_numpy().astype(float)
         jky = g["jky_sr"].to_numpy().astype(float)
@@ -105,7 +109,7 @@ def fit_predict_traffic(
         for i, h in enumerate(g["horse_id"].to_list()):
             n, u_vc, u_w = res.get(h, (0, 0.0, 0.0))
             vc.append(pop.v_c.fixed(band, rtg[i]) + shrink_mult * lam_vc(n) * u_vc
-                      + form_gain * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
+                      + fg * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
                       + speedfig_gain * sfig[i] + trainer_gain * trn[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
             # stamina analogue of form_gain (market under-weights W' at gain 1.0).
@@ -114,6 +118,13 @@ def fit_predict_traffic(
         geom = track_for(venue, dist, _surface(dist))
         course = g["course"][0] if "course" in g.columns else "A"
         draw = g["draw"].to_numpy().astype(float)
+        # bend ground-loss gain is PER-VENUE and GEOMETRIC: HV (bend-dominated) wants ~2.7x ST. An
+        # explicit draw_gain arg overrides (sweeps), else the venue value. On a no-bend course (the ST
+        # straight 1000m chute) there is no arc to lose, so zero it — the residual draw effect there is a
+        # reverse watering/going gradient, not ground-loss, and applying the penalty has the wrong sign.
+        draw_g = draw_gain if draw_gain is not None else DRAW_GAIN_BY_VENUE.get(venue, DRAW_GAIN)
+        if geom.bend_fraction(dist) < 0.05:
+            draw_g = 0.0
         bend_curv = bend if bend is not None else CALIBRATED_BEND_CURVATURE.get(venue, 1.0 / 120.0)
         seed = abs(hash(race_id[0])) % (2**31)
         mass = g["bodywt"].to_numpy().astype(float) if "bodywt" in g.columns else np.full(g.height, 500.0)
@@ -130,7 +141,7 @@ def fit_predict_traffic(
             # multinomial logit: P(i wins) = softmax(-mu_i/sigma_t), mu_i = D/v_target_i. Also gives the
             # full finishing-order distribution for place/exotics. Not the physical model (the diffusion
             # law is — see "wald"); kept as the instant probe for wide parameter sweeps.
-            l_eff = dist * (1.0 + draw_gain * (draw - 1.0))
+            l_eff = dist * (1.0 + draw_g * (draw - 1.0))
             mu = l_eff / (vc * (1.0 + np.array(wp) / dist))
             s = np.exp(-(mu - mu.min()) / sigma_t)
             p = s / s.sum()
@@ -147,7 +158,7 @@ def fit_predict_traffic(
             # draw_fs_gain modulates the penalty by field size: crowding (more rivals to be boxed by)
             # amplifies the draw effect — the mean-field shadow of the collision physics (horses are
             # not collisionless), centred at a 12-runner field.
-            dg = draw_gain * (1.0 + draw_fs_gain * (g.height - 12.0))
+            dg = draw_g * (1.0 + draw_fs_gain * (g.height - 12.0))
             l_eff = dist * (1.0 + dg * (draw - 1.0))
             mu = l_eff / (vc * (1.0 + np.array(wp) / dist))
             lam = dist * dist / (2.0 * d_eff)

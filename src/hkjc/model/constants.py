@@ -87,8 +87,23 @@ SHRINK_MULT = float(os.environ.get("SHRINK_MULT", "0.5"))
 # term captures only the MEAN-FIELD draw effect; the interaction structure (draw x field-size,
 # draw x pace, boxed-in) is the agent-based sim's domain (its original motivation). See hkjc.model.fit.
 DRAW_GAIN = float(os.environ.get("DRAW_GAIN", "0.003"))
+# PER-VENUE bend ground-loss. The draw penalty is GEOMETRIC, so it must scale with the track: HV is
+# bend-dominated (the strongest draw bias in HK) and wants ~2.7x the ST gain — the global ST-calibrated
+# 0.003 massively UNDER-penalised draw at HV (re-diagnosis journal 0024: HV draw residual was the #1
+# mechanism by far; the per-venue sweep peaks at HV~0.008, ST~0.003, lifting HV 48->53% of market).
+# NOTE the sign lesson: a subagent first read the HV residual as "over-weighted, set to 0" — the actual
+# sweep proved the OPPOSITE (0 craters HV to 41%); always sweep, never trust a residual-sign label.
+# The ST straight 1000m chute (no bends) gets draw_gain ZEROED in fit_predict_traffic (geometry, not a
+# constant) — there the residual draw effect is a reverse watering/going gradient, not bend ground-loss.
+DRAW_GAIN_BY_VENUE = {"ST": 0.003, "HV": 0.008}
 
 FORM_GAIN = float(os.environ.get("FORM_GAIN", "5.0"))
+# PER-VENUE form coupling. The model was originally calibrated on ST and applied globally; a
+# per-venue re-diagnosis (journal 0024) showed HV — bend-dominated, the tightest track in HK — wants
+# a LOWER form coupling (HV form was over-weighted, residual t=-13.7 vs ST's -8.4). HV optimum ~4.0
+# (joint sweep peak), ST stays 5.0. fit_predict_traffic resolves the venue's value unless form_gain is
+# passed explicitly (for sweeps). Falls back to FORM_GAIN for an unknown venue.
+FORM_GAIN_BY_VENUE = {"ST": 5.0, "HV": 4.0}
 SPEED_NOISE = float(os.environ.get("SPEED_NOISE", "0.12"))
 JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "5.0"))
 PACE_GAIN = float(os.environ.get("PACE_GAIN", "0.0"))

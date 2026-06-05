@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-20 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+21 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -24,3 +24,4 @@
 - **0020-re-diagnosis-at-the-recency-56-baseline-rebalanc** →all (research/confirmed) [Re-diagnosis at the recency (56%) baseline rebalanced the ability gains: FORM_GAIN 4->5, W_PRIME_GAIN 2->1](entries/0020-re-diagnosis-at-the-recency-56-baseline-rebalanc.md) — _recalibration, form-gain, w-prime-gain, re-diagnosis, recency, wald, parsimony_
 - **0021-breakthrough-re-added-bend-ground-loss-to-the-wa** →all (research/confirmed) [BREAKTHROUGH: re-added bend ground-loss to the wald drift (DRAW_GAIN=0.003) -> ST 56->58% of market](entries/0021-breakthrough-re-added-bend-ground-loss-to-the-wa.md) — _draw, bend-ground-loss, wald, breakthrough, interaction, abm, re-diagnosis, first-principles_
 - **0022-bodywt-re-checked-on-the-production-wald-path-re** →all (research/confirmed) [bodywt re-checked on the production wald path: real but SMALL (~0.8pp) -- not a needle-mover, parked](entries/0022-bodywt-re-checked-on-the-production-wald-path-re.md) — _bodywt, mass, wald, parked, low-leverage, structural, ability-model, next-direction_
+- **0023-research-round-6-parallel-dimension-probes-hv-is** →all (research/open) [Research round (6 parallel dimension probes): HV is broken (#1 lever, ~10pp); pace + rest-days are real medium leads](entries/0023-research-round-6-parallel-dimension-probes-hv-is.md) — _research-round, per-venue, HV, draw, pace, lone-leader, days-since-run, opponent-adjusted, interactions, sectionals, headroom_
