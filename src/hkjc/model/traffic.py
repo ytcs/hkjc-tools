@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..track import HAPPY_VALLEY, TrackGeometry
-from .base import RaceModel
+from ..core.track import HAPPY_VALLEY, TrackGeometry
+from ..core.contracts import RaceModel
 
 
 class TrafficRaceModel(RaceModel):

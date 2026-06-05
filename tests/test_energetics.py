@@ -23,7 +23,7 @@ def test_energetics_race_model_ranks_by_predicted_time():
     import numpy as np
 
     from hkjc.model.energetics import EnergeticsRaceModel
-    from hkjc.simulation import RaceSimulator
+    from hkjc.core.simulation import RaceSimulator
 
     v_c = np.array([16.5, 16.0, 15.5])      # A fastest sustainable
     w_prime = np.array([100.0, 80.0, 60.0])

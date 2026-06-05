@@ -29,8 +29,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..track import HAPPY_VALLEY, TrackGeometry
-from .base import RaceModel
+from ..core.track import HAPPY_VALLEY, TrackGeometry
+from ..core.contracts import RaceModel
 
 G = 9.81            # m/s²
 RHO = 1.2           # air density, kg/m³

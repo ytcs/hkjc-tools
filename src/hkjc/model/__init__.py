@@ -15,7 +15,7 @@
   motion (mass, metabolic power, drag/drafting, reserve depletion) into which every
   factor couples as a real term. Reduces to the energetics model when drag is off.
 """
-from .base import RaceModel
+from ..core.contracts import RaceModel
 from .plackett_luce import PlackettLuceModel
 from .conditional_logit import ConditionalLogit, conditional_logit_fit_predict
 from .baselines import market_baseline_fit_predict, uniform_fit_predict

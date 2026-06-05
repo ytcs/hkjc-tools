@@ -4,7 +4,7 @@ import polars as pl
 
 from hkjc.bets import pools
 from hkjc.model import PlackettLuceModel
-from hkjc.simulation import RaceSimulator
+from hkjc.core.simulation import RaceSimulator
 
 
 def _sim(n: int = 3, ns: int = 200_000, seed: int = 0) -> RaceSimulator:

@@ -1,7 +1,7 @@
 """Tests for the DataSource protocol, feature store and W/P/Q outcome schema."""
 import polars as pl
 
-from hkjc.data.source import CallableSource, DataSource, make_race_id
+from hkjc.core.contracts import CallableSource, DataSource, make_race_id
 from hkjc.data.feature_store import (
     FeatureStore,
     add_win_place_outcomes,

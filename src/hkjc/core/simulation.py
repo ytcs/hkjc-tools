@@ -32,7 +32,7 @@ from typing import Iterable
 
 import numpy as np
 
-from .model import RaceModel
+from .contracts import RaceModel
 
 
 class RaceSimulator:

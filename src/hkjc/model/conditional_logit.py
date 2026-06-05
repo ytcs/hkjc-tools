@@ -25,7 +25,7 @@ import numpy as np
 import polars as pl
 from scipy.optimize import minimize
 
-from ..data.source import RACE_KEYS
+from ..core.contracts import RACE_KEYS
 
 
 def _codes(race_index: Sequence) -> np.ndarray:

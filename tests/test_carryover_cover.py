@@ -5,7 +5,7 @@ import numpy as np
 
 from hkjc.bets import carryover_cover as cc
 from hkjc.model import PlackettLuceModel
-from hkjc.simulation import RaceSimulator
+from hkjc.core.simulation import RaceSimulator
 
 
 def _sim(n: int = 8, ns: int = 120_000, seed: int = 0) -> RaceSimulator:

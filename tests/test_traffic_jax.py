@@ -9,7 +9,7 @@ pytest.importorskip("jax")
 
 from hkjc.model.traffic import TrafficRaceModel  # noqa: E402
 from hkjc.model.traffic_jax import sample_orders_jax, win_prob_grid  # noqa: E402
-from hkjc.track import HAPPY_VALLEY  # noqa: E402
+from hkjc.core.track import HAPPY_VALLEY  # noqa: E402
 
 
 def _pwin(orders, n):

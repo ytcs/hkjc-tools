@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..track import HAPPY_VALLEY, TrackGeometry
+from ..core.track import HAPPY_VALLEY, TrackGeometry
 
 
 def _finish_times(v_target, off0, key, bend_curvature, speed_noise, pace_bias, pace_gain,

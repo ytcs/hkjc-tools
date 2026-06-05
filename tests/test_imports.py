@@ -4,7 +4,7 @@ import hkjc
 
 def test_top_level_api():
     for name in [
-        "data", "harville_model", "model", "simulation", "bets",
+        "core", "data", "harville_model", "model", "bets",
         "eval", "ledger", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
         "RaceSimulator", "OddsTickStore", "FeatureStore", "DataSource", "Ledger",
         "pareto_filter", "generate_historical_data",
@@ -12,12 +12,21 @@ def test_top_level_api():
         assert hasattr(hkjc, name), f"hkjc.{name} missing"
 
 
+def test_canonical_core_paths():
+    import hkjc.core.contracts
+    import hkjc.core.race
+    import hkjc.core.track
+    import hkjc.core.simulation
+    import hkjc.core.utils
+    import hkjc.core.hkjc_facts
+    assert hkjc.core.RaceModel is hkjc.core.contracts.RaceModel
+
+
 def test_canonical_data_paths():
     import hkjc.data.live
     import hkjc.data.historical
     import hkjc.data.odds_ticks
     import hkjc.data.processing
-    import hkjc.data.source
     import hkjc.data.feature_store
     import hkjc.data.racecard
     import hkjc.data.sectional
@@ -31,9 +40,8 @@ def test_eval_and_ledger_modules():
 
 
 def test_model_package_paths():
-    import hkjc.model.base
     import hkjc.model.plackett_luce
     import hkjc.model.conditional_logit
     import hkjc.model.baselines
-    # RaceModel re-exported from the package root (back-compat after the split)
-    assert hkjc.model.RaceModel is hkjc.model.base.RaceModel
+    # RaceModel contract now lives in core; the model package re-exports it.
+    assert hkjc.model.RaceModel is hkjc.core.contracts.RaceModel

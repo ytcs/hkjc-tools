@@ -92,6 +92,11 @@ class Race:
         return np.array([v if v is not None else default for v in vals], dtype=float)
 
     # --------------------------------------------------------------- model builders
+    # NOTE: these convenience builders reach UP into ``model`` / ``calibration``. The
+    # imports are function-local on purpose, so importing ``core`` never pulls in
+    # ``model`` (the layering holds at module-load time; only calling a builder creates
+    # the runtime dependency). If this ever feels wrong, move the builders to a
+    # ``model.builders`` module of free functions taking a Race.
     def traffic_model(self, v_c=None, w_prime=None, **kwargs):
         """Build the Tier-A interacting :class:`~hkjc.model.TrafficRaceModel`.
 
@@ -99,8 +104,8 @@ class Race:
         from the runners (sectional energetics) unless overridden, falling back to
         equal-ability defaults for a pure draw-geometry study.
         """
-        from .calibration import CALIBRATED_BEND_CURVATURE
-        from .model.traffic import TrafficRaceModel
+        from ..calibration import CALIBRATED_BEND_CURVATURE
+        from ..model.traffic import TrafficRaceModel
         if "bend_curvature" not in kwargs and self.venue in CALIBRATED_BEND_CURVATURE:
             kwargs["bend_curvature"] = CALIBRATED_BEND_CURVATURE[self.venue]
         return TrafficRaceModel(
@@ -112,7 +117,7 @@ class Race:
 
     def energetics_model(self, v_c=None, w_prime=None, **kwargs):
         """Build the non-interacting :class:`~hkjc.model.EnergeticsRaceModel`."""
-        from .model.energetics import EnergeticsRaceModel
+        from ..model.energetics import EnergeticsRaceModel
         return EnergeticsRaceModel(
             self._ability("v_c", v_c, DEFAULT_V_C),
             self._ability("w_prime", w_prime, DEFAULT_W_PRIME),
@@ -121,7 +126,7 @@ class Race:
 
     def plackett_luce(self, **kwargs):
         """Build the market-odds Harville/Plackett-Luce baseline from win odds."""
-        from .model.plackett_luce import PlackettLuceModel
+        from ..model.plackett_luce import PlackettLuceModel
         return PlackettLuceModel.from_odds(self.win_odds, **kwargs)
 
     # ------------------------------------------------------------- constructors

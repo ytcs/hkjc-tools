@@ -1,7 +1,7 @@
 """Tests for race-course geometry and the venue/surface/distance resolver."""
 import pytest
 
-from hkjc.track import (HAPPY_VALLEY as HV, SHA_TIN_AWT, SHA_TIN_STRAIGHT,
+from hkjc.core.track import (HAPPY_VALLEY as HV, SHA_TIN_AWT, SHA_TIN_STRAIGHT,
                         SHA_TIN_TURF, track_for)
 
 

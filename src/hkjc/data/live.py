@@ -8,7 +8,7 @@ from cachetools.func import ttl_cache
 import numpy as np
 import polars as pl
 
-from ..utils import _try_int, _try_float
+from ..core.utils import _try_int, _try_float
 
 # The true carryover/jackpot pools (multi-race; carry forward when not won).
 JACKPOT_POOLS = ["DT", "TT", "SixUP"]

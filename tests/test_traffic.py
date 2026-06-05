@@ -2,7 +2,7 @@
 import numpy as np
 
 from hkjc.model.traffic import TrafficRaceModel
-from hkjc.simulation import RaceSimulator
+from hkjc.core.simulation import RaceSimulator
 
 
 def test_draw_bias_emerges_from_geometry():

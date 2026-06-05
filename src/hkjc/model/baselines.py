@@ -15,7 +15,7 @@ from typing import Callable, Sequence
 
 import polars as pl
 
-from ..data.source import RACE_KEYS
+from ..core.contracts import RACE_KEYS
 
 
 def market_baseline_fit_predict(

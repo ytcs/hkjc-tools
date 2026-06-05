@@ -7,7 +7,7 @@ import polars as pl
 from bs4 import BeautifulSoup
 from cachetools.func import ttl_cache
 
-from ..utils import _parse_html_table
+from ..core.utils import _parse_html_table
 
 HKJC_RACE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate={date}&Racecourse={venue_code}&RaceNo={race_number}"
 HKJC_HORSE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseNo={horse_no}"

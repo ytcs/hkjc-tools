@@ -19,7 +19,7 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 import polars as pl
 
-from .source import KEY_COLUMNS, RACE_KEYS, CallableSource, DataSource
+from ..core.contracts import KEY_COLUMNS, RACE_KEYS, CallableSource, DataSource
 
 
 # --------------------------------------------------------------- outcome schema

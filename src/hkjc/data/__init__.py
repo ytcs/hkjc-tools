@@ -15,19 +15,19 @@ except shared parsing helpers in :mod:`hkjc.utils`.
 - :mod:`~hkjc.data.source` — the ``DataSource`` protocol (uniform input seam).
 - :mod:`~hkjc.data.feature_store` — assemble sources into a modelling frame.
 """
-from . import (live, historical, processing, odds_ticks, source,
+from . import (live, historical, processing, odds_ticks,
                feature_store, jackpot_ticks, carryover_ledger, capture,
                jackpot_history, sectional, racecard, corunning)
 from .odds_ticks import OddsTickStore
 from .jackpot_ticks import JackpotCaptureStore
 from .carryover_ledger import CarryoverLedger
 from .capture import capture_once, settle_meeting, settle_recent
-from .source import DataSource, CallableSource, KEY_COLUMNS
+from ..core.contracts import DataSource, CallableSource, KEY_COLUMNS
 from .feature_store import FeatureStore
 
 __all__ = [
     "live", "historical", "racecard", "sectional", "corunning", "processing",
-    "odds_ticks", "source", "feature_store", "jackpot_ticks", "carryover_ledger",
+    "odds_ticks", "feature_store", "jackpot_ticks", "carryover_ledger",
     "capture", "jackpot_history",
     "OddsTickStore", "JackpotCaptureStore", "CarryoverLedger",
     "capture_once", "settle_meeting", "settle_recent",

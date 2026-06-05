@@ -2,8 +2,8 @@
 import numpy as np
 
 from hkjc.model.dynamics import G, K_LOCO, DynamicsRaceModel
-from hkjc.simulation import RaceSimulator
-from hkjc.track import SHA_TIN_TURF
+from hkjc.core.simulation import RaceSimulator
+from hkjc.core.track import SHA_TIN_TURF
 
 
 def _rng():

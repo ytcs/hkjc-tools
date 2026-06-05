@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .base import RaceModel
+from ..core.contracts import RaceModel
 
 SECTION_LEN = 400.0   # metres; HKJC times all-but-the-first section at 400m
 

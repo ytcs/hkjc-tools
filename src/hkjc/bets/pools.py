@@ -10,7 +10,7 @@ from typing import List
 
 import polars as pl
 
-from ..simulation import RaceSimulator
+from ..core.simulation import RaceSimulator
 
 
 def parse_combination(combo) -> List[int]:

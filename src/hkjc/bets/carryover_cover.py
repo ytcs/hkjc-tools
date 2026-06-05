@@ -25,7 +25,7 @@ from typing import List, Sequence
 
 import numpy as np
 
-from ..simulation import RaceSimulator
+from ..core.simulation import RaceSimulator
 
 
 def top3_coverage(sim: RaceSimulator, horses: Sequence[int]) -> float:

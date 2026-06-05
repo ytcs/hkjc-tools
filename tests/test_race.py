@@ -2,9 +2,9 @@
 import numpy as np
 import polars as pl
 
-from hkjc.race import DEFAULT_V_C, Race, Runner
-from hkjc.simulation import RaceSimulator
-from hkjc.track import SHA_TIN_STRAIGHT, SHA_TIN_TURF
+from hkjc.core.race import DEFAULT_V_C, Race, Runner
+from hkjc.core.simulation import RaceSimulator
+from hkjc.core.track import SHA_TIN_STRAIGHT, SHA_TIN_TURF
 
 
 def _equal_field(n, venue="HV", distance=1200, **kw):
