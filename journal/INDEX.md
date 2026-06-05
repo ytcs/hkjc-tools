@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-16 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+17 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -20,3 +20,4 @@
 - **0014-noise-framing-resolved-velocity-mult-log-normal** →all (research/confirmed) [Noise framing resolved: velocity-mult (=log-normal proportional time-noise) wins; statistical model can't do interactions](entries/0014-noise-framing-resolved-velocity-mult-log-normal.md) — _noise-model, finishing-time, plackett-luce, interactions, architecture, parsimony_
 - **0015-future-direction-stat-mech-condensed-matter-mach** →all (research/open) [FUTURE DIRECTION: stat-mech / condensed-matter machinery for the interaction layer](entries/0015-future-direction-stat-mech-condensed-matter-mach.md) — _future-direction, stat-mech, condensed-matter, interactions, mean-field-games, TASEP, plackett-luce, game-theory_
 - **0016-diffusion-law-inverse-gaussian-first-passage-tes** →all (research/confirmed) [Diffusion law (Inverse-Gaussian first-passage) tested: ties the in-place log-normal noise](entries/0016-diffusion-law-inverse-gaussian-first-passage-tes.md) — _diffusion, inverse-gaussian, wald, first-passage, noise-model, unification, foundation_
+- **0017-awt-fix-in-the-diffusion-framework-d-awt-2x-d-tu** →all (research/confirmed) [AWT fix in the diffusion framework: D_awt = 2x D_turf (no ad-hoc velocity knob)](entries/0017-awt-fix-in-the-diffusion-framework-d-awt-2x-d-tu.md) — _awt, diffusion, surface, noise-model, ability-transfer, calibration_

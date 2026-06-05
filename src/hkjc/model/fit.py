@@ -65,7 +65,8 @@ def fit_predict_traffic(
     speedfig_gain: float = 0.0,
     speed_noise: float = SPEED_NOISE,
     sigma_t: float = 2.5,
-    diff_coef: float = 15.0,
+    diff_coef: float = 170.0,
+    awt_diff_mult: float = 2.0,
     pace_gain: float = PACE_GAIN,
     bend: float | None = None,
     sim: str = SIM,
@@ -148,8 +149,10 @@ def fit_predict_traffic(
             # drift-diffusion dx = v·dt + √(2D)·dW, which is the INVERSE GAUSSIAN (Wald) distribution —
             # strictly positive (time can't be negative), with Var(T)=2D·L/v³ (CV ∝ 1/√L) baked in.
             # One physical parameter: the diffusion coefficient D (m²/s); IG shape λ = L²/(2D).
+            # AWT is a more diffusive surface (kickback, less reliable turf-trained signal) => larger D.
+            d_eff = diff_coef * (awt_diff_mult if _surface(dist) == "awt" else 1.0)
             mu = dist / (vc * (1.0 + np.array(wp) / dist))
-            lam = dist * dist / (2.0 * diff_coef)
+            lam = dist * dist / (2.0 * d_eff)
             rng = np.random.default_rng(seed)
             t = rng.wald(np.broadcast_to(mu, (n_samples, g.height)), lam)
             counts = np.bincount(t.argmin(axis=1), minlength=g.height).astype(float)
