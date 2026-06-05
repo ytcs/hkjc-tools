@@ -2,7 +2,7 @@
 import numpy as np
 import polars as pl
 
-from hkjc.eval import calibration as cal
+from hkjc.backtesting import scoring as cal
 
 
 def test_perfect_predictions_score_zero():

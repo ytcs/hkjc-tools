@@ -1,6 +1,6 @@
 """Tests for multiple-testing control."""
 
-from hkjc.eval import selection as sel
+from hkjc.backtesting import selection as sel
 
 
 def test_bh_rejects_all_when_uniformly_small():

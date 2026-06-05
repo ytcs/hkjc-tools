@@ -5,7 +5,7 @@ import hkjc
 def test_top_level_api():
     for name in [
         "core", "data", "model", "betting",
-        "eval", "ledger", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
+        "backtesting", "ledger", "RaceModel", "PlackettLuceModel", "ConditionalLogit",
         "RaceSimulator", "OddsTickStore", "FeatureStore", "DataSource", "Ledger",
         "pareto_filter", "generate_historical_data",
     ]:

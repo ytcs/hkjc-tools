@@ -2,9 +2,9 @@
 import numpy as np
 import polars as pl
 
-from hkjc.eval import calibration as cal
-from hkjc.eval import harness
-from hkjc.eval import walkforward as wf
+from hkjc.backtesting import scoring as cal
+from hkjc.backtesting import harness
+from hkjc.backtesting import walkforward as wf
 from hkjc.model.baselines import market_baseline_fit_predict, uniform_fit_predict
 from hkjc.model.conditional_logit import (
     ConditionalLogit,

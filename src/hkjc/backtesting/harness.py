@@ -17,7 +17,7 @@ from typing import Callable, List, Optional, Sequence
 
 import polars as pl
 
-from . import calibration
+from . import scoring
 from .walkforward import Fold
 
 FitPredict = Callable[[pl.DataFrame, pl.DataFrame], pl.DataFrame]
@@ -40,9 +40,9 @@ def score_predictions(
         return {"n": 0}
     p = preds[prob_col].to_numpy()
     y = preds[outcome_col].to_numpy()
-    report = calibration.calibration_report(p, y, bins=bins)
+    report = scoring.calibration_report(p, y, bins=bins)
     if race_col is not None:
-        report["race_win_log_loss"] = calibration.race_win_log_loss(
+        report["race_win_log_loss"] = scoring.race_win_log_loss(
             preds, prob_col=prob_col, winner_col=outcome_col, race_col=race_col)
         report["n_races"] = int(preds[race_col].n_unique())
     return report

@@ -1,8 +1,8 @@
 """Tests for walk-forward folds and the sealed lockbox."""
 import pytest
 
-from hkjc.eval import walkforward as wf
-from hkjc.eval.walkforward import Lockbox, LockboxBreachError
+from hkjc.backtesting import walkforward as wf
+from hkjc.backtesting.walkforward import Lockbox, LockboxBreachError
 
 
 DATES = [f"2026-01-{d:02d}" for d in range(1, 13)]   # 12 meeting-dates

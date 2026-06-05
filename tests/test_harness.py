@@ -2,8 +2,8 @@
 import numpy as np
 import polars as pl
 
-from hkjc.eval import harness
-from hkjc.eval import walkforward as wf
+from hkjc.backtesting import harness
+from hkjc.backtesting import walkforward as wf
 
 
 def _make_data() -> pl.DataFrame:
