@@ -28,7 +28,7 @@ from hkjc.model.fit import fit_predict_traffic
 CACHE = Path("data_cache")
 
 
-def collect_oos(df, jky_mean, bend) -> pl.DataFrame:
+def collect_oos(df, jky_mean, bend, wpg) -> pl.DataFrame:
     dates = df["date"].unique().to_list()
     folds = walk_forward_folds(dates, n_folds=5, embargo=1, min_train=1)
     parts = []
@@ -37,7 +37,7 @@ def collect_oos(df, jky_mean, bend) -> pl.DataFrame:
         test = df.filter(pl.col("date").is_in(fold.test))
         if train.height == 0 or test.height == 0:
             continue
-        parts.append(fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend))
+        parts.append(fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend, w_prime_gain=wpg))
     return pl.concat(parts)
 
 
@@ -62,13 +62,14 @@ def clustered_slope(x, y, rid):
 def main():
     bend = os.environ.get("BEND")
     bend = float(bend) if bend is not None else None
+    wpg = float(os.environ.get("W_PRIME_GAIN", "1.0"))
     df, jky_mean = load("ST")
-    p = collect_oos(df, jky_mean, bend)
+    p = collect_oos(df, jky_mean, bend, wpg)
     p = p.with_columns(
         (pl.col("market_win_prob") / pl.col("market_win_prob").sum().over("race_id")).alias("mkt"),
         (pl.col("p") / pl.col("p").sum().over("race_id")).alias("mdl"))
     p = p.with_columns((pl.col("mkt") - pl.col("mdl")).alias("resid"))
-    print(f"bend={bend if bend is not None else 'default(0.0037)'}  "
+    print(f"bend={bend if bend is not None else 'default(0.0037)'}  W_PRIME_GAIN={wpg}  "
           f"OOS runners={p.height}, races={p['race_id'].n_unique()}")
     print(f"mean |resid| = {p['resid'].abs().mean():.4f}  (0 = perfect fit to market)\n")
 

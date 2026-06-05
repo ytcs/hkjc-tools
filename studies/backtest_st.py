@@ -90,9 +90,10 @@ def main():
 
     bend = os.environ.get("BEND")
     bend = float(bend) if bend is not None else None
+    wpg = float(os.environ.get("W_PRIME_GAIN", "1.0"))
 
     def _model(train, test):
-        return fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend)
+        return fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend, w_prime_gain=wpg)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

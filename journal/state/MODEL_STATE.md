@@ -29,32 +29,32 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 
 | Constant | Value | Where | Note |
 |---|---|---|---|
-| `FORM_GAIN` | **4.0** | `backtest_traffic_st.py` (HV imports it) | Was 2.0; residual diag showed form t=+32 under-weighted. Sweep found interior optimum ~3.5–4.0. ST 43.3%→48.2%, ECE 0.0081→0.0069. Lowering SPEED_NOISE instead HURTS — amplify the GOOD signal, don't globally sharpen. |
-| `SPEED_NOISE` | 0.12 | same | Unchanged; race-day noise. |
-| `bend_curvature` (ST) | 0.0037 | calibration grid | Geometric draw bias (mass×lateral offset). **Suspected stale** — see queue #1. |
+| `FORM_GAIN` | **4.0** | `hkjc.model.constants` | Was 2.0; residual diag showed form t=+32 under-weighted. Interior optimum ~3.5–4.0. ST 43.3%→48.2%. Amplify the GOOD signal, don't lower SPEED_NOISE. |
+| `W_PRIME_GAIN` | **2.0** | `hkjc.model.constants` (applied in `fit.py`) | Was 1.0; residual diag showed W′ under-weighted t=+13.2. Sweep peaked 1.5–2.5 (3.0 over-amplifies, W′ noisy). Full-scale ST 47.7%→49.1%; w_prime residual halved (t +13.2→+6.4), v_c over-weight also fell (−8.9→−7.0). |
+| `JOCKEY_GAIN` | 5.0 | `hkjc.model.constants` | Jockey trip/ability coupling (+7pp). |
+| `SPEED_NOISE` | 0.12 | `hkjc.model.constants` | Race-day noise; calibrated to the ability spread. |
+| `bend_curvature` (ST/HV) | 0.0037 / 0.0023 | `hkjc.model.calibration` | Geometric draw bias. **Confirmed near-optimal — NOT the lever for the draw residual (see below).** |
 
-Current fit: **ST ≈ 48% of market, HV ≈ 43%.** mean |resid| = 0.0430 (was 0.0457 pre-FORM_GAIN fix).
+Current fit: **ST ≈ 49% of market** (49.1% at N=3000 after the W′ bake; was 47.7%). HV not yet re-confirmed at W_PRIME_GAIN=2.0 — **follow-up: run `VENUE=HV studies/backtest_st.py`.** mean |resid| 0.0426.
 
-## OPEN RESIDUAL QUEUE (priority by |t|, measured at FORM_GAIN=4)
+## OPEN RESIDUAL QUEUE (re-measured at FORM_GAIN=4, W_PRIME_GAIN=2.0)
 
-1. **`draw` OVER-weighted — t = −17.4 — #1 miss.**
-   Unchanged by the form fix ⇒ a *separate* miscalibration of bend geometry. `bend_curvature=0.0037`
-   is too strong (likely calibrated on the old 3-month 161-race subset, same staleness that made
-   FORM_GAIN=2 wrong). **Cleanest next fix — a single-constant recalibration, structurally identical
-   to FORM_GAIN.** RECOMMENDED NEXT STUDY.
+1. **`bodywt` (mass) UNDER-weighted — t = +8.6 — #1 actionable.**
+   Market prices body mass. The single-sourced EOM (`hkjc.model.eom`, used by `DynamicsRaceModel`)
+   now carries mass (`v_c = p_c/(K_LOCO·m·g)`) — but PRODUCTION (`fit.py` → `traffic_jax.win_probs`,
+   kinematic) does NOT. Next mechanism: wire race-day mass into the production win-prob path and
+   recalibrate. A real coupling, not a flat additive bodywt term. Verify it's mass, not a class proxy.
 
-2. **`w_prime` (anaerobic reserve) UNDER-weighted — t = +12.9 — #2.**
-   Sharpening v_c (form) left the reserve channel relatively under-used; market values stamina more.
-   Candidate: a W′ gain, or relax W′ empirical-Bayes shrinkage. Caution: W′ is the noisier estimate —
-   amplify carefully, verify it doesn't just inflate variance.
+2. **`v_c` OVER- / `w_prime` UNDER- (t −7.0 / +6.4) — residual ability rebalance.**
+   The W′ bake halved this but didn't zero it. A further small W′ push or a slight FORM/v_c trim could
+   help — but diminishing returns and W′ is noisy. Lower priority than mass.
 
-3. **`bodywt` (mass) UNDER-weighted — t = +9.0 — #3.**
-   Market prices body mass; `traffic_jax` has NO mass term (it's kinematic). `dynamics.py` (power-balance
-   EOM) DOES: `v_c = p_c/(K_LOCO·m·g)`. The two sims have drifted — this residual IS that drift. Fixing
-   needs a real mechanistic coupling (single-source the EOM so JAX sim and python sim don't diverge),
-   not a flat additive bodywt term. Tangled with class/condition — verify it's mass, not a class proxy.
-
-Lower |t| (monitor, not actionable): actwt +6.0, burden −5.6, style −5.4, rtg +2.8.
+### Falsified / low-leverage (do not re-litigate)
+- **`draw` OVER-weighted t≈−17.5 is NOT bend_curvature-fixable.** Subsample sweep nominated 0.0030 but
+  full-scale gave 47.9% vs 0.0037's 47.7% (within noise), ECE worse; %market is flat over bend in
+  [0.003,0.005]. The draw residual is real but **low-leverage** (it shifts mid-pack mass, not the
+  winner's prob, which dominates %market). A high |t| ≠ high leverage — prioritise by *winner* impact.
+  Possible real fix later: a draw×distance/field interaction, not the flat bend constant.
 
 ## Methodology caveats
 

@@ -25,7 +25,7 @@ from ..core.hkjc_facts import AWT_DISTANCE
 from ..core.track import track_for
 from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
                           distance_band, fit_energetics_population)
-from .constants import FORM_GAIN, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN, SPEED_NOISE
+from .constants import FORM_GAIN, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN, SPEED_NOISE, W_PRIME_GAIN
 from .traffic_jax import win_probs
 
 
@@ -59,6 +59,7 @@ def fit_predict_traffic(
     n_samples: int = N_SAMPLES,
     form_gain: float = FORM_GAIN,
     jockey_gain: float = JOCKEY_GAIN,
+    w_prime_gain: float = W_PRIME_GAIN,
     speed_noise: float = SPEED_NOISE,
     pace_gain: float = PACE_GAIN,
     bend: float | None = None,
@@ -88,7 +89,9 @@ def fit_predict_traffic(
             n, u_vc, u_w = res.get(h, (0, 0.0, 0.0))
             vc.append(pop.v_c.fixed(band, rtg[i]) + lam_vc(n) * u_vc
                       + form_gain * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean))
-            wp.append(pop.w_prime.fixed(band, rtg[i]) + lam_w(n) * u_w)
+            # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
+            # stamina analogue of form_gain (market under-weights W' at gain 1.0).
+            wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)
         geom = track_for(venue, dist, _surface(dist))
         course = g["course"][0] if "course" in g.columns else "A"
         # within-race style z-score → pace policy (front-runners take position, closers wait)

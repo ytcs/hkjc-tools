@@ -38,6 +38,16 @@ History / rationale (do not lose):
   market), so coupling it double-counts. Kept as dormant infrastructure (trajectory-
   measured pace_bias, the venue/distance litmus, the best-response layer). Revisit at HV.
 
+- W_PRIME_GAIN = 2.0  (multiplier on the per-horse anaerobic-reserve residual). The
+  market-residual diagnosis showed the ABM over-channels ability through critical velocity
+  (v_c/form over-weighted) and UNDER-weighted the W' reserve (w_prime_eb residual t=+13.2).
+  This gain amplifies the per-horse reserve spread (the shrunken EB residual u_w), the
+  reserve analogue of FORM_GAIN. RECALIBRATED 1.0 -> 2.0: the subsample sweep peaked broadly
+  over 1.5-2.5 (3.0 over-amplifies — W' is the noisier estimate), and at full scale 2.0 lifts
+  ST 47.7% -> 49.1% of market. The mechanism check confirms it: the w_prime residual HALVED
+  (t +13.2 -> +6.4) and the coupled v_c over-weighting also fell (t -8.9 -> -7.0) — the
+  ability channel rebalanced from critical-velocity toward reserve, as the mechanism predicts.
+
 - N_SAMPLES = 6000  Monte-Carlo samples per race for the win-probability estimate.
 
 bend_curvature (the geometric draw bias) is per-venue and lives in
@@ -52,4 +62,5 @@ FORM_GAIN = float(os.environ.get("FORM_GAIN", "4.0"))
 SPEED_NOISE = float(os.environ.get("SPEED_NOISE", "0.12"))
 JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "5.0"))
 PACE_GAIN = float(os.environ.get("PACE_GAIN", "0.0"))
+W_PRIME_GAIN = float(os.environ.get("W_PRIME_GAIN", "2.0"))
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))
