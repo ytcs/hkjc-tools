@@ -34,16 +34,29 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | **`FORM_GAIN_BY_VENUE`** | **ST 5.0 / HV 4.0** | `hkjc.model.constants` | Form coupling, now PER-VENUE. ST recalibrated 4→5 at the recency baseline (+0.9pp). HV wants LOWER (4.0) — HV form was over-weighted (residual t=−13.7 vs ST −8.4). Resolved per-race; an explicit `form_gain` arg overrides (for sweeps). |
 | `SHRINK_MULT` | **0.5** | `hkjc.model.constants` | Multiplier on the sectional v_c EB residual — it was OVER-trusted at 1.0 (peak 0.5 in both career+recency scans; dropping it, 0.0, costs only ~0.8pp — the sectional energetics barely earns its keep for win). |
 | `W_PRIME_GAIN` | **1.0** | `hkjc.model.constants` | Stamina coupling; REVERTED 2→1 at the recency baseline. Recency form ABSORBED the reserve signal — re-diagnosis flipped W′ to over-weighted (t=−8.95). Win-prob impact flat over 0–2 (W′ is a margin effect); parsimony + residual sign both say revert to the un-amplified EB estimate. |
-| `JOCKEY_GAIN` | 5.0 | `hkjc.model.constants` | Jockey trip/ability coupling. Held under recency. |
+| `JOCKEY_GAIN` | **6.0** | `hkjc.model.constants` | Jockey trip/ability; re-swept 5→6 after the recent bakes (shared optimum both venues, +0.4/0.3pp). |
+| **`POS_FADE_GAIN`** | **−1.0** | `hkjc.model.constants` | Positional-fade: `v_c += gain·(early_pos−field_mean)`. Non-interacting physics over-rates front-runners / under-rates closers — the mean-field shadow of the pace equilibrium (see THEORY §3b). Clean shared optimum both venues. `features.early_position_table`. |
+| **`ALLOMETRIC_B_BY_VENUE`** | **ST 1.1 / HV 1.0** | `hkjc.model.constants` | Allometric mass law `v_c ∝ m^(b−1)`, now applied on the wald path. The persistent #1 ST residual; converts only at ST (+0.5pp; HV 1.0 = off). |
+| **`DRAW_GAIN_AWT`** | **0.008** | `hkjc.model.constants` | Per-SURFACE draw: AWT dirt has a stronger rail bias than turf (overrides the venue value). AWT 43→49%. |
 | `SPEED_NOISE` | 0.12 | `hkjc.model.constants` | Velocity-noise (= log-normal time). Diffusion `diff_coef≈170` ties it (`sim="wald"`). |
 | `awt_diff_mult` | 2.0 | `fit.py` (sim="wald") | AWT is 2× as diffusive as turf (surface-dependent D) — fixes AWT over-confidence (12.7%→23.7%). |
 | `bend_curvature` (ST/HV) | 0.0037 / 0.0023 | `hkjc.model.calibration` | Geometric draw bias. Confirmed near-optimal; draw is low-leverage (parked). |
 
-Current fit: **ST ≈ 58.3% / HV ≈ 52.5% of market** (wald, full-scale). ST arc: 55.3→58.3% (recency-form
-re-diagnosis: FG 4→5, WPG 2→1, DRAW_GAIN 0→0.003). **HV arc: 47.6→52.5% (+4.9pp) via PER-VENUE
-calibration** (DRAW_GAIN ST 0.003→HV 0.008, FORM_GAIN ST 5→HV 4) — the model had been ST-calibrated and
-applied globally. HV still trails ST by ~6pp (more headroom there — see NEXT LEVERS). The ST-1000m
-straight chute now zeroes the (wrong-signed) draw ground-loss.
+Current fit: **ST ≈ 60.0% / HV ≈ 54% of market** (wald, full-scale). MILESTONE: ST crossed 60% (project
+start ~48%). Levers since the recency-form era, in order: **per-venue DRAW/FORM** (HV 47.6→52.5%, +4.9pp
+— the model had been ST-calibrated and applied globally; DRAW_GAIN ST 0.003/HV 0.008, FORM ST 5/HV 4);
+**positional-fade** POS_FADE_GAIN=−1.0 (+0.5/0.6pp, the pace-equilibrium shadow); **allometric mass** on
+wald (ST b=1.1, +0.5pp; the persistent #1 ST residual; HV b=1.0 — doesn't convert there); **AWT
+per-surface draw** 0.008 (AWT 43→49%, the AWT market is ~33% softer); **JOCKEY_GAIN 5→6** (+0.4/0.3pp).
+HV still trails ST ~6pp (diffuse gap, not one mechanism). The ST-1000m straight chute zeroes the draw term.
+
+**SATURATION NOTE (important for the next agent):** the mean-field-surrogate levers are now saturating.
+A growing list of real market residuals do NOT convert to %market when coupled (they're collinear with
+priced signals or too noisy per-horse): opponent-strength/Elo, carried-weight (actwt), rest-days
+(days-since-RACE), weight-trajectory (bw_dev, won-corr~0), the contestedness×pos_fade interaction.
+**The conversion test (quick_eval), not the residual t-stat, is the real gate.** Beyond ~60% the gains
+need either the INTERACTION layer (the ABM — theory predictions below) or NEW DATA (below), not more
+mean-field terms.
 
 ## ARCHITECTURE (audit findings — the model is a prototype, not gospel)
 
@@ -73,26 +86,36 @@ sn0.12) all sit at interior optima under the surrogate too.
 processes (TASEP) for blocking, active matter for drafting, mean-field games for jockey policy; an
 "interacting Plackett-Luce" with PL as the free theory. See journal 0015.
 
-## NEXT LEVERS
+## NEXT LEVERS (post-60% — the mean-field surrogate is saturating)
 
-0. **`bodywt`/mass — the NEW #1 residual (t=+9.6, UNDER-weighted).** Market backs heavier horses more;
-   the model has no mass effect (ALLOMETRIC_B=1). Was PARKED as "b=1 isometric optimum, coupling hurts" —
-   but that was decided at the 48% baseline via the EOM steady-state law `v_c·(m/m̄)^(b−1)`. At 58% with
-   the ability channel rebalanced it is the top residual again. **Revisit: is the right coupling a v_c law
-   (mass→sustainable power) or a NOISE law (heavier = more reliable, smaller D)?** A direct mass→drift or
-   mass→D term in the wald model (not the EOM path) is untried. Prime candidate.
-1. **Draw interaction (ABM territory).** The mean-field bend ground-loss is DONE (DRAW_GAIN=0.003,
-   +1.9pp, residual t=−26.5→−1.5). The residual has a field-size GRADIENT (small fields over-penalized,
-   crowded under — the collision fingerprint: horses aren't collisionless). A mean-field field-size
-   modulation (`draw_fs_gain`, wired but unbaked) recovers only ~0.1pp — diminishing returns. The full
-   draw×crowding / boxed-in / draw×pace structure is the agent-based sim's job (place/exotics).
-2. **`actwt` (carried weight) t=+2.9 UNDER** — handicap weight as a quality proxy (better horses carry
-   more). Small but untested as its own term (distinct from bodywt). Cheap to probe.
-3. **AWT ability-transfer (data-limited).** Noise half fixed (D_awt=2×D_turf, 12.7%→23.7%). Rest genuine:
-   turf-trained ability barely ranks AWT winners (0.59 vs 0.70). Surface-specific form; AWT ~6% (starved).
-4. **Going×horse affinity** — real, residual-loop-blind (race-level). Needs the calibration-by-condition
-   instrument. **Recency×career form blend** — recency replaced career wholesale; a weak career 2nd term
-   might add a little. **Unused fundamentals** (parsimony-gated): barrier-trial times, gear, sire aptitude.
+The cheap per-horse mean-field terms are largely banked or refuted. The remaining headroom is in two
+buckets, both bigger investments — this is the strategic fork for the push toward 70%:
+
+**A. The INTERACTION layer (the ABM / theory predictions — no new data).** THEORY §3b develops the race as
+a differential / mean-field game and lists ranked, leak-free testable predictions. The mean-field shadow
+(POS_FADE) pays; its *interaction* structure is untouched. NOTE: the simplest test — contestedness×pos_fade
+(prediction #1) via an `early_pos>0.85` count — did NOT convert (the mean-field term absorbs it / the proxy
+is crude). The richer interactions likely need the kinematic ABM, which BEATS wald at HV (+2-3pp) but loses
+on ST — so the ABM is the natural HV win model and the substrate for the pace/draw×style couplings. Highest
+ceiling; reserve for place/exotics too.
+
+**B. NEW DATA (scraping builds — the data-mining round found these, all in HKJC_DATA.md).** Each opens a
+data-starved dimension: **barrier-trial times** (`btresult`) → the only pre-race fitness signal for DEBUTANTS
+(the debut market is genuinely soft — winner-rank 0.44 vs 0.68 — and our model is currently WORSE than the
+market there, partly because RTG is *anti-predictive* for fill-null debut ratings); **training-load**
+(`localtrackwork` timed gallops) → the right substrate for the rest/fitness-fatigue axis (days-since-RACE
+is blind to daily training, which is why rest-days didn't convert); **weather** (NEW GraphQL op) → wind +
+a *continuous* soil-moisture going proxy (the environment dimension); **formline** → the relational
+opponent-linkage for the competition interaction (THEORY §3b pred #5).
+
+**Quick wins still on the table (existing data, no big build):** a DEBUT-specific fix — suppress the
+anti-predictive RTG for fill-null debut ratings + lean on jockey (the strongest debut signal, t=5.3);
+needs a `prior_starts` feature. Bounded (~0.3-0.5pp global) but a real correctness fix.
+
+**Refuted/parked this session (do NOT re-litigate — residual signal that does NOT convert):** opponent-
+strength/Elo (collinear with rtg), carried-weight actwt, rest-days (days-since-race proxy), weight-trajectory
+bw_dev (won-corr~0), contestedness×pos_fade, HV form-by-distance (marginal +0.2-0.4pp). The CONVERSION test
+(quick_eval %market), not the residual t-stat, is the gate — many high-|t| residuals are already priced.
 
 ### Parked — tested, do NOT re-litigate (real signal but low-leverage / redundant on WIN)
 speed-figure form (rank-form's pace/class invariance wins); **trainer** strike-rate (+0.2pp, redundant
