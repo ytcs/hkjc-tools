@@ -26,8 +26,8 @@ from ..core.track import track_for
 from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
                           distance_band, fit_energetics_population)
 from . import dynamics
-from .constants import (ALLOMETRIC_B, FORM_GAIN, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN,
-                        SHRINK_MULT, SIM, SPEED_NOISE, W_PRIME_GAIN)
+from .constants import (ALLOMETRIC_B, DRAW_GAIN, FORM_GAIN, JOCKEY_GAIN, N_SAMPLES,
+                        PACE_GAIN, SHRINK_MULT, SIM, SPEED_NOISE, W_PRIME_GAIN)
 from .traffic_jax import win_probs
 
 
@@ -65,6 +65,8 @@ def fit_predict_traffic(
     trainer_gain: float = 0.0,
     speedfig_gain: float = 0.0,
     shrink_mult: float = SHRINK_MULT,
+    draw_gain: float = DRAW_GAIN,
+    draw_fs_gain: float = 0.0,
     speed_noise: float = SPEED_NOISE,
     sigma_t: float = 2.5,
     diff_coef: float = 170.0,
@@ -128,7 +130,8 @@ def fit_predict_traffic(
             # multinomial logit: P(i wins) = softmax(-mu_i/sigma_t), mu_i = D/v_target_i. Also gives the
             # full finishing-order distribution for place/exotics. Not the physical model (the diffusion
             # law is — see "wald"); kept as the instant probe for wide parameter sweeps.
-            mu = dist / (vc * (1.0 + np.array(wp) / dist))
+            l_eff = dist * (1.0 + draw_gain * (draw - 1.0))
+            mu = l_eff / (vc * (1.0 + np.array(wp) / dist))
             s = np.exp(-(mu - mu.min()) / sigma_t)
             p = s / s.sum()
         elif sim == "wald":
@@ -138,7 +141,15 @@ def fit_predict_traffic(
             # One physical parameter: the diffusion coefficient D (m²/s); IG shape λ = L²/(2D).
             # AWT is a more diffusive surface (kickback, less reliable turf-trained signal) => larger D.
             d_eff = diff_coef * (awt_diff_mult if _surface(dist) == "awt" else 1.0)
-            mu = dist / (vc * (1.0 + np.array(wp) / dist))
+            # bend ground-loss: a horse drawn k lanes off the rail runs a longer arc round the
+            # turns => larger effective distance => longer first-passage time. Geometry fixes the
+            # sign (outside = slower); the magnitude is calibrated and absorbs jockeys steering in.
+            # draw_fs_gain modulates the penalty by field size: crowding (more rivals to be boxed by)
+            # amplifies the draw effect — the mean-field shadow of the collision physics (horses are
+            # not collisionless), centred at a 12-runner field.
+            dg = draw_gain * (1.0 + draw_fs_gain * (g.height - 12.0))
+            l_eff = dist * (1.0 + dg * (draw - 1.0))
+            mu = l_eff / (vc * (1.0 + np.array(wp) / dist))
             lam = dist * dist / (2.0 * d_eff)
             rng = np.random.default_rng(seed)
             t = rng.wald(np.broadcast_to(mu, (n_samples, g.height)), lam)

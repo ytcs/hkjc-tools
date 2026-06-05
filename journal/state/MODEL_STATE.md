@@ -30,15 +30,20 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | Constant | Value | Where | Note |
 |---|---|---|---|
 | **`FORM_HALF_LIFE`** | **2.0 races** | `hkjc.model.constants` | **THE production form is RECENCY-weighted (exp), not the career mean. +7.8pp — the biggest single lever.** Clean half-life optimum at ~2 (career=∞ worst). Career form stale over long HK careers; recency tracks current ability + matches market weighting. `features.recency_form_table`. |
-| `FORM_GAIN` | 4.0 | `hkjc.model.constants` | Form coupling; held at 4 under recency (sharp peak; over-gain over-concentrates fast). |
+| **`DRAW_GAIN`** | **0.003** | `hkjc.model.constants` | **Bend ground-loss re-added to the wald/pl drift: `L_eff = dist·(1+DRAW_GAIN·(draw−1))`. Production wald had NO draw term (it lived only in the kinematic sim, dropped at the wald switch) — re-diagnosis flagged draw as the #1 residual (t=−26.5). +1.9pp (56→58%); collapsed the residual to t=−1.5. Calibrated magnitude matches the geometric arc-length scale.** |
+| `FORM_GAIN` | **5.0** | `hkjc.model.constants` | Form coupling; RECALIBRATED 4→5 at the recency baseline (recency form is sharper/higher-variance than career, flipped form back to under-weighted t=+11.4). Clean optimum at 5 (+0.9pp); 6–7 fall off fast. |
 | `SHRINK_MULT` | **0.5** | `hkjc.model.constants` | Multiplier on the sectional v_c EB residual — it was OVER-trusted at 1.0 (peak 0.5 in both career+recency scans; dropping it, 0.0, costs only ~0.8pp — the sectional energetics barely earns its keep for win). |
-| `W_PRIME_GAIN` | 2.0 | `hkjc.model.constants` | Stamina coupling; held (1–2 within noise under recency, which absorbed some W′). |
+| `W_PRIME_GAIN` | **1.0** | `hkjc.model.constants` | Stamina coupling; REVERTED 2→1 at the recency baseline. Recency form ABSORBED the reserve signal — re-diagnosis flipped W′ to over-weighted (t=−8.95). Win-prob impact flat over 0–2 (W′ is a margin effect); parsimony + residual sign both say revert to the un-amplified EB estimate. |
 | `JOCKEY_GAIN` | 5.0 | `hkjc.model.constants` | Jockey trip/ability coupling. Held under recency. |
 | `SPEED_NOISE` | 0.12 | `hkjc.model.constants` | Velocity-noise (= log-normal time). Diffusion `diff_coef≈170` ties it (`sim="wald"`). |
 | `awt_diff_mult` | 2.0 | `fit.py` (sim="wald") | AWT is 2× as diffusive as turf (surface-dependent D) — fixes AWT over-confidence (12.7%→23.7%). |
 | `bend_curvature` (ST/HV) | 0.0037 / 0.0023 | `hkjc.model.calibration` | Geometric draw bias. Confirmed near-optimal; draw is low-leverage (parked). |
 
-Current fit: **ST ≈ 56% of market** (probit 56.1%, diffusion/wald 55.6%, full-scale; was ~48% before the recency-form switch). HV not yet re-confirmed — **follow-up: `VENUE=HV studies/backtest_st.py`.** A fresh residual re-diagnosis at the 56% baseline is the next housekeeping step (the old queue is dead).
+Current fit: **ST ≈ 58% of market** (wald, full-scale; model ECE 0.0060 — better-calibrated than the
+market's 0.0069). Session arc: 55.3% → 58.2% via the re-diagnosis loop (FG 4→5 +0.9pp; WPG 2→1 revert;
+**DRAW_GAIN 0→0.003 +1.9pp — the big one**). HV not yet re-confirmed — **follow-up: `VENUE=HV
+studies/backtest_st.py`.** Re-diagnosis at the 58% baseline: draw NEUTRALIZED (t=−26.5→−1.5), form/W′/v_c
+all balanced; the new #1 residual is **bodywt t=+9.6 (UNDER-weighted)** — see NEXT LEVERS.
 
 ## ARCHITECTURE (audit findings — the model is a prototype, not gospel)
 
@@ -70,33 +75,36 @@ processes (TASEP) for blocking, active matter for drafting, mean-field games for
 
 ## NEXT LEVERS
 
-0. **Housekeeping:** re-diagnose the market residual at the 56% baseline (old queue dead); re-confirm
-   HV (`VENUE=HV`); a finer recency half-life + "recency × career" blend check (recency replaced career
-   wholesale — adding career back as a weak second term might add a little).
-1. **AWT ability-transfer (data-limited).** The noise/over-confidence half is fixed (D_awt=2×D_turf,
-   12.7%→23.7%). The rest is genuine: turf-trained ability barely ranks AWT winners (percentile 0.59 vs
-   0.70). Surface-specific form/v_c would help but AWT is ~6% of races (data-starved). Hard, localized.
-2. **Going×horse affinity** — real physical mechanism, residual-loop-blind (race-level). Common goings
-   ~calibrated; rare soft/wet too sparse. Needs the calibration-by-condition instrument.
-3. **Critical-power v_c estimator** — the hyperbola `D=v_c·T+W′`. BUT note the sectional v_c is now
-   *over-trusted* (SHRINK_MULT=0.5) and barely earns its keep for win, so sharpening it is lower-value
-   than it looked. Foundational for place/exotics more than win.
-4. **Unused fundamentals (parsimony-gated):** barrier-trial times (direct fitness), gear changes, sire
-   distance/going aptitude. Add only if they move the needle.
+0. **`bodywt`/mass — the NEW #1 residual (t=+9.6, UNDER-weighted).** Market backs heavier horses more;
+   the model has no mass effect (ALLOMETRIC_B=1). Was PARKED as "b=1 isometric optimum, coupling hurts" —
+   but that was decided at the 48% baseline via the EOM steady-state law `v_c·(m/m̄)^(b−1)`. At 58% with
+   the ability channel rebalanced it is the top residual again. **Revisit: is the right coupling a v_c law
+   (mass→sustainable power) or a NOISE law (heavier = more reliable, smaller D)?** A direct mass→drift or
+   mass→D term in the wald model (not the EOM path) is untried. Prime candidate.
+1. **Draw interaction (ABM territory).** The mean-field bend ground-loss is DONE (DRAW_GAIN=0.003,
+   +1.9pp, residual t=−26.5→−1.5). The residual has a field-size GRADIENT (small fields over-penalized,
+   crowded under — the collision fingerprint: horses aren't collisionless). A mean-field field-size
+   modulation (`draw_fs_gain`, wired but unbaked) recovers only ~0.1pp — diminishing returns. The full
+   draw×crowding / boxed-in / draw×pace structure is the agent-based sim's job (place/exotics).
+2. **`actwt` (carried weight) t=+2.9 UNDER** — handicap weight as a quality proxy (better horses carry
+   more). Small but untested as its own term (distinct from bodywt). Cheap to probe.
+3. **AWT ability-transfer (data-limited).** Noise half fixed (D_awt=2×D_turf, 12.7%→23.7%). Rest genuine:
+   turf-trained ability barely ranks AWT winners (0.59 vs 0.70). Surface-specific form; AWT ~6% (starved).
+4. **Going×horse affinity** — real, residual-loop-blind (race-level). Needs the calibration-by-condition
+   instrument. **Recency×career form blend** — recency replaced career wholesale; a weak career 2nd term
+   might add a little. **Unused fundamentals** (parsimony-gated): barrier-trial times, gear, sire aptitude.
 
 ### Parked — tested, do NOT re-litigate (real signal but low-leverage / redundant on WIN)
-draw (bend, t=−17.5); bodywt/mass (allometric b=1 isometric); speed-figure form (rank-form's pace/class
-invariance wins); **trainer** strike-rate (+0.2pp, redundant with jockey+rating); distance-dependent
-noise (flat best); the full power-balance EOM (~1.4 nats behind kinematic; `sim="eom"` inert infra).
+speed-figure form (rank-form's pace/class invariance wins); **trainer** strike-rate (+0.2pp, redundant
+with jockey+rating); distance-dependent noise (flat best); the full power-balance EOM (~1.4 nats behind
+kinematic; `sim="eom"` inert infra). **draw mean-field DONE** (no longer parked — DRAW_GAIN=0.003).
 
-### Parked — real residual but LOW-LEVERAGE (do not re-litigate)
+### Note on the residual→leverage rule
 A high |t| residual ≠ a useful lever; what matters is impact on the WINNER's probability (which dominates
-%market). The high-leverage lever this session was W′ (+1.4pp). These are real but inert on win:
-- **`draw`** (t≈−17.5): not bend_curvature-fixable (full-scale 47.9% vs 47.7%, flat ridge, ECE worse).
-- **`bodywt`/mass** (t=+8.6, confirmed real, survives class/rating): steady-state allometric law
-  `v_c·(m/m̄)^(b−1)` — optimum b=1 (isometric, no net effect); coupling it only hurts. Full power-balance
-  EOM also underperforms the kinematic sim by ~1.4 nats (kept as inert `SIM="eom"` infra).
-- **speed-figure form** (velocity vs par): worse than rank-form, which already normalises pace+class.
+%market). BUT the draw lesson (t=−26.5, parked as "flat ridge" at 48%, then +1.9pp once re-added to the
+*production* path) shows a parked verdict can go stale when the baseline/sim changes — the old draw test
+was on the kinematic sim, but production switched to wald which had dropped draw entirely. Re-check parked
+items against the CURRENT production path before trusting "low-leverage". `bodywt` is the next such re-check.
 
 ## Methodology caveats
 

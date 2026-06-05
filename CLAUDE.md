@@ -65,13 +65,15 @@ On session start, an agent reads its inbox (`Journal.inbox("<name>")`) and its l
 ## Where the modelling work stands
 
 Authoritative state: `journal/state/MODEL_STATE.md` (constants + the open residual queue).
-Current: FORM_GAIN=4.0, SPEED_NOISE=0.12, JOCKEY_GAIN=5.0, bend_curvature ST=0.0037/HV=0.0023;
-fit ≈ 48% (ST) / 43% (HV) of market.
+Current production (SIM=wald): FORM_HALF_LIFE=2 (recency form), FORM_GAIN=5.0, W_PRIME_GAIN=1.0,
+JOCKEY_GAIN=5.0, SHRINK_MULT=0.5, DRAW_GAIN=0.003 (bend ground-loss); fit ≈ **58% of market (ST)**,
+model ECE 0.0060. HV not yet re-confirmed at this baseline.
 
-**Open residual queue (the modelling agent's worklist, by |t|):**
-1. `draw` OVER-weighted, t=−17.4 → recalibrate `bend_curvature` (cleanest single-constant fix).
-2. `w_prime` UNDER-weighted, t=+12.9 → amplify the reserve channel (carefully; W′ is noisy).
-3. `bodywt`/mass UNDER-weighted, t=+9.0 → wire the mass term (now in the EOM) into production.
+**Open residual queue (the modelling agent's worklist, by |t|, at the 58% baseline):**
+1. `bodywt`/mass UNDER-weighted, t=+9.6 → the new #1; revisit as a wald drift/noise term (the EOM
+   steady-state law gave b=1 "no effect", but that was at 48% — re-check on the production path).
+2. `actwt` (carried weight) UNDER, t=+2.9 → handicap-as-quality proxy, cheap untested probe.
+3. Draw mean-field DONE (DRAW_GAIN, +1.9pp); residual draw×field-size is interaction = ABM territory.
 
 The method is the loop: **diagnose** (market-residual regression, race-clustered SEs) →
 **recalibrate** (a mechanism-grounded constant) → **bake** (`hkjc.model.constants`) →

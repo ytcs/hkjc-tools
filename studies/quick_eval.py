@@ -40,7 +40,8 @@ def quick_eval(df, jky_mean, *, n_folds: int = 3, test_cap: int = 150, n_samples
         test = df.filter(pl.col("date").is_in(fold.test))
         if train.height == 0 or test.height == 0:
             continue
-        rids = test["race_id"].unique().to_list()
+        rids = sorted(test["race_id"].unique().to_list())  # sort: polars unique() is not order-stable
+
         if len(rids) > test_cap:
             keep = set(rng.choice(rids, size=test_cap, replace=False).tolist())
             test = test.filter(pl.col("race_id").is_in(list(keep)))

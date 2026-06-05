@@ -1,12 +1,12 @@
 # Agent Journal — Index
 
-17 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+19 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
 - **0001-form-gain-recalibrated-2-0-4-0-ability-under-wei** →all (research/superseded) [FORM_GAIN recalibrated 2.0 -> 4.0 (ability under-weighted)](entries/0001-form-gain-recalibrated-2-0-4-0-ability-under-wei.md) — _calibration, form_gain, goodness-of-fit_
 - **0003-refactor-acceptance-st-47-7-of-market-reproduced** →all (research/confirmed) [Refactor acceptance: ST 47.7% of market reproduced on the new library](entries/0003-refactor-acceptance-st-47-7-of-market-reproduced.md) — _acceptance, refactor, goodness-of-fit_
-- **0004-bend-curvature-recalibration-falsified-draw-resi** →all (research/confirmed) [Bend_curvature recalibration FALSIFIED -- draw residual is low-leverage](entries/0004-bend-curvature-recalibration-falsified-draw-resi.md) — _calibration, bend_curvature, draw, negative-result, residual-queue_
+- **0004-bend-curvature-recalibration-falsified-draw-resi** →all (research/superseded) [Bend_curvature recalibration FALSIFIED -- draw residual is low-leverage](entries/0004-bend-curvature-recalibration-falsified-draw-resi.md) — _calibration, bend_curvature, draw, negative-result, residual-queue_
 - **0005-w-prime-gain-recalibrated-1-0-2-0-anaerobic-rese** →all (research/confirmed) [W_PRIME_GAIN recalibrated 1.0 -> 2.0 (anaerobic reserve under-weighted)](entries/0005-w-prime-gain-recalibrated-1-0-2-0-anaerobic-rese.md) — _calibration, w_prime_gain, goodness-of-fit, reserve_
 - **0006-bodywt-residual-is-real-body-mass-not-a-class-pr** →all (research/confirmed) [Bodywt residual is REAL body mass, not a class proxy (confirmed)](entries/0006-bodywt-residual-is-real-body-mass-not-a-class-pr.md) — _residual-queue, mass, bodywt, mechanism-validation_
 - **0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go** →all (research/open) [Scrutiny of v_c regressors: form is lossy (rank), going is a blind spot](entries/0007-scrutiny-of-v-c-regressors-form-is-lossy-rank-go.md) — _scrutiny, form, speed-figure, going, critical-power, methodology, v_c_
@@ -21,3 +21,5 @@
 - **0017-awt-fix-in-the-diffusion-framework-d-awt-2x-d-tu** →all (research/confirmed) [AWT fix in the diffusion framework: D_awt = 2x D_turf (no ad-hoc velocity knob)](entries/0017-awt-fix-in-the-diffusion-framework-d-awt-2x-d-tu.md) — _awt, diffusion, surface, noise-model, ability-transfer, calibration_
 - **0018-breakthrough-recency-weighted-form-half-life-2-r** →all (research/confirmed) [BREAKTHROUGH: recency-weighted form (half-life ~2 races) lifts ST 48% -> 56% of market (+7.8pp)](entries/0018-breakthrough-recency-weighted-form-half-life-2-r.md) — _recency, form, breakthrough, ability, shrinkage, knob-scan_
 - **0019-model-lineup-drop-probit-velocity-mult-wald-diff** →all (research/confirmed) [Model lineup: drop probit (velocity-mult); Wald (diffusion) is production, PL the fast probe](entries/0019-model-lineup-drop-probit-velocity-mult-wald-diff.md) — _wald, diffusion, probit, plackett-luce, model-lineup, jax, n_samples, first-principles_
+- **0020-re-diagnosis-at-the-recency-56-baseline-rebalanc** →all (research/confirmed) [Re-diagnosis at the recency (56%) baseline rebalanced the ability gains: FORM_GAIN 4->5, W_PRIME_GAIN 2->1](entries/0020-re-diagnosis-at-the-recency-56-baseline-rebalanc.md) — _recalibration, form-gain, w-prime-gain, re-diagnosis, recency, wald, parsimony_
+- **0021-breakthrough-re-added-bend-ground-loss-to-the-wa** →all (research/confirmed) [BREAKTHROUGH: re-added bend ground-loss to the wald drift (DRAW_GAIN=0.003) -> ST 56->58% of market](entries/0021-breakthrough-re-added-bend-ground-loss-to-the-wa.md) — _draw, bend-ground-loss, wald, breakthrough, interaction, abm, re-diagnosis, first-principles_
