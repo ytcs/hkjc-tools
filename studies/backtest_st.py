@@ -122,10 +122,12 @@ def main():
     sim = os.environ.get("SIM", "wald")
     _ab = os.environ.get("ALLOMETRIC_B")
     ab = float(_ab) if _ab is not None else None  # None -> per-venue ALLOMETRIC_B_BY_VENUE
+    _dfs = os.environ.get("DRAW_FS_GAIN")  # crowding-amplified draw; None -> per-venue DRAW_FS_GAIN_BY_VENUE
+    dfs = float(_dfs) if _dfs is not None else None
 
     def _model(train, test):
         return fit_predict_traffic(train, test, jky_mean=jky_mean, bend=bend,
-                                   w_prime_gain=wpg, sim=sim, allometric_b=ab)
+                                   w_prime_gain=wpg, sim=sim, allometric_b=ab, draw_fs_gain=dfs)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

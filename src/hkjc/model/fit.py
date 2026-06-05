@@ -26,7 +26,8 @@ from ..core.track import track_for
 from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
                           distance_band, fit_energetics_population)
 from . import dynamics
-from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
+from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, DRAW_FS_GAIN,
+                        DRAW_FS_GAIN_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
                         DRAW_GAIN_BY_VENUE, FORM_GAIN, FORM_GAIN_BY_VENUE, JOCKEY_GAIN,
                         N_SAMPLES, PACE_GAIN, POS_FADE_GAIN, SHRINK_MULT, SIM,
                         SPEED_NOISE, W_PRIME_GAIN)
@@ -69,7 +70,7 @@ def fit_predict_traffic(
     pos_fade_gain: float = POS_FADE_GAIN,
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
-    draw_fs_gain: float = 0.0,
+    draw_fs_gain: float | None = None,
     speed_noise: float = SPEED_NOISE,
     sigma_t: float = 2.5,
     diff_coef: float = 170.0,
@@ -181,8 +182,11 @@ def fit_predict_traffic(
             # sign (outside = slower); the magnitude is calibrated and absorbs jockeys steering in.
             # draw_fs_gain modulates the penalty by field size: crowding (more rivals to be boxed by)
             # amplifies the draw effect — the mean-field shadow of the collision physics (horses are
-            # not collisionless), centred at a 12-runner field.
-            dg = draw_g * (1.0 + draw_fs_gain * (g.height - 12.0))
+            # not collisionless), centred at a 12-runner field. PER-VENUE (HV-only; converts only where
+            # boxed-in physics dominates) unless passed explicitly (for sweeps). The max(0,·) clamp keeps
+            # the penalty from REVERSING into a wide-draw bonus in small fields (unphysical).
+            dfs_g = draw_fs_gain if draw_fs_gain is not None else DRAW_FS_GAIN_BY_VENUE.get(venue, DRAW_FS_GAIN)
+            dg = draw_g * max(0.0, 1.0 + dfs_g * (g.height - 12.0))
             l_eff = dist * (1.0 + dg * (draw - 1.0))
             mu = l_eff / (vc * (1.0 + np.array(wp) / dist))
             lam = dist * dist / (2.0 * d_eff)

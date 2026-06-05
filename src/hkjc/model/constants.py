@@ -102,6 +102,21 @@ DRAW_GAIN_BY_VENUE = {"ST": 0.003, "HV": 0.008}
 # ~33% softer than turf (a more reachable benchmark). fit resolves this by SURFACE, overriding the venue.
 DRAW_GAIN_AWT = float(os.environ.get("DRAW_GAIN_AWT", "0.008"))
 
+# DRAW_FS_GAIN: crowding-amplified draw — the ONE convertible INTERACTION term (the agent-based sim's
+# original motivation, distilled to a mean-field shadow). The bend ground-loss penalty is scaled by field
+# size: dg = draw_g·max(0, 1 + DRAW_FS_GAIN·(N−12)), so a wide draw costs MORE in a crowded field (more
+# rivals to be boxed by / forced wider) and the penalty vanishes (never reverses — hence the clamp) in a
+# roomy small field. PER-VENUE and HV-ONLY: the full-scale PAIRED (fixed-seed) test converts only at HV
+# (0.25 → +0.3pp, 53.8→54.1%; the venue where collision/boxed-in physics dominates — tightest bends, the
+# strongest draw bias in HK), and is FLAT at ST (0.0pp; ST draw is cleaner geometry already captured by the
+# linear DRAW_GAIN). LESSON: the 150-race quick_eval wildly OVER-stated this (+1–1.6pp) — only the paired
+# full-scale gate (PYTHONHASHSEED fixed so base/candidate share MC seeds) revealed the true ~+0.3pp. The
+# relational pace-pressure interaction (front-runner fade scaling with rival front-runner count, THEORY §3b)
+# was tested the same way and did NOT convert — a 4th flat result on the pace axis; pos_fade already absorbs
+# it. So the interaction axis yields exactly this one HV term. fit resolves per-venue unless passed (sweeps).
+DRAW_FS_GAIN = float(os.environ.get("DRAW_FS_GAIN", "0.0"))
+DRAW_FS_GAIN_BY_VENUE = {"ST": 0.0, "HV": 0.25}
+
 # POS_FADE_GAIN: positional-fade coupling (m/s of effective v_c per unit habitual-early-position above
 # the field mean). The production drift-diffusion is NON-interacting, so it over-rates habitual front-
 # runners (which burn the anaerobic reserve setting the pace with no draft) and under-rates closers —
