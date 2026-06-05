@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 data_cache/
 *.parquet
+yolov8*.pt
+*.pt
