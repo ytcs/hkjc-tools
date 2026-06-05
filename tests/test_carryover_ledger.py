@@ -8,7 +8,7 @@ from hkjc.data.carryover_ledger import (
     build_carryover_rows,
     settled_jackpot_result,
 )
-from hkjc.data.jackpot_ticks import JackpotCaptureStore
+from hkjc.data.ticks import JackpotCaptureStore
 
 
 def _snapshot(jackpot, investment, est):

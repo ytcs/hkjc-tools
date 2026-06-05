@@ -35,8 +35,7 @@ image = (
 )
 def capture():
     from hkjc.data.capture import capture_once
-    from hkjc.data.jackpot_ticks import JackpotCaptureStore
-    from hkjc.data.odds_ticks import OddsTickStore
+    from hkjc.data.ticks import JackpotCaptureStore, OddsTickStore
 
     volume.reload()
     js = JackpotCaptureStore(f"{DATA}/jackpot_ticks")
@@ -53,7 +52,7 @@ def capture():
 def settle():
     from hkjc.data.capture import settle_recent
     from hkjc.data.carryover_ledger import CarryoverLedger
-    from hkjc.data.jackpot_ticks import JackpotCaptureStore
+    from hkjc.data.ticks import JackpotCaptureStore
 
     volume.reload()
     js = JackpotCaptureStore(f"{DATA}/jackpot_ticks")

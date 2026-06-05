@@ -10,16 +10,16 @@ except shared parsing helpers in :mod:`hkjc.utils`.
 - :mod:`~hkjc.data.racecard` — pre-race racecard (ratings, gear, weights, …).
 - :mod:`~hkjc.data.sectional` — per-horse sectional split times.
 - :mod:`~hkjc.data.processing` — build historical datasets across a date range.
-- :mod:`~hkjc.data.odds_ticks` — capture and persist the live-odds time series.
-- :mod:`~hkjc.data.jackpot_ticks` / `~hkjc.data.carryover_ledger` — the carryover flywheel.
-- :mod:`~hkjc.data.source` — the ``DataSource`` protocol (uniform input seam).
+- :mod:`~hkjc.data.ticks` — capture/persist the live-odds and jackpot-pool time series.
+- :mod:`~hkjc.data.carryover_ledger` — the carryover event ledger (flywheel).
 - :mod:`~hkjc.data.feature_store` — assemble sources into a modelling frame.
+
+The ``DataSource`` protocol (uniform input seam) lives in :mod:`hkjc.core.contracts`.
 """
-from . import (live, historical, processing, odds_ticks,
-               feature_store, jackpot_ticks, carryover_ledger, capture,
+from . import (live, historical, processing, ticks,
+               feature_store, carryover_ledger, capture,
                jackpot_history, sectional, racecard, corunning)
-from .odds_ticks import OddsTickStore
-from .jackpot_ticks import JackpotCaptureStore
+from .ticks import OddsTickStore, JackpotCaptureStore
 from .carryover_ledger import CarryoverLedger
 from .capture import capture_once, settle_meeting, settle_recent
 from ..core.contracts import DataSource, CallableSource, KEY_COLUMNS
@@ -27,7 +27,7 @@ from .feature_store import FeatureStore
 
 __all__ = [
     "live", "historical", "racecard", "sectional", "corunning", "processing",
-    "odds_ticks", "feature_store", "jackpot_ticks", "carryover_ledger",
+    "ticks", "feature_store", "carryover_ledger",
     "capture", "jackpot_history",
     "OddsTickStore", "JackpotCaptureStore", "CarryoverLedger",
     "capture_once", "settle_meeting", "settle_recent",

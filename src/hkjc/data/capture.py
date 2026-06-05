@@ -18,9 +18,8 @@ from .carryover_ledger import (
     settled_jackpot_result,
 )
 from .historical import get_race_dividends
-from .jackpot_ticks import JackpotCaptureStore
+from .ticks import JackpotCaptureStore, OddsTickStore
 from .live import live_jackpots
-from .odds_ticks import OddsTickStore
 
 
 def _leg_races(races_csv: str) -> list[int]:

@@ -20,16 +20,14 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 import polars as pl
 
 from ..core.contracts import KEY_COLUMNS, RACE_KEYS, CallableSource, DataSource
+from ..core.hkjc_facts import places_paid
 
 
 # --------------------------------------------------------------- outcome schema
-def paying_places(field_size: int) -> int:
-    """HKJC place rule: 3 paid for 7+ runners, 2 for 4–6, none for ≤3."""
-    if field_size >= 7:
-        return 3
-    if field_size >= 4:
-        return 2
-    return 0
+# The HKJC place rule lives in core.hkjc_facts.places_paid (single source of truth);
+# re-exported here under the historical name, and mirrored by the vectorised polars
+# expression in add_win_place_outcomes below (keep the two in sync).
+paying_places = places_paid
 
 
 def add_win_place_outcomes(df: pl.DataFrame, place_col: str = "finish_pos") -> pl.DataFrame:
@@ -42,7 +40,7 @@ def add_win_place_outcomes(df: pl.DataFrame, place_col: str = "finish_pos") -> p
     """
     df = df.with_columns(pl.col(place_col).cast(pl.Int64, strict=False).alias("finish_pos"))
     df = df.with_columns(pl.len().over(RACE_KEYS).alias("field_size"))
-    places = (
+    places = (  # vectorised mirror of core.hkjc_facts.places_paid
         pl.when(pl.col("field_size") >= 7).then(3)
         .when(pl.col("field_size") >= 4).then(2)
         .otherwise(0)

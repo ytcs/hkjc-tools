@@ -1,7 +1,7 @@
 """Network-free tests for the odds tick store."""
 import datetime as dt
 
-from hkjc.data.odds_ticks import OddsTickStore
+from hkjc.data.ticks import OddsTickStore
 
 
 def _rows(win: dict) -> list:

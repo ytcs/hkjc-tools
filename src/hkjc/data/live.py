@@ -8,12 +8,11 @@ from cachetools.func import ttl_cache
 import numpy as np
 import polars as pl
 
+from ..core.hkjc_facts import LIVEODDS_ENDPOINT as HKJC_LIVEODDS_ENDPOINT
 from ..core.utils import _try_int, _try_float
 
 # The true carryover/jackpot pools (multi-race; carry forward when not won).
 JACKPOT_POOLS = ["DT", "TT", "SixUP"]
-
-HKJC_LIVEODDS_ENDPOINT = "https://info.cld.hkjc.com/graphql/base/"
 
 RACEMTG_PAYLOAD = {
     "operationName": "raceMeetings",

@@ -1,31 +1,19 @@
-"""Odds time-series capture and persistence.
+"""Time-series tick stores — odds and jackpot pools.
 
-The tick store turns the live odds endpoint into a durable time series: every
-poll is normalized to tidy rows and written as an immutable Parquet file under a
-meeting/venue/race partition. This is the densest feedback signal the research
-loop has — it underpins closing-line value (see :mod:`hkjc.eval.clv`),
-odds-drift / steam detection, and any timing study.
+Both the live-odds and jackpot-pool feeds are turned into durable time series the same
+way: every poll is normalized to tidy rows and written as an immutable Parquet file
+under a meeting partition (append-only, concurrency-safe — each poll is a fresh file).
+The two stores share that mechanic (:func:`_write_parquet`, :func:`_empty`) but differ
+in partition granularity and schema, so they stay as two classes in one module.
 
-Separation of concerns: this module **only acquires and persists**. It does not
-compute edge or evaluate bets — closing-line semantics and CLV live in
-:mod:`hkjc.eval.clv`, which reads from here. The GraphQL transport lives in
-:mod:`hkjc.data.live`; the store calls the *uncached* fetcher so it records genuine
-market readings rather than cache-repeated snapshots.
+Separation of concerns: this module **only acquires and persists**. It does not compute
+edge or evaluate bets — closing-line semantics and CLV live in :mod:`hkjc.betting.clv`,
+which reads from here. The GraphQL transport lives in :mod:`hkjc.data.live`.
 
-Storage layout (append-only, concurrency-safe — each poll is a fresh file)::
+Layouts::
 
-    {root}/date={YYYY-MM-DD}/venue={ST|HV}/race={n}/{epoch_us}.parquet
-
-Each row is one (pool, selection) odds reading at one poll:
-
-    captured_at  pl.Datetime(UTC)  our poll time
-    date         str               meeting date, reconciled with the server
-    venue        str               ST | HV
-    race         int               race number
-    pool         str               WIN | PLA | QIN | QPL | ...
-    selection    str               combString: "3" (win/place) or "3,5" (quinella)
-    odds         float             decimal odds
-    last_update  str               server-side pool lastUpdateTime (dedup key)
+    odds:     {root}/date={YYYY-MM-DD}/venue={ST|HV}/race={n}/{epoch_us}.parquet
+    jackpot:  {root}/date={YYYY-MM-DD}/venue={ST|HV}/{epoch_us}.parquet
 """
 from __future__ import annotations
 
@@ -36,7 +24,7 @@ from typing import Iterable, List, Optional, Sequence, Union
 
 import polars as pl
 
-from .live import _fetch_live_races, _fetch_live_odds_uncached
+from .live import _fetch_live_odds_uncached, _fetch_live_races, live_jackpots
 
 DEFAULT_POOLS: tuple[str, ...] = ("WIN", "PLA", "QIN", "QPL")
 
@@ -48,10 +36,41 @@ TICK_SCHEMA = {
     "pool": pl.Utf8,
     "selection": pl.Utf8,
     "odds": pl.Float64,
-    "last_update": pl.Utf8,
+    "last_update": pl.Utf8,           # server-side pool lastUpdateTime (dedup key)
+}
+
+JACKPOT_TICK_SCHEMA = {
+    "captured_at": pl.Datetime(time_unit="us", time_zone="UTC"),
+    "date": pl.Utf8,
+    "venue": pl.Utf8,
+    "pool": pl.Utf8,
+    "leg": pl.Int64,
+    "races": pl.Utf8,
+    "investment": pl.Float64,        # G: today's gross pool
+    "jackpot": pl.Float64,           # C: carried-in jackpot
+    "estimated_dividend": pl.Float64,
+    "merged_pool_id": pl.Utf8,
 }
 
 
+# ----------------------------------------------------------------- shared helpers
+def _ensure_utc(captured_at: datetime) -> datetime:
+    return captured_at.replace(tzinfo=timezone.utc) if captured_at.tzinfo is None else captured_at
+
+
+def _write_parquet(df: pl.DataFrame, partition_dir: Path, captured_at: datetime) -> Path:
+    """Write one immutable poll file named by capture epoch-microseconds."""
+    partition_dir.mkdir(parents=True, exist_ok=True)
+    path = partition_dir / f"{int(captured_at.timestamp() * 1_000_000)}.parquet"
+    df.write_parquet(path)
+    return path
+
+
+def _empty(schema: dict) -> pl.DataFrame:
+    return pl.DataFrame(schema=schema)
+
+
+# ----------------------------------------------------------------- odds tick store
 class OddsTickStore:
     """Append-only Parquet store for the live-odds time series.
 
@@ -111,7 +130,7 @@ class OddsTickStore:
             frames.append(self.record(captured_at, rdate, rvenue, race, rows, dedupe=dedupe))
             if delay and i < len(info["Races"]) - 1:
                 time.sleep(delay)
-        return pl.concat(frames) if frames else self._empty()
+        return pl.concat(frames) if frames else _empty(TICK_SCHEMA)
 
     def record(
         self,
@@ -137,7 +156,7 @@ class OddsTickStore:
             prev = self._latest_frame(date, venue, race)
             if prev is not None and self._same_market(prev, df):
                 return df
-        self._write(df, date, venue, race, captured_at)
+        _write_parquet(df, self._partition_dir(date, venue, race), _ensure_utc(captured_at))
         return df
 
     # -------------------------------------------------------------------- read
@@ -158,7 +177,7 @@ class OddsTickStore:
         pr = f"race={race}" if race is not None else "race=*"
         files = sorted(self.root.glob(f"{pd_}/{pv}/{pr}/*.parquet"))
         if not files:
-            return self._empty()
+            return _empty(TICK_SCHEMA)
         df = pl.read_parquet(files)
         if pool is not None:
             pools = [pool] if isinstance(pool, str) else list(pool)
@@ -174,8 +193,7 @@ class OddsTickStore:
     ) -> pl.DataFrame:
         clean = [r for r in rows if r.get("Odds") is not None]
         n = len(clean)
-        if captured_at.tzinfo is None:
-            captured_at = captured_at.replace(tzinfo=timezone.utc)
+        captured_at = _ensure_utc(captured_at)
         return pl.DataFrame(
             {
                 "captured_at": [captured_at] * n,
@@ -189,13 +207,6 @@ class OddsTickStore:
             },
             schema=TICK_SCHEMA,
         )
-
-    def _write(self, df: pl.DataFrame, date: str, venue: str, race: int, captured_at: datetime) -> Path:
-        d = self._partition_dir(date, venue, race)
-        d.mkdir(parents=True, exist_ok=True)
-        path = d / f"{int(captured_at.timestamp() * 1_000_000)}.parquet"
-        df.write_parquet(path)
-        return path
 
     def _latest_frame(self, date: str, venue: str, race: int) -> Optional[pl.DataFrame]:
         d = self._partition_dir(date, venue, race)
@@ -212,5 +223,59 @@ class OddsTickStore:
         kb = set(zip(b["pool"].to_list(), b["selection"].to_list(), b["odds"].round(3).to_list()))
         return ka == kb
 
-    def _empty(self) -> pl.DataFrame:
-        return pl.DataFrame(schema=TICK_SCHEMA)
+
+# -------------------------------------------------------------- jackpot tick store
+class JackpotCaptureStore:
+    """Append-only Parquet store for the live jackpot-pool time series.
+
+    Unlike :class:`OddsTickStore`, snapshots are **not** deduped: the whole point is
+    the trajectory of the jackpot ``C``, gross pool ``G`` and estimated dividend toward
+    close (the late-money-dilution signal the carryover strategy is built on).
+    """
+
+    def __init__(self, root: Union[str, Path]):
+        self.root = Path(root)
+
+    def capture(self, date: str = "", venue: str = "", now: Optional[datetime] = None) -> pl.DataFrame:
+        """Poll a meeting's jackpot pools once and persist the snapshot.
+
+        Empty strings let the server pick the current meeting. Returns the snapshot
+        (empty if no jackpot pools are open). Meant to be run repeatedly across the
+        betting window by an orchestrator/cron.
+        """
+        snap = live_jackpots(date, venue, jackpot_only=True)
+        captured_at = now or datetime.now(timezone.utc)
+        return self.record(captured_at, snap)
+
+    def record(self, captured_at: datetime, snapshot: pl.DataFrame) -> pl.DataFrame:
+        """Persist an already-fetched ``live_jackpots`` snapshot (network-free)."""
+        if snapshot is None or snapshot.height == 0:
+            return _empty(JACKPOT_TICK_SCHEMA)
+        captured_at = _ensure_utc(captured_at)
+        df = snapshot.with_columns(
+            pl.lit(captured_at).cast(JACKPOT_TICK_SCHEMA["captured_at"]).alias("captured_at")
+        )
+        df = df.select(list(JACKPOT_TICK_SCHEMA.keys())).cast(JACKPOT_TICK_SCHEMA)
+        _write_parquet(df, self.root / f"date={df['date'][0]}" / f"venue={df['venue'][0]}", captured_at)
+        return df
+
+    def read(self, date: Optional[str] = None, venue: Optional[str] = None,
+             pool: Optional[str] = None) -> pl.DataFrame:
+        pd_ = f"date={date}" if date else "date=*"
+        pv = f"venue={venue}" if venue else "venue=*"
+        files = sorted(self.root.glob(f"{pd_}/{pv}/*.parquet"))
+        if not files:
+            return _empty(JACKPOT_TICK_SCHEMA)
+        df = pl.read_parquet(files)
+        if pool is not None:
+            df = df.filter(pl.col("pool") == pool)
+        return df.sort("captured_at")
+
+    def latest(self, date: Optional[str] = None, venue: Optional[str] = None) -> pl.DataFrame:
+        """The most recent snapshot per (date, venue, pool, leg) — the close-proxy."""
+        df = self.read(date, venue)
+        if df.height == 0:
+            return df
+        return (df.sort("captured_at")
+                .group_by(["date", "venue", "pool", "leg"], maintain_order=True)
+                .last())

@@ -25,7 +25,7 @@ def test_canonical_core_paths():
 def test_canonical_data_paths():
     import hkjc.data.live
     import hkjc.data.historical
-    import hkjc.data.odds_ticks
+    import hkjc.data.ticks
     import hkjc.data.processing
     import hkjc.data.feature_store
     import hkjc.data.racecard
