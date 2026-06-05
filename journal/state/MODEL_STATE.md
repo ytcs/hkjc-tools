@@ -93,18 +93,26 @@ processes (TASEP) for blocking, active matter for drafting, mean-field games for
 The cheap per-horse mean-field terms are largely banked or refuted. After a full three-front push
 (2026-06-05: ABM revamp + data + debut), the picture sharpened decisively:
 
-**A. The INTERACTION layer — the kinematic ABM is DEAD as a production win model (premise overturned).**
-The old "kinematic BEATS wald at HV +2-3pp" claim is STALE — it predated the per-venue wald bakes. At the
-current baseline the kinematic sim LOSES to wald at HV by **−4.1pp** (48.8% vs 52.9%, paired quick_eval):
-the per-venue DRAW 0.008 / FORM 4.0 / pos_fade / mass bakes superseded its uncalibrated emergent-geometry
-draw. So do NOT try to promote the slow JAX sim to production. The interaction axis instead pays as
-**mean-field shadow terms on the fast wald path** (the ABM is a *theory generator*, like pos_fade was):
-- **DRAW_FS_GAIN (crowding×draw) CONVERTS** — HV +0.3pp (baked, HV-only). The one win from the whole pass.
-- **Relational pace-pressure does NOT convert** — a front-runner's W′-burn scaling with rival front-runner
-  count (THEORY §3b #1), driven by the converting `early_pos` signal, formulated as a clean symmetric
-  interaction (contested→front fade, lone leader steals it, closers boosted): HV +0.12pp (noise), ST flat.
-  This is the **4th flat result on the pace-interaction axis** (PACE_GAIN, contestedness×pos_fade, the eom,
-  now pace_press). `pos_fade` already absorbs the convertible pace signal. The pace axis is closed for now.
+**A. The INTERACTION layer — the first-attempt ABM code was deprecated, but the axis is DEFERRED, not dead.**
+The kinematic sim is gone as production: the old "kinematic BEATS wald at HV +2-3pp" claim was STALE (it
+predated the per-venue wald bakes); at the current baseline it LOSES to wald at HV by **−4.1pp** (48.8 vs
+52.9, paired), so the per-venue DRAW/FORM/pos_fade/mass bakes superseded its uncalibrated emergent draw.
+The sims are deprecated from the codebase (physics preserved in THEORY.md Appendix). What converts so far
+are **mean-field shadow terms on the fast wald path**:
+- **DRAW_FS_GAIN (crowding×draw)** — HV +0.3pp (baked, HV-only) — but an INTERIM stopgap, not the answer.
+- **Relational pace-pressure** (front-runner W′-burn ∝ rival front-runner count, THEORY §3b #1, driven by
+  the converting `early_pos`): HV +0.12pp (noise), ST flat — a 4th flat result on the simplistic pace axis.
+
+**WHY the simplistic interaction treatments don't convert (the key open theory, per the user):** draw and
+the pace/competition structure are **deeply coupled to the CONTROL dimension** — the jockey's policy (how the
+gate is used to take position, when to commit, how the trip is navigated). A regression / mean-field term
+(`DRAW_GAIN`, `DRAW_FS_GAIN`, a scalar contestedness) can only capture the *first-order geometric shadow* of
+a fundamentally **geometry × control** phenomenon. The ABM did reproduce the qualitative draw/trip
+characteristics — the mechanism is REAL — but it is not modelled deeply enough. The proper treatment is a
+joint **differential / mean-field game of jockeys navigating the geometry** (the §3b competition game), with
+draw as a boundary condition. **DEFER, don't reject:** keep the draw + interaction axis open and treat the
+baked draw terms as interim until geometry + control are modelled together. This is the most promising piece
+of deep theory-building left — but it is a theory build, not a regression probe.
 
 **B. NEW DATA is the genuine remaining lever — and barrier trials are #1 (build IN PROGRESS).** Both the
 data-mining and debut work converge: **debutants need NEW signal, not a reweighting of existing features.**
@@ -119,14 +127,18 @@ test (esp. on the debut subset). Secondary sources: **weather** (GraphQL `Weathe
 soil-moisture going proxy + wind; needs poll-and-log, no history) and **formline** (reconstruct the
 collateral-form graph from our existing `localresults` for full depth). See HKJC_DATA.md.
 
-**Refuted/parked this session (do NOT re-litigate — residual signal that does NOT convert):** opponent-
-strength/Elo (collinear with rtg), carried-weight actwt, rest-days (days-since-race proxy), weight-trajectory
-bw_dev (won-corr~0), contestedness×pos_fade AND the richer relational pace-pressure (pace axis closed),
-HV form-by-distance (marginal), and the **debut RTG-suppression / debut-jockey-gain** (premise real — fab.
-RTG corr −0.04 — but rating slope is tiny (~0.04 m/s over the debut spread vs FORM's ~2 m/s), the model is
-already calibrated on debuts (mean p 0.065 vs actual 0.068), and ~35% of "debutants" carry a REAL handicapper
-rating, so suppression discards signal; the debut-jockey gain HURT, HV 33→28%). The CONVERSION test
-(quick_eval %market), not the residual t-stat, is the gate — many high-|t| residuals are already priced.
+**Refuted this session (do NOT re-litigate — residual signal that does NOT convert as a simple term):**
+opponent-strength/Elo (collinear with rtg), carried-weight actwt, rest-days (days-since-race proxy),
+weight-trajectory bw_dev (won-corr~0), HV form-by-distance (marginal), and the **debut RTG-suppression /
+debut-jockey-gain** (premise real — fab. RTG corr −0.04 — but rating slope is tiny (~0.04 m/s over the debut
+spread vs FORM's ~2 m/s), the model is already calibrated on debuts (mean p 0.065 vs actual 0.068), and ~35%
+of "debutants" carry a REAL handicapper rating, so suppression discards signal; the debut-jockey gain HURT,
+HV 33→28%). The CONVERSION test (quick_eval %market), not the residual t-stat, is the gate.
+
+**DEFERRED (NOT refuted — real mechanism, wrong tool):** the draw / pace / competition INTERACTION axis. The
+simple regression/mean-field treatments (contestedness×pos_fade, relational pace-pressure) don't convert
+because the effect is geometry × CONTROL coupled (see §A above) — revisit as a joint theory build, not a
+scalar probe. The baked draw terms are interim stopgaps.
 
 ### Parked — tested, do NOT re-litigate (real signal but low-leverage / redundant on WIN)
 speed-figure form (rank-form's pace/class invariance wins); **trainer** strike-rate (+0.2pp, redundant
