@@ -227,63 +227,6 @@ relational build (5).
 
 ---
 
-## 4. What the additive-statistical approach already ruled out
-
-History worth keeping (so it isn't re-litigated). Run through a leak-free walk-forward,
-the **flat fundamentals** — draw, carried weight, official rating, and *crude* recent
-form, voted/weighted as static covariates — **add little or nothing over the closing win
-line**; the win market is efficient w.r.t. all of them. The lesson is not "these don't
-matter" but "the market already prices the *main effects*." Gains have come only from:
-- **measuring a latent better** (recency-weighted form ≫ career mean: the single biggest
-  lever), and
-- **adding a missing *mechanism* to the production model** (bend ground-loss re-added to
-  the diffusion drift: the second biggest).
-Both are mechanism/measurement upgrades, not re-weightings — which is exactly what the
-theory predicts.
-
----
-
-## 5. Where the model sits (scorecard)
-
-| dimension | in the model | gap |
-|---|---|---|
-| physics — kinematics | `v_c`/`W′` drift-diffusion (Wald) ✓ | — |
-| physics — geometry | bend ground-loss in the drift ✓ | — |
-| physics — surface | AWT = more diffusive ✓ | turf↔AWT ability transfer |
-| **physiology — ability** | recency form + sectional + rating | **not opponent-adjusted** |
-| physiology — condition/health | ✗ | fitness cycle, days-since-run, trials, vet |
-| physiology — body/mass | tested; ~null on win | real but small lever |
-| strategy — pace/policy | infrastructure present, gain off | game-theoretic equilibrium |
-| interaction | mean-field draw only; ABM reserved | the many-body coupling |
-| **environment** | going partly | **wind / track bias / course bias unused** |
-| **competition / handicap** | rating-conditioned mean | **relative / opponent structure** |
-| market / information | the fit target | intent signals (gear/vet/trials) unused |
-| stochasticity | diffusion noise ✓ | the start + incidents not explicit |
-
-The two highest-leverage, currently-weakest cells: **opponent-adjusted ability**
-(§2.6 — physiology measured through the competition lens) and **environment**
-(§2.5 — exogenous signal we currently discard).
-
----
-
-## 6. The research programme (sketch)
-
-1. **Measure the latents better** — opponent-adjusted / relative ability (a coherent
-   rating); sharper energetics from sectionals; then trajectory if it pays.
-2. **Add missing mechanisms to the production (diffusion) model** — one term at a time,
-   each with a physical derivation and an OOS %-market + ECE check.
-3. **Let the agent-based sim carry the couplings** — traffic/blocking (exclusion
-   processes), drafting (active matter), pace policy (mean-field games) — the
-   "interacting Plackett-Luce" with PL as the free theory. Reserved for place/exotics
-   and the interaction residual the mean-field surrogate cannot reach.
-4. **Bring in exogenous environment** — wind, track bias, course geometry.
-
-Parsimony gates all of it: a term must be **physics/ game-theory-derivable AND move the
-needle**. First-principles grounding lets us rely less on statistics — a derived
-mechanism is a priori correct — but it still has to earn its place.
-
----
-
 ## 3c. The geometry × control game — draw as a boundary condition on the jockey policy
 
 §3b developed the competition game in the **longitudinal** (along-track, effort/pace)
@@ -495,6 +438,54 @@ this experiment is designed to *partition* the remaining draw signal into its ge
 control shares.
 
 ---
+
+## 3d. How the couplings map onto the generative model — the structure
+
+The drift-diffusion exposes **three independent knobs** a feature can load: the aerobic ceiling
+`v_c`, the anaerobic reserve `W′` (the `(1+W′/L)` late boost), and the diffusion `D` (consistency /
+racing luck, the Wald shape `λ = L²/2D`). A feature is correctly structured only when it loads the
+knob its mechanism actually acts on — using a signal is not enough; it must enter in the right place.
+
+**`v_c` is a precision-weighted posterior over critical velocity.** The ability channels (official
+rating, form, sectional `v_c`, collateral-form, barrier trial, speed-figure) are *noisy measurements
+of the same latent `v_c`*. The principled combination is the precision-weighted posterior mean
+`v_c = Σ_k (π_k/Σπ) v_c^(k)`, `π_k = 1/σ_k²`. The production drift `v_c_eff = v_c_base + Σ_k g_k·s_k`
+is the first-order **linearisation** of that posterior, so each gain `g_k` is the channel's relative
+precision — which is exactly why gains are calibrated rather than free, why over-coupling a channel
+past its precision hurts, and why a channel collinear with a priced one adds nothing. The coherent
+empirical-Bayes **fusion** — one shrinkage posterior over *all* velocity observations (official runs,
+barrier trials, and training gallops), each down-weighted by its noise, with the correct non-linear
+`λ(n_eff)` — is this structure made exact, and the right home for every ability signal. Channels that
+load `v_c`: rating (hierarchical-Bayes band×rating mean), form (a rank-censored velocity residual —
+its margin-censoring is *why* the velocity-unit figures add over it), sectional `v_c`, **collateral-
+form** (a Massey least-squares opponent-adjusted velocity — literally the consistent rating the "win
+model is a rating system at equilibrium" framing predicts), trial, speed-figure, and **allometric
+mass** (`v_c ∝ m^(b−1)`, with one *venue-invariant* physiological exponent `b ≈ 1.1`; mass is simply
+low-leverage where other channels already price it, not a different exponent per track).
+
+**`W′` carries the late-race reserve.** Fade-resistance (final-section vs peak velocity) is the
+kinematic signature of the reserve emptying in the closing stages; positional-fade is a front-runner's
+*`W′`-burn* spent setting the pace. Both are **reserve** phenomena and belong on the `W′` knob, where
+their effect is naturally distance-aware (`W′/L` bites harder over sprints) and the gain reads in
+reserve-metres. (Production currently applies them as a `v_c` proxy — a correlated approximation that
+raises/lowers the whole velocity curve rather than just the closing kick.)
+
+**`D` carries consistency — the one knob not yet exploited.** Every banked signal moves the *mean*
+drift; none moves the per-horse *variance*. But a horse with erratic figures is genuinely less
+predictable, so its `D_i` should scale with the spread of its own prior figures. Because the winner is
+an **order statistic**, variance is as load-bearing as the mean — a high-variance horse upsets more
+often than its mean drift implies, and a metronomic one less.
+
+**Career phase enters as regression to the horse's own mean.** A point rating sits above or below the
+horse's career-mean level; the market over-discounts a horse off its recent peak and over-rates one at
+its ceiling, so the converting correction is **mean-reversion toward the career mean** (this is what
+the rating-trajectory "peak-gap" signal actually captures — a process feature pays only where it adds
+an *absolute career landmark* the point rating cannot express, not where it merely restates recent form,
+which is already in the form channel).
+
+`JOCKEY` sits slightly apart: part trip-quality (a real `v_c` effect), part an information proxy
+(fancied horses get the top riders), so it is partly endogenous to the very market we fit — a
+measurement we keep, but not a clean single mechanism.
 
 ## 4. What the additive-statistical approach already ruled out
 
