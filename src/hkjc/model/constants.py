@@ -156,5 +156,5 @@ ALLOMETRIC_B = float(os.environ.get("ALLOMETRIC_B", "1.0"))
 # %market only at ST (b≈1.2, +0.5pp; the persistent mass residual). At HV the coupling does NOT convert
 # (b=1.0 best — like several HV residuals it's collinear with what's already priced there), so mass is
 # ST-only. fit resolves per-venue unless allometric_b is passed explicitly (for sweeps). b=1 = isometric.
-ALLOMETRIC_B_BY_VENUE = {"ST": 1.2, "HV": 1.0}
+ALLOMETRIC_B_BY_VENUE = {"ST": 1.1, "HV": 1.0}
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))
