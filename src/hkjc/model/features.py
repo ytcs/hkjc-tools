@@ -112,6 +112,29 @@ def style_table(sectional: pl.DataFrame) -> pl.DataFrame:
                     pl.when(pl.col("style").is_finite()).then(pl.col("style")).alias("style"))
 
 
+def early_position_table(run_policy: pl.DataFrame) -> pl.DataFrame:
+    """Leak-free trailing mean early running POSITION per horse (1 = led early, 0 = settled last).
+
+    From ``run_policy_dataset``'s ``early_pos_norm`` (normalised early field position; winners
+    average 0.95 vs the 0.76 field mean, so HIGH = nearer the front early). The strictly-prior
+    expanding mean is the horse's *habitual* early position — its running style as a POSITION,
+    distinct from the speed-based :func:`style_table` (the two correlate only ~0.12). Feeds the
+    positional-fade term: the non-interacting drift-diffusion over-rates habitual front-runners
+    (they burn the anaerobic reserve setting the pace with no cover) and under-rates closers — the
+    mean-field shadow of the pace equilibrium (front horses win ~1pp LESS than the physics predicts,
+    closers ~1pp MORE; ground-truth-confirmed, residual t≈−7 at both venues).
+    """
+    rp = run_policy.with_columns(
+        pl.col("date").cast(pl.Utf8).str.replace_all("/", "-").alias("date"))
+    rp = rp.with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"))
+    rp = (rp.select("date", "d", "venue", "race_no", "runner", "horse_id", "early_pos_norm")
+          .sort(["horse_id", "d"])
+          .with_columns(((pl.col("early_pos_norm").cum_sum().over("horse_id") - pl.col("early_pos_norm"))
+                         / (pl.col("early_pos_norm").cum_count().over("horse_id") - 1)).alias("early_pos")))
+    return rp.select("date", "venue", "race_no", "runner",
+                     pl.when(pl.col("early_pos").is_finite()).then(pl.col("early_pos")).alias("early_pos"))
+
+
 def speed_figure_table(results_rich: pl.DataFrame) -> pl.DataFrame:
     """Leak-free trailing SPEED FIGURE per horse — a velocity-based ability signal (m/s).
 

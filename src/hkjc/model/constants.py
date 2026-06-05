@@ -97,6 +97,18 @@ DRAW_GAIN = float(os.environ.get("DRAW_GAIN", "0.003"))
 # constant) — there the residual draw effect is a reverse watering/going gradient, not bend ground-loss.
 DRAW_GAIN_BY_VENUE = {"ST": 0.003, "HV": 0.008}
 
+# POS_FADE_GAIN: positional-fade coupling (m/s of effective v_c per unit habitual-early-position above
+# the field mean). The production drift-diffusion is NON-interacting, so it over-rates habitual front-
+# runners (which burn the anaerobic reserve setting the pace with no draft) and under-rates closers —
+# the mean-field shadow of the pace EQUILIBRIUM (a differential game: each jockey spends a finite W' given
+# rivals' styles). Ground-truth-confirmed: front horses win ~1pp LESS than the physics predicts, closers
+# ~1pp MORE; residual t≈−7 both venues, survives controlling for form/v_c/W'. early_pos high = front, so
+# the calibrated gain is NEGATIVE (front -> lower v_c). See features.early_position_table. CALIBRATED to
+# -1.0: a clean shared optimum at BOTH venues (ST +1.1pp, HV +1.2pp full-scale), confirming it's a true
+# mean-field constant (same sign+magnitude everywhere) — the right signature for an equilibrium effect,
+# not a venue quirk. Sharp peak; |gain|>=2 collapses fast (don't over-couple a within-race-centred term).
+POS_FADE_GAIN = float(os.environ.get("POS_FADE_GAIN", "-1.0"))
+
 FORM_GAIN = float(os.environ.get("FORM_GAIN", "5.0"))
 # PER-VENUE form coupling. The model was originally calibrated on ST and applied globally; a
 # per-venue re-diagnosis (journal 0024) showed HV — bend-dominated, the tightest track in HK — wants

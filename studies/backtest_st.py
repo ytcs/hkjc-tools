@@ -18,8 +18,9 @@ from pathlib import Path
 import polars as pl
 
 from hkjc.backtesting import harness, walk_forward_folds
-from hkjc.model.features import (form_table, jockey_table, recency_form_table,
-                                 speed_figure_table, style_table, trainer_table)
+from hkjc.model.features import (early_position_table, form_table, jockey_table,
+                                 recency_form_table, speed_figure_table, style_table,
+                                 trainer_table)
 from hkjc.model.constants import FORM_HALF_LIFE
 from hkjc.model.fit import fit_predict_traffic
 
@@ -72,6 +73,13 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     sect = pl.read_parquet(CACHE / "sectional_dataset.parquet")
     df = df.join(style_table(sect), on=keys, how="left")
     df = df.with_columns(pl.col("style").fill_null(pl.col("style").mean()))
+    # leak-free habitual early POSITION (front-runner tendency) for the positional-fade term
+    rpq = CACHE / "run_policy_dataset.parquet"
+    if rpq.exists():
+        df = df.join(early_position_table(pl.read_parquet(rpq)), on=keys, how="left")
+        df = df.with_columns(pl.col("early_pos").fill_null(pl.col("early_pos").mean()))
+    else:
+        df = df.with_columns(pl.lit(0.764).alias("early_pos"))
     rr = pl.read_parquet(CACHE / "results_rich.parquet")
     df = df.join(jockey_table(rr), on=["date", "horse_id"], how="left")
     jky_mean = float(df["jky_sr"].mean())

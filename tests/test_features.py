@@ -1,8 +1,8 @@
 """The extracted leak-free ability features compute strictly-prior means (no leakage)."""
 import polars as pl
 
-from hkjc.model.features import (form_table, jockey_table, recency_form_table,
-                                 style_table, trainer_table)
+from hkjc.model.features import (early_position_table, form_table, jockey_table,
+                                 recency_form_table, style_table, trainer_table)
 
 
 def test_form_is_strictly_prior_expanding_mean():
@@ -66,6 +66,20 @@ def test_trainer_strike_rate_is_prior_only():
     assert sr[0] is None
     assert abs(sr[1] - 1.0) < 1e-9
     assert abs(sr[2] - 0.5) < 1e-9
+
+
+def test_early_position_is_strictly_prior():
+    # the positional-fade feature: trailing mean early position must use only prior runs.
+    rp = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-08", "2025-01-15"],
+        "venue": ["ST"] * 3, "race_no": [1, 1, 1], "runner": [1, 1, 1],
+        "horse_id": ["H1"] * 3, "early_pos_norm": [0.2, 0.8, 0.5],
+    })
+    out = early_position_table(rp).sort("date")
+    ep = out["early_pos"].to_list()
+    assert ep[0] is None                        # debut: no prior
+    assert abs(ep[1] - 0.2) < 1e-9              # prior = {run1 0.2}
+    assert abs(ep[2] - 0.5) < 1e-9              # mean(0.2, 0.8)
 
 
 def test_style_trailing_mean_prior_only():

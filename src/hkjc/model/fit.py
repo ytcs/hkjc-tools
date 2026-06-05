@@ -28,7 +28,7 @@ from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
 from . import dynamics
 from .constants import (ALLOMETRIC_B, DRAW_GAIN, DRAW_GAIN_BY_VENUE, FORM_GAIN,
                         FORM_GAIN_BY_VENUE, JOCKEY_GAIN, N_SAMPLES, PACE_GAIN,
-                        SHRINK_MULT, SIM, SPEED_NOISE, W_PRIME_GAIN)
+                        POS_FADE_GAIN, SHRINK_MULT, SIM, SPEED_NOISE, W_PRIME_GAIN)
 from .traffic_jax import win_probs
 
 
@@ -65,6 +65,7 @@ def fit_predict_traffic(
     w_prime_gain: float = W_PRIME_GAIN,
     trainer_gain: float = 0.0,
     speedfig_gain: float = 0.0,
+    pos_fade_gain: float = POS_FADE_GAIN,
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
     draw_fs_gain: float = 0.0,
@@ -104,13 +105,18 @@ def fit_predict_traffic(
         # trainer strike rate, within-race centred (a constant field shift cancels in win prob)
         trn = g["trn_sr"].to_numpy().astype(float) if "trn_sr" in g.columns else np.zeros(g.height)
         trn = trn - np.nanmean(trn)
+        # positional fade: habitual early position, within-race centred (front-runners over-rated by
+        # the non-interacting physics; pos_fade_gain is NEGATIVE so front -> lower v_c, closer -> higher)
+        epos = g["early_pos"].to_numpy().astype(float) if "early_pos" in g.columns else np.full(g.height, 0.764)
+        epos = epos - np.nanmean(epos)
         band = distance_band(dist)
         vc, wp = [], []
         for i, h in enumerate(g["horse_id"].to_list()):
             n, u_vc, u_w = res.get(h, (0, 0.0, 0.0))
             vc.append(pop.v_c.fixed(band, rtg[i]) + shrink_mult * lam_vc(n) * u_vc
                       + fg * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
-                      + speedfig_gain * sfig[i] + trainer_gain * trn[i])
+                      + speedfig_gain * sfig[i] + trainer_gain * trn[i]
+                      + pos_fade_gain * epos[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
             # stamina analogue of form_gain (market under-weights W' at gain 1.0).
             wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)
