@@ -152,4 +152,17 @@ ALLOMETRIC_B = float(os.environ.get("ALLOMETRIC_B", "1.0"))
 # (b=1.0 best — like several HV residuals it's collinear with what's already priced there), so mass is
 # ST-only. fit resolves per-venue unless allometric_b is passed explicitly (for sweeps). b=1 = isometric.
 ALLOMETRIC_B_BY_VENUE = {"ST": 1.1, "HV": 1.0}
+
+# TRIAL_GAIN: barrier-trial speed-figure coupling (m/s of v_c per unit trial_fig). The FIRST NEW-DATA
+# lever: a barrier trial is the only on-track form a DEBUTANT has, and the market is otherwise efficient
+# on debuts via the official handicapper rating — so this is genuinely new signal, not a reweighting of
+# what's priced. trial_fig is already a velocity (trial v_c vs a going×distance par, same kinematics as
+# the speed figure), so the coefficient is O(1). PER-VENUE (HV benefits more — softer debut market, smaller
+# fields): full-scale PAIRED test ST 60.0→60.3% (gain 1.0), HV 54.1→54.9% (gain 1.5); clean interior optima
+# both venues (2.5 over-couples). On the SUBSET where it acts (races with a trialed debutant) it is worth
+# +3–7pp. NOTE this is a LOWER BOUND: the panel only carries 1 year of trials (2025-06→), so only recent
+# debuts are covered — a fuller barrier-trial backfill lifts it further. Needs data_cache/barrier_trials.parquet
+# (features.barrier_trial_table, joined as-of on the short stable brand). fit resolves per-venue unless passed.
+TRIAL_GAIN = float(os.environ.get("TRIAL_GAIN", "0.0"))
+TRIAL_GAIN_BY_VENUE = {"ST": 1.0, "HV": 1.5}
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))

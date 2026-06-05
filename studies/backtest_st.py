@@ -18,9 +18,9 @@ from pathlib import Path
 import polars as pl
 
 from hkjc.backtesting import harness, walk_forward_folds
-from hkjc.model.features import (early_position_table, form_table, jockey_table,
-                                 recency_form_table, speed_figure_table, style_table,
-                                 trainer_table)
+from hkjc.model.features import (barrier_trial_table, early_position_table, form_table,
+                                 jockey_table, prior_starts_table, recency_form_table,
+                                 speed_figure_table, style_table, trainer_table)
 from hkjc.model.constants import FORM_HALF_LIFE
 from hkjc.model.fit import fit_predict_traffic
 
@@ -68,6 +68,9 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     # career mean. Career form kept as `form_career` for diagnosis/comparison only.
     df = df.join(form_table(e, w).rename({"form": "form_career"}), on=keys, how="left")
     df = df.with_columns(pl.col("form_career").fill_null(0.5))
+    # strictly-prior career start count (0 = debut) — the flag for the barrier-trial debut signal
+    df = df.join(prior_starts_table(e, w), on=keys, how="left")
+    df = df.with_columns(pl.col("prior_starts").fill_null(0))
     df = df.join(recency_form_table(e, w, half_life=FORM_HALF_LIFE).rename({"form_rec": "form"}),
                  on=keys, how="left").with_columns(pl.col("form").fill_null(0.5))
     sect = pl.read_parquet(CACHE / "sectional_dataset.parquet")
@@ -97,6 +100,15 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     # velocity-based speed figure (leak-free trailing); neutral 0 when unknown
     df = df.join(speed_figure_table(rr), on=["date", "venue", "race_no", "runner"], how="left")
     df = df.with_columns(pl.col("speedfig").fill_null(0.0))
+    # barrier-trial speed figure (the only prior on-track form for DEBUTANTS); leak-free as-of join
+    # on horse brand. trial date strictly precedes the race (mornings vs race days). 0 = no prior trial.
+    btq = CACHE / "barrier_trials.parquet"
+    if btq.exists():
+        tt = barrier_trial_table(pl.read_parquet(btq)).sort("d")
+        df = df.sort("d").join_asof(tt, on="d", by="horse_id", strategy="backward")
+        df = df.with_columns(pl.col("trial_fig").fill_null(0.0))
+    else:
+        df = df.with_columns(pl.lit(0.0).alias("trial_fig"))
     df = df.with_columns((pl.col("date") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("race_id"))
     return df, jky_mean
 
@@ -122,10 +134,12 @@ def main():
     ab = float(_ab) if _ab is not None else None  # None -> per-venue ALLOMETRIC_B_BY_VENUE
     _dfs = os.environ.get("DRAW_FS_GAIN")  # crowding-amplified draw; None -> per-venue DRAW_FS_GAIN_BY_VENUE
     dfs = float(_dfs) if _dfs is not None else None
+    _tg = os.environ.get("TRIAL_GAIN")  # barrier-trial debut signal; None -> per-venue TRIAL_GAIN_BY_VENUE
+    tg = float(_tg) if _tg is not None else None
 
     def _model(train, test):
-        return fit_predict_traffic(train, test, jky_mean=jky_mean,
-                                   w_prime_gain=wpg, sim=sim, allometric_b=ab, draw_fs_gain=dfs)
+        return fit_predict_traffic(train, test, jky_mean=jky_mean, w_prime_gain=wpg, sim=sim,
+                                   allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

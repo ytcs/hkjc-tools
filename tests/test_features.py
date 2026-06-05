@@ -1,9 +1,9 @@
 """The extracted leak-free ability features compute strictly-prior means (no leakage)."""
 import polars as pl
 
-from hkjc.model.features import (early_position_table, form_table, jockey_table,
-                                 prior_starts_table, recency_form_table, style_table,
-                                 trainer_table)
+from hkjc.model.features import (barrier_trial_table, early_position_table, form_table,
+                                 jockey_table, prior_starts_table, recency_form_table,
+                                 style_table, trainer_table)
 
 
 def test_form_is_strictly_prior_expanding_mean():
@@ -44,6 +44,26 @@ def test_prior_starts_is_strictly_prior_count():
     assert ps[0] == 0                       # debut: zero prior starts
     assert ps[1] == 1                       # one prior run
     assert ps[2] == 2                       # two prior runs
+
+
+def test_barrier_trial_fig_expanding_mean_and_brand_key():
+    # two horses, trials over dates; trial_fig must be the expanding mean of (v_trial − par),
+    # keyed by the SHORT brand (horse_brand), not the long HK_YYYY_XXXX horse_id.
+    bt = pl.DataFrame({
+        "date": ["2026-01-01", "2026-02-01", "2026-01-01"],
+        "horse_id": ["HK_2025_L001", "HK_2025_L001", "HK_2025_L002"],  # long form (NOT the join key)
+        "horse_brand": ["L001", "L001", "L002"],                        # short brand (the join key)
+        "distance": [1200, 1200, 1200], "going": ["GOOD"] * 3,
+        "trial_time": [72.0, 70.0, 71.0],                               # v = 16.67, 17.14, 16.90
+    })
+    out = barrier_trial_table(bt).sort(["horse_id", "d"])
+    assert set(out["horse_id"].to_list()) == {"L001", "L002"}           # brand is the key
+    a = out.filter(pl.col("horse_id") == "L001").sort("d")
+    # par(GOOD,1200) = mean(16.67,17.14,16.90) ; L001 trial-1 fig then trial-1&2 mean
+    v = [1200 / t for t in (72.0, 70.0, 71.0)]
+    par = sum(v) / 3
+    assert abs(a["trial_fig"][0] - (v[0] - par)) < 1e-9                 # first trial: itself
+    assert abs(a["trial_fig"][1] - ((v[0] - par) + (v[1] - par)) / 2) < 1e-9   # expanding mean
 
 
 def test_jockey_strike_rate_is_prior_only():

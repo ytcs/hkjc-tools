@@ -164,6 +164,44 @@ def early_position_table(run_policy: pl.DataFrame) -> pl.DataFrame:
                      pl.when(pl.col("early_pos").is_finite()).then(pl.col("early_pos")).alias("early_pos"))
 
 
+def barrier_trial_table(barrier_trials: pl.DataFrame) -> pl.DataFrame:
+    """Leak-free trial speed figure per horse, keyed (horse_id, d) for an as-of join.
+
+    A barrier trial is a horse's only on-track form before its DEBUT (and a fitness read on a
+    return from a layoff). Same kinematics as :func:`speed_figure_table`: a trial's average
+    velocity ``v_trial = distance / trial_time`` (m/s), expressed relative to a condition par
+    ``par(going, distance)`` so trials over different trips/going are comparable —
+
+        trial_fig = v_trial − par(going, distance)        (m/s above/below the trial standard)
+
+    Then the strictly-prior **expanding mean** per horse over its trials (sorted by date). Trials
+    never share a date with a race for a horse (mornings vs race days), so a backward as-of join
+    on ``d`` by ``horse_id`` is leak-free. ``par`` is a condition constant (not the horse's own
+    outcome), so using the full panel for it is leak-free. Returns one row per trial; join the
+    LATEST prior row to each race via ``join_asof(..., by="horse_id", strategy="backward")``.
+
+    NOTE the join key: the trial data's ``horse_id`` is the long ``HK_YYYY_XXXX`` registration,
+    but the model panels key on the SHORT stable brand (e.g. ``L316``), which is the trial data's
+    ``horse_brand`` column — so we emit ``horse_brand`` aliased to ``horse_id``.
+    """
+    bt = barrier_trials.with_columns(
+        pl.col("date").cast(pl.Utf8).str.replace_all("/", "-").alias("date"),
+        pl.col("trial_time").cast(pl.Float64, strict=False).alias("ttime"),
+        pl.col("distance").cast(pl.Float64, strict=False).alias("dist_m"),
+        pl.col("going").cast(pl.Utf8).alias("going"))
+    bt = bt.filter((pl.col("ttime") > 0) & pl.col("dist_m").is_not_null()
+                   & pl.col("horse_brand").is_not_null())
+    bt = bt.with_columns((pl.col("dist_m") / pl.col("ttime")).alias("v_trial"))
+    bt = bt.with_columns(pl.col("v_trial").mean().over(["going", "dist_m"]).alias("par"))
+    bt = bt.with_columns((pl.col("v_trial") - pl.col("par")).alias("tf"),
+                         pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"),
+                         pl.col("horse_brand").alias("horse_id"))
+    bt = bt.sort(["horse_id", "d"]).with_columns(
+        (pl.col("tf").cum_sum().over("horse_id") / pl.col("tf").cum_count().over("horse_id"))
+        .alias("trial_fig"))
+    return bt.select("horse_id", "d", "trial_fig")
+
+
 def speed_figure_table(results_rich: pl.DataFrame) -> pl.DataFrame:
     """Leak-free trailing SPEED FIGURE per horse — a velocity-based ability signal (m/s).
 
