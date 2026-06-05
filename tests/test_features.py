@@ -2,7 +2,8 @@
 import polars as pl
 
 from hkjc.model.features import (early_position_table, form_table, jockey_table,
-                                 recency_form_table, style_table, trainer_table)
+                                 prior_starts_table, recency_form_table, style_table,
+                                 trainer_table)
 
 
 def test_form_is_strictly_prior_expanding_mean():
@@ -23,6 +24,26 @@ def test_form_is_strictly_prior_expanding_mean():
     assert forms[0] is None                 # debut: no prior
     assert abs(forms[1] - 1.0) < 1e-9       # prior = {run1 rf=1.0}
     assert abs(forms[2] - 0.5) < 1e-9       # prior = mean(1.0, 0.0)
+
+
+def test_prior_starts_is_strictly_prior_count():
+    # one horse, three dated runs: prior_starts on run k must count only runs < k.
+    # Leak-prone (a count must never include the current row) -> regression-guarded.
+    e = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-08", "2025-01-15"],
+        "venue": ["ST"] * 3, "race_no": [1, 1, 1], "runner": [1, 1, 1],
+        "horse_id": ["H1"] * 3,
+    })
+    w = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-08", "2025-01-15"],
+        "venue": ["ST"] * 3, "race_no": [1, 1, 1], "runner": [1, 1, 1],
+        "finish_pos": [1, 5, 1], "field_size": [5, 5, 5],
+    })
+    out = prior_starts_table(e, w).sort("date")
+    ps = out["prior_starts"].to_list()
+    assert ps[0] == 0                       # debut: zero prior starts
+    assert ps[1] == 1                       # one prior run
+    assert ps[2] == 2                       # two prior runs
 
 
 def test_jockey_strike_rate_is_prior_only():

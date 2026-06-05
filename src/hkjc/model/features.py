@@ -46,6 +46,34 @@ def form_table(energetics: pl.DataFrame, wpq: pl.DataFrame) -> pl.DataFrame:
                     pl.when(pl.col("form").is_finite()).then(pl.col("form")).alias("form"))
 
 
+def prior_starts_table(energetics: pl.DataFrame, wpq: pl.DataFrame) -> pl.DataFrame:
+    """Leak-free count of a horse's STRICTLY PRIOR official starts before each race.
+
+    ``prior_starts = cum_count(runs) − 1`` over runs sorted by date (all venues count), so a
+    debutant (first official start) gets 0 and a horse's k-th career start gets ``k−1``. Same
+    expanding/strictly-prior pattern as :func:`form_table`; contains no information from the
+    current or any later run. Returns (date, venue, race_no, runner, prior_starts).
+
+    The debut flag: every history-based ability feature (form, sectional v_c residual, the
+    horse's own jockey history) falls back to neutral on a debut, and the official rating is
+    fill-null'd to the field median — a fabricated, anti-predictive class signal for genuinely
+    unrated first-timers. ``prior_starts == 0`` marks exactly those rows. NOTE: a simple RTG-
+    suppression on this flag does NOT convert (the rating slope is tiny and the market is already
+    efficient on debuts — see journal); its real use is keying NEW debut signal (barrier-trial
+    form), where the horse has no race history but a barrier trial to read.
+    """
+    e = energetics.with_columns(_norm_date().alias("date"))
+    w = wpq.with_columns(_norm_date().alias("date"))
+    h = (e.select("date", "venue", "race_no", "runner", "horse_id")
+         .join(w.select("date", "venue", "race_no", "runner"),
+               on=["date", "venue", "race_no", "runner"])
+         .with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"))
+         .sort(["horse_id", "d"]))
+    h = h.with_columns(
+        (pl.col("d").cum_count().over("horse_id") - 1).alias("prior_starts"))
+    return h.select("date", "venue", "race_no", "runner", "prior_starts")
+
+
 def recency_form_table(energetics: pl.DataFrame, wpq: pl.DataFrame,
                        half_life: float = 2.0) -> pl.DataFrame:
     """Leak-free EXP-WEIGHTED form (recency) — recent runs weighted more (half-life in races).
