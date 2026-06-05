@@ -1,4 +1,4 @@
-"""Fit + predict for the production ABM — leak-free per-horse ability → win probabilities.
+"""Fit + predict for the production win model — leak-free per-horse ability → win probabilities.
 
 This is the model, not a study. Inside a walk-forward fold the energetics **population**
 is fit on train only; each horse's ability is its empirical-Bayes estimate from its
@@ -12,9 +12,13 @@ The effective critical velocity each runner carries into the sim is::
             + λ_vc(n) · u_vc                      # shrunken per-horse sectional residual
             + FORM_GAIN · (form − 0.5)            # form ability coupling (the big one)
             + JOCKEY_GAIN · (jky − jky_mean)      # jockey trip/ability coupling
+            + POS_FADE_GAIN · (early_pos − mean)  # positional-fade (pace-equilibrium shadow)
+            × (m/m̄)^(b−1)                         # allometric mass (wald path)
 
 and the anaerobic reserve W′ is the rating-conditioned mean plus its shrunken residual.
-These feed the interacting traffic sim (draw geometry + car-following) for win probs.
+These feed the ``wald`` first-passage diffusion law (with per-venue bend ground-loss +
+crowding draw) for win probs — see the ``sim`` branches. The interacting agent-based sims
+were deprecated 2026-06 (low-leverage for win; preserved in docs/THEORY.md Appendix).
 """
 from __future__ import annotations
 
@@ -23,15 +27,12 @@ import polars as pl
 
 from ..core.hkjc_facts import AWT_DISTANCE
 from ..core.track import track_for
-from .calibration import (CALIBRATED_BEND_CURVATURE, EnergeticsPopulation,
-                          distance_band, fit_energetics_population)
-from . import dynamics
+from .calibration import (EnergeticsPopulation, distance_band,
+                          fit_energetics_population)
 from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, DRAW_FS_GAIN,
                         DRAW_FS_GAIN_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
                         DRAW_GAIN_BY_VENUE, FORM_GAIN, FORM_GAIN_BY_VENUE, JOCKEY_GAIN,
-                        N_SAMPLES, PACE_GAIN, POS_FADE_GAIN, SHRINK_MULT, SIM,
-                        SPEED_NOISE, W_PRIME_GAIN)
-from .traffic_jax import win_probs
+                        N_SAMPLES, POS_FADE_GAIN, SHRINK_MULT, SIM, W_PRIME_GAIN)
 
 
 def _surface(distance: int) -> str:
@@ -71,12 +72,9 @@ def fit_predict_traffic(
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
     draw_fs_gain: float | None = None,
-    speed_noise: float = SPEED_NOISE,
     sigma_t: float = 2.5,
     diff_coef: float = 170.0,
     awt_diff_mult: float = 2.0,
-    pace_gain: float = PACE_GAIN,
-    bend: float | None = None,
     sim: str = SIM,
     allometric_b: float | None = None,
 ) -> pl.DataFrame:
@@ -124,7 +122,6 @@ def fit_predict_traffic(
             wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)
         vc = np.array(vc)
         geom = track_for(venue, dist, _surface(dist))
-        course = g["course"][0] if "course" in g.columns else "A"
         draw = g["draw"].to_numpy().astype(float)
         # bend ground-loss gain is PER-VENUE and GEOMETRIC: HV (bend-dominated) wants ~2.7x ST. An
         # explicit draw_gain arg overrides (sweeps), else the venue value. On a no-bend course (the ST
@@ -138,30 +135,19 @@ def fit_predict_traffic(
             draw_g = DRAW_GAIN_BY_VENUE.get(venue, DRAW_GAIN)
         if geom.bend_fraction(dist) < 0.05:
             draw_g = 0.0
-        bend_curv = bend if bend is not None else CALIBRATED_BEND_CURVATURE.get(venue, 1.0 / 120.0)
         seed = abs(hash(race_id[0])) % (2**31)
         mass = g["bodywt"].to_numpy().astype(float) if "bodywt" in g.columns else np.full(g.height, 500.0)
         mass = np.where(np.isnan(mass), np.nanmean(mass), mass)
         # ALLOMETRIC mass coupling (first-principles): steady-state v_c ∝ m^(b−1) — the analytic solution
         # of v_c = p_c/(K_LOCO·m·g) with allometric aerobic power p_c = κ·m^b. b>1 ⇒ heavier horses sustain
         # more speed (power scales super-linearly with muscle mass), b=1 = isometric (off). Field-relative
-        # (centred on the race's geometric-mean mass). Applies to the statistical sims (pl/wald/kinematic);
-        # the eom path instead lets mass act through the full Newton's-law dynamics, so skip it there.
-        # PER-VENUE: an explicit allometric_b arg overrides (sweeps), else the venue value (mass converts
-        # only at ST). The eom path uses the global ALLOMETRIC_B for its full dynamics.
+        # (centred on the race's geometric-mean mass). PER-VENUE: an explicit allometric_b arg overrides
+        # (sweeps), else the venue value (mass converts only at ST).
         ab = allometric_b if allometric_b is not None else ALLOMETRIC_B_BY_VENUE.get(venue, ALLOMETRIC_B)
-        if sim != "eom" and ab != 1.0:
+        if ab != 1.0:
             ref = float(np.exp(np.nanmean(np.log(mass))))
             vc = vc * (mass / ref) ** (ab - 1.0)
-        if sim == "eom":
-            # power-balance EOM: declared body mass enters every term (locomotion, inertia,
-            # reserve energy, drag); aerobic power p_c = κ·m^b via the one allometric constant.
-            # (Recorded future path — currently underperforms the kinematic sim; see journal.)
-            p = dynamics.win_probs(vc, np.array(wp), mass, draw, dist,
-                                   allometric_b=(allometric_b if allometric_b is not None else ALLOMETRIC_B),
-                                   track=geom, course=course, size=n_samples,
-                                   bend_curvature=bend_curv, speed_noise=speed_noise, seed=seed)
-        elif sim == "pl":
+        if sim == "pl":
             # FAST PROBE (closed form, no sampling). Gumbel finishing-time noise -> Plackett-Luce /
             # multinomial logit: P(i wins) = softmax(-mu_i/sigma_t), mu_i = D/v_target_i. Also gives the
             # full finishing-order distribution for place/exotics. Not the physical model (the diffusion
@@ -170,8 +156,8 @@ def fit_predict_traffic(
             mu = l_eff / (vc * (1.0 + np.array(wp) / dist))
             s = np.exp(-(mu - mu.min()) / sigma_t)
             p = s / s.sum()
-        elif sim == "wald":
-            # DIFFUSION LAW (the correct standard theory): finishing time = first-passage time of a
+        else:
+            # DIFFUSION LAW (the production win model): finishing time = first-passage time of a
             # drift-diffusion dx = v·dt + √(2D)·dW, which is the INVERSE GAUSSIAN (Wald) distribution —
             # strictly positive (time can't be negative), with Var(T)=2D·L/v³ (CV ∝ 1/√L) baked in.
             # One physical parameter: the diffusion coefficient D (m²/s); IG shape λ = L²/(2D).
@@ -194,16 +180,6 @@ def fit_predict_traffic(
             t = rng.wald(np.broadcast_to(mu, (n_samples, g.height)), lam)
             counts = np.bincount(t.argmin(axis=1), minlength=g.height).astype(float)
             p = (counts + 1.0) / (n_samples + g.height)
-        else:
-            # (mass already applied above via the allometric law for this path)
-            # within-race style z-score → pace policy (front-runners take position, closers wait)
-            style = g["style"].to_numpy().astype(float)
-            sd = style.std()
-            pace_bias = (style - style.mean()) / sd if sd > 1e-9 else np.zeros_like(style)
-            p = win_probs(vc, np.array(wp), draw, dist,
-                          track=geom, course=course, size=n_samples, bend_curvature=bend_curv,
-                          speed_noise=speed_noise, pace_bias=pace_bias, pace_gain=pace_gain,
-                          seed=seed)
         preds.append(g.with_columns(pl.Series("p", p), pl.Series("v_c_eb", vc),
                                     pl.Series("w_prime_eb", wp)))
     return pl.concat(preds)

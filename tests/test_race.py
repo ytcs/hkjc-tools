@@ -3,7 +3,6 @@ import numpy as np
 import polars as pl
 
 from hkjc.core.race import DEFAULT_V_C, Race, Runner
-from hkjc.core.simulation import RaceSimulator
 from hkjc.core.track import SHA_TIN_STRAIGHT, SHA_TIN_TURF
 
 
@@ -27,28 +26,16 @@ def test_runner_arrays_are_in_starting_order():
 
 
 def test_ability_defaults_when_runners_lack_energetics():
+    # equal-ability fallback resolves identical v_c/W' for every runner
     race = _equal_field(8)
-    m = race.traffic_model()
-    # equal-ability fallback -> all v_target identical
-    assert np.allclose(m.v_target, m.v_target[0])
-    assert m.v_target[0] > DEFAULT_V_C                         # v_c * (1 + W'/D)
-
-
-def test_traffic_model_draw_bias_emerges_at_hv():
-    race = _equal_field(12, "HV", 1200)
-    sim = RaceSimulator(race.traffic_model(), n_samples=6000)
-    pw = np.array([sim.prob(sim.wins(i)) for i in range(race.n)])
-    assert pw.argmax() == 0                                    # inner draw favoured
-    assert pw[:3].mean() > pw[-3:].mean()
+    v_c = race._ability("v_c", None, DEFAULT_V_C)
+    assert np.allclose(v_c, DEFAULT_V_C) and v_c.shape == (8,)
 
 
 def test_straight_chute_has_no_draw_bias():
-    # 1000m at Sha Tin is the straight course: no bends -> draws are symmetric
+    # 1000m at Sha Tin is the straight course: no bends -> no geometric draw bias
     race = _equal_field(12, "ST", 1000)
     assert race.bend_fraction == 0.0
-    sim = RaceSimulator(race.traffic_model(), n_samples=6000)
-    pw = np.array([sim.prob(sim.wins(i)) for i in range(race.n)])
-    assert abs(pw[:3].mean() - pw[-3:].mean()) < 0.02          # ~uniform
 
 
 def test_from_results_maps_schema_and_infers_surface():

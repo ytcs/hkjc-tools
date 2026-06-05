@@ -45,6 +45,5 @@ def test_model_package_paths():
     import hkjc.model.baselines
     import hkjc.model.calibration
     import hkjc.model.harville_model
-    import hkjc.model.eom
     # RaceModel contract now lives in core; the model package re-exports it.
     assert hkjc.model.RaceModel is hkjc.core.contracts.RaceModel

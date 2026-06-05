@@ -1,8 +1,6 @@
-"""Calibrate the agent-based race model — empirical & hierarchical Bayes.
+"""Calibrate the production win model's ability population — empirical & hierarchical Bayes.
 
-Two layers, fit separately and then composed:
-
-**1. Horse-level energetics (hierarchical / empirical Bayes).** Per-run
+**Horse-level energetics (hierarchical / empirical Bayes).** Per-run
 ``(v_c, W')`` recovered from sectionals are *noisy* (an easy winner eases down → its
 ``v_c`` under-reads). We model each parameter with a one-way Normal–Normal
 random-effects structure: a per-run observation is a horse effect plus within-horse
@@ -16,20 +14,10 @@ variance components; the *horse-specific* parameters are the shrunken random
 effects. Leave-one-out estimates (``loo=True``) drop a run from its own horse's
 pool, so a run's energetics never leak into a fit that predicts that run.
 
-**2. Track physics (horse-independent), Bayesian.** With each horse's LOO-EB ability
-held fixed, the :class:`~hkjc.model.TrafficRaceModel` is fully specified except for
-the per-venue ``bend_curvature`` (ground lost per metre off the rail on a turn — the
-draw-bias magnitude). The likelihood of *which draw actually won* — real abilities at
-real draws on the real geometry — as a function of ``bend_curvature`` yields a
-posterior over a grid. Because the field's ability spread comes from layer 1, the
-draw effect is not over-attributed to geometry (a strong horse overcomes a wide
-gate). A light venue-level empirical-Bayes prior pools the two venues.
-
-Everything here is pure (numpy/polars) and offline — see
-``experiments/calibrate_traffic_model.py`` for the run on cached data. The
-``bend_curvature`` likelihood is deliberately factored from the model so finer data
-(true lateral lane trajectories from aerial video, Tier-B) can later sharpen the
-*same* posterior without changing the machinery.
+Everything here is pure (numpy/polars) and offline. The per-venue draw bias is now a
+calibrated mean-field term on the production ``wald`` path (``DRAW_GAIN_BY_VENUE``), not a
+simulated bend_curvature — the interacting traffic sim that the old bend-curvature grid
+calibrated was deprecated in 2026-06 (see ``hkjc.model.fit`` and docs/THEORY.md Appendix).
 """
 from __future__ import annotations
 
@@ -255,131 +243,3 @@ def empirical_draw_curve(df: pl.DataFrame, draw_col: str = "draw",
                  pl.col(finish_col).mean().alias("mean_finish"),
                  pl.col("_relfin").mean().alias("rel_finish"))
             .sort(draw_col))
-
-
-# ----------------------------------------------------- track-physics Bayesian fit
-@dataclass
-class RaceConfig:
-    """One race reduced to what the traffic model needs + the realised winner."""
-    venue: str
-    distance: float
-    surface: str
-    course: str
-    draws: np.ndarray
-    v_c: np.ndarray
-    w_prime: np.ndarray
-    winner_idx: int        # 0-based index (into the runner arrays) of the actual winner
-
-
-def _p_winner(cfg: RaceConfig, bend_curvature: float, speed_noise: float,
-              n_samples: int, rng: np.random.Generator) -> float:
-    """Model probability the realised winner wins, at a candidate bend_curvature."""
-    from .traffic import TrafficRaceModel
-    from ..core.track import track_for
-    geom = track_for(cfg.venue, cfg.distance, cfg.surface)
-    m = TrafficRaceModel(cfg.v_c, cfg.w_prime, cfg.draws, cfg.distance,
-                         track=geom, course=cfg.course,
-                         bend_curvature=bend_curvature, speed_noise=speed_noise)
-    orders = m.sample_orders(n_samples, rng)
-    wins = (orders[:, 0] == cfg.winner_idx).sum()
-    return (wins + 1.0) / (n_samples + m.n)      # Laplace-smoothed
-
-
-def bend_loglik(configs: list[RaceConfig], bend_grid: np.ndarray,
-                speed_noise: float = 0.02, n_samples: int = 1500,
-                seed: int = 0, backend: str = "numpy") -> np.ndarray:
-    """Summed log-likelihood of realised winners over ``bend_grid`` (one venue).
-
-    ``backend="jax"`` uses the JIT/vmap kernel (:func:`hkjc.model.traffic_jax.win_prob_grid`),
-    computing every grid point for a race in one compiled call — much faster for the
-    full sweep. ``"numpy"`` is the dependency-free reference.
-    """
-    bend_grid = np.asarray(bend_grid)
-    if backend == "jax":
-        from .traffic_jax import win_prob_grid
-        from ..core.track import track_for
-        ll = np.zeros(len(bend_grid))
-        for i, c in enumerate(configs):
-            geom = track_for(c.venue, c.distance, c.surface)
-            p = win_prob_grid(c.v_c, c.w_prime, c.draws, c.distance, c.winner_idx, bend_grid,
-                              track=geom, course=c.course, size=n_samples,
-                              speed_noise=speed_noise, seed=seed + i)
-            ll += np.log(p)
-        return ll
-    ll = np.zeros(len(bend_grid))
-    for j, b in enumerate(bend_grid):
-        rng = np.random.default_rng(seed + j)
-        ll[j] = sum(np.log(_p_winner(c, b, speed_noise, n_samples, rng)) for c in configs)
-    return ll
-
-
-@dataclass(frozen=True)
-class BendPosterior:
-    grid: np.ndarray
-    logpost: np.ndarray            # unnormalised
-    prior_log: np.ndarray
-
-    @property
-    def post(self) -> np.ndarray:
-        p = np.exp(self.logpost - self.logpost.max())
-        return p / p.sum()
-
-    @property
-    def mean(self) -> float:
-        return float((self.grid * self.post).sum())
-
-    @property
-    def map(self) -> float:
-        return float(self.grid[int(np.argmax(self.logpost))])
-
-    def interval(self, mass: float = 0.9) -> tuple[float, float]:
-        order = np.argsort(self.grid)
-        g, p = self.grid[order], self.post[order]
-        c = np.cumsum(p)
-        lo = float(g[np.searchsorted(c, (1 - mass) / 2)])
-        hi = float(g[min(np.searchsorted(c, 1 - (1 - mass) / 2), len(g) - 1)])
-        return lo, hi
-
-
-def _lognormal_logpdf(x: np.ndarray, mu: float, sigma: float) -> np.ndarray:
-    x = np.maximum(x, 1e-12)
-    return -np.log(x * sigma * np.sqrt(2 * np.pi)) - (np.log(x) - mu) ** 2 / (2 * sigma ** 2)
-
-
-def _apply_prior(ll: np.ndarray, grid: np.ndarray, mu: float, sigma: float) -> BendPosterior:
-    prior_log = _lognormal_logpdf(grid, mu, sigma)
-    return BendPosterior(grid=grid, logpost=ll + prior_log, prior_log=prior_log)
-
-
-def bend_posterior(configs: list[RaceConfig], bend_grid: np.ndarray,
-                   prior_mu: float = np.log(1 / 100), prior_sigma: float = 0.8,
-                   **kw) -> BendPosterior:
-    """Posterior over ``bend_curvature`` for one venue (lognormal prior × winner likelihood)."""
-    return _apply_prior(bend_loglik(configs, bend_grid, **kw), bend_grid, prior_mu, prior_sigma)
-
-
-def hierarchical_bend(venue_configs: dict, bend_grid: np.ndarray,
-                      prior_sigma: float = 0.8, **kw) -> dict:
-    """Venue-level empirical Bayes: pool venues into a shared prior, then shrink.
-
-    Each venue's (expensive, simulated) winner likelihood is computed **once**. Pass 1
-    fits each venue under a broad prior; the mean of the venue posteriors sets a shared
-    hyper-prior location; pass 2 re-applies that hyper-prior to the cached likelihoods —
-    so a thin-data venue borrows strength from the other. Returns ``{venue: BendPosterior}``.
-    """
-    lls = {v: bend_loglik(c, bend_grid, **kw) for v, c in venue_configs.items()}
-    first = {v: _apply_prior(ll, bend_grid, np.log(1 / 100), prior_sigma) for v, ll in lls.items()}
-    hyper_mu = float(np.mean([np.log(p.mean) for p in first.values()]))
-    return {v: _apply_prior(ll, bend_grid, hyper_mu, prior_sigma) for v, ll in lls.items()}
-
-
-# Per-venue calibrated bend_curvature, from experiments/calibrate_traffic_model.py on
-# the 2026 cached data (rating-segmented EB abilities; see journal). These are the
-# draw-slope moment-match values — they directly reproduce the empirical mean-finish
-# vs draw curve. Both are ~half the uncalibrated default (1/120 = 0.0083): the model
-# was over-amplified. ST is corroborated by the Bayesian winner-likelihood posterior
-# (0.0040, agreeing with the 0.0037 moment-match); HV's winner-likelihood is
-# underpowered (98 races, rails low), so HV rests on the moment-match alone. HV's
-# curvature is *lower* than ST's because HV's larger bend fraction amplifies the same
-# curvature more — matching similar empirical draw-slopes needs less of it.
-CALIBRATED_BEND_CURVATURE: dict = {"HV": 0.0023, "ST": 0.0037}

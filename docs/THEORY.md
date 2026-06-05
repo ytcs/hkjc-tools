@@ -281,3 +281,55 @@ The two highest-leverage, currently-weakest cells: **opponent-adjusted ability**
 Parsimony gates all of it: a term must be **physics/ game-theory-derivable AND move the
 needle**. First-principles grounding lets us rely less on statistics — a derived
 mechanism is a priori correct — but it still has to earn its place.
+
+---
+
+## Appendix: lessons from the deprecated agent-based sims
+
+The project began as a literal **agent-based model** — interacting horses simulated step-by-step
+on the real geometry. Two implementations existed (`hkjc.model.traffic` / `traffic_jax`, the
+kinematic car-following sim; `hkjc.model.eom` / `dynamics`, the power-balance equation of motion).
+**Both were deprecated from the codebase in 2026-06** once the production win model (the `wald`
+drift-diffusion first-passage law) plus per-venue mean-field calibration decisively beat them. The
+physics they encoded is preserved here so the lessons are not lost with the code.
+
+**What they modelled (still the correct picture of the mechanism):**
+- **Power-balance EOM (the "plant").** Each horse is a body of mass `m` driven by metabolic power
+  `P(t)` against real resistances, integrated by Newton's law: `m·dv/dt = P/v − F_resist`, with
+  `F_resist = K_LOCO·m·g` (locomotion) `+ ½ρ·cda·v²·(1−draft)` (aero drag, cut by slipstreaming a
+  leader) `+` bend ground-loss. A finite anaerobic reserve `W′` (joules) depletes above the aerobic
+  ceiling `P_c` and forces the late-race fade. This is *why* `v_c = P_c/(K_LOCO·m·g)` falls with
+  mass — and it yields the **allometric mass law** `v_c ∝ m^(b−1)` (from `p_c = κ·m^b`) that DID
+  survive: it is now applied analytically on the `wald` path (the one converting idea the EOM gave).
+- **Kinematic interaction sim.** Car-following (a horse cannot pass through one ahead in its lateral
+  band — it is speed-capped/blocked), gap-acceptance lane changes, and bend ground-loss from the
+  draw-derived lateral offset. Draw bias and trip-trouble **emerge** from geometry + traffic rather
+  than being fitted.
+
+**Why the *code* was deprecated (an engineering verdict, NOT a verdict on the axis):**
+- As a first-attempt *implementation*, the sims were low-leverage for WIN. A non-interacting
+  first-passage model (`wald`) plus per-venue mean-field terms matches or beats them at ~35× the
+  speed; at the calibrated baseline the kinematic sim **lost to `wald` at HV by −4.1pp** (its
+  uncalibrated emergent draw is worse than the tuned per-venue `DRAW_GAIN`). So the hand-tuned
+  car-following loop is retired — but the *physics it pointed at remains the right picture*, and it
+  did reproduce the qualitative draw/trip characteristics that the mean-field terms only approximate.
+
+**Draw and the interaction axis are DEFERRED, not rejected — the key open theory.** Draw is not a
+static geometric covariate: its effect is **deeply coupled to the control dimension** (the jockey's
+policy — how the gate is used to take up position, when to commit, how the trip is navigated). A
+regression / mean-field term (`DRAW_GAIN`, `DRAW_FS_GAIN`) can only capture the *first-order geometric
+shadow* of a fundamentally **geometry × control** phenomenon, which is why the simplistic relational
+treatments (front-runner fade ∝ rival front-runner count, tested four ways) do not yet convert — not
+because the mechanism is absent, but because we have not yet modelled geometry and control jointly.
+The proper treatment is a differential / mean-field **game of jockeys navigating the geometry** (the
+competition game of §3b), with draw as a boundary condition on that game. Until we have confidently
+modelled geometry + control together, treat the baked draw terms as **interim stopgaps** and keep the
+axis open. This is the single most promising piece of deep theory-building left.
+
+**Substrate when the axis is taken up** (also for place/exotic pricing, where whole-field ordering
+matters more than the knife-edge for first): an **interacting Plackett-Luce** (PL as the free theory)
+or condensed-matter machinery — exclusion processes (TASEP) for blocking, active-matter for drafting,
+mean-field games for the jockey-control policy — built jointly with the geometry, not a hand-tuned
+loop. Rebuild against the conversion test, and remember the methodology lesson: confirm every
+candidate with a **paired fixed-seed full-scale** backtest (the subsampled quick_eval over-stated the
+one surviving interim term ~4×).

@@ -19,12 +19,6 @@ History / rationale (do not lose):
   career-form era ran 2.0 -> 4.0 (market under-weighted ability, t=+32; ECE 0.0081 ->
   0.0069, matching the market's own calibration).
 
-- SPEED_NOISE = 0.12  (per-horse race-day speed sd, fraction of v_target). Must be
-  calibrated to the ability spread or the sim is over-confident. With a real ability
-  signal (form) the win is mostly unpredictable, so this is large. KEY: lowering it
-  HURTS at every gain — the fix was amplifying the GOOD signal (form), not global
-  sharpening (cutting noise also sharpens the noisy sectional v_c and overfits).
-
 - JOCKEY_GAIN = 5.0  (m/s of v_c per unit jockey strike-rate above the field-neutral
   mean). Jockey couples like form — a measurement of the effective v_c the horse
   realises (part better-trip, part the private info that a fancied horse gets a top
@@ -32,12 +26,6 @@ History / rationale (do not lose):
   15 over-couples and hurts), lifting the model ~29% -> ~38% of market skill. Baked at
   the plateau centre.
 
-- PACE_GAIN = 0.0  (running-style -> pace policy is OFF). The MECHANISM is real and the
-  sim reproduces it (front-runner +0.6pp, closer -0.9pp), but as a PREDICTOR off the
-  trailing-rel_early proxy it is FALSIFIED on ST: every PACE_GAIN>0 hurts OOS
-  monotonically. The early-speed edge is already absorbed by FORM (and priced by the
-  market), so coupling it double-counts. Kept as dormant infrastructure (trajectory-
-  measured pace_bias, the venue/distance litmus, the best-response layer). Revisit at HV.
 
 - W_PRIME_GAIN = 1.0  (multiplier on the per-horse anaerobic-reserve residual = the
   un-amplified natural EB estimate). REVERTED 2.0 -> 1.0 at the recency-form (56%) baseline.
@@ -102,18 +90,20 @@ DRAW_GAIN_BY_VENUE = {"ST": 0.003, "HV": 0.008}
 # ~33% softer than turf (a more reachable benchmark). fit resolves this by SURFACE, overriding the venue.
 DRAW_GAIN_AWT = float(os.environ.get("DRAW_GAIN_AWT", "0.008"))
 
-# DRAW_FS_GAIN: crowding-amplified draw — the ONE convertible INTERACTION term (the agent-based sim's
-# original motivation, distilled to a mean-field shadow). The bend ground-loss penalty is scaled by field
-# size: dg = draw_g·max(0, 1 + DRAW_FS_GAIN·(N−12)), so a wide draw costs MORE in a crowded field (more
-# rivals to be boxed by / forced wider) and the penalty vanishes (never reverses — hence the clamp) in a
-# roomy small field. PER-VENUE and HV-ONLY: the full-scale PAIRED (fixed-seed) test converts only at HV
-# (0.25 → +0.3pp, 53.8→54.1%; the venue where collision/boxed-in physics dominates — tightest bends, the
-# strongest draw bias in HK), and is FLAT at ST (0.0pp; ST draw is cleaner geometry already captured by the
-# linear DRAW_GAIN). LESSON: the 150-race quick_eval wildly OVER-stated this (+1–1.6pp) — only the paired
-# full-scale gate (PYTHONHASHSEED fixed so base/candidate share MC seeds) revealed the true ~+0.3pp. The
-# relational pace-pressure interaction (front-runner fade scaling with rival front-runner count, THEORY §3b)
-# was tested the same way and did NOT convert — a 4th flat result on the pace axis; pos_fade already absorbs
-# it. So the interaction axis yields exactly this one HV term. fit resolves per-venue unless passed (sweeps).
+# DRAW_FS_GAIN: crowding-amplified draw — an INTERIM mean-field stopgap on the draw axis (NOT the final
+# word; see below). The bend ground-loss penalty is scaled by field size: dg = draw_g·max(0, 1 +
+# DRAW_FS_GAIN·(N−12)), so a wide draw costs MORE in a crowded field (more rivals to be boxed by / forced
+# wider) and the penalty vanishes (never reverses — hence the clamp) in a roomy small field. PER-VENUE and
+# HV-ONLY: the full-scale PAIRED (fixed-seed) test converts only at HV (0.25 → +0.3pp, 53.8→54.1%; the
+# venue where collision/boxed-in physics dominates — tightest bends, the strongest draw bias in HK), and is
+# FLAT at ST (0.0pp). LESSON: the 150-race quick_eval wildly OVER-stated this (+1–1.6pp) — only the paired
+# full-scale gate (PYTHONHASHSEED fixed so base/candidate share MC seeds) revealed the true ~+0.3pp.
+# DEFERRED, NOT REJECTED: draw is deeply coupled to the CONTROL dimension (jockey policy — how the gate is
+# used to take up position / navigate the trip), so a regression/mean-field term only captures the
+# first-order geometric SHADOW of a geometry×control phenomenon. The richer relational pace-pressure term
+# (front-runner fade ∝ rival front-runner count, THEORY §3b) doesn't yet convert for the same reason — the
+# mechanism is real but needs geometry + control modelled JOINTLY (a differential game of jockeys on the
+# geometry), not because the axis is dead. Treat DRAW_GAIN/DRAW_FS_GAIN as interim until that theory exists.
 DRAW_FS_GAIN = float(os.environ.get("DRAW_FS_GAIN", "0.0"))
 DRAW_FS_GAIN_BY_VENUE = {"ST": 0.0, "HV": 0.25}
 
@@ -136,36 +126,26 @@ FORM_GAIN = float(os.environ.get("FORM_GAIN", "5.0"))
 # (joint sweep peak), ST stays 5.0. fit_predict_traffic resolves the venue's value unless form_gain is
 # passed explicitly (for sweeps). Falls back to FORM_GAIN for an unknown venue.
 FORM_GAIN_BY_VENUE = {"ST": 5.0, "HV": 4.0}
-SPEED_NOISE = float(os.environ.get("SPEED_NOISE", "0.12"))
 # JOCKEY_GAIN 5->6: re-swept after the mass/pos-fade/per-venue bakes; jg=6 is a clean shared optimum at
 # BOTH venues (ST +0.4pp, HV +0.35pp; 7 ties, 8 falls off). The jockey signal absorbs trip/positioning
 # quality the sectional EB v_c misses — slightly more leverage now that the other channels are sharper.
 JOCKEY_GAIN = float(os.environ.get("JOCKEY_GAIN", "6.0"))
-PACE_GAIN = float(os.environ.get("PACE_GAIN", "0.0"))
 W_PRIME_GAIN = float(os.environ.get("W_PRIME_GAIN", "1.0"))
-# SIM selects the win-probability model:
-#   "wald"      — DEFAULT, the production win model. Finishing time = first-passage of a drift-diffusion
-#                 (Inverse-Gaussian); the principled, first-principles noise law. One physical parameter
-#                 (the diffusion coefficient D); surface-dependent (AWT 2x). ~56% of market.
-#   "pl"        — fast-and-dirty closed-form probe (Plackett-Luce / Gumbel softmax); instant, no sampling.
-#                 Use for wide parameter sweeps; slightly less accurate than wald.
-#   "kinematic" — the JAX traffic sim (car-following + draw geometry). For INTERACTIONS / place+exotic
-#                 pricing only — traffic is low-leverage for WIN, where wald matches it ~35x faster.
-#   "eom"       — the power-balance EOM (inert recorded infra; underperforms for win — see journal).
-# The velocity-multiplicative "probit" mode was dropped (an odd in-between: noise on velocity, not the
-# physical finishing-time observable, and a one-shot draw rather than a diffusion).
+# SIM selects the win-probability model (the interacting agent-based sims were deprecated 2026-06):
+#   "wald" — DEFAULT, the production win model. Finishing time = first-passage of a drift-diffusion
+#            (Inverse-Gaussian); the principled, first-principles noise law. One physical parameter
+#            (the diffusion coefficient D); surface-dependent (AWT 2x).
+#   "pl"   — fast closed-form probe (Plackett-Luce / Gumbel softmax); instant, no sampling. Gives the
+#            full finishing-order distribution (place/exotics); slightly less accurate than wald for win.
 SIM = os.environ.get("SIM", "wald")
 
-# ALLOMETRIC_B: the body-mass power exponent b in p_c = κ·m^b — the ONE physiological constant for
-# how aerobic power scales with muscle mass. Derived from the EOM, not a free gain: v_c =
-# p_c/(K_LOCO·m·g) ⟹ at steady state v_c ∝ m^(b−1). The kinematic (production) path applies exactly
-# that analytic law as a field-relative factor v_c *= (m/m̄)^(b−1); the SIM="eom" path instead lets
-# mass act through the full Newton's-law dynamics (inertia/fade/drag too). The residual diagnosis
-# showed the market backs heavier horses MORE (bodywt residual t=+8.6) and a probe confirmed it is
-# REAL mass (partial t=+8.8 controlling for rating+class; monotone; survives within-class) ⟹ b>1
-# (power scales super-linearly with mass). b=1.0 = no mass effect; calibrate upward. NOTE: the full
-# SIM="eom" path currently underperforms the kinematic sim (see journal) — production uses the
-# steady-state law. Declared weight is pre-race, so leak-free. Now applied on the WALD path too.
+# ALLOMETRIC_B: the body-mass power exponent b in p_c = κ·m^b — the ONE physiological constant for how
+# aerobic power scales with muscle mass. Derived (not a free gain) from the power-balance steady state
+# v_c = p_c/(K_LOCO·m·g) ⟹ v_c ∝ m^(b−1); applied on the wald path as a field-relative factor
+# v_c *= (m/m̄)^(b−1). The residual diagnosis showed the market backs heavier horses MORE (bodywt
+# residual t=+8.6) and a probe confirmed it is REAL mass (partial t=+8.8 controlling for rating+class;
+# monotone; survives within-class) ⟹ b>1 (power scales super-linearly with mass). b=1.0 = no mass
+# effect. Declared weight is pre-race, so leak-free.
 ALLOMETRIC_B = float(os.environ.get("ALLOMETRIC_B", "1.0"))
 # PER-VENUE: the allometric mass effect is REAL and the #1 ST residual (bodywt t≈+8), but converts to
 # %market only at ST (b≈1.2, +0.5pp; the persistent mass residual). At HV the coupling does NOT convert

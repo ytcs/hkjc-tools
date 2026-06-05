@@ -9,8 +9,9 @@ serves the walk-forward backtest and a live race card.
 - :func:`form_table` — expanding mean of prior relative-finish. Form is the dominant
   ability signal (≈18% of market skill) and survives the handicap.
 - :func:`jockey_table` — trailing win strike-rate of the booked jockey (≈+7pp).
-- :func:`style_table` — trailing mean ``rel_early`` (front-runner ↑ / closer ↓); the
-  pace-policy input (dormant by default, PACE_GAIN=0 — see constants).
+- :func:`style_table` — trailing mean ``rel_early`` (front-runner ↑ / closer ↓), a speed-based
+  running-style signal. (The position-based :func:`early_position_table` is what feeds the live
+  positional-fade term; ``style`` is currently unused by the production fit — kept as a feature.)
 
 Recency note: an exp-weighted form is +8pp in a bare conditional logit but does NOT
 transfer to the ABM (the recency the market prices is already carried by the official

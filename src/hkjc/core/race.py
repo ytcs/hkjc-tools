@@ -8,7 +8,7 @@ arrays (``v_c``, ``w_prime``, ``draw``, ``distance``, ``course`` …) around. A
 itself, so an agent-based simulation is one call:
 
     race = Race.from_results(results_df)         # or .from_racecard(...)
-    sim  = RaceSimulator(race.traffic_model(), n_samples=50_000)
+    sim  = RaceSimulator(race.energetics_model(), n_samples=50_000)
     sim.prob(sim.wins(0))
 
 Indices follow the rest of the library: position ``i`` in the per-runner arrays is
@@ -97,24 +97,6 @@ class Race:
     # ``model`` (the layering holds at module-load time; only calling a builder creates
     # the runtime dependency). If this ever feels wrong, move the builders to a
     # ``model.builders`` module of free functions taking a Race.
-    def traffic_model(self, v_c=None, w_prime=None, **kwargs):
-        """Build the Tier-A interacting :class:`~hkjc.model.TrafficRaceModel`.
-
-        Resolves geometry/course/draw from the race; per-horse ``(v_c, w_prime)`` come
-        from the runners (sectional energetics) unless overridden, falling back to
-        equal-ability defaults for a pure draw-geometry study.
-        """
-        from ..model.calibration import CALIBRATED_BEND_CURVATURE
-        from ..model.traffic import TrafficRaceModel
-        if "bend_curvature" not in kwargs and self.venue in CALIBRATED_BEND_CURVATURE:
-            kwargs["bend_curvature"] = CALIBRATED_BEND_CURVATURE[self.venue]
-        return TrafficRaceModel(
-            self._ability("v_c", v_c, DEFAULT_V_C),
-            self._ability("w_prime", w_prime, DEFAULT_W_PRIME),
-            self.draws, self.distance,
-            track=self.geometry, course=self.course, **kwargs,
-        )
-
     def energetics_model(self, v_c=None, w_prime=None, **kwargs):
         """Build the non-interacting :class:`~hkjc.model.EnergeticsRaceModel`."""
         from ..model.energetics import EnergeticsRaceModel

@@ -5,3 +5,6 @@ data_cache/
 *.parquet
 yolov8*.pt
 *.pt
+
+# agent worktrees + local settings
+.claude/

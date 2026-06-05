@@ -21,9 +21,11 @@ them); `vision` is an opt-in CV subsystem.
 - `hkjc.core` — contracts (`RaceModel`, `DataSource`), `Race`/`TrackGeometry`, `RaceSimulator`,
   and `hkjc_facts` (THE source for site quirks + betting rules — import it, don't hard-code).
 - `hkjc.data` — scrapers + persistence (`ticks`, carryover ledger). Acquires only, no edge.
-- `hkjc.model` — the ABM: `eom` (single canonical JAX power-balance EOM, mass-aware),
-  `fit.fit_predict_traffic` (leak-free EB ability → win probs), `features` (leak-free
-  form/jockey/style), `calibration`, `constants` (the baked gains).
+- `hkjc.model` — the production win model: `fit.fit_predict_traffic` (leak-free EB ability →
+  win probs via the `wald` first-passage diffusion law + per-venue mean-field couplings),
+  `features` (leak-free form/jockey/style/early-pos), `calibration` (EB population), `constants`
+  (baked gains). The interacting agent-based sims (kinematic + power-balance EOM) were deprecated
+  2026-06 — low-leverage for win; physics preserved in `docs/THEORY.md` (Appendix).
 - `hkjc.betting` — `pools`, `carryover`, `clv`, and the `Strategy` seam.
 - `hkjc.backtesting` — walk-forward + scoring (% of market, ECE) + **no-lookahead enforcement**
   (`AsOfView`, `assert_no_lookahead`).
@@ -64,17 +66,16 @@ On session start, an agent reads its inbox (`Journal.inbox("<name>")`) and its l
 
 ## Where the modelling work stands
 
-Authoritative state: `journal/state/MODEL_STATE.md` (constants + the open residual queue).
-Current production (SIM=wald): FORM_HALF_LIFE=2 (recency form), FORM_GAIN=5.0, W_PRIME_GAIN=1.0,
-JOCKEY_GAIN=5.0, SHRINK_MULT=0.5, DRAW_GAIN=0.003 (bend ground-loss); fit ≈ **58% of market (ST)**,
-model ECE 0.0060. HV not yet re-confirmed at this baseline.
-
-**Open residual queue (the modelling agent's worklist, by |t|, at the 58% baseline):**
-1. `bodywt`/mass UNDER-weighted, t=+9.6 → the new #1; revisit as a wald drift/noise term (the EOM
-   steady-state law gave b=1 "no effect", but that was at 48% — re-check on the production path).
-2. `actwt` (carried weight) UNDER, t=+2.9 → handicap-as-quality proxy, cheap untested probe.
-3. Draw mean-field DONE (DRAW_GAIN, +1.9pp); residual draw×field-size is interaction = ABM territory.
+Authoritative state: `journal/state/MODEL_STATE.md` (constants table + the lever queue + the
+refuted list — read it before any modelling work). Current production (`SIM=wald`, per-venue
+calibration): fit ≈ **60.0% of market (ST) / 54.1% (HV)** (from ~48% at project start), model ECE
+~0.005. The cheap per-horse mean-field levers are **saturated**: the next real gain needs NEW DATA
+(barrier trials for debuts — build underway), not more mean-field terms. The interaction axis yields
+exactly one convertible mean-field term (`DRAW_FS_GAIN`, crowding draw, HV-only); the full ABM was
+deprecated.
 
 The method is the loop: **diagnose** (market-residual regression, race-clustered SEs) →
 **recalibrate** (a mechanism-grounded constant) → **bake** (`hkjc.model.constants`) →
-**re-diagnose**. Verify every change improves OOS % of market *and* ECE, not just in-sample.
+**re-diagnose**. The CONVERSION test (%market, confirmed at full scale with a PAIRED fixed-seed
+backtest — `PYTHONHASHSEED=0` so base/candidate share MC seeds), NOT the residual t-stat, is the
+gate; verify every change improves OOS % of market *and* ECE, not just in-sample.

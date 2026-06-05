@@ -2,10 +2,9 @@
 import numpy as np
 import polars as pl
 
-from hkjc.model.calibration import (RaceConfig, bend_posterior, distance_band,
-                              empirical_draw_curve, fit_energetics_population,
-                              fit_random_effects, horse_energetics,
-                              horse_energetics_trailing)
+from hkjc.model.calibration import (distance_band, empirical_draw_curve,
+                              fit_energetics_population, fit_random_effects,
+                              horse_energetics, horse_energetics_trailing)
 
 
 def _synth_runs(n_horses=400, sigma=0.6, tau=0.8, seed=1):
@@ -123,23 +122,3 @@ def test_empirical_draw_curve_shapes():
     c = empirical_draw_curve(df)
     assert set(c["draw"].to_list()) == {1, 2}
     assert c.filter(pl.col("draw") == 1)["p_win"][0] == 1.0
-
-
-def _draw_race(winner_draw, n=10, seed=0):
-    draws = np.arange(1, n + 1)
-    return RaceConfig(venue="HV", distance=1200, surface="turf", course="A",
-                      draws=draws, v_c=np.full(n, 16.0), w_prime=np.full(n, 50.0),
-                      winner_idx=winner_draw - 1)
-
-
-def test_bend_posterior_responds_to_draw_signal():
-    grid = np.linspace(0.001, 0.03, 6)
-    # inner draws always win -> posterior should favour a LARGER bend_curvature than
-    # a field where the winner is random.
-    inner = [_draw_race(winner_draw=1, seed=s) for s in range(10)]
-    rand = [_draw_race(winner_draw=int(1 + (s % 10)), seed=100 + s) for s in range(10)]
-    p_inner = bend_posterior(inner, grid, n_samples=600)
-    p_rand = bend_posterior(rand, grid, n_samples=600)
-    assert p_inner.mean > p_rand.mean
-    lo, hi = p_inner.interval(0.9)
-    assert lo <= p_inner.mean <= hi

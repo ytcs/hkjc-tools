@@ -8,9 +8,9 @@ from those below it); ``backtesting`` and ``agents`` sit on top and nothing impo
   (the single source for HKJC site quirks + betting rules).
 - **data** — connectors/scrapers (live + historical) and the persistence stores; acquires
   and persists only, computes no edge.
-- **model** — the agent-based race model: the single canonical power-balance EOM
-  (:mod:`hkjc.model.eom`), the leak-free fit→predict pipeline (:mod:`hkjc.model.fit`), the
-  ability features, calibration, and the baked constants.
+- **model** — the production win model: the leak-free fit→predict pipeline
+  (:mod:`hkjc.model.fit`, the ``wald`` first-passage diffusion law + per-venue mean-field
+  terms), the ability features, the empirical-Bayes calibration, and the baked constants.
 - **betting** — price pools, value the closing line, and stake against a ``Strategy``.
 - **backtesting** — replay history, enforce no-lookahead (``AsOfView`` + the leakage check),
   and score models/strategies (% of market, ECE, selection control).

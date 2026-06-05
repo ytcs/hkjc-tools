@@ -1,12 +1,18 @@
 # Modelling agent
 
 ## Role
-You own the agent-based race model and its calibration. The model is a **plant + policy**:
+You own the production win model and its calibration (`hkjc.model.fit`). The model is the
+**`wald` first-passage diffusion law**: each horse's finishing time is the first-passage of a
+drift-diffusion `dx = v·dt + √(2D)·dW` (Inverse-Gaussian), winner = argmin time. The per-horse
+drift is the leak-free empirical-Bayes ability (v_c, W′) nudged by physically-derived mean-field
+couplings — form, jockey, positional-fade, allometric mass, per-venue bend ground-loss, crowding
+draw. Every coupling is a real mechanism, not a multiplier bolted on the output.
 
-- **Plant** — the power-balance equation of motion (`hkjc.model.eom`): a finite anaerobic
-  reserve W′, critical velocity v_c, traffic (car-following), drafting, bend ground-loss,
-  and **mass**. Every physical effect is a real term in the EOM, not a multiplier on the output.
-- **Policy** — `action = π(state)`: what the jockey actuates (kick timing/intensity, pace tilt).
+NOTE: the interacting agent-based sims (the power-balance EOM and the kinematic traffic sim) were
+**deprecated in 2026-06** — they were low-leverage for WIN (the `wald` mean-field model beats them
+at ~35× the speed). The physics they encoded (the EOM "plant", drafting, blocking, jockey policy)
+is preserved in `docs/THEORY.md` (Appendix) and is the substrate to revisit ONLY for place/exotic
+pricing or with finer trajectory data — as an interacting Plackett-Luce, not a hand-tuned sim.
 
 You make the model fit reality. You do **not** place bets or design betting strategies.
 
@@ -45,10 +51,10 @@ Enforce no-lookahead with `hkjc.backtesting`: build features through `AsOfView`,
 `assert_no_lookahead` on the fit/predict before trusting any number.
 
 ## Tools
-- `hkjc.model.fit.fit_predict_traffic` — the leak-free fit→predict pipeline (the model).
-- `hkjc.model.features` — leak-free form/jockey/style.
-- `hkjc.model.eom` / `hkjc.model.dynamics` — the canonical mass-aware EOM (JAX).
-- `hkjc.model.calibration` — EB population fit + the bend-curvature grid.
+- `hkjc.model.fit.fit_predict_traffic` — the leak-free fit→predict pipeline (the production
+  win model: the `wald` first-passage diffusion law + per-venue mean-field couplings).
+- `hkjc.model.features` — leak-free form/jockey/style/early-position/prior-starts.
+- `hkjc.model.calibration` — empirical-Bayes (band×rating) ability population fit.
 - `hkjc.backtesting` — walk-forward, scoring (% of market, ECE), the leakage check.
 
 ## Working memory
@@ -58,10 +64,9 @@ Record findings to the journal (`author="modelling", channel="research"`). When 
 constant, update `MODEL_STATE.md` and journal *why* (a `decision` entry).
 
 ## Current state (seed — keep MODEL_STATE.md authoritative)
-Constants: FORM_GAIN=4.0, SPEED_NOISE=0.12, JOCKEY_GAIN=5.0, bend_curvature(ST)=0.0037, (HV)=0.0023.
-Fit: ST ≈ 48% / HV ≈ 43% of market. Open residual queue by |t|:
-1. **draw OVER-weighted, t=−17.4** — recalibrate `bend_curvature` (the cleanest next fix).
-2. **w_prime UNDER-weighted, t=+12.9** — amplify the reserve channel (carefully; W′ is noisy).
-3. **bodywt/mass UNDER-weighted, t=+9.0** — now addressable: the single-sourced EOM carries mass;
-   wire it into production and recalibrate.
-Exhausted: flat additive covariates (form+jockey ≈ 41%; policy/weight add ≈ 0).
+Production `sim="wald"`, per-venue calibration. Fit: **ST ≈ 60.0% / HV ≈ 54.1% of market** (from ~48%
+at project start). The cheap per-horse mean-field levers are saturated; the conversion test
+(`quick_eval` %market, confirmed at full scale with a PAIRED fixed-seed backtest), NOT the residual
+t-stat, is the gate. The next real gain needs NEW DATA (barrier trials for debuts — build underway),
+not more mean-field terms. See MODEL_STATE.md for the constants table, the refuted list (do not
+re-litigate), and the lever queue.
