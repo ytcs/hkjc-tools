@@ -46,11 +46,13 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | `SPEED_NOISE` | 0.12 | `hkjc.model.constants` | Velocity-noise (= log-normal time). Diffusion `diff_coef≈170` ties it (`sim="wald"`). |
 | `awt_diff_mult` | 2.0 | `fit.py` (sim="wald") | AWT is 2× as diffusive as turf (surface-dependent D) — fixes AWT over-confidence (12.7%→23.7%). |
 
-Current fit: **ST ≈ 62.6% / HV ≈ 59.3% of market** (wald, full-scale paired). This push (60.0/54.1 → 62.6/59.3:
-ST +2.6pp, HV +5.2pp) was driven ENTIRELY by NEW DATA + new STRUCTURAL signal — barrier trials (debut/lightly-
-raced form), collateral-form (opponent strength), rating-peakgap (career decline), trajectory fade — none of
-which is a reweighting of priced features. The HV gap to ST closed from ~6pp to ~3pp (collateral + peakgap both
-hit HV hardest — the tactical track where field-strength + career-phase are most mispriced).
+Current fit: **ST ≈ 63.3% / HV ≈ 59.4% of market** (wald, full-scale paired). This push (60.0/54.1 → 63.3/59.4:
+ST +3.3pp, HV +5.3pp) was driven ENTIRELY by NEW DATA + new STRUCTURAL signal — barrier trials (debut/lightly-
+raced form), collateral-form (opponent strength), rating-peakgap (career decline), trajectory fade, trainer
+hot-streak (intent momentum), and **draw→D (the trip-variance third knob)** — none a reweighting of priced
+features. The HV gap to ST closed from ~6pp to ~4pp (collateral + peakgap hit HV hardest — the tactical track
+where field-strength + career-phase are most mispriced; ST gains most from trials + draw-variance).
+Newly baked since the table above: `TRN_HOT_GAIN_BY_VENUE` (ST 2.0/HV 1.0), `DRAW_VAR_GAIN_BY_VENUE` (ST 0.5/HV 0.0).
 
 **THE PATH IS NEW DATA + NEW STRUCTURE, not more mean-field (this push proved it).** The earlier "saturation"
 was a saturation of *mean-field terms on the existing race panel* — every per-horse residual was collinear with
