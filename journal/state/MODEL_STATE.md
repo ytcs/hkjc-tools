@@ -135,9 +135,14 @@ of deep theory-building left — but it is a theory build, not a regression prob
    race-history can't give (race-derived condition features are fully collinear — refuted). Backfill → fuse (per #1).
 3. **CV / vision (longer horizon).** Video path extraction from race replays (`hkjc.vision`) to "watch" past races
    for dynamics section-times miss; gait analysis for biomechanical condition (esp. debut barrier-trial video).
-4. **Geometry × control theory (deferred, THEORY §3c).** The draw axis. Minimal next experiment = O1: replace the
-   scalar per-venue `DRAW_GAIN·(Dr−1)` with a `g(Course)` geometry modulation — partitions draw into geometry vs
-   control shares. Then O2 (draw × #front-runners-drawn-inside) and O3 (ground-saved control quality from trajectory).
+4. **Geometry × control theory (THEORY §3c). O1 DONE → the draw signal is in the CONTROL channel, not geometry.**
+   O1 (draw × Course geometry modulation) was tested: the geometry hypothesis is REAL at the residual level (ST draw
+   penalty steepens on tighter Courses, interaction t=−6.79) but does NOT convert (%market flat) — the per-venue
+   scalar `DRAW_GAIN` already saturates the geometry MOMENT for the winner's probability. So skip O2 (still a pre-race
+   geometry/composition proxy). **Next = O3: a leak-free ground-saved / path-efficiency CONTROL-QUALITY trait** —
+   rank-gain-per-unit-relative-velocity averaged over a horse's prior runs (a stable jockeyship latent) from the
+   EXISTING `trajectory_dataset_full` (NO CV needed), coupled as a per-horse trip/v_c bump. The baked `DRAW_GAIN`/
+   `DRAW_FS_GAIN` stay interim stopgaps. (Course/rail is in `st_history` for ST only; HV is locked to A.)
 5. **Other new data:** weather (continuous soil-moisture going + wind; poll-and-log, no history); formline (the
    collateral graph could go deeper / directed). See HKJC_DATA.md.
 
