@@ -9,3 +9,7 @@ yolov8*.pt
 # agent worktrees + local settings
 .claude/
 studies/newdata_samples/
+
+# CV prototype regenerable artifacts (code is tracked; frames/outputs/video are not)
+studies/cv/frames/
+studies/cv/out/
