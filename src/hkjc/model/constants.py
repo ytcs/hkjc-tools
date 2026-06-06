@@ -190,6 +190,34 @@ ALLOMETRIC_B_BY_VENUE = {"ST": 1.1, "HV": 1.0}
 TRIAL_GAIN = float(os.environ.get("TRIAL_GAIN", "0.0"))
 TRIAL_GAIN_BY_VENUE = {"ST": 1.5, "HV": 1.0}
 
+# TRIAL_PI_RATIO: the principled SUCCESSOR to the additive TRIAL_GAIN — fuse a barrier trial into the
+# empirical-Bayes v_c posterior at the trial's OWN precision, with a race-count-adaptive weight, instead
+# of a flat additive bump. A horse's v_c residual is a precision-weighted posterior of (i) the rating-
+# conditioned population prior (precision π_0 = 1/τ²), (ii) its n race observations (each at π_race = 1/σ²),
+# and (iii) its m trial observations on the race-v_c scale (each at π_trial = ρ·π_race). The trial's
+# effective weight on its own residual is then w_trial = m·π_trial / (π_0 + n·π_race + m·π_trial), which
+# DECAYS as race evidence n accumulates: a debut/green horse (n=0..2) moves a lot, an established one (n≈30)
+# barely — exactly the property the flat additive TRIAL_GAIN lacks (it over-weights established horses,
+# under-weights green ones). ρ = π_trial/π_race is the trial's precision relative to a race: the train-only
+# affine map of trial-residual→race-residual has slope b≈0.14 and residual var ≈ race-residual var, giving a
+# raw data ratio ρ≈0.77 (a trial is worth ~¾ of a race once mapped). The trial is folded ABOVE the SHRINK_MULT
+# layer (it is NOT a sectional-v_c residual and must not inherit its global shrinkage — that double-shrink was
+# the first fusion attempt's bug). A NO-OP at ρ=0 (recovers the race-only posterior exactly). Needs the
+# trial_vc / trial_m columns (features.trial_vc_table) + barrier_trials.parquet. ρ is calibrated by the paired
+# full-scale conversion test; the structural win is matching additive on debuts while ADDING on lightly-raced.
+TRIAL_PI_RATIO = float(os.environ.get("TRIAL_PI_RATIO", "0.0"))
+# PER-VENUE: fusion BAKED at ST (ρ=2.0) — the paired full-scale conversion test (PYTHONHASHSEED=0) gives
+# OVERALL 62.6→62.9% (+0.3pp), with the structural win underneath: DEBUT (0 starts) −68.9→−62.9% (+6.0pp)
+# and LIGHTLY-RACED (1–5) 66.4→67.5% (+0.9pp) — the slices where the flat additive's weight is wrong —
+# while ESTABLISHED (6+) is flat (−0.4pp, within seed noise). HV stays on the additive (ρ=0): its trial
+# signal is too sparse/weak (only ~30 debut winners in 4 yr, additive HV gain just 1.0) and fusion costs
+# −0.3pp at the headline there (the light slice loses more than debut gains). The HV trial axis waits for
+# the denser training-gallop prior (the same fusion extends to it). ρ is the FADE-RATE knob (larger ρ ⇒
+# slower fade with race count); the weight is normalised to 1 at debut so the fusion EQUALS the additive
+# for a debutant and fades for established — recovering the win signal where it matters and shedding the
+# additive's over-weighting of established horses. See fit.fit_predict_traffic + fit.fit_trial_vc_map.
+TRIAL_PI_RATIO_BY_VENUE = {"ST": 2.0, "HV": 0.0}
+
 # COLLAT_GAIN: collateral-form coupling (m/s of effective v_c per unit of the opponent-adjusted
 # collateral rating, within-race centred). Competition is RELATIONAL, not scalar (THEORY §3b): a
 # horse's ability is estimated by propagating beaten-margins through the field it ran, the fields

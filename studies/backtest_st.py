@@ -22,7 +22,7 @@ from hkjc.model.features import (attach_rating_trajectory, barrier_trial_table,
                                  collateral_form_table, early_position_table, form_table,
                                  jockey_table, prior_starts_table, recency_form_table,
                                  speed_figure_table, style_table, trainer_hot_table,
-                                 trainer_table, trajectory_trait_table)
+                                 trainer_table, trajectory_trait_table, trial_vc_table)
 from hkjc.model.constants import FADE_GAIN, FORM_HALF_LIFE
 from hkjc.model.fit import fit_predict_traffic
 
@@ -120,11 +120,18 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     # on horse brand. trial date strictly precedes the race (mornings vs race days). 0 = no prior trial.
     btq = CACHE / "barrier_trials.parquet"
     if btq.exists():
-        tt = barrier_trial_table(pl.read_parquet(btq)).sort("d")
+        bt = pl.read_parquet(btq)
+        tt = barrier_trial_table(bt).sort("d")
         df = df.sort("d").join_asof(tt, on="d", by="horse_id", strategy="backward")
         df = df.with_columns(pl.col("trial_fig").fill_null(0.0))
+        # trial critical velocity (race scale) + prior trial count for the coherent precision-fusion
+        tv = trial_vc_table(bt).sort("d")
+        df = df.sort("d").join_asof(tv, on="d", by="horse_id", strategy="backward")
+        df = df.with_columns(pl.col("trial_m").fill_null(0.0))
     else:
-        df = df.with_columns(pl.lit(0.0).alias("trial_fig"))
+        df = df.with_columns(pl.lit(0.0).alias("trial_fig"),
+                             pl.lit(None, dtype=pl.Float64).alias("trial_vc"),
+                             pl.lit(0.0).alias("trial_m"))
     # rating-trajectory PROCESS feature (own-peak deficit); strict backward as-of (no same-day leak)
     df = attach_rating_trajectory(df, r)
     df = df.with_columns((pl.col("date") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("race_id"))
@@ -154,6 +161,8 @@ def main():
     dfs = float(_dfs) if _dfs is not None else None
     _tg = os.environ.get("TRIAL_GAIN")  # barrier-trial debut signal; None -> per-venue TRIAL_GAIN_BY_VENUE
     tg = float(_tg) if _tg is not None else None
+    _tpr = os.environ.get("TRIAL_PI_RATIO")  # coherent trial-fusion precision ratio; None -> per-venue baked
+    tpr = float(_tpr) if _tpr is not None else None
     _cg = os.environ.get("COLLAT_GAIN")  # opponent-adjusted collateral-form; None -> per-venue baked
     cg = float(_cg) if _cg is not None else None
     _fg = os.environ.get("FADE_GAIN")  # trajectory fade-resistance; None -> baked default
@@ -168,7 +177,8 @@ def main():
     def _model(train, test):
         return fit_predict_traffic(train, test, jky_mean=jky_mean, w_prime_gain=wpg, sim=sim,
                                    allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg, collat_gain=cg,
-                                   fade_gain=fg2, rtg_peakgap_gain=pgg, trn_hot_gain=thg, draw_var_gain=dvg)
+                                   fade_gain=fg2, rtg_peakgap_gain=pgg, trn_hot_gain=thg, draw_var_gain=dvg,
+                                   trial_pi_ratio=tpr)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

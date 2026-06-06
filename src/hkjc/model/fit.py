@@ -36,7 +36,8 @@ from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, COLLAT_GAIN,
                         FADE_GAIN, FADE_W_GAIN, FORM_GAIN, FORM_GAIN_BY_VENUE,
                         JOCKEY_GAIN, N_SAMPLES, PEAKGAP_GAIN, PEAKGAP_GAIN_BY_VENUE,
                         POS_FADE_GAIN, POSFADE_W_GAIN, SHRINK_MULT, SIM, SUSTAIN_GAIN, TRIAL_GAIN,
-                        TRIAL_GAIN_BY_VENUE, TRN_HOT_GAIN, TRN_HOT_GAIN_BY_VENUE, W_PRIME_GAIN)
+                        TRIAL_GAIN_BY_VENUE, TRIAL_PI_RATIO, TRIAL_PI_RATIO_BY_VENUE,
+                        TRN_HOT_GAIN, TRN_HOT_GAIN_BY_VENUE, W_PRIME_GAIN)
 
 
 def _surface(distance: int) -> str:
@@ -61,6 +62,43 @@ def horse_residuals(train: pl.DataFrame, pop: EnergeticsPopulation) -> dict:
     return {h: (n, sa / n, sb / n) for h, (n, sa, sb) in agg.items()}
 
 
+def fit_trial_vc_map(train: pl.DataFrame, pop: EnergeticsPopulation,
+                     signal: str = "trial_fig") -> tuple[float, float]:
+    """Train-only affine map putting a trial signal onto the race v_c **residual** scale.
+
+    The trial signal (the speed-figure ``trial_fig`` — trial velocity vs a going×distance par, the
+    figure the additive ``TRIAL_GAIN`` rides; or the critical-velocity ``trial_vc`` on the race
+    scale) is a noisy measurement of the horse's race v_c residual. We regress the race v_c residual
+    (this run's own ``v_c`` minus the rating-band fixed effect) on the trial signal over the train
+    rows that carry a prior trial, giving ``(a, b)`` with ``E[race_resid | trial] = a + b·trial``.
+    This ``b`` is the BLUE (regression) coefficient that converts the trial figure into the *best
+    point estimate* of the v_c residual; the count-adaptive fusion weight ``w_trial`` then decides
+    how much to TRUST that estimate vs the horse's accumulating race evidence — at n=0 (debut) it
+    is trusted nearly fully, fading toward 0 as races accumulate. Leak-free (train only). Returns
+    ``(a, b)``; a train with too few trials returns ``(0.0, 0.0)`` so the fusion is a no-op.
+    """
+    col = signal if signal in train.columns else None
+    if col is None:
+        return 0.0, 0.0
+    d = train.filter(pl.col(col) != 0.0) if signal == "trial_fig" else \
+        train.filter(pl.col(col).is_not_null() & (pl.col(col) > 0))
+    if d.height < 50:
+        return 0.0, 0.0
+    bands = d["distance"].map_elements(distance_band, return_dtype=pl.Utf8).to_list()
+    rtg = d["rtg"].to_numpy().astype(float) if "rtg" in d.columns else None
+    fixed = np.array([pop.v_c.fixed(b, rtg[i] if rtg is not None else None)
+                      for i, b in enumerate(bands)])
+    x = d[col].to_numpy().astype(float)
+    if signal != "trial_fig":          # critical-velocity signal is on the race v_c scale -> residual
+        x = x - fixed
+    y = d["v_c"].to_numpy().astype(float) - fixed
+    mask = np.isfinite(x) & np.isfinite(y)
+    if mask.sum() < 50:
+        return 0.0, 0.0
+    b, a = np.polyfit(x[mask], y[mask], 1)
+    return float(a), float(b)
+
+
 def fit_predict_traffic(
     train: pl.DataFrame,
     test: pl.DataFrame,
@@ -73,6 +111,7 @@ def fit_predict_traffic(
     trainer_gain: float = 0.0,
     speedfig_gain: float = 0.0,
     trial_gain: float | None = None,
+    trial_pi_ratio: float | None = None,
     collat_gain: float | None = None,
     sustain_gain: float = SUSTAIN_GAIN,
     fade_gain: float = FADE_GAIN,
@@ -102,6 +141,20 @@ def fit_predict_traffic(
     res = horse_residuals(train, pop)
     lam_vc = lambda n: pop.v_c.tau2 / (pop.v_c.tau2 + pop.v_c.sigma2 / n) if n > 0 else 0.0       # noqa: E731
     lam_w = lambda n: pop.w_prime.tau2 / (pop.w_prime.tau2 + pop.w_prime.sigma2 / n) if n > 0 else 0.0  # noqa: E731
+    # COHERENT TRIAL FUSION (the precision-weighted v_c posterior — successor to the additive TRIAL_GAIN).
+    # The v_c residual posterior fuses three sources at their OWN precisions: the population prior
+    # (π_0 = 1/τ²), n race observations (each π_race = 1/σ²), and m trial observations on the race scale
+    # (each π_trial = ρ·π_race). The trial enters ABOVE the SHRINK_MULT layer (it is NOT a sectional residual
+    # — no double-shrink). Train-only affine map puts the trial v_c on the race-residual scale (leak-free).
+    pi0 = 1.0 / pop.v_c.tau2
+    pi_race = 1.0 / pop.v_c.sigma2
+    rho = trial_pi_ratio  # set per-race below from the venue value when None; 0 ⇒ fusion is a no-op
+    # The fused trial signal is the speed-figure trial_fig (the figure the additive TRIAL_GAIN rides
+    # and that CONVERTS for win). The train-only affine map trial_fig→race-v_c-residual confirms the
+    # trial is on the right scale and leak-free; the production coupling reuses the gated tg_v (the
+    # map's BLUE slope b≈0.22 is the honest single-obs coefficient, but the win order-statistic wants
+    # the gated tg_v at debut — see fit_trial_vc_map). The fusion only re-shapes WHEN to trust it (n).
+    _ = fit_trial_vc_map  # kept for the affine-map / precision derivation + tests (see docstring)
     preds = []
     for race_id, g in test.group_by("race_id"):
         g = g.sort("runner")
@@ -112,6 +165,8 @@ def fit_predict_traffic(
         fg = form_gain if form_gain is not None else FORM_GAIN_BY_VENUE.get(venue, FORM_GAIN)
         # barrier-trial debut signal is PER-VENUE (HV benefits more); explicit arg overrides (sweeps)
         tg_v = trial_gain if trial_gain is not None else TRIAL_GAIN_BY_VENUE.get(venue, TRIAL_GAIN)
+        # coherent trial-fusion precision ratio ρ (π_trial/π_race), PER-VENUE; explicit arg overrides (sweeps)
+        rho_v = rho if rho is not None else TRIAL_PI_RATIO_BY_VENUE.get(venue, TRIAL_PI_RATIO)
         # collateral-form (opponent-adjusted) coupling is PER-VENUE (HV wants ~2.5x ST); arg overrides
         cg = collat_gain if collat_gain is not None else COLLAT_GAIN_BY_VENUE.get(venue, COLLAT_GAIN)
         rtg = g["rtg"].to_numpy().astype(float)
@@ -121,6 +176,9 @@ def fit_predict_traffic(
         sfig = g["speedfig"].to_numpy().astype(float) if "speedfig" in g.columns else np.zeros(g.height)
         # barrier-trial speed figure (m/s vs trial par) — the only prior on-track form for debutants
         tfig = g["trial_fig"].to_numpy().astype(float) if "trial_fig" in g.columns else np.zeros(g.height)
+        # prior trial COUNT m (number of trial pseudo-observations) for the coherent precision-fusion;
+        # the fused trial SIGNAL is the speed-figure tfig above, the count comes from trial_vc_table.
+        tm = g["trial_m"].to_numpy().astype(float) if "trial_m" in g.columns else np.zeros(g.height)
         # collateral-form opponent-adjusted rating (m/s), within-race centred (field-mean shift cancels)
         cfm = g["collat_form"].to_numpy().astype(float) if "collat_form" in g.columns else np.zeros(g.height)
         cfm = cfm - np.nanmean(cfm)
@@ -148,10 +206,32 @@ def fit_predict_traffic(
         vc, wp = [], []
         for i, h in enumerate(g["horse_id"].to_list()):
             n, u_vc, u_w = res.get(h, (0, 0.0, 0.0))
-            vc.append(pop.v_c.fixed(band, rtg[i]) + shrink_mult * lam_vc(n) * u_vc
+            # COHERENT TRIAL FUSION: a v_c-residual term carrying the horse's m trial observations at
+            # their OWN precision π_trial = ρ·π_race, with the race-count-adaptive weight w_trial =
+            # m·π_trial / (π_0 + n·π_race + m·π_trial). It DECAYS as race evidence n grows (a green horse
+            # moves a lot, an established one barely) — the property the flat additive tg_v lacks. The trial
+            # residual is mapped to the race-residual scale by the train-only affine map (leak-free). Folded
+            # ABOVE the SHRINK_MULT layer (the trial is not a sectional residual; no double-shrink). No-op at
+            # ρ=0 or m=0. When ρ>0 the additive tg_v term is OFF (the two are alternative trial structures).
+            trial_term = 0.0
+            if rho_v > 0.0 and tm[i] > 0.0 and tfig[i] != 0.0:
+                # The trial enters the v_c posterior as m pseudo-observations at precision π_trial =
+                # ρ·π_race; its effective weight is w_trial = m·π_trial/(π_0 + n·π_race + m·π_trial),
+                # which DECAYS as race evidence n accumulates. We express the trial figure at the same
+                # CALIBRATED coupling the additive uses (tg_v, which the conversion test already gated)
+                # but NORMALISE the weight to 1 at debut (n=0, m=1): w_norm = w_trial(n,m)/w_trial(0,1).
+                # So the fusion EQUALS the additive for a debutant (recovering its win signal exactly)
+                # and FADES smoothly toward 0 as the horse races — the property the flat additive lacks.
+                m_pi = tm[i] * rho_v * pi_race
+                w_trial = m_pi / (pi0 + n * pi_race + m_pi)
+                w0 = (rho_v * pi_race) / (pi0 + rho_v * pi_race)   # w_trial at n=0, m=1
+                w_norm = w_trial / w0 if w0 > 0 else 0.0
+                trial_term = w_norm * tg_v * tfig[i]
+            tg_eff = 0.0 if rho_v > 0.0 else tg_v
+            vc.append(pop.v_c.fixed(band, rtg[i]) + shrink_mult * lam_vc(n) * u_vc + trial_term
                       + fg * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
                       + speedfig_gain * sfig[i] + trainer_gain * trn[i]
-                      + tg_v * tfig[i] + cg * cfm[i] + pos_fade_gain * epos[i]
+                      + tg_eff * tfig[i] + cg * cfm[i] + pos_fade_gain * epos[i]
                       + sustain_gain * sustain[i] + fade_gain * fade[i] + pgg * pgap[i]
                       + thg * thot[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the

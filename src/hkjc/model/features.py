@@ -19,7 +19,11 @@ rating, which enters nonlinearly via ``v_c.fixed(band, rtg)``), so the career me
 """
 from __future__ import annotations
 
+import json
+
 import polars as pl
+
+from .energetics import estimate_run_energetics, section_distances
 
 
 def _norm_date(col: str = "date") -> pl.Expr:
@@ -223,6 +227,68 @@ def barrier_trial_table(barrier_trials: pl.DataFrame) -> pl.DataFrame:
         (pl.col("tf").cum_sum().over("horse_id") / pl.col("tf").cum_count().over("horse_id"))
         .alias("trial_fig"))
     return bt.select("horse_id", "d", "trial_fig")
+
+
+def trial_vc_table(barrier_trials: pl.DataFrame) -> pl.DataFrame:
+    """Leak-free per-horse trial *critical velocity* on the RACE v_c scale, for precision-fusion.
+
+    This is the substrate for folding barrier trials into the empirical-Bayes v_c posterior at
+    the trial's OWN precision (NOT the additive :func:`barrier_trial_table` proxy, and NOT the
+    globally-shrunken sectional-v_c residual channel). For each trial we recover a per-horse
+    critical velocity on the *same physical scale as race v_c*:
+
+    - the batch's leader velocity profile (``batch_sect`` split times, shared within a trial batch)
+      gives a batch critical velocity ``v_c^batch`` via the same :func:`estimate_run_energetics`
+      machinery the race energetics use (the settled late-race velocity the field fades to);
+    - each horse ran the *same trial* at its own ``trial_time``, so its critical velocity scales
+      with its average pace relative to the batch leader: ``v_c = v_c^batch · batch_time/trial_time``.
+
+    The resulting per-horse ``trial_vc`` has mean ≈ the race v_c mean (~16.82 m/s) — it is on the
+    race scale by construction, so a single train-only affine map suffices to put it on the
+    race-*residual* scale (done in :func:`hkjc.model.fit`). Then the strictly-prior **expanding
+    mean** per horse (sorted by date) and the prior trial **count** ``trial_m`` (how many trials
+    that mean averages, = the fusion's number of trial pseudo-observations). Leak-free: trials never
+    share a date with a race for a horse (mornings vs race days), so a backward as-of join on ``d``
+    by ``horse_id`` is safe; the expanding mean is strictly prior within the trial stream too.
+
+    Returns (horse_id, d, trial_vc, trial_m); join the LATEST prior row to each race via
+    ``join_asof(..., by="horse_id", strategy="backward")``. Keyed on the SHORT stable brand
+    (``horse_brand``), matching the model panels — same join key as :func:`barrier_trial_table`.
+    """
+    bt = barrier_trials.with_columns(
+        pl.col("date").cast(pl.Utf8).str.replace_all("/", "-").alias("date"),
+        pl.col("trial_time").cast(pl.Float64, strict=False).alias("ttime"),
+        pl.col("batch_time").cast(pl.Float64, strict=False).alias("btime"),
+        pl.col("distance").cast(pl.Float64, strict=False).alias("dist_m"))
+    bt = bt.filter((pl.col("ttime") > 0) & (pl.col("btime") > 0) & pl.col("dist_m").is_not_null()
+                   & pl.col("horse_brand").is_not_null() & pl.col("batch_sect").is_not_null())
+
+    # batch leader critical velocity from its section split profile (same as the race energetics)
+    def _batch_vc(sect_s: str | None, dist: float | None) -> float | None:
+        try:
+            sect = json.loads(sect_s)
+        except (TypeError, ValueError):
+            return None
+        if not sect or len(sect) < 2 or dist is None:
+            return None
+        try:
+            return float(estimate_run_energetics(sect, section_distances(float(dist), len(sect))).v_c)
+        except (ValueError, ZeroDivisionError, FloatingPointError):
+            return None
+
+    rows = bt.select("batch_sect", "dist_m").to_dicts()
+    vc_batch = [_batch_vc(r["batch_sect"], r["dist_m"]) for r in rows]
+    bt = bt.with_columns(pl.Series("_vc_batch", vc_batch))
+    bt = bt.with_columns(
+        (pl.col("_vc_batch") * pl.col("btime") / pl.col("ttime")).alias("_tvc"),
+        pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"),
+        pl.col("horse_brand").alias("horse_id"))
+    bt = bt.filter(pl.col("_tvc").is_not_null())
+    bt = bt.sort(["horse_id", "d"]).with_columns(
+        (pl.col("_tvc").cum_sum().over("horse_id") / pl.col("_tvc").cum_count().over("horse_id"))
+        .alias("trial_vc"),
+        pl.col("_tvc").cum_count().over("horse_id").cast(pl.Float64).alias("trial_m"))
+    return bt.select("horse_id", "d", "trial_vc", "trial_m")
 
 
 def collateral_form_table(results_rich: pl.DataFrame, kappa: float = 1.0) -> pl.DataFrame:

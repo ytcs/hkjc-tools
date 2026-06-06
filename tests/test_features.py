@@ -4,7 +4,7 @@ import polars as pl
 from hkjc.model.features import (barrier_trial_table, collateral_form_table,
                                  early_position_table, form_table, jockey_table,
                                  prior_starts_table, recency_form_table, style_table,
-                                 trainer_hot_table, trainer_table)
+                                 trainer_hot_table, trainer_table, trial_vc_table)
 
 
 def test_form_is_strictly_prior_expanding_mean():
@@ -65,6 +65,32 @@ def test_barrier_trial_fig_expanding_mean_and_brand_key():
     par = sum(v) / 3
     assert abs(a["trial_fig"][0] - (v[0] - par)) < 1e-9                 # first trial: itself
     assert abs(a["trial_fig"][1] - ((v[0] - par) + (v[1] - par)) / 2) < 1e-9   # expanding mean
+
+
+def test_trial_vc_on_race_scale_count_and_strictly_prior():
+    # trial v_c (race scale) for the coherent precision-fusion: the batch leader's section profile
+    # gives a batch v_c, scaled per horse by batch_time/trial_time; the expanding mean is strictly
+    # prior and trial_m counts the trials averaged. Batch split: [25.8, 23.4, 22.3] over 1200m.
+    bt = pl.DataFrame({
+        "date": ["2026-01-01", "2026-03-01", "2026-01-01"],
+        "horse_id": ["HK_2025_L001", "HK_2025_L001", "HK_2025_L002"],
+        "horse_brand": ["L001", "L001", "L002"],
+        "distance": [1200, 1200, 1200], "going": ["GOOD"] * 3,
+        "batch_time": [71.5, 71.5, 71.5],                      # batch leader time (shared)
+        "batch_sect": ["[25.8, 23.4, 22.3]"] * 3,              # batch leader splits (shared)
+        "trial_time": [72.0, 70.0, 71.0],
+    })
+    out = trial_vc_table(bt).sort(["horse_id", "d"])
+    assert set(out.columns) >= {"horse_id", "d", "trial_vc", "trial_m"}
+    a = out.filter(pl.col("horse_id") == "L001").sort("d")
+    # trial_m is the strictly-inclusive expanding COUNT (1 then 2)
+    assert a["trial_m"].to_list() == [1.0, 2.0]
+    # trial_vc is on the race v_c scale (m/s, ~16-17 for a 1200m trial) and the expanding mean
+    assert 15.0 < a["trial_vc"][0] < 18.0
+    # leader-relative scaling: a horse slower than the batch leader has a LOWER trial v_c than one faster
+    # (trial_time 72.0 > batch 71.5 -> below; the second trial 70.0 < 71.5 -> the mean rises)
+    assert a["trial_vc"][1] > a["trial_vc"][0]                # 70s trial faster than 72s -> mean up
+    assert out.filter(pl.col("horse_id") == "L002")["trial_m"][0] == 1.0
 
 
 def test_collateral_form_is_strictly_prior_and_propagates():
