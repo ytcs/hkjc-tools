@@ -168,6 +168,16 @@ to get a direct URL. `type=replay-aerial` is the overhead view best for trajecto
 Morning track-work clips: `…/twstarter/{YYYY}/{YYYYMMDD}/{RR}/novo/twstarter_…_2500kbps.mp4`
 (`{RR}` zero-padded). Pundit tips: `…/tipsindex/tips_index.asp?RaceNo={n}`.
 
+**Easiest video acquisition (the CV unblock) — YouTube archives via `yt-dlp`.** The HKJC CMS
+resolver (`getVideoInfo`) needs the browser session and is awkward to script (the CV feasibility
+probe's one hard blocker). But there are **full race live-stream archives on YouTube** — the side
+broadcast view **plus commentary plus on-screen LIVE ODDS** — downloadable with `yt-dlp`
+(playlists like `youtube.com/playlist?list=PLMVIVrWyo-Z_3Bddw6rIoyqhzeP35h1ij`). This is the
+practical substrate for any CV build: the broadcast SIDE view is the tractable one for
+off-the-shelf detection (the feasibility probe got 7 horses + 11 jockeys with no fine-tune vs 0 on
+the overhead), it carries saddlecloth numbers + silks for identity, and the burned-in odds/commentary
+are bonus signals. (Not a priority now — recorded for when CV path-extraction / gait is taken up.)
+
 ## 5. Scraping discipline (don't get rate-limited)
 
 - **Odds poll:** ~90 s interval with ~10 s jitter (odds barely move faster except near
