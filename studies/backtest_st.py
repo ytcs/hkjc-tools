@@ -19,11 +19,13 @@ import polars as pl
 
 from hkjc.backtesting import harness, walk_forward_folds
 from hkjc.model.features import (attach_rating_trajectory, barrier_trial_table,
-                                 collateral_form_table, early_position_table, form_table,
+                                 collateral_form_table, collateral_form_table_v2,
+                                 early_position_table, form_table,
                                  jockey_table, prior_starts_table, recency_form_table,
                                  speed_figure_table, style_table, trainer_hot_table,
                                  trainer_table, trajectory_trait_table, trial_vc_table)
-from hkjc.model.constants import FADE_GAIN, FORM_HALF_LIFE
+from hkjc.model.constants import (COLLAT_CONSTRUCTION_BY_VENUE, FADE_GAIN,
+                                  FORM_HALF_LIFE)
 from hkjc.model.fit import fit_predict_traffic
 
 CACHE = Path("data_cache")
@@ -105,8 +107,30 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     # velocity-based speed figure (leak-free trailing); neutral 0 when unknown
     df = df.join(speed_figure_table(rr), on=["date", "venue", "race_no", "runner"], how="left")
     df = df.with_columns(pl.col("speedfig").fill_null(0.0))
-    # collateral-form ability rating (opponent-adjusted velocity, leak-free strictly-prior); 0 = no prior
-    df = df.join(collateral_form_table(rr), on=["date", "venue", "race_no", "runner"], how="left")
+    # collateral-form ability rating (opponent-adjusted velocity, leak-free strictly-prior); 0 = no prior.
+    # PER-VENUE construction (COLLAT_CONSTRUCTION_BY_VENUE): ST uses the DEEPENED rating (Jacobi
+    # multi-sweep + recency + trip-band like-for-like, +1.1pp); HV keeps the baked one-sweep table.
+    # An empty construction dict == the baked collateral_form_table. Env vars override for sweeps:
+    #   COLLAT_V2=1 forces collateral_form_table_v2 with COLLAT_{KAPPA,HALFLIFE,MARGINPOW,ASYM,SWEEPS}
+    #   and COLLAT_BANDPAR; COLLAT_V2=0 forces the baked one-sweep table at BOTH venues.
+    _v2 = os.environ.get("COLLAT_V2")
+    if _v2 == "0":
+        ct = collateral_form_table(rr)
+    elif _v2 == "1":
+        _hl = os.environ.get("COLLAT_HALFLIFE")
+        ct = collateral_form_table_v2(
+            rr,
+            kappa=float(os.environ.get("COLLAT_KAPPA", "1.0")),
+            half_life=(float(_hl) if _hl else None),
+            margin_pow=float(os.environ.get("COLLAT_MARGINPOW", "1.0")),
+            asym=float(os.environ.get("COLLAT_ASYM", "1.0")),
+            n_sweeps=int(os.environ.get("COLLAT_SWEEPS", "1")),
+            band_par=os.environ.get("COLLAT_BANDPAR") == "1",
+        )
+    else:
+        cons = COLLAT_CONSTRUCTION_BY_VENUE.get(venue, {})
+        ct = collateral_form_table_v2(rr, **cons) if cons else collateral_form_table(rr)
+    df = df.join(ct, on=["date", "venue", "race_no", "runner"], how="left")
     df = df.with_columns(pl.col("collat_form").fill_null(0.0))
     # trajectory-shape traits (sustained-speed, fade-resistance) from per-section velocity path; 0 = unknown
     trajq = CACHE / "trajectory_dataset_full.parquet"

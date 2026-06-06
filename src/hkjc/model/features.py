@@ -367,6 +367,182 @@ def collateral_form_table(results_rich: pl.DataFrame, kappa: float = 1.0) -> pl.
         {"date": dates_, "venue": venues_, "race_no": raceno_, "runner": runner_, "collat_form": val_})
 
 
+def _distance_band_key(dist: float) -> int:
+    """Coarse trip band for like-for-like collateral (a margin at 1200m says less about 2000m)."""
+    if dist < 1200:
+        return 0
+    if dist < 1400:
+        return 1
+    if dist < 1800:
+        return 2
+    return 3
+
+
+def collateral_form_table_v2(
+    results_rich: pl.DataFrame,
+    kappa: float = 1.0,
+    half_life: float | None = None,
+    margin_pow: float = 1.0,
+    asym: float = 1.0,
+    n_sweeps: int = 1,
+    band_par: bool = False,
+) -> pl.DataFrame:
+    """REFINEMENT of :func:`collateral_form_table` — same leak-free online Massey rating, with
+    four optional refinements of the competition axis, each conversion-tested as a MARGINAL gain
+    over the baked one-sweep rating. All are strictly-prior / online in date order (identical
+    leak-free discipline as :func:`collateral_form_table`).
+
+    Parameters
+    ----------
+    kappa : collateral propagation strength on the field-strength term (1.0 = least-squares).
+    half_life : if set, the per-horse rating is an EXP-WEIGHTED mean of its ``obs`` (recent
+        meetings count more — a stale opponent rating goes off, à la the recency-form lever)
+        instead of the flat expanding mean. ``None`` = expanding mean (the baked behaviour).
+    margin_pow : nonlinear margin weighting — the within-race margin ``(s_i − mean_R)`` is raised
+        to this power (sign-preserving: ``sign(m)·|m|^p``). ``>1`` rewards big margins more,
+        ``<1`` compresses. 1.0 = linear (baked).
+    asym : strength-of-schedule ASYMMETRY — weight the field-strength inheritance differently for
+        runs you BEAT the field mean (margin>0) vs LOST to it (margin<0). The kept field term is
+        ``κ·R̄`` for a beat and ``κ·asym·R̄`` for a loss. asym<1 down-weights "quality of fields
+        lost to" (losing to a strong field tells you less than beating one). 1.0 = symmetric (baked).
+    n_sweeps : DEEPER PROPAGATION. >1 runs additional leak-free Gauss–Seidel refinement passes over
+        the STRICTLY-PRIOR race graph before each new race-date is emitted, propagating opponent
+        strength further through the collateral chain toward the true Massey fixed point. The extra
+        sweeps only ever touch strictly-prior races, so the rating emitted for a race still uses no
+        information from it or any later race. 1 = single online sweep (baked).
+    band_par : if True, the par velocity (and the margin) is computed within (going, distance-BAND)
+        AND the field-strength inheritance is conditioned on the trip band, so a 1200m margin only
+        feeds a horse's rating for nearby trips (ability is partly trip-specific).
+
+    Returns (date, venue, race_no, runner, collat_form); null on debut.
+    """
+    rr = results_rich.with_columns(
+        pl.col("date").cast(pl.Utf8).str.replace_all("/", "-").alias("date"),
+        pl.col("RaceDistance").cast(pl.Float64, strict=False).alias("dist_m"),
+        pl.col("FinishTime").cast(pl.Float64, strict=False).alias("ftime"),
+        pl.col("Going").cast(pl.Utf8).alias("going"),
+        pl.col("HorseNo").cast(pl.Int64, strict=False).alias("runner"),
+        pl.col("RaceNumber").cast(pl.Int64, strict=False).alias("race_no"),
+        pl.col("Venue").cast(pl.Utf8).alias("venue"),
+    )
+    rr = rr.filter((pl.col("ftime") > 0) & pl.col("dist_m").is_not_null())
+    rr = rr.with_columns((pl.col("dist_m") / pl.col("ftime")).alias("v_run"))
+    if band_par:
+        rr = rr.with_columns(
+            pl.col("dist_m").map_elements(_distance_band_key, return_dtype=pl.Int64).alias("band"))
+        rr = rr.with_columns(pl.col("v_run").mean().over(["going", "band"]).alias("par"))
+    else:
+        rr = rr.with_columns(pl.col("v_run").mean().over(["going", "dist_m"]).alias("par"))
+        rr = rr.with_columns(pl.lit(0, dtype=pl.Int64).alias("band"))
+    rr = rr.with_columns(
+        (pl.col("v_run") - pl.col("par")).alias("s"),
+        pl.col("date").str.strptime(pl.Date, "%Y-%m-%d", strict=False).alias("d"))
+    rr = rr.with_columns(
+        (pl.col("date") + "_" + pl.col("venue") + "_" + pl.col("race_no").cast(pl.Utf8)).alias("rid"))
+    rr = rr.sort("d")
+
+    # per-horse rating state. With band conditioning, a horse carries a rating PER band; the
+    # field-strength it inherits is the band-matched prior rating (fallback to its global mean).
+    # The running stat is exp-weighted (decay<1) or a flat expanding mean (decay=1, baked).
+    band_sums: dict[tuple, float] = {}      # (horse, band) -> running stat numerator
+    band_w: dict[tuple, float] = {}          # (horse, band) -> running stat denominator
+    glob_sums: dict[str, float] = {}
+    glob_w: dict[str, float] = {}
+    decay = 1.0 if half_life is None else 0.5 ** (1.0 / half_life)
+
+    # cache every prior race's runner records so deeper sweeps can re-solve the prior graph.
+    # each record: (rid, [(horse, s, band)], smean_per_band dict)
+    prior_races: list = []
+
+    def _rating(h: str, band: int) -> float | None:
+        if band_par:
+            k = (h, band)
+            if band_w.get(k, 0.0) > 0:
+                return band_sums[k] / band_w[k]
+            if glob_w.get(h, 0.0) > 0:
+                return glob_sums[h] / glob_w[h]
+            return None
+        if glob_w.get(h, 0.0) > 0:
+            return glob_sums[h] / glob_w[h]
+        return None
+
+    def _ingest(records, smean_by_band, w_scale: float, field_src=None):
+        """Fold one prior race into the running per-horse stats (used by online emit + resweeps).
+
+        ``field_src`` (h, band)->rating maps the field-strength source. ``None`` = the live online
+        state (one Gauss–Seidel pass). For a Jacobi fixed-point resweep, pass the PREVIOUS sweep's
+        frozen ratings so opponent strength propagates one more hop through the chain.
+        """
+        if field_src is None:
+            known = [r for h, s, b in records if (r := _rating(h, b)) is not None]
+        else:
+            known = [field_src[(h, b)] for h, s, b in records if (h, b) in field_src]
+        field_r = sum(known) / len(known) if known else 0.0
+        for h, s, b in records:
+            m = s - smean_by_band[b]
+            m_w = (1.0 if m >= 0 else -1.0) * (abs(m) ** margin_pow) if margin_pow != 1.0 else m
+            kf = kappa * (1.0 if m >= 0 else asym) * field_r
+            obs = m_w + kf
+            if band_par:
+                k = (h, b)
+                band_sums[k] = decay * band_sums.get(k, 0.0) + w_scale * obs
+                band_w[k] = decay * band_w.get(k, 0.0) + w_scale
+            glob_sums[h] = decay * glob_sums.get(h, 0.0) + w_scale * obs
+            glob_w[h] = decay * glob_w.get(h, 0.0) + w_scale
+
+    def _snapshot_ratings(races) -> dict:
+        """Frozen (horse, band)->rating from the CURRENT state (used as a Jacobi field source)."""
+        snap: dict = {}
+        for recs, _smb in races:
+            for h, _s, b in recs:
+                r = _rating(h, b)
+                if r is not None:
+                    snap[(h, b)] = r
+        return snap
+
+    dates_, venues_, raceno_, runner_, val_ = [], [], [], [], []
+    cur_date = None
+    for (_rid,), g in rr.group_by("rid", maintain_order=True):
+        d_today = g["d"][0]
+        if n_sweeps > 1 and d_today != cur_date and prior_races:
+            # leak-free DEEPER propagation: Jacobi fixed-point sweeps over the STRICTLY-PRIOR graph.
+            # each extra sweep recomputes every prior race's obs using the PREVIOUS sweep's frozen
+            # ratings as the field strength, so opponent strength propagates one more hop per sweep.
+            for _ in range(n_sweeps - 1):
+                prev = _snapshot_ratings(prior_races)
+                band_sums.clear()
+                band_w.clear()
+                glob_sums.clear()
+                glob_w.clear()
+                for recs, smb in prior_races:
+                    _ingest(recs, smb, 1.0, field_src=prev)
+            cur_date = d_today
+        hs = g["HorseID"].to_list()
+        ss = g["s"].to_numpy()
+        bands = g["band"].to_list()
+        d0 = g["date"][0]
+        v0 = g["venue"][0]
+        rn0 = int(g["race_no"][0])
+        rns = g["runner"].to_list()
+        for rn, h, b in zip(rns, hs, bands):
+            dates_.append(d0)
+            venues_.append(v0)
+            raceno_.append(rn0)
+            runner_.append(rn)
+            val_.append(_rating(h, b))
+        # per-band within-race mean (the contemporaneous condition normaliser)
+        smean_by_band: dict[int, float] = {}
+        for b in set(bands):
+            sel = [float(ss[i]) for i in range(len(ss)) if bands[i] == b]
+            smean_by_band[b] = sum(sel) / len(sel)
+        records = [(h, float(si), b) for h, si, b in zip(hs, ss, bands)]
+        _ingest(records, smean_by_band, 1.0)
+        if n_sweeps > 1:
+            prior_races.append((records, smean_by_band))
+    return pl.DataFrame(
+        {"date": dates_, "venue": venues_, "race_no": raceno_, "runner": runner_, "collat_form": val_})
+
+
 def trajectory_trait_table(trajectory: pl.DataFrame) -> pl.DataFrame:
     """Leak-free per-horse TRAJECTORY-SHAPE traits from the per-section velocity path (m/s).
 

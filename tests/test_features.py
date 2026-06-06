@@ -2,9 +2,10 @@
 import polars as pl
 
 from hkjc.model.features import (barrier_trial_table, collateral_form_table,
-                                 early_position_table, form_table, jockey_table,
-                                 prior_starts_table, recency_form_table, style_table,
-                                 trainer_hot_table, trainer_table, trial_vc_table)
+                                 collateral_form_table_v2, early_position_table,
+                                 form_table, jockey_table, prior_starts_table,
+                                 recency_form_table, style_table, trainer_hot_table,
+                                 trainer_table, trial_vc_table)
 
 
 def test_form_is_strictly_prior_expanding_mean():
@@ -112,6 +113,34 @@ def test_collateral_form_is_strictly_prior_and_propagates():
     v1, v2 = 1000.0 / 60.0, 1000.0 / 62.0
     expected = v1 - (v1 + v2) / 2.0                  # race-2 H1 rating = its race-1 within-field margin
     assert vals[2] is not None and abs(vals[2] - expected) < 1e-9
+
+
+def test_collateral_v2_default_equals_baked_and_stays_strictly_prior():
+    # The refined builder with default args must reproduce the baked one-sweep table bit-for-bit,
+    # and every refinement (multi-sweep / recency / band-par) must keep the strictly-prior guarantee:
+    # the rating emitted for a race uses only STRICTLY-PRIOR runs (debut rows -> null).
+    rr = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-01", "2025-01-08", "2025-01-08", "2025-01-15"],
+        "Venue": ["ST"] * 5, "RaceNumber": [1, 1, 2, 2, 3], "HorseNo": [1, 2, 1, 3, 1],
+        "HorseID": ["H1", "H2", "H1", "H3", "H1"],
+        "RaceDistance": [1000.0, 1000.0, 1200.0, 1200.0, 1000.0],
+        "FinishTime": [60.0, 62.0, 73.0, 74.0, 61.0],
+        "Going": ["GOOD"] * 5,
+    })
+    base = collateral_form_table(rr, kappa=1.0).sort(["date", "race_no", "runner"])
+    v2 = collateral_form_table_v2(rr, kappa=1.0).sort(["date", "race_no", "runner"])
+    # default v2 == baked, including the null (debut) pattern
+    for a, b in zip(base["collat_form"].to_list(), v2["collat_form"].to_list()):
+        assert (a is None) == (b is None)
+        if a is not None:
+            assert abs(a - b) < 1e-12
+    # every refinement keeps the two race-1 debut rows null (strictly-prior; cannot see own race)
+    for kw in ({"n_sweeps": 4}, {"half_life": 3.0}, {"band_par": True},
+               {"n_sweeps": 3, "half_life": 3.0, "band_par": True}):
+        out = collateral_form_table_v2(rr, **kw).sort(["date", "race_no", "runner"])
+        v = out["collat_form"].to_list()
+        assert v[0] is None and v[1] is None              # race-1 debuts -> null under every refinement
+        assert v[-1] is not None                          # H1's 3rd run has strictly-prior history
 
 
 def test_jockey_strike_rate_is_prior_only():

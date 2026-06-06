@@ -235,6 +235,33 @@ TRIAL_PI_RATIO_BY_VENUE = {"ST": 2.0, "HV": 0.0}
 COLLAT_GAIN = float(os.environ.get("COLLAT_GAIN", "0.0"))
 COLLAT_GAIN_BY_VENUE = {"ST": 1.0, "HV": 2.5}
 
+# COLLAT_CONSTRUCTION_BY_VENUE: per-venue construction of the collateral-form rating itself (the
+# args to features.collateral_form_table_v2; an empty dict = the baked one-sweep collateral_form_table).
+# The competition-axis DEEPENING (2026-06): three leak-free refinements of the one-sweep Massey rating
+#   - n_sweeps: deeper propagation — Jacobi fixed-point sweeps over the STRICTLY-PRIOR race graph,
+#     each propagating opponent strength one more hop through the collateral chain (leak-free: the
+#     extra sweeps only ever touch prior races). 1 = the baked single online sweep.
+#   - half_life: recency-weight the per-horse collateral observations (a stale opponent rating goes
+#     off, à la the recency-form lever). None = flat expanding mean (baked).
+#   - band_par: trip-conditioned par + band-matched field-strength inheritance — a margin at 1200m
+#     only feeds the rating for nearby trips (ability is partly trip-specific / like-for-like).
+# Conversion test (PAIRED full-scale, PYTHONHASHSEED=0):
+#   ST: {n_sweeps:3, half_life:4, band_par:True} -> 62.6→63.7% (+1.1pp; ECE 0.0083→0.0075). The three
+#       stack SUPER-additively (each ~+0.3-0.4pp alone, +1.1pp together) — ST has the full trip range so
+#       like-for-like band conditioning pays, and the deeper graph + recency add on top.
+#   HV: refined construction does NOT convert — sweeps5+rec4 lands 58.3-58.5% at EVERY gain (1.0-2.5),
+#       BELOW the 59.3% baked-one-sweep baseline (quick_eval over-stated it +1.4pp; full-scale −0.8pp),
+#       and +band_par craters it (the tight HV track uses too few trip bands — band-par fragments it).
+#       So HV KEEPS the baked one-sweep table ({}). The deeper propagation/recency/like-for-like all add
+#       at ST but NOT at HV — the venue split is the finding, not a universal win.
+# margin nonlinearity (margin_pow) and SoS asymmetry (asym, down-weighting fields-lost-to) were tested
+# and REJECTED at both venues (symmetric LINEAR margin is right; "quality of fields lost to" carries
+# real info — down-weighting losses hurt −0.5pp; margin_pow>1 hurt −1.7pp).
+COLLAT_CONSTRUCTION_BY_VENUE = {
+    "ST": {"n_sweeps": 3, "half_life": 4.0, "band_par": True},
+    "HV": {},
+}
+
 # SUSTAIN_GAIN / FADE_GAIN: trajectory-shape couplings (m/s of effective v_c per unit of the leak-free
 # prior trajectory z-trait). The sectional v_c / speed-figure channels read a run's AVERAGE energetics;
 # the per-section velocity PATH (trajectory_dataset_full) exposes the SHAPE — sustained-speed ability
