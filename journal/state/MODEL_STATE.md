@@ -46,13 +46,25 @@ re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
 | `SPEED_NOISE` | 0.12 | `hkjc.model.constants` | Velocity-noise (= log-normal time). Diffusion `diff_coef≈170` ties it (`sim="wald"`). |
 | `awt_diff_mult` | 2.0 | `fit.py` (sim="wald") | AWT is 2× as diffusive as turf (surface-dependent D) — fixes AWT over-confidence (12.7%→23.7%). |
 
-Current fit: **ST ≈ 63.3% / HV ≈ 59.4% of market** (wald, full-scale paired). This push (60.0/54.1 → 63.3/59.4:
-ST +3.3pp, HV +5.3pp) was driven ENTIRELY by NEW DATA + new STRUCTURAL signal — barrier trials (debut/lightly-
+Current fit: **ST ≈ 65.0% / HV ≈ 59.7% of market** (wald, full-scale paired). This push (60.0/54.1 → 65.0/59.7:
+ST +5.0pp, HV +5.6pp) was driven ENTIRELY by NEW DATA + new STRUCTURAL signal — barrier trials (debut/lightly-
 raced form), collateral-form (opponent strength), rating-peakgap (career decline), trajectory fade, trainer
-hot-streak (intent momentum), and **draw→D (the trip-variance third knob)** — none a reweighting of priced
-features. The HV gap to ST closed from ~6pp to ~4pp (collateral + peakgap hit HV hardest — the tactical track
-where field-strength + career-phase are most mispriced; ST gains most from trials + draw-variance).
-Newly baked since the table above: `TRN_HOT_GAIN_BY_VENUE` (ST 2.0/HV 1.0), `DRAW_VAR_GAIN_BY_VENUE` (ST 0.5/HV 0.0).
+hot-streak (intent momentum), **draw→D (the trip-variance third knob)**, the **coherent trial FUSION**
+(precision-weighted v_c posterior), the **W′-recoupling of fade/pos_fade** (reserve knob, distance-aware), and
+the **deepened collateral rating** (Jacobi multi-sweep + recency + trip-band) — none a reweighting of priced
+features. ST broke 65% on the deepened collateral alone (+1.3pp over fusion, super-additive).
+Newly baked since the table above (all paired full-scale, PYTHONHASHSEED=0):
+- `TRN_HOT_GAIN_BY_VENUE` (ST 2.0/HV 1.0) — trainer hot-streak / intent.
+- `DRAW_VAR_GAIN_BY_VENUE` (ST 0.5/HV 0.0) — draw→D trip variance (the third knob; ST-only, the EVT field-size
+  argument predicts variance pays in big fields → ST not HV — see THEORY §3e).
+- `FADE_W_GAIN=8.0`, `POSFADE_W_GAIN=−80.0` (FADE_GAIN/POS_FADE_GAIN retired to 0.0) — fade + positional-fade
+  moved off the v_c proxy onto the **W′ knob** (reserve-metres, distance-aware via W′/L; THEORY §3d T1).
+  ST parity, HV +0.3pp (the gain lands in HV sprints — the W′/L signature).
+- `TRIAL_PI_RATIO_BY_VENUE` (ST 2.0/HV 0.0) — coherent barrier-trial FUSION: trial folded into the v_c
+  posterior at its OWN precision above the shrink layer, weight fading with race count. ST +0.4pp (debut +6pp);
+  HV stays additive. The substrate for folding training gallops next.
+- `COLLAT_CONSTRUCTION_BY_VENUE` (ST {n_sweeps:3, half_life:4, band_par}; HV {}) — deepened collateral rating.
+  ST +1.3pp on the live base; HV keeps the baked one-sweep (band-par fragments its tight trip range).
 
 **THE PATH IS NEW DATA + NEW STRUCTURE, not more mean-field (this push proved it).** The earlier "saturation"
 was a saturation of *mean-field terms on the existing race panel* — every per-horse residual was collinear with
@@ -92,8 +104,9 @@ processes (TASEP) for blocking, active matter for drafting, mean-field games for
 
 ## NEXT LEVERS (post-60% — NEW DATA + NEW STRUCTURE is the path; proven this push)
 
-The 2026-06 fan-out (barrier trials, competition, trajectory, physiology, rating-trajectory, theory) lifted
-ST 60.0→62.6 / HV 54.1→59.3 entirely via new data + structural signal. The forward levers, ranked:
+The 2026-06 fan-out (barrier trials, competition, trajectory, physiology, rating-trajectory, fusion, W′-recoupling,
+deepened collateral, theory) lifted ST 60.0→65.0 / HV 54.1→59.7 entirely via new data + structural signal. The
+forward levers, ranked:
 
 **A. The INTERACTION layer — the first-attempt ABM code was deprecated, but the axis is DEFERRED, not dead.**
 The kinematic sim is gone as production: the old "kinematic BEATS wald at HV +2-3pp" claim was STALE (it
@@ -123,30 +136,46 @@ of deep theory-building left — but it is a theory build, not a regression prob
   velocity rating, NOT scalar Elo). HV +2.3pp, ECE improves. The competition axis, cracked.
 - **Rating-peakgap** (`PEAKGAP_GAIN`, `features.rating_trajectory_table`) — PROCESS feature, own-peak deficit.
   HV +2.4pp. Pays because it adds an absolute career landmark the point rating can't express.
-- **Trajectory fade** (`FADE_GAIN`, `features.trajectory_trait_table`) — late-velocity hold, +0.2/0.1pp.
+- **Trajectory fade** (`FADE_W_GAIN`, `features.trajectory_trait_table`) — late-velocity hold, +0.2/0.1pp; now on the
+  **W′ knob** (with positional-fade, `POSFADE_W_GAIN`) — reserve phenomena, distance-aware (THEORY §3d T1). HV +0.3pp.
+- **Coherent trial FUSION** (`TRIAL_PI_RATIO`, ST 2.0) — trial folded into the v_c posterior at its own precision,
+  weight fading with race count. ST 63.3→63.7% (+0.4pp; debut +6pp). The successor to additive `TRIAL_GAIN`.
+- **Deepened collateral** (`COLLAT_CONSTRUCTION_BY_VENUE`, ST Jacobi-3-sweep + recency-4 + trip-band) — ST 63.7→65.0%
+  (+1.3pp, super-additive with fusion; ECE improves). HV keeps the one-sweep table (band-par fragments its trip range).
+- **Training-load DATA banked** (`src/hkjc/data/trackwork.py`, `data_cache/trackwork.parquet`, 30k+ Banister gallops)
+  — scraped & leak-free, NOT yet wired (route into the fusion per Plan #1, not an additive bolt-on).
 
 **C. THE FORWARD PLAN (ranked; user-steered):**
-1. **Coherent Bayesian fusion of all velocity observations (the next architecture).** The additive `TRIAL_GAIN`
-   is a crude proxy — it over-weights trials for established horses, under-weights green ones. Fold barrier
-   trials (then training gallops) into the SAME empirical-Bayes ability posterior as official runs, DOWN-WEIGHTED,
-   so the shrinkage `lam(n_eff)` handles the debut→established gradient and the denser prior tightens v_c/W′ for
-   ALL lightly-raced horses, not just debutants. Touches `calibration.fit_energetics_population` + `fit.horse_residuals`
-   (weight trials as a fraction of a race; put trial v_c on the race v_c scale via trial sectionals `batch_sect`).
-2. **Training-load as the densest prior layer.** `localtrackwork` (daily dated timed gallops, ~3 wk pre-race) +
-   `veterinaryrecord` are CONFIRMED historically scrapeable & leak-free (physiology agent). The real fitness signal
-   race-history can't give (race-derived condition features are fully collinear — refuted). Backfill → fuse (per #1).
-3. **CV / vision (longer horizon).** Video path extraction from race replays (`hkjc.vision`) to "watch" past races
-   for dynamics section-times miss; gait analysis for biomechanical condition (esp. debut barrier-trial video).
-4. **Geometry × control / draw axis (THEORY §3c) — RE-OPENED (the O1 close was too eager).** O1 (a multiplicative
-   `g(Course)` modulation of the *scalar MEAN* draw penalty, ST-only) did not convert even though the residual is real
-   (draw steepens on tighter Courses, t=−6.79). That rejects ONE structure (the mean-scalar), not the mechanism. Two
-   faces of draw the mean-scalar cannot express are now being tested: **(i) draw → the diffusion `D` (trip VARIANCE)** —
-   a wide/boxed draw is a higher-variance trip (clear run vs trapped), and since the winner is an order statistic, a
-   per-horse `D_i` lift for risky draws changes win prob in a way no mean-shift can (the §3d third-knob argument);
-   **(ii) draw × distance via real `bend_fraction(distance)`** — a DERIVED, distance-aware penalty vs the flat fitted
-   scalar; **(iii)** first-principles arc-loss (bend-angle × lane-offset). Plus **O3** (a control-quality
-   path-efficiency jockeyship trait from `trajectory_dataset_full`, no CV) for the CONTROL share. The baked `DRAW_GAIN`/
-   `DRAW_FS_GAIN` stay interim stopgaps until these settle. (Course/rail is in `st_history` for ST only; HV locked to A.)
+1. **Coherent Bayesian fusion — BANKED for trials (`TRIAL_PI_RATIO`, ST ρ=2.0); EXTEND to training gallops next.**
+   The trial now folds into the v_c posterior at its OWN precision above the shrink layer, weight fading with race
+   count (ST +0.4pp, debut +6pp). The architecture is proven and was explicitly built as **the substrate for the
+   gallop layer**. NEXT: fold the (already-scraped) training gallops into the same posterior — `data_cache/trackwork.parquet`
+   is landed (30k+ Banister gallop sessions; `src/hkjc/data/trackwork.py`, probe in `studies/trackwork_fitness_probe.py`).
+   The training agent's additive probe converted +0.2/+0.4pp (fresh-work subslice 2×), but the RIGHT home is the
+   fusion (a gallop is the densest, noisiest velocity obs — give it its own low precision, like the trial). Needs a
+   full ~1.5k-horse backfill (current research subsample ~13% coverage) + `trial_vc_table`-style `gallop_vc_table`,
+   then a 3rd precision channel `π_gallop = ρ_g·π_race` in the fit fusion. HV's sparse trial axis may convert once
+   the denser gallop prior joins it.
+2. **CV / vision (IN PROGRESS).** Drone (aerial) replay path-extraction agent running — the (x,y,t) data feed is
+   non-interceptable (confirmed), so CV on the near-top-down drone video: frames → detect → camera-motion homography
+   → rail-relative (arc-length x, rail-offset y) coords, prototyped on one race (home straight first). Unblocks the
+   geometry × control axis (§3c) with real lateral paths. Gait analysis (biomechanical condition) is the follow-on.
+3. **Geometry × control / draw axis (THEORY §3c/§3e).** **draw→`D` (trip variance) BANKED** (`DRAW_VAR_GAIN`, ST 0.5,
+   +0.4pp) — the first use of the third knob, and the EVT field-size argument (§3e) retro-explains its ST-only split
+   (variance pays in big fields). O1 (scalar-MEAN `g(Course)` modulation) did NOT convert (rejects that structure, not
+   the mechanism). Still open: **O3** control-quality path-efficiency jockeyship trait from `trajectory_dataset_full`
+   (the CONTROL share, no CV); **draw × distance via real `bend_fraction`**; and the CV lateral paths (#2) for the
+   genuine 2-D game. Baked `DRAW_GAIN`/`DRAW_FS_GAIN` stay interim until geometry+control are modelled jointly.
+4. **NEW §3e phase-structure levers (theory-derived this session; convertible & leak-free):**
+   - **Gate-break trait** — first-call rank *adjusted for draw* (= `early_pos` decomposed into draw-explained vs
+     gate-skill), EB-shrunk over prior runs → the start-phase drift; its dispersion optionally → `D`. The "start not
+     explicit" scorecard gap, given a structure. Unmodelled today.
+   - **Finishing-sectional v_c channel** — last-400 m velocity (pace+going adjusted) as its OWN high-precision channel
+     in the fusion (the closing phase is the least tactically-contaminated ability readout — give each PHASE its own precision).
+   - **Distance-law of variance** — validate the parameter-free `CV(T) ∝ 1/√L` prediction against per-distance ECE;
+     if sprints are under-dispersed, add a distance-dependent `D(L)` floor (start+traffic inject distance-independent variance).
+   - **Field-size weighting of the D knob** — prioritise every variance lever (figure-variance→`D_i`, gate-temperament,
+     `D(L)`) on ST big fields (the order-statistic left-tail argument; MC already captures it — this is a prioritisation rule).
 5. **Other new data:** weather (continuous soil-moisture going + wind; poll-and-log, no history); formline (the
    collateral graph could go deeper / directed). See HKJC_DATA.md.
 
