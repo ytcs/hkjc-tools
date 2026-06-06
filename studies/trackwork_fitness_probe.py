@@ -169,7 +169,7 @@ def _eval(df, folds, jky_mean, fit_gain, subset_mask=None):
 
     eval_df = d2
     if subset_mask is not None:
-        keep_races = d2.filter(subset_mask)["race_id"].unique()
+        keep_races = d2.filter(subset_mask)["race_id"].unique().implode()
         eval_df = d2.filter(pl.col("race_id").is_in(keep_races))
 
     summary = {}
