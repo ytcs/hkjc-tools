@@ -21,8 +21,8 @@ from hkjc.backtesting import harness, walk_forward_folds
 from hkjc.model.features import (attach_rating_trajectory, barrier_trial_table,
                                  collateral_form_table, early_position_table, form_table,
                                  jockey_table, prior_starts_table, recency_form_table,
-                                 speed_figure_table, style_table, trainer_table,
-                                 trajectory_trait_table)
+                                 speed_figure_table, style_table, trainer_hot_table,
+                                 trainer_table, trajectory_trait_table)
 from hkjc.model.constants import FADE_GAIN, FORM_HALF_LIFE
 from hkjc.model.fit import fit_predict_traffic
 
@@ -91,6 +91,9 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     df = df.with_columns(pl.col("jky_sr").fill_null(jky_mean))
     df = df.join(trainer_table(rr), on=["date", "horse_id"], how="left")
     df = df.with_columns(pl.col("trn_sr").fill_null(float(df["trn_sr"].mean())))
+    # trainer RECENCY hot-streak (intent / stable-confidence overlay); leak-free strictly-prior
+    df = df.join(trainer_hot_table(rr), on=["date", "horse_id"], how="left")
+    df = df.with_columns(pl.col("trn_hot").fill_null(float(df["trn_hot"].mean())))
     # declared horse weight (published pre-race -> leak-free), keyed by runner
     bw = (rr.with_columns(pl.col("date").cast(pl.Utf8).str.replace_all("/", "-"),
                           pl.col("HorseNo").cast(pl.Int64, strict=False).alias("runner"),
@@ -157,11 +160,13 @@ def main():
     fg2 = float(_fg) if _fg is not None else FADE_GAIN
     _pgg = os.environ.get("PEAKGAP_GAIN")  # rating-trajectory own-peak deficit; None -> per-venue baked
     pgg = float(_pgg) if _pgg is not None else None
+    _thg = os.environ.get("TRN_HOT_GAIN")  # trainer recency hot-streak (intent); None -> per-venue baked
+    thg = float(_thg) if _thg is not None else None
 
     def _model(train, test):
         return fit_predict_traffic(train, test, jky_mean=jky_mean, w_prime_gain=wpg, sim=sim,
                                    allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg, collat_gain=cg,
-                                   fade_gain=fg2, rtg_peakgap_gain=pgg)
+                                   fade_gain=fg2, rtg_peakgap_gain=pgg, trn_hot_gain=thg)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

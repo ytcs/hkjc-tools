@@ -35,7 +35,7 @@ from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, COLLAT_GAIN,
                         DRAW_GAIN_BY_VENUE, FADE_GAIN, FORM_GAIN, FORM_GAIN_BY_VENUE,
                         JOCKEY_GAIN, N_SAMPLES, PEAKGAP_GAIN, PEAKGAP_GAIN_BY_VENUE,
                         POS_FADE_GAIN, SHRINK_MULT, SIM, SUSTAIN_GAIN, TRIAL_GAIN,
-                        TRIAL_GAIN_BY_VENUE, W_PRIME_GAIN)
+                        TRIAL_GAIN_BY_VENUE, TRN_HOT_GAIN, TRN_HOT_GAIN_BY_VENUE, W_PRIME_GAIN)
 
 
 def _surface(distance: int) -> str:
@@ -76,6 +76,7 @@ def fit_predict_traffic(
     sustain_gain: float = SUSTAIN_GAIN,
     fade_gain: float = FADE_GAIN,
     rtg_peakgap_gain: float | None = None,
+    trn_hot_gain: float | None = None,
     pos_fade_gain: float = POS_FADE_GAIN,
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
@@ -128,6 +129,10 @@ def fit_predict_traffic(
         pgap = g["rtg_peakgap"].to_numpy().astype(float) if "rtg_peakgap" in g.columns else np.zeros(g.height)
         pgap = pgap - np.nanmean(pgap)
         pgg = rtg_peakgap_gain if rtg_peakgap_gain is not None else PEAKGAP_GAIN_BY_VENUE.get(venue, PEAKGAP_GAIN)
+        # trainer hot-streak (recency-weighted SR) — intent/stable-confidence overlay, within-race centred
+        thot = g["trn_hot"].to_numpy().astype(float) if "trn_hot" in g.columns else np.zeros(g.height)
+        thot = thot - np.nanmean(thot)
+        thg = trn_hot_gain if trn_hot_gain is not None else TRN_HOT_GAIN_BY_VENUE.get(venue, TRN_HOT_GAIN)
         # trainer strike rate, within-race centred (a constant field shift cancels in win prob)
         trn = g["trn_sr"].to_numpy().astype(float) if "trn_sr" in g.columns else np.zeros(g.height)
         trn = trn - np.nanmean(trn)
@@ -143,7 +148,8 @@ def fit_predict_traffic(
                       + fg * (form[i] - 0.5) + jockey_gain * (jky[i] - jky_mean)
                       + speedfig_gain * sfig[i] + trainer_gain * trn[i]
                       + tg_v * tfig[i] + cg * cfm[i] + pos_fade_gain * epos[i]
-                      + sustain_gain * sustain[i] + fade_gain * fade[i] + pgg * pgap[i])
+                      + sustain_gain * sustain[i] + fade_gain * fade[i] + pgg * pgap[i]
+                      + thg * thot[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
             # stamina analogue of form_gain (market under-weights W' at gain 1.0).
             wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)

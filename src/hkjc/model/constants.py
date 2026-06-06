@@ -213,4 +213,14 @@ FADE_GAIN = float(os.environ.get("FADE_GAIN", "0.1"))
 # current base). features.rating_trajectory_table / attach_rating_trajectory. fit resolves per-venue.
 PEAKGAP_GAIN = float(os.environ.get("PEAKGAP_GAIN", "0.0"))
 PEAKGAP_GAIN_BY_VENUE = {"ST": -0.015, "HV": -0.025}
+
+# TRN_HOT_GAIN: trainer hot-streak — the INTENT / stable-confidence overlay (THEORY §2.7). The flat
+# career trainer strike-rate (trainer_table) is already priced (~+0.2pp), but the RECENCY-weighted
+# MOMENTUM (a yard suddenly winning) is not: features.trainer_hot_table (exp-weighted SR, half-life
+# 30 runs), within-race centred. PER-VENUE: ST 62.6→62.9% (+0.3pp), HV 59.3→59.4% (+0.1pp); ECE improves
+# at both, and the ST trainer residual collapses to t≈0 after baking (a closure check — the bake absorbs
+# exactly that channel). Jockey-upgrade and class-move were tested the same way and are PRICED (don't
+# convert — collinear with JOCKEY_GAIN / rating). fit resolves per-venue unless trn_hot_gain is passed.
+TRN_HOT_GAIN = float(os.environ.get("TRN_HOT_GAIN", "0.0"))
+TRN_HOT_GAIN_BY_VENUE = {"ST": 2.0, "HV": 1.0}
 N_SAMPLES = int(os.environ.get("N_SAMPLES", "6000"))

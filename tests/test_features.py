@@ -4,7 +4,7 @@ import polars as pl
 from hkjc.model.features import (barrier_trial_table, collateral_form_table,
                                  early_position_table, form_table, jockey_table,
                                  prior_starts_table, recency_form_table, style_table,
-                                 trainer_table)
+                                 trainer_hot_table, trainer_table)
 
 
 def test_form_is_strictly_prior_expanding_mean():
@@ -129,6 +129,19 @@ def test_trainer_strike_rate_is_prior_only():
     assert sr[0] is None
     assert abs(sr[1] - 1.0) < 1e-9
     assert abs(sr[2] - 0.5) < 1e-9
+
+
+def test_trainer_hot_streak_is_prior_only():
+    # recency-weighted trainer SR (intent): debut null, strictly-prior exp-weighted mean.
+    rr = pl.DataFrame({
+        "date": ["2025-01-01", "2025-01-08", "2025-01-15"],
+        "Trainer": ["T1"] * 3, "HorseID": ["H1", "H2", "H3"], "Pla": [1, 0, 1],
+    })
+    out = trainer_hot_table(rr, half_life=30.0).sort("date")
+    hot = out["trn_hot"].to_list()
+    assert hot[0] is None                 # first runner: no prior
+    assert abs(hot[1] - 1.0) < 1e-9       # prior = {win}
+    assert 0.0 < hot[2] < 1.0             # exp-mean of {win, loss}, strictly prior
 
 
 def test_early_position_is_strictly_prior():
