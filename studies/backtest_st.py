@@ -68,8 +68,8 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
         df = df.with_columns(pl.lit(None, dtype=pl.Utf8).alias("course"))
     df = df.with_columns(pl.col("course").fill_null("A"))
     # leak-free ability features from the library
-    # production form = RECENCY (exp-weighted, half-life ~2 races): 48% -> 56% of market over the
-    # career mean. Career form kept as `form_career` for diagnosis/comparison only.
+    # production form = RECENCY (exp-weighted, half-life ~2 races). Career form kept as
+    # `form_career` for diagnosis/comparison only.
     df = df.join(form_table(e, w).rename({"form": "form_career"}), on=keys, how="left")
     df = df.with_columns(pl.col("form_career").fill_null(0.5))
     # strictly-prior career start count (0 = debut) — the flag for the barrier-trial debut signal
@@ -109,7 +109,7 @@ def load(venue: str = VENUE) -> tuple[pl.DataFrame, float]:
     df = df.with_columns(pl.col("speedfig").fill_null(0.0))
     # collateral-form ability rating (opponent-adjusted velocity, leak-free strictly-prior); 0 = no prior.
     # PER-VENUE construction (COLLAT_CONSTRUCTION_BY_VENUE): ST uses the DEEPENED rating (Jacobi
-    # multi-sweep + recency + trip-band like-for-like, +1.1pp); HV keeps the baked one-sweep table.
+    # multi-sweep + recency + trip-band like-for-like); HV keeps the baked one-sweep table.
     # An empty construction dict == the baked collateral_form_table. Env vars override for sweeps:
     #   COLLAT_V2=1 forces collateral_form_table_v2 with COLLAT_{KAPPA,HALFLIFE,MARGINPOW,ASYM,SWEEPS}
     #   and COLLAT_BANDPAR; COLLAT_V2=0 forces the baked one-sweep table at BOTH venues.
@@ -177,7 +177,7 @@ def main():
     folds = walk_forward_folds(dates, n_folds=5, embargo=1, min_train=1)
     print(f"{VENUE}: {df['race_id'].n_unique()} races, {df.height} runners, {len(folds)} folds")
 
-    wpg = float(os.environ.get("W_PRIME_GAIN", "2.0"))
+    wpg = float(os.environ.get("W_PRIME_GAIN", "1.0"))
     sim = os.environ.get("SIM", "wald")
     _ab = os.environ.get("ALLOMETRIC_B")
     ab = float(_ab) if _ab is not None else None  # None -> per-venue ALLOMETRIC_B_BY_VENUE

@@ -6,16 +6,11 @@ These are the per-horse trait measurements the production model rides on, each c
 result. They are pure transforms over already-loaded frames (no I/O), so the same code
 serves the walk-forward backtest and a live race card.
 
-- :func:`form_table` — expanding mean of prior relative-finish. Form is the dominant
-  ability signal (≈18% of market skill) and survives the handicap.
-- :func:`jockey_table` — trailing win strike-rate of the booked jockey (≈+7pp).
+- :func:`form_table` — expanding mean of prior relative-finish (the dominant ability signal).
+- :func:`jockey_table` — trailing win strike-rate of the booked jockey.
 - :func:`style_table` — trailing mean ``rel_early`` (front-runner ↑ / closer ↓), a speed-based
   running-style signal. (The position-based :func:`early_position_table` is what feeds the live
   positional-fade term; ``style`` is currently unused by the production fit — kept as a feature.)
-
-Recency note: an exp-weighted form is +8pp in a bare conditional logit but does NOT
-transfer to the ABM (the recency the market prices is already carried by the official
-rating, which enters nonlinearly via ``v_c.fixed(band, rtg)``), so the career mean stays.
 """
 from __future__ import annotations
 
@@ -59,13 +54,7 @@ def prior_starts_table(energetics: pl.DataFrame, wpq: pl.DataFrame) -> pl.DataFr
     expanding/strictly-prior pattern as :func:`form_table`; contains no information from the
     current or any later run. Returns (date, venue, race_no, runner, prior_starts).
 
-    The debut flag: every history-based ability feature (form, sectional v_c residual, the
-    horse's own jockey history) falls back to neutral on a debut, and the official rating is
-    fill-null'd to the field median — a fabricated, anti-predictive class signal for genuinely
-    unrated first-timers. ``prior_starts == 0`` marks exactly those rows. NOTE: a simple RTG-
-    suppression on this flag does NOT convert (the rating slope is tiny and the market is already
-    efficient on debuts — see journal); its real use is keying NEW debut signal (barrier-trial
-    form), where the horse has no race history but a barrier trial to read.
+    ``prior_starts == 0`` marks debut rows — used to key the barrier-trial debut signal.
     """
     e = energetics.with_columns(_norm_date().alias("date"))
     w = wpq.with_columns(_norm_date().alias("date"))
@@ -140,8 +129,7 @@ def trainer_hot_table(results_rich: pl.DataFrame, half_life: float = 30.0) -> pl
     rate; this is the sharper RECENCY-weighted analogue — an exp-weighted mean (half-life in *runs*,
     not days) of the trainer's win indicator over its STRICTLY PRIOR runners. A yard suddenly winning
     races runs hotter than its long-run rate. Strictly-prior (the exp mean is shifted by one), keyed
-    (date, horse_id). The flat trainer SR adds only ~0.2pp over jockey+rating (priced); the MOMENTUM
-    the market reads is the new signal (ST +0.3pp / HV +0.1pp, ECE improves at both venues).
+    (date, horse_id).
     """
     rr = (results_rich
           .with_columns(pl.col("date").cast(pl.Utf8).alias("date"),
@@ -176,9 +164,7 @@ def early_position_table(run_policy: pl.DataFrame) -> pl.DataFrame:
     expanding mean is the horse's *habitual* early position — its running style as a POSITION,
     distinct from the speed-based :func:`style_table` (the two correlate only ~0.12). Feeds the
     positional-fade term: the non-interacting drift-diffusion over-rates habitual front-runners
-    (they burn the anaerobic reserve setting the pace with no cover) and under-rates closers — the
-    mean-field shadow of the pace equilibrium (front horses win ~1pp LESS than the physics predicts,
-    closers ~1pp MORE; ground-truth-confirmed, residual t≈−7 at both venues).
+    (they burn the anaerobic reserve setting the pace with no cover) and under-rates closers.
     """
     rp = run_policy.with_columns(
         pl.col("date").cast(pl.Utf8).str.replace_all("/", "-").alias("date"))
@@ -388,9 +374,8 @@ def collateral_form_table_v2(
     band_par: bool = False,
 ) -> pl.DataFrame:
     """REFINEMENT of :func:`collateral_form_table` — same leak-free online Massey rating, with
-    four optional refinements of the competition axis, each conversion-tested as a MARGINAL gain
-    over the baked one-sweep rating. All are strictly-prior / online in date order (identical
-    leak-free discipline as :func:`collateral_form_table`).
+    four optional refinements of the competition axis. All are strictly-prior / online in date
+    order (identical leak-free discipline as :func:`collateral_form_table`).
 
     Parameters
     ----------
@@ -599,10 +584,8 @@ def rating_trajectory_table(rating: pl.DataFrame, k: int = 4) -> pl.DataFrame:
     (``rating_dataset``: ``horse_id, date, rtg``), per rating update:
 
       - ``rtg_peakgap`` — current rtg − the horse's own prior PEAK rtg (≤0): how far below its own
-        best. The one trajectory feature that CONVERTS — it carries an ABSOLUTE career landmark the
-        point cannot express (a declining horse runs below what its lagging point rating says); see
-        ``PEAKGAP_GAIN_BY_VENUE``. ``rtg_vel`` (Δrtg/k) and ``rtg_accel`` did NOT convert — they merely
-        restate recent form (collinear with the form channel); ``rtg_nupd`` (maturity) kept for diagnosis.
+        best, an absolute career landmark the point rating cannot express; see ``PEAKGAP_GAIN_BY_VENUE``.
+        Also emits ``rtg_vel`` (Δrtg/k), ``rtg_accel``, and ``rtg_nupd`` (maturity) for diagnosis.
 
     LEAK-FREE: each row summarises the rating history up to and *including* that update; the consumer
     as-of-joins it backward with ``allow_exact_matches=False``, so a race on date ``d`` only sees

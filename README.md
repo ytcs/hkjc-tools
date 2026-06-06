@@ -1,11 +1,13 @@
 # hkjc-tools
 
 A physics-grounded modelling stack for Hong Kong Jockey Club (HKJC) horse racing, and the
-data + agent scaffolding around it. The modelling philosophy is **first-principle
-regularization**: the race model is an agent-based simulation (a power-balance equation of
-motion + a tactical policy), and every factor must couple as a real mechanism rather than an
-arbitrary regressor. The goal is to *fit the market* — bet-skill (% of market) is the
-goodness-of-fit metric — before any question of edge.
+data + agent scaffolding around it. The production model is the **`wald` first-passage
+diffusion law** (finishing time = first passage of a drift-diffusion → Inverse-Gaussian,
+winner = argmin) with leak-free empirical-Bayes ability and physically-derived per-venue
+couplings. The modelling philosophy is **first-principle regularization**: every factor must
+couple as a real mechanism, never an arbitrary regressor, and the goal is to *fit the market*
+— % of market is a goodness-of-fit metric, not an edge hunt. Full principles + method:
+**`docs/PHILOSOPHY.md`**; mechanism/theory: `docs/THEORY.md`.
 
 ## Install
 
@@ -33,7 +35,7 @@ Seven packages, one-way dependency graph (each imports only from those below it;
 | --- | --- |
 | `hkjc.core` | Shared contracts (`RaceModel`, `DataSource`), the canonical `Race` / `TrackGeometry`, the Monte-Carlo `RaceSimulator`, and `hkjc_facts` — the single source for HKJC site quirks + betting rules. |
 | `hkjc.data` | Connectors/scrapers (live + historical), the racecard/sectional parsers, and the tick stores (`OddsTickStore`, `JackpotCaptureStore`) + carryover ledger. Acquires and persists only — computes no edge. |
-| `hkjc.model` | The agent-based model: the single canonical power-balance EOM (`eom`/`dynamics`), the leak-free fit→predict pipeline (`fit`), the ability features (`features`), calibration, and the baked constants. |
+| `hkjc.model` | The production win model: the leak-free fit→predict pipeline (`fit`, the `wald` first-passage law + per-venue mean-field couplings), the ability features (`features`), calibration, and the baked constants. (The interacting ABM sims were deprecated 2026-06; physics preserved in `docs/THEORY.md` Appendix.) |
 | `hkjc.betting` | Price pools (`pools`), the carryover structural-edge tools, closing-line value (`clv`), and the `Strategy` seam (model probs → stakes). |
 | `hkjc.backtesting` | Replay history, **enforce no-lookahead** (`AsOfView` + `assert_no_lookahead`), and score models/strategies (% of market, ECE, walk-forward, selection control). |
 | `hkjc.vision` | The opt-in, heavy CV trajectory pipeline (lazy deps). |

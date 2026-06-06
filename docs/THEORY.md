@@ -7,15 +7,11 @@ into a full (PhD-thesis-grade) treatment later. For now it is the scaffold that 
 modelling principled: **every factor we introduce must occupy a named place in this
 structure and couple as a real mechanism, never an arbitrary regressor.**
 
-> The governing principle (do not lose it): **fit the market first.** "% of market" is a
-> goodness-of-fit metric, not an edge hunt. The model is regularised by physics + game
-> theory. There is always a next mechanism — never invoke "private info" to stop.
->
-> **Theory leads, statistics gate. Statistical models cannot replace theoretical understanding.**
-> A feature failing to convert under a simple/additive coupling rejects *that structure*, not the
-> mechanism — the conversion test gates a given coupling; theory chooses which coupling to try next.
-> Never declare a mechanism or axis dead from a crude regression: re-derive the correct structure
-> (right latent, right precision, right interaction) first. "A dead first attempt ≠ a dead axis."
+> Governing principles live in **`docs/PHILOSOPHY.md`** (fit the market first; theory leads /
+> statistics gate; first-principle regularization; the conversion test; leak-free discipline). The
+> two that most shape *this* document: **theory leads, statistics gate** — a feature failing under a
+> simple coupling rejects *that structure*, not the mechanism, so every factor must occupy a named
+> place in the structure below and couple as a real mechanism, never an arbitrary regressor.
 
 ---
 

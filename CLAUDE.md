@@ -4,14 +4,13 @@ Physics-grounded HKJC horse-racing modelling + the agent scaffolding around it. 
 first; it tells you how the repo is laid out, how to run things, and which of the three
 agents to *become* for a given request.
 
-## The one rule that governs the modelling work
+## Principles & method — read `docs/PHILOSOPHY.md` first
 
-**Fit the market first. Bet-skill (% of market) is the goodness-of-fit metric, not an edge
-hunt.** The model is regularized by physics + game theory: every factor must couple as a
-real mechanism (a term in the EOM or the policy), never an arbitrary regressor. Do **not**
-use a "private info / unknowable" excuse to stop — there is always a next mechanism. The
-edge/trading call belongs to the user, never to the model. Full statement:
-`src/hkjc/agents/prompts/modelling_agent.md`.
+The governing principles and the calibration method live in **`docs/PHILOSOPHY.md`** (single
+source). In one line: **fit the market first** — % of market is a goodness-of-fit metric, not an
+edge hunt — regularized by physics + game theory (every factor a real mechanism, never an arbitrary
+regressor), gated by the leak-free paired-fixed-seed conversion test, found via
+diagnose → recalibrate → bake → re-diagnose. The edge/trading call is the user's, never the model's.
 
 ## Layout (seven packages, one-way deps)
 
@@ -56,9 +55,8 @@ They share one journal (`hkjc.agents.Journal`) and talk across sessions via inbo
 | "research a betting strategy", "size stakes", "jackpot/carryover", "/strategy" | **strategist** | `prompts.load("strategist")` | strategies on top of the model. Consumes the model; never edits it. |
 | "go live", "paper-trade today's card", "watch the odds", "/trade" | **trading** | `prompts.load("trading")` | the live (paper) runtime. Executes the chosen strategy; feeds observations back. |
 
-Separation of concerns is hard: the strategist and trading agent **consume** model
-probabilities and never modify the model — if they suspect a miscalibration, they file a
-journal entry addressed to `modelling` (`audience=["modelling"]`), they don't patch it.
+Separation of concerns (PHILOSOPHY §9): strategist and trading **consume** model probabilities and
+never modify the model — a suspected miscalibration is a journal entry to `modelling`, not a patch.
 
 On session start, an agent reads its inbox (`Journal.inbox("<name>")`) and its living state
 (`hkjc.agents.state.read("<name>")`). It records findings to the journal
@@ -68,16 +66,14 @@ On session start, an agent reads its inbox (`Journal.inbox("<name>")`) and its l
 
 Authoritative state: `journal/state/MODEL_STATE.md` (constants table + the lever queue + the
 refuted list — read it before any modelling work). Current production (`SIM=wald`, per-venue
-calibration): fit ≈ **62.6% of market (ST) / 59.3% (HV)** (from ~48% at project start), model ECE
-~0.005. The path past the mean-field plateau is **NEW DATA + STRUCTURAL signal**, proven by the
-2026-06 fan-out: barrier trials (`TRIAL_GAIN`, debut/lightly-raced form), collateral-form
-(`COLLAT_GAIN`, relational opponent-strength — a scalar Elo had failed), rating-peakgap
-(`PEAKGAP_GAIN`, a process/career-landmark feature), trajectory fade (`FADE_GAIN`). Next: fold trials
-(then training gallops) into the EB ability posterior coherently; geometry×control (THEORY §3c). The
-interaction ABM was deprecated (physics in THEORY.md Appendix).
+calibration): fit ≈ **65.0% of market (ST) / 59.7% (HV)** (from ~48% at project start), model ECE
+~0.006. The path past the mean-field plateau is **NEW DATA + STRUCTURAL signal** (PHILOSOPHY §8),
+proven by the 2026-06 fan-out: barrier trials → the coherent precision **fusion** (`TRIAL_PI_RATIO`),
+relational collateral-form (`COLLAT_CONSTRUCTION_BY_VENUE` — a scalar Elo had failed), rating-peakgap
+(career-landmark process feature), fade/positional-fade on the **W′ knob** (`FADE_W_GAIN`), draw→**D**
+trip variance (`DRAW_VAR_GAIN`). Next: fold training gallops into the same fusion; the §3e phase
+levers; geometry×control via CV paths (THEORY §3c/§3e). The interaction ABM was deprecated (physics
+in THEORY.md Appendix).
 
-The method is the loop: **diagnose** (market-residual regression, race-clustered SEs) →
-**recalibrate** (a mechanism-grounded constant) → **bake** (`hkjc.model.constants`) →
-**re-diagnose**. The CONVERSION test (%market, confirmed at full scale with a PAIRED fixed-seed
-backtest — `PYTHONHASHSEED=0` so base/candidate share MC seeds), NOT the residual t-stat, is the
-gate; verify every change improves OOS % of market *and* ECE, not just in-sample.
+The method is the diagnose → recalibrate → bake → re-diagnose loop, gated by the leak-free
+paired-fixed-seed conversion test — see **PHILOSOPHY §5 & §7** for the full statement.

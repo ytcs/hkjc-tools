@@ -5,25 +5,14 @@
 > should become the seed entries of the modelling agent's journal channel.
 > Last updated: 2026-06-05.
 
-## Objective (do not lose this framing)
+## Objective & method — see `docs/PHILOSOPHY.md`
 
-**Fit the market first. Bet-skill (% of market) is a GOODNESS-OF-FIT metric, not an edge hunt.**
-% of market = (uniform_LL − model_LL) / (uniform_LL − market_LL), measured leak-free walk-forward.
-Do NOT invoke the "private info" excuse to stop — that logic would have quit at 10% skill, yet we
-are now ~48%. The edge/trading decision is the user's to make, not a reason to stop calibrating.
-
-**First-principle regularization (physics + game theory).** Every factor introduced must couple as a
-real, plausible *mechanism* in the plant (EOM) or policy — never an arbitrary regressor (overfits).
-The ABM = plant (power-balance EOM: finite W′ reserve, traffic, drafting, bend ground-loss, mass) +
-policy (action = π(state): kick timing/intensity, pace tilt).
-
-## The calibration loop (this is the method)
-
-**diagnose → recalibrate → bake → re-diagnose.**
-Market-residual diagnosis: `resid = market_prob − model_prob` (both de-vigged, race-normalized),
-regress on each observable mechanism with race-clustered SEs. Sign + |t| say which mechanism the
-model mis-weights and by how much. Biggest |t| = the next thing to ground in the physics. Fix it,
-re-run, find the next. (Script: `experiments/market_residual_diagnosis.py`.)
+The governing principles (fit the market first; theory leads / statistics gate; first-principle
+regularization; the conversion test; leak-free; the diagnose → recalibrate → bake → re-diagnose loop;
+new-data+new-structure) live in **`docs/PHILOSOPHY.md`** — read it first. This file is the *current
+state*: the constants, the lever queue, and the refuted list. Residual diagnosis script:
+`experiments/market_residual_diagnosis.py` (`resid = market_prob − model_prob`, de-vigged,
+race-normalized, race-clustered SEs).
 
 ## Current calibration constants (baked)
 
@@ -205,15 +194,12 @@ A high |t| residual ≠ a useful lever; what matters is impact on the WINNER's p
 was on the kinematic sim, but production switched to wald which had dropped draw entirely. Re-check parked
 items against the CURRENT production path before trusting "low-leverage". `bodywt` is the next such re-check.
 
-## Methodology caveats
+## Methodology caveats (model-specific; the general gate is PHILOSOPHY §5)
 
-- **PAIRED fixed-seed full-scale is the real gate (NEW, 2026-06-05).** The 150-race subsampled `quick_eval`
-  WILDLY over-states a knob: `draw_fs_gain` read +1.0–1.6pp on quick_eval but only **+0.3pp HV / 0.0pp ST**
-  at full scale — a ~4× overstatement. AND the full backtest's per-race MC seed is `hash(race_id)`, which is
-  PYTHONHASHSEED-salted → ~±0.3-0.5pp run-to-run noise, so a single-run +0.3pp is indistinguishable from
-  noise. FIX: run base and candidate with **`PYTHONHASHSEED=0` fixed** so they share identical per-race MC
-  seeds — a paired comparison where the delta is purely the mechanism, not seed noise. Use quick_eval only to
-  scout direction/sign; confirm every bake with the paired full-scale test (both venues + ECE).
+- **The paired-fixed-seed gate, concretely:** `draw_fs_gain` read +1.0–1.6pp on the 150-race `quick_eval`
+  but only **+0.3pp HV / 0.0pp ST** at full scale (~4× overstatement); and `hash(race_id)` MC seeds are
+  PYTHONHASHSEED-salted → ±0.3-0.5pp run-to-run noise. So `PYTHONHASHSEED=0` paired runs are mandatory —
+  the live instance of why the conversion test, not the t-stat, is the gate.
 - Going/class categorical residual test is **uninformative** under race-normalization (race-level
   constants vanish). To check condition calibration, use a calibration-by-condition test (ECE within
   each going/class bucket), not mean-resid-by-level.

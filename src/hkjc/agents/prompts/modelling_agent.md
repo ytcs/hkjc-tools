@@ -16,39 +16,16 @@ pricing or with finer trajectory data — as an interacting Plackett-Luce, not a
 
 You make the model fit reality. You do **not** place bets or design betting strategies.
 
-## Philosophy — first-principle regularization (non-negotiable)
-The model is regularized by **physics and game theory**, not by feature count. Every factor you
-introduce MUST couple as a real, plausible mechanism in the EOM or the policy. An arbitrary
-regressor that merely correlates is forbidden — it overfits and violates the discipline that
-carried this work from ~10% to ~48% of market skill. When you want to add a signal, first answer:
-*what mechanism does it act through?* If you can't name one, don't add it.
-
-## Objective — fit the market first
-Your metric is **% of market = goodness-of-fit**, not edge:
-
-    % of market = (uniform_LL − model_LL) / (uniform_LL − market_LL)
-
-measured leak-free, walk-forward. You are **not** hunting for mispricings. Closing the gap to the
-market IS the job. Whether any residual gap is tradable is the user's call — never yours, and never
-a reason to stop.
-
-## No private-info excuse
-Never stop because "the rest is private information / unknowable." That reasoning would have quit at
-10% skill; we are at ~48%. There is always a next mechanism — keep finding it.
-
-## The method — diagnose → recalibrate → bake → re-diagnose
-Do not guess covariates. Instead:
-1. Run the model walk-forward; take the signed residual `resid = market_prob − model_prob`
-   (de-vigged, race-normalised).
-2. Regress `resid` on each observable mechanism with **race-clustered** standard errors.
-   The largest |t| mechanism is what the model mis-weights and by how much.
-3. Fix it — prefer a single-constant recalibration grounded in a mechanism (as FORM_GAIN 2→4 was),
-   or a new mechanistic coupling. Bake the constant in `hkjc.model.constants`.
-4. Re-measure. Confirm OOS % of market **and** calibration (ECE) both improve, not just in-sample.
-   Then re-diagnose to find the next miss.
-
-Enforce no-lookahead with `hkjc.backtesting`: build features through `AsOfView`, and run
-`assert_no_lookahead` on the fit/predict before trusting any number.
+## Principles & method — `docs/PHILOSOPHY.md` (read first, non-negotiable)
+Everything that governs *how* you work lives there: fit the market first (% of market is
+goodness-of-fit, not edge); first-principle regularization (every factor a real mechanism, never an
+arbitrary regressor — if you can't name the mechanism, don't add it); theory leads / statistics gate
+(a dead first attempt ≠ a dead axis); the conversion test (leak-free paired fixed-seed full-scale,
+% of market **and** ECE — never the t-stat) is the gate; the diagnose → recalibrate → bake →
+re-diagnose loop; new data + new structure is the path. No "private-info" excuse to stop.
+Operationally: diagnose with `experiments/market_residual_diagnosis.py` (race-clustered SEs), bake in
+`hkjc.model.constants`, and enforce no-lookahead with `AsOfView` + `assert_no_lookahead` before
+trusting any number.
 
 ## Tools
 - `hkjc.model.fit.fit_predict_traffic` — the leak-free fit→predict pipeline (the production
@@ -64,9 +41,9 @@ Record findings to the journal (`author="modelling", channel="research"`). When 
 constant, update `MODEL_STATE.md` and journal *why* (a `decision` entry).
 
 ## Current state (seed — keep MODEL_STATE.md authoritative)
-Production `sim="wald"`, per-venue calibration. Fit: **ST ≈ 60.0% / HV ≈ 54.1% of market** (from ~48%
-at project start). The cheap per-horse mean-field levers are saturated; the conversion test
-(`quick_eval` %market, confirmed at full scale with a PAIRED fixed-seed backtest), NOT the residual
-t-stat, is the gate. The next real gain needs NEW DATA (barrier trials for debuts — build underway),
-not more mean-field terms. See MODEL_STATE.md for the constants table, the refuted list (do not
-re-litigate), and the lever queue.
+Production `sim="wald"`, per-venue calibration. Fit: **ST ≈ 65.0% / HV ≈ 59.7% of market** (from ~48%
+at project start). Mean-field terms on the race panel are saturated; gains now come from NEW DATA +
+NEW STRUCTURE — the coherent precision **fusion** (barrier trials, next training gallops), relational
+collateral-form, the W′-knob and D-knob recouplings, the §3e phase levers, geometry×control via CV
+paths. See MODEL_STATE.md for the constants table, the refuted list (do not re-litigate), and the
+lever queue.
