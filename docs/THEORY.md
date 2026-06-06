@@ -10,6 +10,12 @@ structure and couple as a real mechanism, never an arbitrary regressor.**
 > The governing principle (do not lose it): **fit the market first.** "% of market" is a
 > goodness-of-fit metric, not an edge hunt. The model is regularised by physics + game
 > theory. There is always a next mechanism — never invoke "private info" to stop.
+>
+> **Theory leads, statistics gate. Statistical models cannot replace theoretical understanding.**
+> A feature failing to convert under a simple/additive coupling rejects *that structure*, not the
+> mechanism — the conversion test gates a given coupling; theory chooses which coupling to try next.
+> Never declare a mechanism or axis dead from a crude regression: re-derive the correct structure
+> (right latent, right precision, right interaction) first. "A dead first attempt ≠ a dead axis."
 
 ---
 
@@ -455,7 +461,21 @@ precision — which is exactly why gains are calibrated rather than free, why ov
 past its precision hurts, and why a channel collinear with a priced one adds nothing. The coherent
 empirical-Bayes **fusion** — one shrinkage posterior over *all* velocity observations (official runs,
 barrier trials, and training gallops), each down-weighted by its noise, with the correct non-linear
-`λ(n_eff)` — is this structure made exact, and the right home for every ability signal. Channels that
+`λ(n_eff)` — is this structure made exact, and the right home for every ability signal.
+
+**The fusion must give each observation type its OWN precision — a shared shrinkage is the wrong
+structure.** A first attempt folded barrier trials into the *sectional-v_c residual* channel, which
+production globally shrinks (`SHRINK_MULT≈0.5`×`λ`, calibrated to the *noisy* sectional estimate); that
+diluted a comparatively *high-precision* signal and underperformed the direct additive coupling for the
+win order-statistic (though it *did* tighten the ability estimate / ECE for lightly-raced horses —
+confirming the denser-prior mechanism is real). The lesson is structural, not a refutation: the trial is
+not a sectional-v_c residual and must not inherit its shrinkage. The correct fusion assigns each channel
+(races, trials, gallops) its OWN estimated precision/variance component, so a trial enters at *its* noise
+level — recovering the full additive signal *and* the calibration gain, and extending cleanly to training
+gallops. (Methodological note: a feature failing under one coupling means *that structure* is wrong, not
+that the mechanism is dead — statistics gate a given structure; theory chooses which structure to try.)
+
+Channels that
 load `v_c`: rating (hierarchical-Bayes band×rating mean), form (a rank-censored velocity residual —
 its margin-censoring is *why* the velocity-unit figures add over it), sectional `v_c`, **collateral-
 form** (a Massey least-squares opponent-adjusted velocity — literally the consistent rating the "win
