@@ -32,7 +32,8 @@ from .calibration import (EnergeticsPopulation, distance_band,
 from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, COLLAT_GAIN,
                         COLLAT_GAIN_BY_VENUE, DRAW_FS_GAIN,
                         DRAW_FS_GAIN_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
-                        DRAW_GAIN_BY_VENUE, FADE_GAIN, FORM_GAIN, FORM_GAIN_BY_VENUE,
+                        DRAW_GAIN_BY_VENUE, DRAW_VAR_GAIN, DRAW_VAR_GAIN_BY_VENUE,
+                        FADE_GAIN, FORM_GAIN, FORM_GAIN_BY_VENUE,
                         JOCKEY_GAIN, N_SAMPLES, PEAKGAP_GAIN, PEAKGAP_GAIN_BY_VENUE,
                         POS_FADE_GAIN, SHRINK_MULT, SIM, SUSTAIN_GAIN, TRIAL_GAIN,
                         TRIAL_GAIN_BY_VENUE, TRN_HOT_GAIN, TRN_HOT_GAIN_BY_VENUE, W_PRIME_GAIN)
@@ -81,6 +82,7 @@ def fit_predict_traffic(
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
     draw_fs_gain: float | None = None,
+    draw_var_gain: float | None = None,
     sigma_t: float = 2.5,
     diff_coef: float = 170.0,
     awt_diff_mult: float = 2.0,
@@ -208,9 +210,22 @@ def fit_predict_traffic(
             dg = draw_g * max(0.0, 1.0 + dfs_g * (g.height - 12.0))
             l_eff = dist * (1.0 + dg * (draw - 1.0))
             mu = l_eff / (vc * (1.0 + np.array(wp) / dist))
-            lam = dist * dist / (2.0 * d_eff)
+            # STRUCTURE: draw → the DIFFUSION D (the trip VARIANCE), not the drift. An extreme draw in a
+            # crowded field is a higher-variance trip (clear run vs boxed/forced-wide is a coin-flip the
+            # mean can't carry). Make D per-horse: D_i = d_eff·(1 + dvg·risk_i), risk = bend exposure ×
+            # field-normalised lateral extremity (rail and extreme-outside are the trip-uncertainty
+            # extremes). Larger D_i ⇒ larger Wald variance ⇒ that horse upsets the order statistic more
+            # than its mean drift implies. PER-VENUE (ST-only; HV draw mean is already well-priced, so
+            # variance only blurs it). THEORY §3d's per-horse-D knob. Resolved per-venue unless passed.
+            dvg = draw_var_gain if draw_var_gain is not None else DRAW_VAR_GAIN_BY_VENUE.get(venue, DRAW_VAR_GAIN)
+            d_h = d_eff
+            if dvg != 0.0 and g.height > 1:
+                extremity = 2.0 * np.abs(draw - (g.height + 1.0) / 2.0) / (g.height - 1.0)
+                d_h = d_eff * (1.0 + dvg * geom.bend_fraction(dist) * extremity)
+            lam = dist * dist / (2.0 * np.asarray(d_h))
             rng = np.random.default_rng(seed)
-            t = rng.wald(np.broadcast_to(mu, (n_samples, g.height)), lam)
+            t = rng.wald(np.broadcast_to(mu, (n_samples, g.height)),
+                         np.broadcast_to(lam, (n_samples, g.height)))
             counts = np.bincount(t.argmin(axis=1), minlength=g.height).astype(float)
             p = (counts + 1.0) / (n_samples + g.height)
         preds.append(g.with_columns(pl.Series("p", p), pl.Series("v_c_eb", vc),

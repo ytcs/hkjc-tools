@@ -162,11 +162,13 @@ def main():
     pgg = float(_pgg) if _pgg is not None else None
     _thg = os.environ.get("TRN_HOT_GAIN")  # trainer recency hot-streak (intent); None -> per-venue baked
     thg = float(_thg) if _thg is not None else None
+    _dvg = os.environ.get("DRAW_VAR_GAIN")  # draw -> diffusion D (trip variance); None -> per-venue baked
+    dvg = float(_dvg) if _dvg is not None else None
 
     def _model(train, test):
         return fit_predict_traffic(train, test, jky_mean=jky_mean, w_prime_gain=wpg, sim=sim,
                                    allometric_b=ab, draw_fs_gain=dfs, trial_gain=tg, collat_gain=cg,
-                                   fade_gain=fg2, rtg_peakgap_gain=pgg, trn_hot_gain=thg)
+                                   fade_gain=fg2, rtg_peakgap_gain=pgg, trn_hot_gain=thg, draw_var_gain=dvg)
 
     summary = {}
     for name, fp in {"traffic": _model, "market": _market, "uniform": _uniform}.items():

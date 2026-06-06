@@ -107,6 +107,22 @@ DRAW_GAIN_AWT = float(os.environ.get("DRAW_GAIN_AWT", "0.008"))
 DRAW_FS_GAIN = float(os.environ.get("DRAW_FS_GAIN", "0.0"))
 DRAW_FS_GAIN_BY_VENUE = {"ST": 0.0, "HV": 0.25}
 
+# DRAW_VAR_GAIN: draw → the DIFFUSION D (the trip VARIANCE), not the drift. Every other draw term
+# (DRAW_GAIN, DRAW_FS_GAIN) moves only the MEAN ground-loss; but an extreme/wide draw in a crowded field
+# is a higher-VARIANCE trip (clear run vs boxed/forced-wide is a coin-flip the mean can't carry). Because
+# the winner is an ORDER STATISTIC, raising a horse's D_i (Wald shape λ=L²/2D) lifts its win prob in a way
+# no mean-shift can — a high-variance trip wins more often than its mean implies (and places less). The
+# un-modelled VARIANCE face of draw, and the FIRST use of §3d's per-horse-D knob ("the one not yet
+# exploited"). Per-horse: D_i = D·(1 + DRAW_VAR_GAIN·risk_i), risk_i = bend_fraction(dist)·(2·|draw−(N+1)/2|
+# /(N−1)) — rail and extreme-outside (the two trip-uncertainty extremes) carry the most variance, amplified
+# by bend exposure. CALIBRATED ST 0.5 / HV 0.0: the variance face converts ONLY at ST (62.6→63.0%, +0.4pp,
+# ECE 0.0083→0.0076; broad plateau 0.3–0.7), validating the order-statistic argument. At HV it is strictly
+# harmful (its draw MEAN bias is the strongest in HK and already so well-priced that variance only blurs the
+# order statistic). The MIRROR of DRAW_FS_GAIN (crowded-mean, HV-only): the two venues carry the residual
+# draw signal on OPPOSITE knobs — ST on the variance, HV on the crowded mean. fit resolves per-venue.
+DRAW_VAR_GAIN = float(os.environ.get("DRAW_VAR_GAIN", "0.0"))
+DRAW_VAR_GAIN_BY_VENUE = {"ST": 0.5, "HV": 0.0}
+
 # POS_FADE_GAIN: positional-fade coupling (m/s of effective v_c per unit habitual-early-position above
 # the field mean). The production drift-diffusion is NON-interacting, so it over-rates habitual front-
 # runners (which burn the anaerobic reserve setting the pace with no draft) and under-rates closers —

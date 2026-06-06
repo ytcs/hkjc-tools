@@ -10,6 +10,7 @@ except shared parsing helpers in :mod:`hkjc.utils`.
 - :mod:`~hkjc.data.racecard` — pre-race racecard (ratings, gear, weights, …).
 - :mod:`~hkjc.data.sectional` — per-horse sectional split times.
 - :mod:`~hkjc.data.barrier_trials` — barrier-trial results (debut/return form prior).
+- :mod:`~hkjc.data.trackwork` — daily timed training gallops (the Banister fitness prior).
 - :mod:`~hkjc.data.processing` — build historical datasets across a date range.
 - :mod:`~hkjc.data.ticks` — capture/persist the live-odds and jackpot-pool time series.
 - :mod:`~hkjc.data.carryover_ledger` — the carryover event ledger (flywheel).
@@ -20,7 +21,7 @@ The ``DataSource`` protocol (uniform input seam) lives in :mod:`hkjc.core.contra
 from . import (live, historical, processing, ticks,
                feature_store, carryover_ledger, capture,
                jackpot_history, sectional, racecard, corunning,
-               barrier_trials)
+               barrier_trials, trackwork)
 from .ticks import OddsTickStore, JackpotCaptureStore
 from .carryover_ledger import CarryoverLedger
 from .capture import capture_once, settle_meeting, settle_recent
@@ -29,7 +30,7 @@ from .feature_store import FeatureStore
 
 __all__ = [
     "live", "historical", "racecard", "sectional", "corunning", "processing",
-    "barrier_trials",
+    "barrier_trials", "trackwork",
     "ticks", "feature_store", "carryover_ledger",
     "capture", "jackpot_history",
     "OddsTickStore", "JackpotCaptureStore", "CarryoverLedger",
