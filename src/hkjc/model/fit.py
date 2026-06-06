@@ -33,9 +33,9 @@ from .constants import (ALLOMETRIC_B, ALLOMETRIC_B_BY_VENUE, COLLAT_GAIN,
                         COLLAT_GAIN_BY_VENUE, DRAW_FS_GAIN,
                         DRAW_FS_GAIN_BY_VENUE, DRAW_GAIN, DRAW_GAIN_AWT,
                         DRAW_GAIN_BY_VENUE, DRAW_VAR_GAIN, DRAW_VAR_GAIN_BY_VENUE,
-                        FADE_GAIN, FORM_GAIN, FORM_GAIN_BY_VENUE,
+                        FADE_GAIN, FADE_W_GAIN, FORM_GAIN, FORM_GAIN_BY_VENUE,
                         JOCKEY_GAIN, N_SAMPLES, PEAKGAP_GAIN, PEAKGAP_GAIN_BY_VENUE,
-                        POS_FADE_GAIN, SHRINK_MULT, SIM, SUSTAIN_GAIN, TRIAL_GAIN,
+                        POS_FADE_GAIN, POSFADE_W_GAIN, SHRINK_MULT, SIM, SUSTAIN_GAIN, TRIAL_GAIN,
                         TRIAL_GAIN_BY_VENUE, TRN_HOT_GAIN, TRN_HOT_GAIN_BY_VENUE, W_PRIME_GAIN)
 
 
@@ -79,6 +79,8 @@ def fit_predict_traffic(
     rtg_peakgap_gain: float | None = None,
     trn_hot_gain: float | None = None,
     pos_fade_gain: float = POS_FADE_GAIN,
+    fade_w_gain: float = FADE_W_GAIN,
+    posfade_w_gain: float = POSFADE_W_GAIN,
     shrink_mult: float = SHRINK_MULT,
     draw_gain: float | None = None,
     draw_fs_gain: float | None = None,
@@ -154,7 +156,15 @@ def fit_predict_traffic(
                       + thg * thot[i])
             # w_prime_gain amplifies the per-horse reserve spread (the EB residual) — the
             # stamina analogue of form_gain (market under-weights W' at gain 1.0).
-            wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w)
+            # W′-CHANNEL late-race reserve couplings (THEORY §3d structural fix T1): fade-resistance
+            # and positional-fade are late-race ANAEROBIC-RESERVE phenomena, so they belong on W′ (the
+            # reserve), not v_c. fade_w_gain>0 (holds speed late => MORE reserve, in reserve-metres);
+            # posfade_w_gain<0 (a habitual front-runner BURNS W′ setting the pace => LESS reserve). On
+            # W′ the effect is naturally distance-aware via the (1+W′/L) late boost — W′/L bites harder
+            # over sprints than the flat v_c shave could express. Reserve-metres scale ≈ L/v_c (~83×)
+            # larger than the equivalent v_c-channel gain.
+            wp.append(pop.w_prime.fixed(band, rtg[i]) + w_prime_gain * lam_w(n) * u_w
+                      + fade_w_gain * fade[i] + posfade_w_gain * epos[i])
         vc = np.array(vc)
         geom = track_for(venue, dist, _surface(dist))
         draw = g["draw"].to_numpy().astype(float)

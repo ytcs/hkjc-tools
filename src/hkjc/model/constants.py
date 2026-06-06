@@ -133,7 +133,11 @@ DRAW_VAR_GAIN_BY_VENUE = {"ST": 0.5, "HV": 0.0}
 # -1.0: a clean shared optimum at BOTH venues (ST +1.1pp, HV +1.2pp full-scale), confirming it's a true
 # mean-field constant (same sign+magnitude everywhere) — the right signature for an equilibrium effect,
 # not a venue quirk. Sharp peak; |gain|>=2 collapses fast (don't over-couple a within-race-centred term).
-POS_FADE_GAIN = float(os.environ.get("POS_FADE_GAIN", "-1.0"))
+# THEORY §3d T1 (2026-06): MOVED ONTO THE W′ KNOB (POSFADE_W_GAIN). A front-runner's W′-burn is a
+# late-race RESERVE phenomenon, not an aerobic-ceiling shave — the mechanistically correct home is W′.
+# The v_c-channel version is RETIRED to 0.0 (the W′ version reproduces it overall and the joint move
+# beats HV +0.3pp); kept as a tunable for diagnosis. See POSFADE_W_GAIN.
+POS_FADE_GAIN = float(os.environ.get("POS_FADE_GAIN", "0.0"))
 
 FORM_GAIN = float(os.environ.get("FORM_GAIN", "5.0"))
 # PER-VENUE form coupling. The model was originally calibrated on ST and applied globally; a
@@ -218,7 +222,25 @@ COLLAT_GAIN_BY_VENUE = {"ST": 1.0, "HV": 2.5}
 #   - SUSTAIN_GAIN = 0.0 (DON'T BAKE). The more orthogonal trait but does NOT convert (no shared sign; loses
 #     full-scale at both venues) — already carried by form + v_c. Wiring kept off (re-probe if channels change).
 SUSTAIN_GAIN = float(os.environ.get("SUSTAIN_GAIN", "0.0"))
-FADE_GAIN = float(os.environ.get("FADE_GAIN", "0.1"))
+# FADE_GAIN: v_c-channel fade-resistance. THEORY §3d T1 (2026-06): MOVED ONTO THE W′ KNOB (FADE_W_GAIN).
+# Final-vs-peak section velocity is the kinematic signature of the W′ reserve EMPTYING late, so it is a
+# reserve phenomenon and belongs on W′, where its effect is distance-aware for free (W′/L bites sprints
+# harder). v_c-channel version RETIRED to 0.0 (the W′ version reproduces it; the joint fade+pos move to
+# W′ matches ST and beats HV +0.3pp at better/equal ECE). Kept as a tunable for diagnosis. See FADE_W_GAIN.
+FADE_GAIN = float(os.environ.get("FADE_GAIN", "0.0"))
+
+# --- THEORY §3d T1: late-race anaerobic-reserve couplings on the W′ KNOB (reserve-metres) ---
+# fade-resistance and positional-fade are BOTH late-race W′ phenomena (the reserve emptying / a
+# front-runner's W′-burn setting the pace), so they couple to W′ (the (1+W′/L) late boost), not v_c.
+# The W′ scale is L/v_c (~83x) larger than the equivalent v_c gain and DISTANCE-AWARE: the same reserve
+# deficit costs more over a sprint than a route — a free distance dependence the flat v_c shave can't
+# express. Paired full-scale (PYTHONHASHSEED=0, both venues): moving BOTH terms here MATCHES ST (62.9%,
+# identical nats) and BEATS HV (59.4->59.7%, gap to market improves) vs the v_c-coupled baseline; ECE
+# holds/improves. The mechanically-derived gains (fade .1->8, pos -1->-80) land at the swept optimum.
+# FADE_W_GAIN > 0: holding speed late => MORE reserve => faster (sign preserved from the v_c version).
+# POSFADE_W_GAIN < 0: a habitual front-runner BURNS W′ => LESS reserve => slower (sign preserved).
+FADE_W_GAIN = float(os.environ.get("FADE_W_GAIN", "8.0"))
+POSFADE_W_GAIN = float(os.environ.get("POSFADE_W_GAIN", "-80.0"))
 
 # PEAKGAP_GAIN: rating-TRAJECTORY (process, not point) coupling — the horse's current rating minus its
 # own prior PEAK rating (rtg_peakgap ≤ 0; within-race centred). A PROCESS feature: it carries an ABSOLUTE
