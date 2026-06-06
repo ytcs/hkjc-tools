@@ -507,6 +507,114 @@ which is already in the form channel).
 (fancied horses get the top riders), so it is partly endogenous to the very market we fit — a
 measurement we keep, but not a clean single mechanism.
 
+## 3e. The phase structure of the trip — start, cruise, closing, and the distance-law of variance
+
+§3b develops the race **along-track** (the pace game), §3c **across-track** (the geometry game),
+§3d maps factors onto the three capacity **knobs** (`v_c`, `W′`, `D`). All three are silent on the
+**temporal** axis: the production Wald law treats the trip as a *single homogeneous* drift-diffusion
+from `x = 0` to `x = L` with one drift and one diffusion. A real race is **three dynamically distinct
+phases**, and collapsing them onto one homogeneous law smears together signals that live in different
+phases and load different knobs. Resolving the phases is a measurement upgrade with no new mechanism —
+exactly the kind of lever (like recency-form) the theory says pays.
+
+**Phase 1 — the start transient (gate → settled, ≈ first call).** From rest, acceleration-limited, off
+the gate; this phase is *not* the steady-state first-passage and the homogeneous law has no representation
+of it. It enters the order statistic as a **random initial condition**: `T_i = T_0,i + T_main,i`, where
+`T_0,i` is the time/ground lost (or gained) getting away and settling. `T_0,i` has a per-horse **mean**
+— *gate speed / break quality*, a stable, public, leak-free trait — and a per-horse **variance** — *gate
+temperament* (some horses are draw-jumpers, some dwell), which loads `D`. **This is the "start not
+explicit" gap in the scorecard, given a structure.** Crucially `T_0` is *not* `early_pos`: `early_pos` is
+the settled *level* at the early call, which conflates draw + break + style; the break trait is the
+*position change across the break itself* — first-call rank **adjusted for draw** — i.e. `early_pos`
+decomposed into its draw-explained part and the residual **gate-skill** part. The wide-draw interaction is
+sharp: a slow break from a wide gate forfeits both longitudinal *and* lateral ground (you miss the gap to
+cross — the §3c control dilemma), so the break trait should matter most exactly where the draw does.
+*Convertible experiment:* a leak-free trailing `gate_break` trait (first-call-rank-minus-draw, EB-shrunk
+over prior runs) loading the drift; its dispersion optionally loading `D`. Unmodelled today.
+
+**Phase 2 — the cruise (mid-race).** Tactical: the §3b pace duel and §3c lateral navigation. This phase
+is *least* about raw ability (it is positioning) and *most* about control — which is why the early/mid
+sectionals are the *noisiest* `v_c` channel and why tactical contamination is worst here.
+
+**Phase 3 — the closing (final ≈400 m).** `W′` empties, every horse is maximally extended, nobody is
+holding anything back — the **least tactically-contaminated** read of raw capacity in the whole race. The
+finishing sectional, normalised for the pace it was run into and the going, is therefore the **highest-
+precision `v_c`+`W′` channel** available — higher than the trip-average speed figure, which dilutes the
+clean closing signal with the tactical cruise. *Convertible experiment:* a **finishing-speed figure**
+(last-400 m velocity, pace-and-ground adjusted) entered as its *own high-precision channel* in the §3d
+`v_c` posterior (not folded into the overall speed figure). This is the temporal analogue of the §3d
+"give each observation its own precision" lesson — give each *phase* its own precision.
+
+**The distance-law of variance (a parameter-free prediction the model already makes).** From the Wald
+law with `λ = L²/2D`, `μ = L/v`: `Var(T) = μ³/λ = 2D·L/v³ ∝ L`, so the **coefficient of variation**
+`CV(T) = √(2D /(L·v)) ∝ 1/√L`. Longer races are *intrinsically more predictable* — favourites win more,
+upsets are rarer — purely from the geometry of first-passage, with no extra parameter. **Validate it**
+against per-distance ECE / upset rates. The refinement if it fails: the start transient and traffic
+inject a roughly **distance-independent** chunk of variance (a bad break or a check costs ~the same
+seconds whether the trip is 1000 m or 2000 m), so as a *fraction* of a short trip they loom larger. That
+means the diffusion is not constant but has a floor that dominates the sprints:
+`D(L) = D_0 + D_phase` with `D_phase` (start + traffic) a fixed additive term ⇒ **excess upset variance
+in sprints beyond `1/√L`.** *Convertible experiment:* a distance-dependent `D` floor if the sprint cells
+are under-dispersed.
+
+**Field size amplifies the variance knob (order-statistic / extreme-value corollary).** The winner is the
+**left-tail extreme** of `N` finishing-time draws. In a larger field the win requires a *deeper* tail
+event, so per-horse variance (`D`) has **more leverage on who wins the larger `N` is**: a high-`D` horse's
+fat left tail is worth more in a 14-runner ST handicap than in a 6-runner HV field. The Monte-Carlo
+already captures this exactly (it simulates `argmin` over the *true* field), so **no new term is needed** —
+but it is a sharp *prioritisation* rule: **the `D`-knob pays in big fields and barely at all in small
+ones.** This retro-explains the just-baked result that **draw→`D` converted on ST and was null on HV** —
+ST runs the big fields, HV the small ones; the EVT argument *predicts* exactly that venue split, a clean
+theory-confirms-data check. Corollary for the queue: pursue every variance lever (figure-variance→`D_i`,
+gate-temperament→`D`, distance-floor `D(L)`) **on ST first**, and weight expectations by field size.
+
+**The phases are control regimes, not just ability bands — and control is *intertemporal*.** The
+decomposition above reads the phases as *ability-signal purity* (closing = cleanest `v_c`). But each phase
+is first a distinct **control sub-problem**: the jockey's policy `π_i(t)` of §3b/§3c is not one action over
+the trip — it is **phase-indexed**, a different action set in each phase, and the §3b pace game and §3c
+lateral game actually resolve phase-by-phase:
+
+- **Start = break effort + initial slot.** How hard to gun from the gate, and which lateral position to
+  take — this *sets the boundary condition* `y_i(0)` for the entire §3c crossing game. So the break is not
+  pure capacity: "gate skill" splits into a **capacity** part (raw early acceleration → drift) and a
+  **policy** part (whether the jockey *chooses* to use it — gun for the lead vs settle). The two need
+  separate leak-free traits: gate *ability* vs gate *intent*.
+- **Cruise = positioning, path, and cover.** Pure tactics — the §3b pace duel and §3c rail-save/peel-out
+  navigation. Control *dominates* here and raw ability is mostly held in reserve, which is exactly why the
+  cruise sectionals are the noisiest ability channel.
+- **Closing = kick timing.** An optimal-**stopping** problem: *when* to ask for the final effort. Kick too
+  early and `W′` empties before the line (fade); too late and there is no track left to use it. The §3b
+  "when to commit" is this phase transition in the policy, and a horse's habitual **kick fraction**
+  (`run_policy.kick_frac_obs` — where in the trip its acceleration peaks) is a leak-free *control* trait.
+
+**The decisive point is that the phase where a control choice is *made* differs from the phase where its
+cost is *paid*.** `W′` spent on a forward early position (a start/cruise choice) is reserve *missing* in the
+closing kick. **Control is intertemporal, and the coupling runs across phases** — precisely the structure a
+homogeneous single-drift law cannot carry. This is the mechanism behind the just-baked **T1**
+(`POS_FADE → W′`, §3d): the positional fade is an *early* control decision (lead) debited from the *late*
+anaerobic reserve, and putting it on the `W′` knob — distance-aware via `W′/L` — is the reduced form of
+that cross-phase debit. By the same logic **fade-resistance, positional-fade, and kick-timing are facets
+of one intertemporal `W′`-deployment policy**, resolved by phase: an early-committer (front-runner, early
+kick) burns reserve and fades; a late-committer conserves it. Their *shared* home is `W′`, and the phase a
+trait reads from tells you which sign it carries. The convertible features are therefore **phase-resolved
+control traits** — gate-intent (start), cruise position/ground-saving (the §3c `O3`/`O4` path-efficiency),
+and kick-fraction (closing) — each a habitual *policy* parameter, leak-free from prior runs, and each
+loading the knob (`v_c` for path-efficiency that saves ground; `W′` for the reserve-deployment timing) its
+phase implicates. The phase axis is thus the *temporal scaffold that the §3b/§3c control games hang on*:
+§3b/§3c say control is relational and geometric; §3e says it is also **sequenced**, and the sequence is
+what couples an early tactic to a late cost.
+
+**Why this is one idea.** The homogeneous Wald assigns one drift and one diffusion to a trip that is a
+*start* (a random initial condition: mean = gate skill → drift, variance = temperament → `D`; **and** a
+control choice — break intent), a *cruise* (tactical, low ability-signal — **the control game's arena**),
+and a *closing* (the high-precision ability readout → drift; **and** the kick-timing stopping problem).
+Phase-resolving the trip routes each signal to the phase — and the knob — where it actually lives, exposes
+the **intertemporal** control coupling (early tactic → late reserve cost) that the single-drift law hides,
+and the same `1/√L` law that falls out of the variance knob tells us where (long vs short) and for whom
+(big vs small field) the mean and the variance each dominate the order statistic.
+
+---
+
 ## 4. What the additive-statistical approach already ruled out
 
 History worth keeping (so it isn't re-litigated). Run through a leak-free walk-forward,
