@@ -104,3 +104,28 @@ def find_layout(img, *, min_legend_sat: int = 120) -> Layout:
         clock_y0=int(0.27 * h),
         clock_y1=int(0.45 * h),
     )
+
+
+def render_active(panel) -> bool:
+    """Is the AVV 3D render present in this RIGHT panel (vs the live broadcast intro)?
+
+    The replay opens full-width with the live TV broadcast (start gate + early run) before it
+    switches to the split-screen render. ``find_layout.aerial_active`` is unreliable there (it fires
+    on the live gate). The render-only tell is the bottom SILK-LEGEND strip — a row of distinct
+    saturated NON-green silk boxes that the live footage never has. We count those boxes in the
+    panel's lower strip; >=1 means the render is up. (Validated across HV "C" and "A" replays:
+    0 through the whole live intro, >=1 for every render frame incl. the mid-race solid-rail stretch.)
+    """
+    import cv2
+    import numpy as np
+
+    ph = panel.shape[0]
+    hsv = cv2.cvtColor(panel, cv2.COLOR_BGR2HSV)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    strip = slice(int(0.70 * ph), int(0.86 * ph))
+    nongreen = ((s[strip] > 110) & (v[strip] > 110) & ((h[strip] < 35) | (h[strip] > 90))).astype("uint8")
+    nongreen = cv2.morphologyEx(nongreen, cv2.MORPH_CLOSE, np.ones((3, 7), np.uint8))
+    n, _lbl, st, _c = cv2.connectedComponentsWithStats(nongreen, 8)
+    boxes = sum(1 for k in range(1, n)
+                if st[k, cv2.CC_STAT_AREA] > 120 and st[k, cv2.CC_STAT_WIDTH] > 8)
+    return boxes >= 1

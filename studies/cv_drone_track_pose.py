@@ -149,7 +149,7 @@ if __name__ == "__main__":
             n_track += 1
         if H is None:
             n_fail += 1
-        if i % 5 == 0:
+        if i % 25 == 0:        # 1 tile/sec
             tiles.append(cv2.resize(draw(bgr, det, H, mi, mo, t, tag), (560, 315)))
     cols = 4
     rows = [np.hstack(tiles[r:r + cols] + [np.zeros_like(tiles[0])] * (cols - len(tiles[r:r + cols])))

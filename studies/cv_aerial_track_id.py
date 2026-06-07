@@ -57,7 +57,7 @@ def main() -> None:
     import matplotlib.pyplot as plt
 
     from cv_rigid_rail import build_rail_geometry, local_radius
-    from hkjc.vision.aerial_layout import find_layout
+    from hkjc.vision.aerial_layout import render_active
     from hkjc.vision.feeds.aerial import track_band
     from hkjc.vision.feeds.aerial_detect import detect_edgefill
     from hkjc.vision.feeds.aerial_rail import line_candidates, select_running_rail
@@ -86,9 +86,9 @@ def main() -> None:
         if i % STRIDE:
             continue
         img = fr.to_ndarray(format="bgr24")
-        if not find_layout(img).aerial_active:
-            continue
         panel = img[:, HALF:]
+        if not render_active(panel):     # skip the live-broadcast intro (find_layout is unreliable)
+            continue
         ph = panel.shape[0]
         ty0, ty1 = track_band(panel)
         dets, _b, _d = detect_edgefill(panel, ty0, ty1, field=FIELD)
@@ -109,12 +109,13 @@ def main() -> None:
         prev_curve = curve
         proj = [(d.cx, d.cy, *project_to_polyline(curve, d.cx, d.cy)) for d in dets]
         perps = np.array([p[3] for p in proj])
-        side = _ry_side(perps)
-        # data-driven lane half-width from the field's own spread on the running side
-        on_side = np.array([p[3] * side for p in proj])
+        side = _ry_side(perps)          # the field's running side of the rail (per-frame median sign)
+        on_side = np.array([p[3] * side for p in proj])   # signed onto the running side (+ = on track)
         lane = LANE_K * float(np.percentile(np.abs(perps), 98))
-        # store the SIGN-CONSISTENT perp (raw p[3]); curve orientation is now temporally stable
-        keep = [p for p, o in zip(proj, on_side) if -8.0 <= o <= lane]   # allow tiny rail overlap
+        # store y_lat as a POSITIVE distance from the rail (the infield side has no runners, so a
+        # signed lateral is unphysical). Keep only running-side blobs within the lane (small rail
+        # overlap allowed), clamped to >= 0.
+        keep = [(p[0], p[1], p[2], max(0.0, o)) for p, o in zip(proj, on_side) if -8.0 <= o <= lane]
         per_frame[i] = keep
         curves[i] = curve
         saved_panels[i] = None  # placeholder; fill panel only for frames we will draw
@@ -220,8 +221,8 @@ def main() -> None:
         ax.plot([p[0] for p in pts], [p[4] for p in pts], "-", lw=1.0, alpha=0.8)
     ax.set_xlabel("aerial frame")
     ax.set_ylabel("perp from rail (px)  [lateral trip]")
-    ax.set_title("Anonymous tracklets (perp vs frame) — field-median-selected running rail, "
-                 "sign-stabilised (px scale not yet normalised)")
+    ax.set_title("Anonymous tracklets (|perp| vs frame) — field-median running rail, positive "
+                 "lateral distance (px scale not yet normalised)")
     fig.savefig(f"{DIAG}/cv_track_id_tracklets.png", dpi=110, bbox_inches="tight")
     print(f"[fig] {DIAG}/cv_track_id_tracklets.png")
 

@@ -1,7 +1,9 @@
 # Inbox — trading
 
-30 open item(s) addressed to trading. Read on session start.
+31 open item(s) addressed to trading. Read on session start.
 
+- **0100-aerial-rail-live-intro-trim-solid-rail-fallback** from modelling (handoff/finding) [Aerial rail: live-intro trim + solid-rail fallback + spike/positive-perp fixes; A-config coalesce open](entries/0100-aerial-rail-live-intro-trim-solid-rail-fallback.md)
+  - ## Update on the 0099 roadmap (aerial rail backbone) Done + validated on HV "C" (R08); committed alongside this entry. - (a) LIVE-INTRO TRIM: new `aerial_layout…
 - **0099-aerial-rail-backbone-robust-promoted-mode-b-reti** from modelling (handoff/decision) [Aerial rail backbone robust + promoted; mode_b retired (field-median running-rail, sign-stable)](entries/0099-aerial-rail-backbone-robust-promoted-mode-b-reti.md)
   - ## Headline Aerial RAIL BACKBONE is now robust + promoted to the library, and the legacy `mode_b` package is retired. The whole-race anonymous (s, perp) path is…
 - **0097-library-promotion-100-hkjc-reconstruction-clock** from modelling (research/note) [library promotion #100: hkjc.reconstruction (clock + fusion v2 + orchestrator) built, ruff+pytest green](entries/0097-library-promotion-100-hkjc-reconstruction-clock.md)

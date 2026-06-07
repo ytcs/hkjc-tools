@@ -171,8 +171,14 @@ def enumerate_lines(cands, deg: int, gray=None) -> list[dict]:
             iy = np.clip(pts[:, 1].astype(int), 0, gray.shape[0] - 1)
             mean_v = float(gray[iy, ix].mean())
         coverage = npix / float(t_hi - t_lo + 1e-6)
+        gx, gy = _gather_inliers(thin, frame)   # thinness: perp spread of the line's own pixels
+        if len(gx) >= 10:
+            qq = np.column_stack([gx, gy]) - mu
+            spread = float(np.median(np.abs((qq @ v) - np.polyval(coeffs, qq @ u))))
+        else:
+            spread = 99.0
         lines.append(dict(pts=pts, frame=frame, npix=npix, ndash=nabs, ext=float(t_hi - t_lo),
-                          curv=curv, meanV=mean_v, coverage=coverage,
+                          curv=curv, meanV=mean_v, coverage=coverage, spread=spread,
                           mid=(float(pts[:, 0].mean()), float(pts[:, 1].mean()))))
     return [ln for ln in lines if ln["ext"] > 80]    # drop stubs that never grew into a line
 
@@ -215,26 +221,29 @@ def select_running_rail(cands, deg, field_pts, prev_tang=None, prev_curve=None, 
 
     Returns ``(curve_pts, tang_out, info)`` or ``(None, prev_tang, None)``.
     """
-    lines = [ln for ln in enumerate_lines(cands, deg) if 1.0 <= ln["coverage"] <= 5.0]
-    if not lines or field_pts is None or len(field_pts) == 0:
+    if field_pts is None or len(field_pts) == 0:
+        return None, prev_tang, None
+    alllines = enumerate_lines(cands, deg)
+    lines = [ln for ln in alllines if 1.0 <= ln["coverage"] <= 5.0]
+    if not lines:
+        # solid-rail-only frame: the ceiling (which rejects the fat field-cluster line when a proper
+        # rail coexists) left nothing -> admit high-coverage THIN lines (a real rail is thin).
+        lines = [ln for ln in alllines if ln["coverage"] >= 1.0 and ln["spread"] <= 5.0]
+    if not lines:
         return None, prev_tang, None
     main = sorted(lines, key=lambda ln: -ln["coverage"])[:2]
+    dists = [_median_dist_to_field(ln["pts"], field_pts) for ln in main]
+    i_near = int(np.argmin(dists))
+    if dists[i_near] > 150.0:        # nearest rail implausibly far from the field -> bad fit, skip
+        return None, prev_tang, None  # (applies to the single-rail case too: kills the f1280 stub)
     if len(main) == 1:
         pick, basis = 0, "single"
+    elif prev_curve is None:
+        pick, basis = i_near, "field-init"
     else:
-        dists = [_median_dist_to_field(ln["pts"], field_pts) for ln in main]
-        i_near = int(np.argmin(dists))
-        if dists[i_near] > 180.0:        # no main rail is plausibly near the field -> bad fit, skip
-            return None, prev_tang, None
-        confident = dists[i_near] < conf * max(dists)
-        if prev_curve is None:
-            pick, basis = i_near, "field-init"
-        else:
-            carry = int(np.argmin([_curve_dist(ln["pts"], prev_curve) for ln in main]))
-            if confident and carry != i_near:
-                pick, basis = i_near, "field-correct"   # field confidently overrides drift
-            else:
-                pick, basis = carry, "carry"
+        carry = int(np.argmin([_curve_dist(ln["pts"], prev_curve) for ln in main]))
+        confident = dists[i_near] < conf * max(dists)   # one rail clearly closer -> trust field
+        pick, basis = (i_near, "field-correct") if (confident and carry != i_near) else (carry, "carry")
     curve = main[pick]["pts"]
     if prev_tang is not None:
         curve = _orient(curve, prev_tang)

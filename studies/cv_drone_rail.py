@@ -128,10 +128,21 @@ def _rail_pixels(bgr, band, tophat):
     wi = (px & green_in).astype(np.uint8) * 255
     return cv2.morphologyEx(wi, cv2.MORPH_CLOSE, np.ones((_ksz(5), _ksz(5)), np.uint8))
 
-def rail_candidates(bgr, band=None, tophat=False, min_ratio=4.0):
+def enhance(bgr):
+    """CLAHE on L (luminance) — recovers the low-contrast rails on the dark, under-lit far turn
+    (validated: t=70 raw 0 candidates -> both rails; t=66/72 second rail recovered). Hue/sat
+    preserved, so the green-segmentation + white thresholds are unaffected on bright frames."""
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    lo, a, b = cv2.split(lab)
+    lo = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(lo)
+    return cv2.cvtColor(cv2.merge([lo, a, b]), cv2.COLOR_LAB2BGR)
+
+def rail_candidates(bgr, band=None, tophat=False, min_ratio=4.0, clahe=True):
     """Elongated interior rail curves (inner rail green-on-both-sides + outer rail), longest first.
-    Length/area/width thresholds scale with SCALE (resolution-independent)."""
+    Length/area/width thresholds scale with SCALE (resolution-independent); CLAHE recovers dark rails."""
     gh = None
+    if clahe:
+        bgr = enhance(bgr)
     if band is None:
         mask, gh = turf_mask(bgr)
         band = largest_band(mask)
