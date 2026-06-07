@@ -1,719 +1,679 @@
-# A Theory of Horse Racing
+# A Theory of Horse Racing — the Causal, First-Principles Physics Generative Model
 
-The conceptual map of the problem: what actually determines a race result, organised
-into dimensions, with the causal structure that ties them together and a note on where
-our model currently sits against each. This is a **living outline** — to be expanded
-into a full (PhD-thesis-grade) treatment later. For now it is the scaffold that keeps
-modelling principled: **every factor we introduce must occupy a named place in this
-structure and couple as a real mechanism, never an arbitrary regressor.**
+The conceptual and mathematical spine of the win model: **what generates a race result**, written
+as a **causal, first-principles generative model** — a real equation of motion under an
+optimal-control deployment policy, with a critical-power energy budget and an aerodynamic field
+coupling, generating the dense path and hence the finishing order. This is the modelling agent's
+mechanism reference. Governing principles + the method are in **`docs/PHILOSOPHY.md`** (read it
+first); the causal DAG / strip / re-emergence in **`docs/CAUSAL_MODEL.md`**; the staged roadmap in
+**`docs/RESEARCH_PROGRAM.md`**; the package design in **`docs/MODEL_DESIGN.md`**.
 
-> Governing principles live in **`docs/PHILOSOPHY.md`** (fit the market first; theory leads /
-> statistics gate; first-principle regularization; the conversion test; leak-free discipline). The
-> two that most shape *this* document: **theory leads, statistics gate** — a feature failing under a
-> simple coupling rejects *that structure*, not the mechanism, so every factor must occupy a named
-> place in the structure below and couple as a real mechanism, never an arbitrary regressor.
-
----
-
-## 1. The generative spine
-
-A race result is an **order statistic of realised finishing times**. For each horse `i`:
-
-```
-T_i  =  ∫ ( effective path length ) / v_i(t)  dt   +   ε_i
-winner = argmin_i T_i      (the win model is a random-utility / first-passage choice model)
-```
-
-Everything in the theory is just **what sets `v_i(t)`** — how much speed a horse can
-produce, how that capacity is spent over the trip, how the arena and rivals perturb it,
-and what is irreducibly random. The dimensions below are organised by **where in this
-equation a factor enters**. Three are *internal* to each horse-in-its-race
-(physiology, physics-plant, strategy-control); three are *external* boundary conditions
-(environment, competition structure, market); one is the *coupling* between horses; and
-one is the *irreducible floor* (stochasticity). Most real effects are **interactions
-across dimensions** — the structure is not separable (§ on couplings).
-
----
-
-## 2. The dimensions
-
-### 2.1 Physiology — the engine ("how fast the horse *can* go today")
-The per-horse latent capacity. Sub-parts:
-- **Intrinsic ability** — the horse's quality. We proxy it with **form** (recency-
-  weighted relative finish) + official rating + sectional `v_c`. **Open weakness: this
-  is not opponent-adjusted** — beating a strong field should count more than a weak one
-  (see § competition; the next structural lever).
-- **Fitness / condition** — readiness on the day: days-since-last-run (freshness vs
-  match-fitness), barrier-trial work, trackwork load, the form cycle.
-- **Health / soundness** — injury, lameness, bleeding (EIPH); vet flags.
-- **Age & development** — maturation curve, peak, decline.
-- **Body composition** — body weight and **weight change** (bulked-up vs run-down).
-- **Energetics (CP–W′)** — the mechanistic substrate: a sustainable aerobic critical
-  velocity `v_c` and a finite anaerobic reserve `W′` depleted above `v_c`. These latents
-  are *intrinsic and stable across races* — the "true" features a noisy finish position
-  only glimpses.
-
-### 2.2 Physics — the plant ("how effort converts to motion")
-The shared equation of motion. `m·dv/dt = P/v − F_resist`, with
-`F_resist = K_LOCO·m·g + ½ρ·cda·v²·(1−draft) + bend ground-loss`.
-- **Kinematics / power balance** — mass & inertia, drag, the `v_c`/`W′` dynamics.
-- **Geometry** — **bend ground-loss**: a wide-drawn horse runs a longer arc round the
-  turns (the dominant draw mechanism; now in the production model).
-- **Surface mechanics** — going → friction / energy return; AWT kickback; firmness.
-
-### 2.3 Strategy — the control ("how ability is *spent*")
-The policy layer: action = π(state).
-- **Running style / pace** — front-runner vs closer; *energy deployment of `W′` over the
-  trip* (go early vs kick late).
-- **Jockey skill & policy** — kick timing/intensity, path-finding, rail-saving, when to
-  commit.
-- **Trainer strategy** — class placement, race selection, **intent** ("is the horse
-  trying today / set up for another day?").
-- **Game theory** — the field's tactics are an **equilibrium**: jockeys best-respond to
-  each other; collective pace (many front-runners → fast contested pace → favours
-  closers) is emergent, not a per-horse property.
-
-### 2.4 Interaction — the coupling ("how horses affect each other")
-The many-body terms — **the reason the agent-based sim exists**; a purely additive
-statistical model *cannot* represent these.
-- **Traffic / blocking / exclusion** — being boxed on the rail, checked, forced to wait
-  for a gap (TASEP-like exclusion). "Horses are not collisionless."
-- **Drafting / slipstream** — energy saved behind cover (active-matter coupling).
-- **Draw × field interaction** — the same wide draw costs more in a crowded field (more
-  bodies to be trapped by) than a sparse one — the *interaction* shadow of geometry.
-
-### 2.5 Environment — the arena (exogenous boundary conditions)
-Same for everyone, asymmetric in effect; modulates physiology *and* physics.
-- **Going / track state** — already partly in physics; broader as a condition.
-- **Wind** — a real aerodynamic term (head/tail/cross on the straights; reshapes the
-  value of drafting).
-- **Track bias** — the "golden rail", watering, where the live ground is on the day.
-- **Course configuration** — A/B/C rail position literally changes geometry & bias.
-- **Distance & class conditions** — the race's stated shape.
-
-### 2.6 Competition structure — the handicap (the adversarial meta-game)
-The dimension that makes this problem *hard*, and the most under-exploited.
-- **Ability is relative.** The handicapper actively **compresses the field** — assigns
-  weight to engineer a blanket finish. This is *why* win probabilities are close and why
-  beating the market is hard.
-- **Opponent-strength adjustment.** Raw form is the wrong object; the strength of the
-  field a horse beat (or lost to) should reweight it — the win model *is itself a rating
-  system at equilibrium* (an "interacting Plackett-Luce"; rating = the consistent
-  solution). **This is the leading candidate for the next structural lever.**
-- **Endogenous weight.** Carried weight reads as a quality signal (better horse → more
-  weight), not merely a physics drag — the two channels must be disentangled.
-
-### 2.7 Market / information — the epistemic overlay (the *target*)
-Separate from the physical race. The betting market aggregates information — including
-what we cannot directly observe:
-- **Private / intent information** — gear changes, jockey bookings, trainer patterns,
-  stable confidence, late money.
-- **Microstructure** — pool sizes, late drift, CLV.
-We **fit** this layer, so it is the yardstick; understanding *what the market knows that
-the model doesn't* is how we decide whether a residual is a missing mechanism (keep
-modelling) or genuinely unmodellable private info.
-
-### 2.8 Stochasticity — the irreducible floor
-What remains even with perfect knowledge.
-- **The start** — gate behaviour, a slow break (a distinct phase, not steady-state).
-- **In-running incidents** — stumble, interference, clipped heels, no clear run
-  ("racing luck"). Often *the* explanation for a result; only partly mechanistic.
-- **Random-utility noise** — modelled as the diffusion term (finishing time = first-
-  passage of a drift-diffusion → Inverse-Gaussian; strictly positive, `Var ∝ 1/√L`).
+> **CAUSAL, FIRST-PRINCIPLES PIVOT (owner-directed; `docs/CAUSAL_MODEL.md` is the authoritative
+> design).** The model is grounded **cause, not effect**, on **first-principles physics, not
+> regression**. The strong channels — FORM, JOCKEY, TRAINER, COLLATERAL, PEAK-GAP, SPEED-FIGURE — are
+> NOT mechanisms; they are downstream **consequences** of the true causes (physiology `v_c, W′_0, a,
+> …`; jockey control `c`; trainer prep `f`). They are STRIPPED from the input and must **RE-EMERGE**
+> as predicted consequences (`docs/CAUSAL_MODEL.md` §4; PHILOSOPHY §1, §5). The generative core is
+> now the **first-principles EOM** (§III.2): every parameter a PHYSICAL CONSTANT with units and
+> bounds (`CP, W′_0, P_max, m, C_dA`), inferred by physically-constrained inversion of the laws — NOT
+> a fitted gain (PHILOSOPHY §2, the no-epicycles rule). The win bit is **too coarse to identify
+> mechanism** (§I); identification is from the **dense path surface**, and the **market is the LAST
+> yardstick, parked during the rebuild** (PHILOSOPHY §3, §6).
+>
+> **Read §I/§II as the empirical road to this reframe**, not the current architecture. `0037`+`0039`
+> prove the meta-signal channels are ONE over-measured ability EFFECT with gate-calibrated couplings,
+> not causes — *why* the additive stack had to go. The current generative core is §III.2 (the EOM),
+> validated in `0047`–`0049`.
+>
+> **Status legend.** **[VALIDATED]** (confirmed this session on the data — the physics, the path-fit,
+> the field coupling, the first re-emergences) vs **[HYPOTHESIZED]** (the not-yet-proven payoff: that
+> the pure-mechanism model beats production is in progress, not proven).
+>
+> **Evidence key (cite journal entries, not queue numbers).** `0029` CV(T) ∝ 1/√L on turf
+> [VALIDATED] · `0032` finishing-time law diffusive-sufficient (AWT floor = larger D, no jump tail)
+> [VALIDATED] · `0037` factor audit: v_c is ONE over-measured ability latent (5/5 retrodiction)
+> [VALIDATED] · `0039` honest fusion craters −35/−32pp ⇒ the additive gains are win-calibrated
+> couplings, not honest measurements [VALIDATED] · `0040` path-likelihood pilot: the sectional surface
+> fits 22–30% better AND surfaces acceleration `a` win alone could not identify [VALIDATED] ·
+> `0042`/`0043` win AND pool-book both REJECT `a` as a coupling — the gates can't identify [VALIDATED]
+> · `0044`/`0045` path-fit foundation + level-bias debiased [VALIDATED] · **`0047` the FIRST-PRINCIPLES
+> EOM core: bang–CP–bang generates the phases, inferred CP≈54 W/kg matches equine physiology, level
+> bias and opening ramp fixed by MECHANISM [VALIDATED]** · **`0048` the dedicated-surface
+> identification battery: CP-from-cruise vs CP-from-Hill DISAGREE +1.4 m/s → a structured
+> falsification diagnosing the missing field coupling; Hill CV is the robust CP anchor [VALIDATED]** ·
+> **`0049` the mean-field pace/draft coupling closes 41–47% of that gap by aerodynamics with NO fitted
+> constant, flattens the fade-hump, and the ability level RE-EMERGES as held-out collateral
+> [VALIDATED]** · `0041` CV frontier: lateral path buildable (binding constraint = cross-view re-id).
 
 ---
 
-## 3. The structure is not separable — couplings dominate
+## 0. The reformulation, in one paragraph
 
-Almost every real effect is a **product across dimensions**, not a main effect. This is
-why additive statistical models plateau and why the mechanistic sim is necessary:
+A race result is an **order statistic of realised finishing times**, generated by horses with
+hidden physiological/behavioural attributes running a stochastic first-passage process on a real
+track. We model it as a **causal, first-principles generative model** in three layers:
+**(I)** each horse carries a latent attribute state `θ_i` (aerobic ceiling, anaerobic reserve,
+acceleration, recovery, control, …) — the **CAUSES**, each a physical constant with units and
+bounds; **(II)** `θ_i` plus race conditions drive a **first-principles equation of motion under a
+critical-power energy budget and a bang–CP–bang optimal-control policy** (§III.2), perturbed by the
+**mean-field pace/draft coupling** to the field (§III.4) — generating each runner's full predicted
+*path* `(x_long, y_lat, v, t)`, the joint distribution over finishing **orders**, and hence *every*
+pool price; **(III)** the parameters are **inferred by physically-constrained inversion of the laws
+on the dense measurement surface** (path-reconstruction — sectional velocities now, lateral and
+margins later), **each constant pinned on its dedicated surface and cross-checked for consistency**
+(§IV; PHILOSOPHY §3, §4), and **validated by re-emergence** of the stripped meta-signals (§V). The
+discipline of `docs/PHILOSOPHY.md` governs; the object we fit is the **dense surface, not the win
+bit** — because win is too coarse a likelihood to identify mechanism — and the **market is the LAST
+yardstick, parked during the rebuild** (PHILOSOPHY §6).
 
-| coupling | dimensions |
-|---|---|
-| going × horse aptitude | environment × physiology |
-| distance × stamina (`W′`) | physics × physiology |
-| pace × running style | strategy × strategy (the equilibrium) |
-| draw × field size × pace | geometry × interaction × strategy |
-| weight × class | competition × physics |
-| surface × ability-transfer (turf↔AWT) | environment × physiology |
+**The causal structure (`docs/CAUSAL_MODEL.md`):** the *same causes* in (I) generate BOTH the
+path/order in (II) AND the **meta-signals** (form, jockey-SR, collateral, …) as downstream
+**consequences** — so the meta-signals are leaves to be RE-DERIVED, never inputs to be fed. Layer
+(II) is the cause→path→order arrow; the meta-signals are the cause→past-paths→measurement arrow. The
+model is built on the causes and validated by the meta-signals re-emerging.
 
-A factor that looks dead as a main effect can be alive as an interaction (and vice
-versa). The diagnose→recalibrate loop on *main-effect* residuals therefore saturates;
-the remaining gains live in the couplings (the sim's domain) and in measuring the
-latents better (sectionals/trajectory) and *relatively* (the handicap lens).
-
----
-
-## 3b. The competition game, developed — the race as a differential / mean-field game
-
-The competition axis is not a scalar add-on to ability; it is the **structure that
-generates the running of the race**. The first attempt to capture it — an Elo /
-relative-form rating — failed not because competition is irrelevant but because that
-object is the *wrong* object: it is collinear (~0.70) with the official rating the
-market already prices, and it discards the only thing competition actually does, which
-is to make outcomes **relational**.
-
-**The differential game.** Fix a trip of length `L`. Each horse `i` carries a finite
-anaerobic reserve `W′_i` above a sustainable critical velocity `v_{c,i}`. A jockey
-chooses an **effort/pace policy** `π_i(t)` (a velocity / reserve-depletion profile over
-the trip) to minimise own finishing time `T_i = ∫ ds/v_i(t)`, subject to the **budget**
-`∫_{v_i>v_c}(v_i−v_{c,i})dt ≤ W′_i/k` and the position dynamics `dx_i = v_i dt`. State =
-`(x_i, W′_i^rem)` + the field's positions (traffic/draft); action = `π_i(t)` (effort and,
-discretely, *when to kick*); payoff = `−T_i` (a tournament — only the *order* pays);
-coupling = drag/draft and traffic make `v_i` depend on `{x_j(t)}`. The optimal `π_i` is a
-**best response to `{π_j}`** → the field's tactics are a **Nash equilibrium**. With many
-runners the rivals enter only through the aggregate **pace**, so the large-field limit is
-a **mean-field game**: each horse best-responds to the field's pace distribution, which
-is itself the aggregate of those responses — a fixed point in pace-policy space.
-
-**Why competition is relational, not scalar.** A horse's effective finishing time
-depends on its **style/ability matchup against this field's composition**, not on a
-context-free number. A front-runner among closers steals an uncontested lead, dictates a
-soft pace, arrives with reserve unspent; the *same* front-runner among other
-front-runners is forced into a contested early duel that burns `W′` against the air with
-no draft, and fades. Identical horse, different equilibrium. A scalar rating cannot
-represent a quantity that is a *function of the opponent set*. The correct generative
-object is an **interacting Plackett-Luce**: PL (independent finishing times → argmin) is
-the **free / non-interacting theory**; the competition couplings bend PL's per-horse
-utilities by *who else is in the race*. Our production Wald/PL surrogate **is** that free
-theory — which is exactly why bolt-on scalar ratings vanish into it, and why the live
-signal must be a *composition interaction*, not a main effect.
-
-**Two levels: the handicapper (Stackelberg) and the pace game.** Running styles are
-**public** (read off past running lines — our `early_pos` feature is the EB-shrunk mean
-of normalised early field position). Jockeys observe them and set up the pace
-accordingly — best-response on *observable* information, so modellable from form alone.
-Above the tactical game sits the **handicapper as a Stackelberg leader**: anticipating
-the equilibrium, they assign weight to **compress ability** and engineer a blanket
-finish. So competition enters twice — the handicapper compresses the **mean** (already
-priced, hence tight win probabilities and an efficient rating channel), but the pace
-equilibrium reshuffles the **conditional** outcome by style-composition (*not* fully
-priced — our opening).
-
-**The positional fade is the mean-field shadow of this equilibrium.** The production
-drift-diffusion is the *non-interacting* theory: context-free drifts, collisionless,
-draftless. It therefore over-rates habitual front-runners (never charged for the
-contested-pace reserve burn) and under-rates closers (never credited the reserve they
-conserve). The confirmed `POS_FADE_GAIN = −1.0` term — front horses win ~1pp *less* than
-the physics predicts, closers ~1pp *more*, residual `t ≈ −7` at **both** venues,
-surviving form/`v_c`/`W′` controls — is exactly this bias, measured. The shared
-sign-and-magnitude across venues is the signature of a **mean-field constant**: the
-field-averaged shadow of the pace equilibrium projected onto one per-horse scalar. We
-have captured only its **zeroth moment** (the field-mean style offset); the equilibrium's
-*interaction* structure — how the fade depends on *who else* is in the race — is
-untouched. That is the next layer, and it converts the theory into testable predictions.
-
-**Testable predictions (ranked; all inputs pre-race & public ⇒ leak-free):**
-1. **Front-runner penalty scales with the count of rival front-runners** (pace
-   contestedness `n_FR`): the fade *grows* with `n_FR`, *vanishes/reverses* at `n_FR=1`.
-   Implement as `POS_FADE × contestedness` on the already-paying scalar — lowest-risk,
-   highest-information. **Top priority.**
-2. **Lone-leader pace-control bonus** (`n_FR=1`): a sign *flip* of the fade. The robust
-   form is the *interaction* with `n_FR` (1+2 tested jointly), not the threshold-fragile
-   standalone lone-leader cell that was already rejected.
-3. **Closer-favoring in contested-pace fields**: closers' bonus scales with `n_FR` — a
-   field-level reshuffle the non-interacting model cannot produce.
-4. **Field pace-shape modulator**: summarise the `early_pos` distribution into one
-   pace-pressure scalar per race modulating the fade gain (generalises 1–3).
-5. **Pairwise matchup / collateral-form terms** (interacting-PL): use HKJC `formline`
-   (who-met-whom + rating/weight deltas) as *relational* utility bumps — the object the
-   scalar Elo groped for, but as an interaction (should survive the collinearity that
-   killed Elo). Highest ceiling, heaviest build — after 1–4 confirm the mechanism.
-6. **Draw × pace** (inside front-runner controls rail+tempo; wide one burns reserve to
-   cross): a genuine many-body term — the agent-based sim's domain, lowest near-term.
-
-Predictions 1–3 are one mechanism (the equilibrium's first moment: fade-scaling-with-
-contestedness) from three angles, all a single `contestedness`-modulated extension of
-`POS_FADE_GAIN` — cheap, leak-free, on-data. Land those before the heavier `formline`
-relational build (5).
+> **NOTE ON THE ARCHITECTURE'S OWN HISTORY.** An intermediate design (read in §I.3, §V below) framed
+> the loop as "identify latents from the path, then **gate-calibrate** their coupling on the market."
+> That is **superseded**: `0042`/`0043` showed the win AND pool-book gates *reject* a strongly
+> path-identified latent (`a`) as a coupling — the gates cannot do identification's work — and the
+> metric is now inverted (path-fit + cross-surface consistency + re-emergence PRIMARY; market LAST,
+> PHILOSOPHY §6). The current core is the first-principles EOM (§III.2), where there is no free
+> coupling gain to calibrate: the deployment is the optimal-control solution and the field coupling is
+> a physical drag/effort response (`0047`–`0049`). §I/§II/§V below are preserved as the *road to* this,
+> with the gate-coupling framing explicitly marked superseded where it appears.
 
 ---
 
-## 3c. The geometry × control game — draw as a boundary condition on the jockey policy
+## I. The reformulation thesis — why win is too coarse a likelihood
 
-§3b developed the competition game in the **longitudinal** (along-track, effort/pace)
-direction and showed the positional fade is its mean-field shadow. This section develops
-the **lateral** (across-track) direction — the part the scalar draw terms (`DRAW_GAIN`,
-`DRAW_FS_GAIN`) only shadow. The thesis (journal `0027`): **draw is not a static
-geometric covariate. Its effect is a functional of the jockey's control policy** — how the
-gate is used to take up position, which lateral path is chosen round the bends (save ground
-on the rail vs. go wide for clear air), and when the anaerobic reserve is spent to win or
-hold position. The right object is a **two-dimensional differential / mean-field game of
-jockeys navigating the real track geometry, with the draw as the initial lateral boundary
-condition**. The scalar terms capture only the *first moment* of that game's resolution;
-this section writes the game down, identifies its equilibrium structure, and — crucially —
-derives the **leak-free observables it predicts** from the data we actually hold.
+### I.1 The old framing and what it actually was
 
-### 1. State, action, dynamics, payoff (the plant + the control)
+The model that reached **65% / 60% of market** (ST / HV) [VALIDATED — production] was built as a
+drift-diffusion win model with an *additive stack of mechanism "knobs"*: an effective critical
+velocity `v_c_eff = v_c_base + Σ_k g_k · s_k` accumulating ~10 signal channels (recency form,
+sectional `v_c`, collateral-form, barrier trial, training gallop, finishing sectional, positional
+fade, gate-break, allometric mass, rating peak-gap, …), each with a separately-calibrated gain
+`g_k`, plus the anaerobic-reserve `W′` and diffusion `D` knobs. The docstring framed this as a
+**precision-weighted posterior over one critical-velocity latent** — `v_c = Σ_k (π_k/Σπ) v_c^(k)`,
+each gain `g_k` the channel's relative precision — and the additive drift as its first-order
+linearisation (the original §3d).
 
-**Geometry (the arena).** Encoded in `hkjc.core.track.TrackGeometry`. A horse runs from
-`d = distance` (metres-from-finish) down to `d = 0`. The arena is parameterised by
-*venue × surface × Course*: the movable running rail (A / A+2 / B / … / C+3, read from
-`results_rich.Course` / `st_history.Course`) sets the usable **width** `w(course)` and the
-home-straight length. The bend map `bend_segments` partitions the lap into **turns** and
-**straights**; on a turn a horse `off` metres off the rail runs extra arc
-`≈ off · κ(d) · ds` where `κ(d)` is the local curvature (≈ `1/R`, larger at HV — the
-tightest HK circuit, hence its strongest draw bias; ≈ 0 on the ST-1000m straight chute,
-which is why `fit.py` zeroes the draw term there). HV is bend-dominated (≈ 470 m + 530 m of
-turn in 1450 m); ST is a galloping oval with two ~495 m bends and long straights.
+**The audit refuted the literal multi-attribute reading of that stack and confirmed the
+single-latent reading.** A factor-analysis of the strictly-prior channel matrix (PCA + drop-one
+ΔR² + a retrodiction of the recent collinearity deaths; **#37**, journal 0037) [VALIDATED] found:
 
-**Agent state.** Each horse-jockey `i` is an agent with state
+- **One dominant ability factor.** PC1 (≈25% of channel variance at both venues) fuses form +
+  speed-figure + collateral + sectional-`v_c` + finishing-sectional into a *single dimension*.
+  These channels are **redundant measurements of one latent `v_c`**, not separate attributes.
+- **High nominal dimensionality is measurement noise, not attributes.** Reaching 80% of variance
+  needs 9 of 16 factors — but the unexplained 75% is idiosyncratic per-instrument noise scattering
+  across the low PCs (one near-private factor each), the signature of *one catch-all measured by
+  many noisy instruments*.
+- **A clean 5/5 retrodiction.** Every channel that recently died of collinearity (finishing
+  sectional `R²≈0.94`, gate-break `R²≈0.998` — it is just `early_pos`) projects into
+  already-spanned factor space; the one survivor (rating peak-gap, `R²≈0.08`) is the one orthogonal
+  axis (a career-landmark process feature). The factor structure *predicts* the deaths.
+- **Context leaks into the ability read.** The position/style channels (`early_pos`, gate-break)
+  load PC1 *as hard as* the ability reads — a category error: a jockey/position-policy signal
+  sitting inside the horse-ability factor.
 
-```
-s_i(t) = ( x_i,        # along-track position (metres covered)
-           y_i,        # lateral offset from the current inner rail  ∈ [0, w(course)]
-           W'_i,       # remaining anaerobic reserve  (≥ 0)
-           v_i )       # current speed
-```
+So the old stack was, descriptively, **one over-measured ability latent + a thin long tail**, with
+the position channels mis-filed into it.
 
-**Action / control policy.** The jockey chooses `a_i(t) = π_i(s_i, s_{-i}; θ_i)`, a map from
-own state and the field state `s_{-i}` to two controls:
+### I.2 The decisive twist — honest fusion craters, so the gains were doing win work the honest posterior discards
 
-```
-u_i(t) ≥ 0    # effort above the aerobic ceiling  (depletes W'_i)
-ẏ_i(t)        # lateral steering rate  (the path: hug rail vs. peel out for clear air)
-```
+The natural "fix" suggested by the audit — **collapse** the redundant gain-stack into one *exact*
+honest precision-weighted posterior (fold each instrument onto the `v_c` residual scale at its own
+precision, share one denominator, de-contaminate the style leak) — was built and gated (**#39**,
+journal 0039). **It cratered: −35pp ST / −32pp HV of market, robustly** [VALIDATED — the gate].
+Diagnosis:
 
-`θ_i` parameterises the **policy type** — a jockey/horse's habitual style (front-runner vs.
-closer, ground-saving rail-hugger vs. wide-and-clear), the object that makes control
-*heterogeneous* and therefore *predictable* from past running lines.
+- The loss is **monotone in the coupling**: amplifying the honest fused shape makes win-fit *worse*
+  — the fused posterior shape is genuinely **less win-discriminative**, not merely under-scaled
+  (within-race `corr(v_c, won)` falls 0.191 → 0.149).
+- **Why:** the legacy gains are calibrated to the **win conversion test**, and that coupling is far
+  *larger* than the honest OLS-to-`v_c`-residual slope (the form slope is `b≈0.69`, but the effective
+  `FORM_GAIN≈5` — ~7× the honest slope). **Form predicts *winning* better than it predicts a horse's
+  own next sectional `v_c`.** Each additive gain does **independent win work** beyond what a
+  mean-target precision fusion carries — it over-couples the shared factor in a *win-relevant*
+  direction (the order-statistic tail) the honest estimate discards.
+- **De-contamination hurts** (+2.2pp ST / +1.4pp HV *without* it): the `early_pos`↔`v_c` correlation
+  is not pure tactical contamination — front-running position encodes real win-relevant ability (gate
+  speed, cruising speed, the jockey's read), and projecting it out strips signal.
 
-**Equations of motion (the plant — same physics as the §2.2 EOM and the deprecated sim,
-now 2-D).**
+**This is the central finding.** The win order-statistic is **too coarse a likelihood to identify
+mechanism**. It cannot tell us how a channel *should* couple — only the precision-weighted *honest*
+posterior is identifiable from outcomes alone, and that honest posterior **under-discriminates** for
+winning. The descriptive one-latent picture (#37) and the gate result (#39) are both correct, and
+together they force the architecture: **the win bit identifies one over-measured latent and then
+demands a coupling much stronger than honesty allows**. Three further confirmations of the same
+"win is too coarse" wall, from the energetics fan-out:
 
-```
-ẋ_i = v_i
-m_i v̇_i = P_c,i + u_i       (metabolic power)                      [longitudinal]
-        − K_LOCO m_i g                                              (locomotion)
-        − ½ ρ c_d A v_i² (1 − draft_i(s_{-i}))                      (aero, cut behind cover)
-        − χ · 𝟙[bend] · κ(x_i) · v_i² · y_i / R                     (bend ground-loss ∝ lateral offset)
-Ẇ'_i = − u_i                  (reserve depletes above ceiling; u_i>0 only when v_i>v_{c,i})
-ẏ_i = steering, subject to the EXCLUSION constraint:
-      y_i may not coincide with y_j for a horse j with x_j ≈ x_i   (cannot occupy a rival's lane)
-```
+- **Reserve formalisation (#35, journal 0035)** [VALIDATED — DON'T-BAKE]: whether `W′` is *energy* or
+  *distance* — a real physical question — is **unidentifiable from win**; distance-`W′` is sufficient,
+  energy/drag reweightings are flat-to-worse. The win bit cannot resolve the conserved-quantity form.
+- **Physiology-from-race-history** collapsed to ~0 partial correlation — a race outcome is itself a
+  coarse training proxy, so layoff/Banister/own-weight add nothing *measured through outcomes*.
+- The **multi-attribute reformulation is NOT warranted by the win panel** (#37): there are not
+  multiple ability latents hiding in the stack to be identified *from outcomes*.
 
-The **lateral channel is where draw lives**: the start fixes `y_i(0) = y_0(Dr_i)` (a wide
-draw starts wide). To save ground a wide-drawn horse must *cross* — spend `ẏ_i < 0` early —
-but crossing is contested: the rail is a scarce resource and the exclusion constraint
-(a TASEP-like single-file occupancy in each lateral band) means a horse can only take the
-rail if a gap opens. So a wide draw imposes a **control dilemma**: (a) commit reserve early
-to cross to the rail and save bend-ground, paying a `W'` tax up front and risking being
-shuffled back if the gap doesn't come; or (b) stay wide, concede the arc-length penalty but
-keep clear air and reserve. The *cost of the draw is whichever horn the equilibrium forces*
-— it is **not** a fixed `DRAW_GAIN·(Dr−1)` arc penalty.
+### I.3 The resolution — identify from the dense surface, gate the coupling on the market
 
-**Payoff.** A tournament: only finishing **order** pays. Agent `i` maximises
+If outcomes cannot identify mechanism, **fit to a denser measurement surface that can**, and keep
+the market as the *gate*, not the *identifier*. The pilot proved this works (**#41/0040**,
+"fit-to-surface"; the journal labels it 0040/queue-31) [VALIDATED — both legs]:
 
-```
-J_i = E[ − T_i ]   or   E[ R(rank_i) ],   T_i = ∫_0^{distance} dx / v_i(t),
-```
+- **The sectional velocity profile is far more fittable than the win bit.** A 4-latent generative
+  profile `(v_c, W′_0, a)` beats the scalar heuristic by **~30% ST / ~22% HV** lower held-out
+  per-section RMSE (leave-one-race-out within a horse). The dense surface *resolves* shape the win
+  bit cannot.
+- **It surfaces a NEW orthogonal, win-relevant latent that win alone could not identify:
+  acceleration `a`** — the opening-split ramp (the §III.5 Phase-1 start transient the homogeneous Wald
+  law has no representation of). `a` carries strong independent win signal given `v_c` and `W′`
+  (ST-sprint `t(a)=+9.98`, nearly as strong as `v_c`), with the distance-band gradient theory predicts
+  (strongest in short trips), and `corr(a, v_c)≈−0.2` — genuinely new information.
+- **Crucially, `a` is the antithesis of the failed gate-break trait.** The §III.5 gate-break trait
+  (first-call rank minus draw, a *positional/policy* read fit against win) had **died as
+  collinear/sub-noise** (#37: it is just `early_pos`). The *same phase*, read instead as a
+  **kinematic** latent recovered from the velocity profile, identifies cleanly and converts as a
+  partial correlation. Identifying from the path, not the win bit, is what made the difference.
 
-i.e. a closed-loop best response that trades the bend-ground integral
-`∫ χ κ(x) v² y_i dx` (minimised by hugging the rail) against the **clear-air / draft / reserve**
-terms (which can favour going wide), under the budget `∫ u_i dt ≤ W'_i` and the lateral
-exclusion constraint coupling `i` to the field.
-
-### 2. Why it is a (mean-field) game, and where DRAW enters
-
-Each jockey's optimal `(u_i, ẏ_i)` is a **best response to `{π_j}`**: the value of crossing
-to the rail depends on whether rivals leave a gap; the value of leading depends on who else
-contests the lead (the §3b pace duel); the draft you get depends on who sits where laterally.
-The profile `{π_i}` is therefore a **Nash equilibrium of a differential game** with state
-constraints (exclusion) — formally an open-loop/feedback Nash solution of the coupled
-Pontryagin/HJB–Isaacs system, one adjoint per agent for `(x, y, W')`. With many runners the
-rivals enter only through **aggregate fields** — the *along-track* pace density `ρ(x,t)` and
-the *lateral* occupancy density `m(x,y,t)` (how crowded each lane is at each point of the
-trip). The large-field limit is a **mean-field game (MFG)**: the HJB for each agent's value
-`V_i(s)` is driven by the population densities `(ρ, m)`, which are in turn the Kolmogorov-
-forward push-forward of the agents' own optimal controls — a fixed point in
-*(pace × lateral-occupancy)* space. The exclusion constraint makes the lateral marginal a
-**congestion MFG** (cost of a lane rises with its occupancy `m`), the cleanest formal home
-for "a wide draw costs more in a crowded field."
-
-**Draw is the initial/boundary condition, its cost mediated by the equilibrium.** `Dr` sets
-`y_i(0)`; the realised draw cost is the equilibrium value-gap
-`ΔV_i = V_i(y_0=rail) − V_i(y_0=wide)`, which is **not** a constant — it is a functional of:
-
-- **the rail/curvature** `κ, w(course)` — more arc to lose on a tight track (HV ≫ ST; ≈ 0 on
-  the straight chute). This the scalar `DRAW_GAIN_BY_VENUE` already captures (its *zeroth* moment).
-- **the field's lateral congestion** `m` — a crowded field (`N` large) means fewer gaps to
-  cross, so the wide horse is *trapped* wide → larger cost. This is the **first interaction
-  moment**; `DRAW_FS_GAIN` (crowding × draw, HV-only) is its scalar shadow — and an interim
-  stopgap, per §Appendix.
-- **own and rivals' policy types** `{θ_j}` — a wide horse drawn outside a wall of
-  front-runners cannot cross and must go wider still; the *same* wide horse with closers
-  inside it can angle down early and save the ground. **Identical draw, opposite cost,
-  decided by the style-composition of the neighbours** — exactly the relational quantity a
-  scalar cannot encode, and the reason the four scalar pace probes (journal `0024`, `0026`)
-  did not convert.
-
-So the equilibrium **mediates** draw: `cost(Dr) = f(Dr; κ, course, N, {θ_j}, θ_i)`. The
-production scalar is `cost ≈ DRAW_GAIN·(Dr−1)` — the projection onto the first two arguments
-at field-mean policy. The open gain is the **policy-conditioned** correction.
-
-### 3. Testable, leak-free observables it predicts (ranked by tractability)
-
-The binding data constraint (verified on the panels): **we have no lateral coordinate.** No
-panel stores `y_i(t)`; the only across-track datum is the *starting* offset `Dr`
-(`results_rich.Dr`). What we *do* have is the **longitudinal rank trajectory** — `RunningPosition`
-(rank at 3–6 call points, e.g. `"9 9 7 1"` = 9th→9th→7th→1st), per-section `velocity` +
-`position` in `trajectory_dataset_full` (400 m sections), and the already-derived policy
-panel `run_policy_dataset` (`early_pos_norm`, `late_pos_norm`, `pos_gain`, `fade`,
-`kick_frac_obs`, `effort_dtg`, `depleted`, each with leak-free `trail_*` trailing means).
-The lateral path and ground-saved are therefore **latent — inferred from the rank trajectory
-× draw × geometry, never observed.** Every observable below respects this and is leak-free
-(a runner's value uses only its STRICTLY PRIOR runs, the `features.py` discipline; the
-contemporaneous geometry/draw/field-composition inputs are all pre-race public).
-
-**O1 — Draw × Course (rail position) interaction. [most tractable]**
-The arc-length penalty scales with curvature, and the movable rail (`Course`) changes both
-`κ`-exposure and width. Predict: the draw gradient is *steeper on tighter Course settings*
-(C/C+3, narrower) than wide (A). Operationalise as a **draw × course** (or draw × `w(course)`,
-or draw × bend-fraction) modulation of `DRAW_GAIN`, i.e. `L_eff = dist·(1 + g(course)·(Dr−1))`.
-Data: `results_rich.Course` + `track_for(...).width/bend_fraction`. Pure pre-race geometry —
-no trajectory, no leak surface, single new constant per course family. **Lowest risk, build first.**
-
-**O2 — Draw × field-pace-makeup (relational congestion). [high value]**
-The wide-draw cost rises with lateral congestion, which the *style composition* of the field
-proxies: many habitual front-runners + a full field ⇒ a wall the wide horse cannot cross ⇒
-larger cost; a field of closers ⇒ the wide horse angles down cheaply. Operationalise:
-per-race **pace-pressure / wall scalars** built from the leak-free `early_position_table`
-(EB-shrunk prior `early_pos`) — e.g. `n_FR` (count of prior-front-runners), the fraction of
-the field drawn *inside* `i` that are front-runners, and `N`. Feature: `DRAW_GAIN × Φ(Dr,
-inside-front-runner-count, N)`. This is the relational generalisation `DRAW_FS_GAIN` only
-shadows (it uses bare `N`); the prediction is that *conditioning the crowding on who is
-inside* converts where bare `N` plateaued. Data: `run_policy`/`early_position_table` + `Dr`.
-
-**O3 — Control-quality / ground-saved signal from the rank trajectory. [medium]**
-The equilibrium predicts a measurable **path-efficiency** type: a horse/jockey that
-habitually *gains rank without a velocity premium* is saving ground (taking the rail, getting
-the gaps) — good control; one that *needs a velocity premium to hold rank* is running wide /
-fighting traffic — costly control. Construct a leak-free per-(horse,jockey) trailing index
-from `trajectory_dataset_full`: regress section-to-section **rank gain** on the horse's
-**relative section velocity**; the residual (rank gained *per unit speed*, i.e. ground-saved
-efficiency) averaged over prior runs is a clean control-quality feature. Cross-check against
-`run_policy.pos_gain` net of `fade`. Couple it as a per-horse `v_c`/trip bump (it is a real,
-stable jockeyship latent, like `early_pos`). Heavier (needs the trajectory join + a
-within-race regression) but mechanism-faithful and convertible as a main-effect first.
-
-**O4 — Jockey policy types (the `θ` partition). [medium, enabling]**
-Cluster jockeys (and horse×jockey pairs) by their leak-free `trail_*` policy vector
-(`trail_early_pos_norm`, `trail_kick_frac_obs`, `trail_fade`, `trail_effort_dtg`, the O3
-ground-saved index) into types — e.g. *ground-saver*, *wide-and-clear*, *late-committer*,
-*pace-presser*. Not a standalone win feature so much as the **input that makes O2/O3
-relational** (the `{θ_j}` the draw cost depends on) and a candidate `DRAW_GAIN` modulator
-(a ground-saver suffers a wide draw less). Tractability: the clustering is cheap; its *value*
-is realised only through O2/O3, so build after them.
-
-**O5 — Draw × pace × position joint term (the full many-body cell). [least tractable]**
-The genuine two-body lateral term — an inside front-runner controls rail+tempo; a wide one
-must burn reserve to cross — i.e. `cost(Dr) × pace-pressure × own-style`. This is the
-agent-based sim's domain (a 2-D MFG Monte-Carlo with the exclusion constraint), reserved for
-place/exotic pricing where whole-field ordering matters more than the knife-edge for first.
-Highest ceiling, heaviest build; only after O1–O3 confirm the mechanism converts at all.
-
-**Ranking (tractability × leak-safety, descending): O1 ≻ O2 ≻ O3 ≻ O4 ≻ O5.** O1 is pure
-pre-race geometry (one constant); O2 reuses an already-converting leak-free table; O3/O4 add
-the trajectory join and a latent index; O5 is the full sim.
-
-### 4. The minimal next experiment (hand-off to a future modelling agent)
-
-**Build O1: a draw × Course (curvature/width) modulation of `DRAW_GAIN`.** It is the single
-most tractable convertible step — pure pre-race geometry, one constant family, zero leak
-surface, and it directly tests the central claim (the draw cost is *geometry-mediated* before
-it is control-mediated) without yet needing the harder control inference.
-
-Concretely: (i) in `fit.py`'s wald drift, replace the per-venue scalar
-`L_eff = dist·(1 + DRAW_GAIN·(Dr−1))` with `g(course) = DRAW_GAIN · h(bend_fraction(course),
-w(course))` resolved from `track_for(venue, distance, surface)` + `results_rich.Course`
-(width and bend-fraction are already on `TrackGeometry`); (ii) scout the shape of
-`g(course)` on the residual (`market_residual_diagnosis.py`, draw × course buckets, race-
-clustered SEs) to set direction; (iii) **confirm with the PAIRED fixed-seed full-scale
-backtest** (`PYTHONHASHSEED=0`, both venues + ECE) — the quick_eval over-states draw-knobs
-~4× (the `DRAW_FS_GAIN` lesson), so the t-stat is only a scout; the %market conversion is the
-gate. **Decision rule:** if the draw gradient is materially steeper on the tight Course
-settings *and* the modulation converts OOS, the geometry-mediation half of the thesis is
-confirmed and O2 (relational congestion) is greenlit; if it is flat, the venue scalar already
-saturates the geometry moment and the gain is purely in the **control** channel (skip to O2/O3
-and the relational/policy terms). Either outcome advances the geometry × control program —
-this experiment is designed to *partition* the remaining draw signal into its geometry vs.
-control shares.
+**So the architecture is:** IDENTIFY latents honestly from the dense path; CALIBRATE their coupling
+into the predictive race model + VALIDATE on the pool book. The rest of this document writes that
+down: the latent state `θ` (§II), the generative race model that turns `θ` into paths and prices
+(§III — the preserved, validated physics), the path-reconstruction objective (§IV), and the
+pool-book gate with the critical coupling-calibration lesson (§V).
 
 ---
 
-## 3d. How the couplings map onto the generative model — the structure
+## II. The latent attribute state `θ_i` — the CAUSES
 
-The drift-diffusion exposes **three independent knobs** a feature can load: the aerobic ceiling
-`v_c`, the anaerobic reserve `W′` (the `(1+W′/L)` late boost), and the diffusion `D` (consistency /
-racing luck, the Wald shape `λ = L²/2D`). A feature is correctly structured only when it loads the
-knob its mechanism actually acts on — using a signal is not enough; it must enter in the right place.
+Each horse `i` carries a hidden attribute vector — physiological + behavioural — that is **intrinsic
+and slowly-varying across races** (the "true" features a noisy single finish only glimpses). **These
+are the CAUSES** (`docs/CAUSAL_MODEL.md` §1): they generate the path AND the meta-signals. FORM,
+speed-figure, collateral and peak-gap are not entries in `θ_i`; they are *noisy past-measurements of*
+`θ_i` (specifically of the ability axis `v_c`) — effects to be re-derived (§II is the cause; the
+meta-signals are its downstream shadow). The jockey-control and trainer-prep causes (`c`, `f`) are
+**crossed** with the horse on each run; separating them from horse-ability is the crossed-effects
+inference of `docs/CAUSAL_MODEL.md` §3.
 
-**`v_c` is a precision-weighted posterior over critical velocity.** The ability channels (official
-rating, form, sectional `v_c`, collateral-form, barrier trial, speed-figure) are *noisy measurements
-of the same latent `v_c`*. The principled combination is the precision-weighted posterior mean
-`v_c = Σ_k (π_k/Σπ) v_c^(k)`, `π_k = 1/σ_k²`. The production drift `v_c_eff = v_c_base + Σ_k g_k·s_k`
-is the first-order **linearisation** of that posterior, so each gain `g_k` is the channel's relative
-precision — which is exactly why gains are calibrated rather than free, why over-coupling a channel
-past its precision hurts, and why a channel collinear with a priced one adds nothing. The coherent
-empirical-Bayes **fusion** — one shrinkage posterior over *all* velocity observations (official runs,
-barrier trials, and training gallops), each down-weighted by its noise, with the correct non-linear
-`λ(n_eff)` — is this structure made exact, and the right home for every ability signal.
+```
+θ_i = ( v_c     aerobic ceiling          — sustainable critical velocity                 [VALIDATED]
+        W′_0    anaerobic reserve         — finite energy bank above v_c                  [VALIDATED]
+        a       acceleration / gate-speed — the opening-ramp / start-transient latent     [VALIDATED, #41]
+        ρ       recovery rate             — reserve replenishment kinetics                [HYPOTHESIZED]
+        D_i     per-horse consistency     — own finishing-time variance (the noise knob)  [HYPOTHESIZED]
+        c       control / ground-saved    — jockeyship path-efficiency (lateral, via CV)  [HYPOTHESIZED]
+        …       )                          — career-trajectory landmark, condition, …
+```
 
-**The fusion must give each observation type its OWN precision — a shared shrinkage is the wrong
-structure.** A first attempt folded barrier trials into the *sectional-v_c residual* channel, which
-production globally shrinks (`SHRINK_MULT≈0.5`×`λ`, calibrated to the *noisy* sectional estimate); that
-diluted a comparatively *high-precision* signal and underperformed the direct additive coupling for the
-win order-statistic (though it *did* tighten the ability estimate / ECE for lightly-raced horses —
-confirming the denser-prior mechanism is real). The lesson is structural, not a refutation: the trial is
-not a sectional-v_c residual and must not inherit its shrinkage. The correct fusion assigns each channel
-(races, trials, gallops) its OWN estimated precision/variance component, so a trial enters at *its* noise
-level — recovering the full additive signal *and* the calibration gain, and extending cleanly to training
-gallops. (Methodological note: a feature failing under one coupling means *that structure* is wrong, not
-that the mechanism is dead — statistics gate a given structure; theory chooses which structure to try.)
+**Hierarchical, strictly-prior.** `θ_i` is drawn from a **population prior** (a hierarchical /
+empirical-Bayes model: a band×rating population mean and variance) and updated to a **per-horse
+posterior** using **only that horse's strictly-prior runs** (the leak-free discipline of
+PHILOSOPHY §6 — expanding means shifted by one, or strict as-of joins). The population prior is what
+lets a lightly-raced horse or a debutant be priced at all — and it is exactly the channel a denser
+prior (barrier trials, training gallops) sharpens.
 
-Channels that
-load `v_c`: rating (hierarchical-Bayes band×rating mean), form (a rank-censored velocity residual —
-its margin-censoring is *why* the velocity-unit figures add over it), sectional `v_c`, **collateral-
-form** (a Massey least-squares opponent-adjusted velocity — literally the consistent rating the "win
-model is a rating system at equilibrium" framing predicts), trial, speed-figure, and **allometric
-mass** (`v_c ∝ m^(b−1)`, with one *venue-invariant* physiological exponent `b ≈ 1.1`; mass is simply
-low-leverage where other channels already price it, not a different exponent per track).
+**What is one latent vs. what is genuinely distinct.** The #37 audit settled this empirically for
+the channels we hold:
 
-**`W′` carries the late-race reserve.** Fade-resistance (final-section vs peak velocity) is the
-kinematic signature of the reserve emptying in the closing stages; positional-fade is a front-runner's
-*`W′`-burn* spent setting the pace. Both are **reserve** phenomena and belong on the `W′` knob, where
-their effect is naturally distance-aware (`W′/L` bites harder over sprints) and the gain reads in
-reserve-metres. (Production currently applies them as a `v_c` proxy — a correlated approximation that
-raises/lowers the whole velocity curve rather than just the closing kick.)
+- **`v_c` is ONE latent measured by many instruments** [VALIDATED]. Form, speed-figure, collateral
+  (Massey opponent-adjusted velocity), the sectional EB residual, the finishing-sectional, and the
+  observation channels (barrier trials, training gallops) are **separate-precision reads of the same
+  `v_c`** — different *instruments*, not different attributes. This is why bolt-on scalar ratings
+  vanish into it and why gains in this channel come from *measuring it better* (the recency-form lever;
+  the relational collateral rating that cracked the competition axis) rather than re-weighting it.
+- **`W′` carries the late-race reserve** [VALIDATED]: fade-resistance (final-vs-peak section velocity)
+  and positional-fade (a front-runner's pace-setting reserve burn) are both *reserve* phenomena,
+  distance-aware via `W′/L`, and now load the `W′` knob (the `FADE_W_GAIN`/`POSFADE_W_GAIN` bakes).
+- **`D` (consistency) is the variance latent** [VALIDATED as a knob; per-horse `D_i` HYPOTHESIZED].
+  Because the winner is an order statistic, variance is as load-bearing as the mean: a high-`D` horse
+  upsets more than its mean drift implies. A horse with erratic figures should carry a larger `D_i`.
+- **`a` (acceleration) is a genuinely orthogonal new latent** [VALIDATED, #41] — identified from the
+  profile, not the stack.
+- **The career-trajectory axis** (rating + own-peak deficit) is the *one* clean second dimension the
+  audit found (PC3, ≈8%) — small, real, distinct (the `PEAKGAP` process feature).
+- **Style/control** (`early_pos` family, lateral path) is a **jockey-policy trait**, *not* a horse
+  ability attribute — it must live in its own layer (the §III.4 control policy), not inside `v_c`,
+  even though it is win-predictive.
 
-**`D` carries consistency — the one knob not yet exploited.** Every banked signal moves the *mean*
-drift; none moves the per-horse *variance*. But a horse with erratic figures is genuinely less
-predictable, so its `D_i` should scale with the spread of its own prior figures. Because the winner is
-an **order statistic**, variance is as load-bearing as the mean — a high-variance horse upsets more
-often than its mean drift implies, and a metronomic one less.
-
-**Career phase enters as regression to the horse's own mean.** A point rating sits above or below the
-horse's career-mean level; the market over-discounts a horse off its recent peak and over-rates one at
-its ceiling, so the converting correction is **mean-reversion toward the career mean** (this is what
-the rating-trajectory "peak-gap" signal actually captures — a process feature pays only where it adds
-an *absolute career landmark* the point rating cannot express, not where it merely restates recent form,
-which is already in the form channel).
-
-`JOCKEY` sits slightly apart: part trip-quality (a real `v_c` effect), part an information proxy
-(fancied horses get the top riders), so it is partly endogenous to the very market we fit — a
-measurement we keep, but not a clean single mechanism.
-
-## 3e. The phase structure of the trip — start, cruise, closing, and the distance-law of variance
-
-§3b develops the race **along-track** (the pace game), §3c **across-track** (the geometry game),
-§3d maps factors onto the three capacity **knobs** (`v_c`, `W′`, `D`). All three are silent on the
-**temporal** axis: the production Wald law treats the trip as a *single homogeneous* drift-diffusion
-from `x = 0` to `x = L` with one drift and one diffusion. A real race is **three dynamically distinct
-phases**, and collapsing them onto one homogeneous law smears together signals that live in different
-phases and load different knobs. Resolving the phases is a measurement upgrade with no new mechanism —
-exactly the kind of lever (like recency-form) the theory says pays.
-
-**Phase 1 — the start transient (gate → settled, ≈ first call).** From rest, acceleration-limited, off
-the gate; this phase is *not* the steady-state first-passage and the homogeneous law has no representation
-of it. It enters the order statistic as a **random initial condition**: `T_i = T_0,i + T_main,i`, where
-`T_0,i` is the time/ground lost (or gained) getting away and settling. `T_0,i` has a per-horse **mean**
-— *gate speed / break quality*, a stable, public, leak-free trait — and a per-horse **variance** — *gate
-temperament* (some horses are draw-jumpers, some dwell), which loads `D`. **This is the "start not
-explicit" gap in the scorecard, given a structure.** Crucially `T_0` is *not* `early_pos`: `early_pos` is
-the settled *level* at the early call, which conflates draw + break + style; the break trait is the
-*position change across the break itself* — first-call rank **adjusted for draw** — i.e. `early_pos`
-decomposed into its draw-explained part and the residual **gate-skill** part. The wide-draw interaction is
-sharp: a slow break from a wide gate forfeits both longitudinal *and* lateral ground (you miss the gap to
-cross — the §3c control dilemma), so the break trait should matter most exactly where the draw does.
-*Convertible experiment:* a leak-free trailing `gate_break` trait (first-call-rank-minus-draw, EB-shrunk
-over prior runs) loading the drift; its dispersion optionally loading `D`. Unmodelled today.
-
-**Phase 2 — the cruise (mid-race).** Tactical: the §3b pace duel and §3c lateral navigation. This phase
-is *least* about raw ability (it is positioning) and *most* about control — which is why the early/mid
-sectionals are the *noisiest* `v_c` channel and why tactical contamination is worst here.
-
-**Phase 3 — the closing (final ≈400 m).** `W′` empties, every horse is maximally extended, nobody is
-holding anything back — the **least tactically-contaminated** read of raw capacity in the whole race. The
-finishing sectional, normalised for the pace it was run into and the going, is therefore the **highest-
-precision `v_c`+`W′` channel** available — higher than the trip-average speed figure, which dilutes the
-clean closing signal with the tactical cruise. *Convertible experiment:* a **finishing-speed figure**
-(last-400 m velocity, pace-and-ground adjusted) entered as its *own high-precision channel* in the §3d
-`v_c` posterior (not folded into the overall speed figure). This is the temporal analogue of the §3d
-"give each observation its own precision" lesson — give each *phase* its own precision.
-
-**The distance-law of variance (a parameter-free prediction the model already makes).** From the Wald
-law with `λ = L²/2D`, `μ = L/v`: `Var(T) = μ³/λ = 2D·L/v³ ∝ L`, so the **coefficient of variation**
-`CV(T) = √(2D /(L·v)) ∝ 1/√L`. Longer races are *intrinsically more predictable* — favourites win more,
-upsets are rarer — purely from the geometry of first-passage, with no extra parameter. **Validate it**
-against per-distance ECE / upset rates. The refinement if it fails: the start transient and traffic
-inject a roughly **distance-independent** chunk of variance (a bad break or a check costs ~the same
-seconds whether the trip is 1000 m or 2000 m), so as a *fraction* of a short trip they loom larger. That
-means the diffusion is not constant but has a floor that dominates the sprints:
-`D(L) = D_0 + D_phase` with `D_phase` (start + traffic) a fixed additive term ⇒ **excess upset variance
-in sprints beyond `1/√L`.** *Convertible experiment:* a distance-dependent `D` floor if the sprint cells
-are under-dispersed.
-
-**Field size amplifies the variance knob (order-statistic / extreme-value corollary).** The winner is the
-**left-tail extreme** of `N` finishing-time draws. In a larger field the win requires a *deeper* tail
-event, so per-horse variance (`D`) has **more leverage on who wins the larger `N` is**: a high-`D` horse's
-fat left tail is worth more in a 14-runner ST handicap than in a 6-runner HV field. The Monte-Carlo
-already captures this exactly (it simulates `argmin` over the *true* field), so **no new term is needed** —
-but it is a sharp *prioritisation* rule: **the `D`-knob pays in big fields and barely at all in small
-ones.** This retro-explains the just-baked result that **draw→`D` converted on ST and was null on HV** —
-ST runs the big fields, HV the small ones; the EVT argument *predicts* exactly that venue split, a clean
-theory-confirms-data check. Corollary for the queue: pursue every variance lever (figure-variance→`D_i`,
-gate-temperament→`D`, distance-floor `D(L)`) **on ST first**, and weight expectations by field size.
-
-**The phases are control regimes, not just ability bands — and control is *intertemporal*.** The
-decomposition above reads the phases as *ability-signal purity* (closing = cleanest `v_c`). But each phase
-is first a distinct **control sub-problem**: the jockey's policy `π_i(t)` of §3b/§3c is not one action over
-the trip — it is **phase-indexed**, a different action set in each phase, and the §3b pace game and §3c
-lateral game actually resolve phase-by-phase:
-
-- **Start = break effort + initial slot.** How hard to gun from the gate, and which lateral position to
-  take — this *sets the boundary condition* `y_i(0)` for the entire §3c crossing game. So the break is not
-  pure capacity: "gate skill" splits into a **capacity** part (raw early acceleration → drift) and a
-  **policy** part (whether the jockey *chooses* to use it — gun for the lead vs settle). The two need
-  separate leak-free traits: gate *ability* vs gate *intent*.
-- **Cruise = positioning, path, and cover.** Pure tactics — the §3b pace duel and §3c rail-save/peel-out
-  navigation. Control *dominates* here and raw ability is mostly held in reserve, which is exactly why the
-  cruise sectionals are the noisiest ability channel.
-- **Closing = kick timing.** An optimal-**stopping** problem: *when* to ask for the final effort. Kick too
-  early and `W′` empties before the line (fade); too late and there is no track left to use it. The §3b
-  "when to commit" is this phase transition in the policy, and a horse's habitual **kick fraction**
-  (`run_policy.kick_frac_obs` — where in the trip its acceleration peaks) is a leak-free *control* trait.
-
-**The decisive point is that the phase where a control choice is *made* differs from the phase where its
-cost is *paid*.** `W′` spent on a forward early position (a start/cruise choice) is reserve *missing* in the
-closing kick. **Control is intertemporal, and the coupling runs across phases** — precisely the structure a
-homogeneous single-drift law cannot carry. This is the mechanism behind the just-baked **T1**
-(`POS_FADE → W′`, §3d): the positional fade is an *early* control decision (lead) debited from the *late*
-anaerobic reserve, and putting it on the `W′` knob — distance-aware via `W′/L` — is the reduced form of
-that cross-phase debit. By the same logic **fade-resistance, positional-fade, and kick-timing are facets
-of one intertemporal `W′`-deployment policy**, resolved by phase: an early-committer (front-runner, early
-kick) burns reserve and fades; a late-committer conserves it. Their *shared* home is `W′`, and the phase a
-trait reads from tells you which sign it carries. The convertible features are therefore **phase-resolved
-control traits** — gate-intent (start), cruise position/ground-saving (the §3c `O3`/`O4` path-efficiency),
-and kick-fraction (closing) — each a habitual *policy* parameter, leak-free from prior runs, and each
-loading the knob (`v_c` for path-efficiency that saves ground; `W′` for the reserve-deployment timing) its
-phase implicates. The phase axis is thus the *temporal scaffold that the §3b/§3c control games hang on*:
-§3b/§3c say control is relational and geometric; §3e says it is also **sequenced**, and the sequence is
-what couples an early tactic to a late cost.
-
-**Why this is one idea.** The homogeneous Wald assigns one drift and one diffusion to a trip that is a
-*start* (a random initial condition: mean = gate skill → drift, variance = temperament → `D`; **and** a
-control choice — break intent), a *cruise* (tactical, low ability-signal — **the control game's arena**),
-and a *closing* (the high-precision ability readout → drift; **and** the kick-timing stopping problem).
-Phase-resolving the trip routes each signal to the phase — and the knob — where it actually lives, exposes
-the **intertemporal** control coupling (early tactic → late reserve cost) that the single-drift law hides,
-and the same `1/√L` law that falls out of the variance knob tells us where (long vs short) and for whom
-(big vs small field) the mean and the variance each dominate the order statistic.
+> **Two superseded framings, named explicitly.** (i) The OLD "knobs as additive corrections on
+> `v_c`" picture is gone: the `0037`/`0039` audit showed those knobs were **one over-measured latent
+> with win-calibrated couplings** masquerading as a multi-attribute object (the physics is kept; the
+> additive-stack architecture is not). (ii) An INTERMEDIATE design then proposed "honest
+> path-identification of `θ` + **gate-calibrated** coupling into the race model" — *that too is
+> superseded* (§0, §IV, §V notes): the win AND pool-book gates reject a path-identified latent as a
+> coupling (`0042`/`0043`), and the first-principles EOM core (§III.2) has **no free coupling gain to
+> calibrate**. The current architecture is **first-principles physical constants, identified on
+> dedicated surfaces and cross-checked, validated by re-emergence** (PHILOSOPHY §2, §4, §5).
+>
+> **The CAUSAL rebuild goes one step further (owner-directed; `docs/CAUSAL_MODEL.md`).** The
+> additive knobs are not merely over-measured — they are **EFFECTS of the causes fed back as inputs**,
+> which is circular. The rebuild **strips** them entirely (FORM/figure/collateral/peak-gap/finsec →
+> effects of ability; jockey/trainer → effects of control/prep) and drives the drift from the
+> *inferred causes* only. The stripped meta-signals must **re-emerge as predicted consequences** of
+> the inferred latents — that re-emergence (not the win gate) is the near-term validation. Short-term
+> win% falls sharply and is accepted on the research model; production stays live. The §IV path-fit
+> objective and the §V gate are inherited (the gate becomes the *last* check, not the primary one)
+> — see `docs/CAUSAL_MODEL.md` §5 for the inverted metric and the staging.
 
 ---
 
-## 4. What the additive-statistical approach already ruled out
+## III. The generative race model — the first-principles physics as the generative core
 
-History worth keeping (so it isn't re-litigated). Run through a leak-free walk-forward,
-the **flat fundamentals** — draw, carried weight, official rating, and *crude* recent
-form, voted/weighted as static covariates — **add little or nothing over the closing win
-line**; the win market is efficient w.r.t. all of them. The lesson is not "these don't
-matter" but "the market already prices the *main effects*." Gains have come only from:
-- **measuring a latent better** (recency-weighted form ≫ career mean: the single biggest
-  lever), and
-- **adding a missing *mechanism* to the production model** (bend ground-loss re-added to
-  the diffusion drift: the second biggest).
-Both are mechanism/measurement upgrades, not re-weightings — which is exactly what the
-theory predicts.
+This is the layer that turns `θ_i` + race conditions into the full predicted **path** per runner,
+the **joint order distribution**, and **every pool price**. It is the hard-won, validated physics of
+the project, now the **first-principles generative core**: a real equation of motion under an
+optimal-control deployment, with the diffusion first-passage as its stochastic envelope, generating
+the dense measurement surface (§IV) — not a stack of corrections on a win model.
+
+> **Causal role (`docs/CAUSAL_MODEL.md` §1.3).** This §III physics IS the **cause → path → order**
+> arrow of the causal DAG. The drift `v_i(t)` is driven by the *inferred physiological causes*
+> (`v_c↔CP, W′_0, a, P_max, m`), NOT the meta-signal stack. **Status (`0044`/`0045`/`0047`):** the
+> earlier heuristic generator carried a +0.42 m/s level bias (`0044`); `0045` debiased it; **`0047`
+> then replaced the heuristic with the first-principles EOM (§III.2), which removes the level bias
+> *and* the opening-ramp defect BY MECHANISM, with no fudge constant** [VALIDATED]. All causal latent
+> inference runs through this EOM core. The remaining residual is now a clean *named* mechanism — the
+> field/pace coupling (§III.4), built and validated in `0049` — not a fitting bug.
+
+### III.1 The generative spine — first-passage of a drift-diffusion
+
+For each runner, finishing time is the **first-passage** of a noisy position process to the line of
+length `L`:
+
+```
+dx_i = v_i(t) · dt + √(2 D_i) · dW_i ,        T_i = inf{ t : x_i(t) ≥ L_eff,i } ,
+winner = argmin_i T_i .
+```
+
+With a constant effective drift `v_i` this is the **Wald / Inverse-Gaussian** law for `T_i`:
+
+```
+T_i ~ IG(μ_i = L/v_i ,  λ_i = L²/(2 D_i)) ,      strictly positive, positively skewed.
+```
+
+Everything else in the theory is **what sets `v_i(t)` and `D_i`** — how much speed a horse can
+produce (`v_c`), how the finite reserve is spent over the trip (`W′`), how the arena and rivals
+perturb it (geometry, traffic, draft), how it accelerates off the gate (`a`), and what is
+irreducibly random (`D`). The non-interacting surrogate (independent `T_i`, win by `argmin`) is the
+**free / Plackett-Luce theory**; the interaction couplings (§III.4) are what bend it.
+
+**[VALIDATED — the law is the right class.]** Two descriptive population studies this session
+confirmed the diffusion first-passage mechanism:
+
+- **`CV(T) ∝ 1/√L`** (#33, journal 0029): from `λ = L²/2D`, `Var(T) = μ³/λ = 2D·L/v³ ∝ L`, so the
+  coefficient of variation falls as `1/√L`. Fitted slope **−0.51 [95% CI −0.84, −0.17]** on turf
+  buckets — the −0.5 prediction sits inside every CI; longer races *are* intrinsically more
+  predictable, **parameter-free**. `D` is constant in `L` on turf (no `D(L)` floor needed there);
+  AWT carries a real distance-independent variance floor (larger `D`, the baked `awt_diff_mult=2`).
+- **Diffusive-sufficient** (#36, journal 0032): the finishing-residual tail is *not* materially
+  heavier than a body-anchored diffusion predicts — no separable jump/incident component
+  (BulkIG/Gamma p99 coverage ≈1.0). The fitted *shape* is marginally closer to Gamma/LogNormal than
+  strict IG, but both are diffusive positively-skewed single-component laws; since the order statistic
+  is moment- and tail-driven, IG carries it adequately. **The diffusion mechanism is the right class**
+  — swapping the first-passage law for Birnbaum–Saunders/Gamma is not warranted (it trades the physical
+  derivation for a marginal body-fit gain with no order-statistic benefit). Racing luck enters as a
+  per-horse `D_i` trait, not a population jump law.
+
+### III.2 The plant — the first-principles equation of motion under bang–CP–bang control [VALIDATED, `0047`]
+
+The drift `v_i(t)` is **the solution of a real equation of motion**, not a fitted shape. This is the
+generative core: a power-balance EOM, a critical-power energy budget, and the Pontryagin
+optimal-control policy that solves the minimum-time problem for this class. **Every parameter is a
+physical constant with units and bounds (PHILOSOPHY §2); the velocity path is the ODE solution; the
+phases are the optimal-control arcs, not fitted phases.**
+
+**(i) The equation of motion (Newton, power-balance form).** For mass `m`, mechanical power `η·P(t)`,
+speed `v`:
+
+```
+m · v · dv/dt = η·P(t)  −  ½ρ_air·C_dA·v³  −  C_rr·m·g·v  −  F_geom·v       (propulsive − aero − ground − bend)
+⇔  m · dv/dt  = η·P/v  −  ½ρ·C_dA·v²  −  C_rr·m·g  −  F_geom .
+```
+
+The **cruise velocity `v_c` is the ROOT** of the force balance `η·CP = ½ρ·C_dA·v_c³ + C_rr·m·g·v_c`
+(unique positive root of a monotone cubic) — a *derived* quantity, NOT a fitted number; CP↔`v_c` is
+an exact bijection.
+
+**(ii) The critical-power energy law.** `P ≤ P_max`; the reserve obeys
+`dW′/dt = −(P−CP)⁺ + (CP−P)⁺/τ·(1−W′/W′_0)`, `W′ ≥ 0` (hard-clamped). Above CP the tank drains;
+below CP it refills (in-race recovery is negligible — `0048`, §IV).
+
+**(iii) The bang–CP–bang optimal policy generates the phases** (the Pontryagin solution for this
+class — they are not assumed, they fall out):
+
+- **RAMP** — `P=P_max` from a gun lunge (`v₀≈4 m/s`) until `v` reaches the cruise root `v_c`. An ODE
+  transient governed by `P_max/m` vs drag — **this is the physically-correct replacement for the old
+  fitted opening ratio `a`.** It fixes the opening-section shape by mechanism (R²≈0→0.77, `0047`).
+- **CRUISE** — `P=CP`, `v` held at `v_c` (the singular arc; `v_c` is a stable equilibrium).
+- **KICK** — a terminal `P=P_max` burn started at the unique distance that empties `W′` exactly at
+  the line (full extension); if ramp+cruise already empty the tank, no kick and the close fades.
+
+**(iv) The physical constants — units, bounds, inferred [VALIDATED equine-plausible, `0047`].**
+`g=9.81`; `ρ_air=1.20 kg/m³`; `η=0.25` (metabolic→mechanical efficiency, Minetti/Taylor);
+`C_rr≈0.040` on good turf (going→surcharge map); `C_dA≈1.10 m²` at the 500 kg reference, frontal
+area `A∝m^(2/3)`; **mass `m` is KNOWN** (declared + actual weight, ≈565 kg median ST — never
+fitted). Per run, `(CP↔v_c, W′_0, P_max)` are inferred by **physically-constrained inversion** (MAP
+within physical bounds, NOT a regression). The inferred medians land squarely in the equine
+literature: `v_c≈17.2–17.4 m/s`, **`CP≈53–54 W/kg`** (gallop VO₂≈47 W/kg gross), `W′_0≈225–246 kJ`,
+`P_max/CP≈1.85–2.18`. These are **measurements, not fits** — the no-epicycles standard met.
+
+**(v) Other physics on the plant.** **Allometric mass** — `v_c ∝ m^(b−1)` from `P_c=κ·m^b`,
+exponent `b≈1.1` [VALIDATED, ST]. **Surface mechanics** — going → `C_rr` surcharge / energy return;
+AWT is more diffusive (a surface-dependent `D`) and kickback-floored. **Bend ground-loss** `F_geom`
+is off on the straight until per-venue geometry is wired.
+
+The reserve `W′` was previously carried as a *distance* — `W′ = Σ_k(v_k−v_c)⁺ t_k`, drift boost
+`(1+W′/L)` — and that distance form is [VALIDATED] sufficient for the win surrogate (`0035`); the EOM
+core now carries `W′` in **Joules** with explicit CP threshold, which is the proper conserved
+quantity and what the dedicated-surface identification (§IV) measures.
+
+> **The EOM matches the heuristic on aggregate accuracy while being pure physics** (`0047`: ST RMSE
+> 0.668 vs heuristic 0.673; HV 0.555 vs 0.521), removes the level bias and opening defect by
+> mechanism, and recovers interpretable physical constants. The remaining residual is the closing
+> fade-hump = the missing field/pace coupling (§III.4), not a form bug. This is the substrate the
+> rest of the physics adds onto.
+
+### III.3 The phase structure of the trip — the temporal scaffold
+
+The homogeneous Wald assigns one drift and one diffusion to a trip that is really **three dynamically
+distinct phases** [VALIDATED that resolving them pays — the `a` latent, #41]. Resolving the phases is a
+measurement upgrade with no new mechanism — and it is *precisely* the structure the dense profile
+surface (§IV) exposes that the win bit cannot.
+
+- **Phase 1 — the start transient (gate → settled).** From rest, acceleration-limited; *not* the
+  steady-state first-passage. It enters the order statistic as a **random initial condition**
+  `T_i = T_0,i + T_main,i`, with a per-horse **mean** (gate speed / break quality → drift) and
+  **variance** (gate temperament → `D`). **This is where the acceleration latent `a` lives** — the
+  opening-split ramp `a = v_1/v_cruise` (#41). The homogeneous law has *no representation* of this
+  phase, which is exactly why `a` is invisible to win but identifiable from the profile, and why it
+  pays most in short trips (the start is a larger fraction of a sprint). `a` is the **capacity** part
+  of the start; whether the jockey *chooses* to use it (gun vs settle) is the **policy** part (§III.4).
+- **Phase 2 — the cruise (mid-race).** Tactical: the §III.4 pace duel and lateral navigation. *Least*
+  about raw ability, *most* about control — which is why the early/mid sectionals are the **noisiest**
+  `v_c` channel.
+- **Phase 3 — the closing (final ≈400 m).** `W′` empties, every horse maximally extended, nobody
+  holding back — the **least tactically-contaminated** read of raw capacity. The finishing sectional
+  (pace- and going-adjusted) is therefore the **highest-precision `v_c`+`W′` channel** — the temporal
+  analogue of "give each instrument its own precision" (give each *phase* its own precision). *(NB the
+  raw finishing-sectional channel died as collinear against win, #32/#37 — but as a generative phase
+  shape it is real; it is identifiable from the profile, not from outcomes.)*
+
+**Control is intertemporal — the coupling runs across phases.** `W′` spent on an early forward
+position (a start/cruise choice) is reserve missing in the closing kick. The jockey's policy
+`π_i(t)` is **phase-indexed**: break effort + initial slot (Phase 1) sets the lateral boundary
+condition for the whole crossing game; positioning/path/cover (Phase 2); and kick-timing — an
+optimal-**stopping** problem (Phase 3). Fade-resistance, positional-fade and kick-timing are facets
+of one intertemporal `W′`-deployment policy resolved by phase; their shared home is `W′`, and the
+phase a trait reads from tells you its sign. The generative model must carry this temporal coupling,
+which a single homogeneous drift cannot.
+
+**Field-size / EVT corollary** [VALIDATED retrodiction]. The winner is the **left-tail extreme** of
+`N` finishing-time draws, so per-horse variance `D` has **more leverage the larger `N` is**: a
+high-`D` horse's fat left tail is worth more in a 14-runner ST field than a 6-runner HV one. This
+retro-explains the baked **draw→`D` converting ST-only** (`DRAW_VAR_GAIN`): ST runs the big fields, HV
+the small ones — a clean theory-predicts-data check. **Prioritisation rule:** pursue every variance
+lever (`D_i` from figure-spread, gate-temperament, distance floors) on ST big fields first.
+
+### III.4 The interaction couplings — the competition game and the geometry × control game
+
+A purely additive model **cannot** represent the many-body terms; these are products across
+dimensions, the reason the generative model (and ultimately the sim) exists. They are the couplings
+that bend the free Plackett-Luce theory into an **interacting Plackett-Luce**. *(This subsection
+preserves the full §3b/§3c development — re-framed as the interaction structure of the generator.)*
+
+**(a) The longitudinal competition game — a mean-field game of pace.** Fix a trip `L`. Each jockey
+chooses an effort/pace policy `π_i(t)` (a velocity / reserve-depletion profile) to minimise own
+finishing time `T_i = ∫ ds/v_i`, subject to the budget `∫_{v_i>v_c}(v_i−v_{c,i})dt ≤ W′_i/k` and the
+position dynamics. State = `(x_i, W′_i^rem)` + the field's positions; payoff = `−T_i` (a tournament —
+only *order* pays); coupling = drag/draft + traffic make `v_i` depend on `{x_j(t)}`. The optimal `π_i`
+is a **best response to `{π_j}`** → a **Nash equilibrium**; in the large-field limit the rivals enter
+only through the aggregate **pace**, so it is a **mean-field game** (a fixed point in pace-policy
+space). **Competition is relational, not scalar:** a front-runner among closers steals an uncontested
+lead and arrives with reserve unspent; the *same* horse among front-runners burns `W′` in a contested
+duel and fades. Identical horse, different equilibrium — a quantity a scalar rating cannot represent.
+The correct generative object is the **interacting Plackett-Luce** (PL = the free theory; the
+couplings bend per-horse utilities by *who else is in the race*). Above the tactical game sits the
+**handicapper as a Stackelberg leader**, assigning weight to *compress ability* and engineer a blanket
+finish — which is why win probabilities are tight and the rating channel efficient.
+
+**[VALIDATED — the field/draft coupling, built first-principles, `0048`/`0049`].** On the EOM core
+(§III.2) the field coupling is not a fitted shadow but **two physical responses to the OBSERVED field
+pace** (a per-section public boundary condition, leak-free for path reconstruction):
+
+- **(i) Longitudinal slipstream / draft** — a horse within the field sits in a partial wake ⇒ reduced
+  effective `C_dA`: the `½ρ·C_dA·v²·(1−draft_i)` aero term with `DRAFT_FRAC=0.30` (a drafting-
+  aerodynamics anchor, scaled by longitudinal cover fraction; the leader gets clear air = 0). NOT a
+  fit.
+- **(ii) Competitive pace-matching** — the horse targets the field pace where it runs hot, bounded by
+  `P_max` and `W′≥0`, drawing down reserve at `(P_match−CP)⁺`; it **reduces to the isolated
+  bang–CP–bang when `v_field ≤ v_c`** (the required limit, unit-tested).
+
+**The decisive cross-surface test (PHILOSOPHY §4) validated this.** `0048` found CP-from-cruise sits
+**+1.4 m/s ABOVE** CP-from-Hill (both venues, structured, not noise) — a clean falsification:
+the settled cruise is *not* aerobic-limited; horses cruise above CP on the field's pace. `0049` then
+built the coupling and showed de-confounding the cruise for draft **closes 41% (ST) / 47% (HV) of
+that exact gap with no fitted constant**, flattens the closing fade-hump (closing mean_res
++0.80→+0.21 ST) and the fast-pace residual, and the de-confounded ability level **RE-EMERGES** as
+held-out collateral (corr −0.02→+0.33 ST). The disagreement *named* the missing physics; the physics
+then *closed* it — the Newtonian standard met. **The per-horse constants stay FIXED; the coupling
+perturbs DEPLOYMENT, not the constants.**
+
+The earlier production-path version of this — the `POS_FADE`/`POSFADE_W_GAIN` mean-field shadow
+(front horses win ~1pp *less* than the non-interacting physics predicts, closers ~1pp *more*,
+`t≈−7` both venues) — is the *acausal* first-order shadow of the same equilibrium, now superseded by
+the physical coupling above on the causal core.
+
+**[HYPOTHESIZED — what remains].** The coupling built in `0049` is the *longitudinal* draft (cover
+fraction from running-position rank) conditioned on the *observed* field pace. Two layers are open:
+(i) the **full positional draft** — who is *laterally* behind whom — needs the `y_i(t)` coordinate
+and is CV-only (§III.4b, Stage 3); (ii) the **mean-field equilibrium** pace (solving the pace fixed
+point so the model is predictive *without* the contemporaneous field pace) is the next structural
+step before this feeds a leak-free WIN predictor (`0049` §5). The relational first moment (fade
+scaling with rival front-runner count, lone-leader bonus, pairwise matchups) lives here too.
+
+**(b) The lateral geometry × control game — draw as a boundary condition.** The same equilibrium runs
+**across-track**. Each horse-jockey is a 2-D agent with state `s_i = (x_i, y_i, W′_i, v_i)` (`y_i` =
+lateral offset from the inner rail ∈ `[0, w(course)]`), controls `(u_i = effort above ceiling, ẏ_i =
+steering)`, on the real geometry (`TrackGeometry`: venue × surface × movable Course rail, the bend map,
+curvature `κ(d)`). The lateral channel is where **draw** lives: the start fixes `y_i(0) = y_0(Dr_i)`;
+the bend ground-loss term `χ·𝟙[bend]·κ(x)·v²·y_i` penalises lateral offset, so a wide horse must either
+**cross** (spend `ẏ<0` and a `W′` tax early, risking being shuffled back) or **stay wide** (concede the
+arc, keep clear air and reserve). The cost is whichever horn the equilibrium forces — **not** a fixed
+`DRAW_GAIN·(Dr−1)` arc penalty. The lateral exclusion constraint (TASEP-like single-file occupancy: a
+horse can take the rail only if a gap opens) makes the large-field limit a **congestion mean-field
+game** — the cleanest formal home for "a wide draw costs more in a crowded field." Draw's realised cost
+is the equilibrium value-gap `ΔV_i = f(Dr; κ, course, N, {θ_j}, θ_i)`, a *functional* of curvature, the
+field's lateral congestion, **and the style-composition of the neighbours** — identical draw, opposite
+cost, decided by who is inside.
+
+**[VALIDATED zeroth moments]:** `DRAW_GAIN_BY_VENUE` (geometric, HV ~2.7× ST — bend-dominated; zeroed
+on the ST straight chute), per-surface `DRAW_GAIN_AWT`, and the one converting *interaction* shadow
+`DRAW_FS_GAIN` (crowding × draw, HV-only — collision physics dominates the tightest track). These are
+**interim stopgaps** for the first one or two moments of the game. **[HYPOTHESIZED]:** the
+policy-conditioned correction — and **the binding constraint is that we have no lateral coordinate**:
+no panel stores `y_i(t)`; the only across-track datum is the *starting* `Dr`. The lateral path and
+ground-saved are **latent**, inferred from the longitudinal rank trajectory × draw × geometry — or, the
+real unlock, **measured by CV** (§VI Stage 3; the drone-video path-extraction PoC has already resolved
+the rail-saver vs wide-and-clear split end-to-end from pixels, #41/0041).
+
+### III.5 From paths to prices — the generative output
+
+`θ_i` + conditions → the per-runner path `(x_long, y_lat, v, t)` → the joint distribution over
+finishing **orders** (Monte-Carlo of the many-body process, or the `argmin` surrogate for the
+non-interacting case). From the joint order distribution **every pool price** follows by construction:
+
+```
+win  = P(i finishes 1st)                          place  = P(i finishes top-k)
+quinella = P({i,j} fill the first two, unordered) forecast = P(i 1st, j 2nd, ordered)
+trifecta = P(i,j,k in order) ,  …                 — all set / ordered probabilities of one joint law.
+```
+
+This is the lever that makes the reformulation worth it: a single generative law priced against the
+**entire pool book**, where the exotics' set/ordered structure constrains the *interaction* terms the
+win marginal is blind to (a forecast price contains the pairwise ordering the win bit integrates out).
+**[HYPOTHESIZED — the pool-book payoff]:** that the exotic pools, even as softer yardsticks, add
+identifying and gating signal beyond win/place is the wager of this architecture (§V).
 
 ---
 
-## 5. Where the model sits (scorecard)
+## IV. The path-reconstruction objective — identify mechanism from the dense surface
 
-| dimension | in the model | gap |
+**The loss that identifies `θ` is path-reconstruction, not win.** Fit `θ_i` + structural params +
+population hyperparameters by **maximising the likelihood of the observed measurement surface** under
+the generative model of §III. The surface is dense where the win bit is coarse:
+
+```
+L_path(θ, Φ) = Σ_runs  log p( observed surface | generative path(θ_i, conditions; Φ) )
+```
+
+- **Now: the sectional velocity profile.** The observation model is a log-velocity Gaussian (≡
+  log-normal section times, the production noise family). The generative path produces the expected
+  K-section profile; `(v_c, W′_0, a)` are recovered per run as a deterministic transform of that run's
+  *own public sectionals* (no outcome, no other horse — same leak status as the existing recoveries),
+  and win-relevance uses strictly-prior trailing means. **[VALIDATED, #41]:** this fits **22–30% better
+  held-out** than the scalar heuristic AND surfaces `a` as a new orthogonal win-relevant latent.
+- **Next: lateral path** (via CV — `y_i(t)`, ground-saved; §VI Stage 3) → the §III.4(b) control latents.
+- **Next: finishing margins** — the margin surface constrains `W′` deployment and relative ability more
+  tightly than the rank does (§VI Stage 2).
+
+**Why this resolves what win cannot.** The dense surface has many degrees of freedom per run (K
+section velocities, a margin, eventually a lateral path) versus the win bit's *one* per race. Mechanisms
+that are **collinear or sub-noise against the win outcome become identified against the surface** — the
+decisive demonstration is `a`: dead as the win-fit gate-break trait (#37), alive as a
+profile-recovered latent with `t=+9.98` (`0040`). **Identification is honest** — the recovered
+constant is the maximum-likelihood explanation of that horse's own observed running, not a quantity
+tuned to make it win.
+
+**Dedicated surface + cross-surface consistency (PHILOSOPHY §4) [VALIDATED, `0048`].** A single
+whole-path NLS *under-identifies* coupled constants (many `(CP, W′_0, P_max)` combinations fit the
+aggregate path). So each constant is pinned on the **surface where it dominates**, with a dedicated
+estimator, and **cross-checked measured several independent ways** — the same constant must AGREE:
+
+| constant | dedicated surface(s) | identifiability (`0048`) |
 |---|---|---|
-| physics — kinematics | `v_c`/`W′` drift-diffusion (Wald) ✓ | — |
-| physics — geometry | bend ground-loss in the drift ✓ | — |
-| physics — surface | AWT = more diffusive ✓ | turf↔AWT ability transfer |
-| **physiology — ability** | recency form + sectional + rating | **not opponent-adjusted** |
-| physiology — condition/health | ✗ | fitness cycle, days-since-run, trials, vet |
-| physiology — body/mass | tested; ~null on win | real but small lever |
-| strategy — pace/policy | infrastructure present, gain off | game-theoretic equilibrium |
-| interaction | mean-field draw only; ABM reserved | the many-body coupling |
-| **environment** | going partly | **wind / track bias / course bias unused** |
-| **competition / handicap** | rating-conditioned mean | **relative / opponent structure** |
-| market / information | the fit target | intent signals (gear/vet/trials) unused |
-| stochasticity | diffusion noise ✓ | the start + incidents not explicit |
+| **CP / `v_c`** | route cruise force-balance root; distance–time (Hill) slope | **Hill CV is the robust anchor** (R²=0.994, slope SE 0.36 m/s) and re-emerges; cruise reads +1.4 m/s too hot |
+| **`P_max`** | opening gate transient; sprint ceiling | ranks horses but the LEVELS alias 2× (peak-instantaneous vs sustained) → split, or pin from CV |
+| **`W′_0`** | Hill intercept `D′`; reserve spent above CP | disagrees ~2×; the Hill intercept (≈220 kJ) is the cleaner anchor until CP is fixed |
+| **`τ`** | sit-and-kick closers | **unidentifiable in-race** (→0): in-race recovery is negligible (a valid negative) |
+| **`C_dA`** | sprint ceiling; lead-vs-draft | aliased with `P_max`; the draft delta is lateral → deferred to CV |
 
-The two highest-leverage, currently-weakest cells: **opponent-adjusted ability**
-(§2.6 — physiology measured through the competition lens) and **environment**
-(§2.5 — exogenous signal we currently discard).
+A **disagreement is a falsification that names missing physics, never a number to fudge** (PHILOSOPHY
+§4): the CP cruise-vs-Hill +1.4 m/s gap diagnosed the field coupling, which `0049` then confirmed by
+closing it. The trustworthy anchor for the causal build is the **Hill critical velocity**; `P_max`,
+`W′_0`, `C_dA` await CV or a fixed CP.
 
----
-
-## 6. The research programme (sketch)
-
-1. **Measure the latents better** — opponent-adjusted / relative ability (a coherent
-   rating); sharper energetics from sectionals; then trajectory if it pays.
-2. **Add missing mechanisms to the production (diffusion) model** — one term at a time,
-   each with a physical derivation and an OOS %-market + ECE check.
-3. **Let the agent-based sim carry the couplings** — traffic/blocking (exclusion
-   processes), drafting (active matter), pace policy (mean-field games) — the
-   "interacting Plackett-Luce" with PL as the free theory. Reserved for place/exotics
-   and the interaction residual the mean-field surrogate cannot reach.
-4. **Bring in exogenous environment** — wind, track bias, course geometry.
-
-Parsimony gates all of it: a term must be **physics/ game-theory-derivable AND move the
-needle**. First-principles grounding lets us rely less on statistics — a derived
-mechanism is a priori correct — but it still has to earn its place.
+> **Historical note (superseded framing).** An intermediate design (§V) treated path-identification as
+> producing latents whose *coupling* into a win model then had to be **gate-calibrated** on the
+> market, because the honest posterior "under-discriminates for win" (§I.2). On the EOM core there is
+> **no free coupling gain to calibrate** — the deployment is the optimal-control solution and the
+> field coupling is a physical response (`0047`–`0049`). The under-discrimination finding stands as
+> *why win is too coarse to identify* (PHILOSOPHY §3); it no longer implies a gate-calibration step.
 
 ---
 
-## Appendix: lessons from the deprecated agent-based sims
+## V. Validation — re-emergence first, the market LAST
 
-The project began as a literal **agent-based model** — interacting horses simulated step-by-step
-on the real geometry. Two implementations existed (`hkjc.model.traffic` / `traffic_jax`, the
-kinematic car-following sim; `hkjc.model.eom` / `dynamics`, the power-balance equation of motion).
-**Both were deprecated from the codebase in 2026-06** once the production win model (the `wald`
-drift-diffusion first-passage law) plus per-venue mean-field calibration decisively beat them. The
-physics they encoded is preserved here so the lessons are not lost with the code.
+The validation hierarchy is **inverted from the old model** (PHILOSOPHY §6). The PRIMARY validation
+is **path-fit + cross-surface consistency (§IV) + re-emergence**; the **market is the LAST
+yardstick, parked during the rebuild** — the final check that the causal model surpasses the deleted
+acausal model's recorded benchmark, never the fitting target.
 
-**What they modelled (still the correct picture of the mechanism):**
-- **Power-balance EOM (the "plant").** Each horse is a body of mass `m` driven by metabolic power
-  `P(t)` against real resistances, integrated by Newton's law: `m·dv/dt = P/v − F_resist`, with
-  `F_resist = K_LOCO·m·g` (locomotion) `+ ½ρ·cda·v²·(1−draft)` (aero drag, cut by slipstreaming a
-  leader) `+` bend ground-loss. A finite anaerobic reserve `W′` (joules) depletes above the aerobic
-  ceiling `P_c` and forces the late-race fade. This is *why* `v_c = P_c/(K_LOCO·m·g)` falls with
-  mass — and it yields the **allometric mass law** `v_c ∝ m^(b−1)` (from `p_c = κ·m^b`) that DID
-  survive: it is now applied analytically on the `wald` path (the one converting idea the EOM gave).
-- **Kinematic interaction sim.** Car-following (a horse cannot pass through one ahead in its lateral
-  band — it is speed-capped/blocked), gap-acceptance lane changes, and bend ground-loss from the
-  draw-derived lateral offset. Draw bias and trip-trouble **emerge** from geometry + traffic rather
-  than being fitted.
+### V.1 Re-emergence — the primary validation (`docs/CAUSAL_MODEL.md` §4)
 
-**Why the *code* was deprecated (an engineering verdict, NOT a verdict on the axis):**
-- As a first-attempt *implementation*, the sims were low-leverage for WIN. A non-interacting
-  first-passage model (`wald`) plus per-venue mean-field terms matches or beats them at ~35× the
-  speed; at the calibrated baseline the kinematic sim **lost to `wald` at HV by −4.1pp** (its
-  uncalibrated emergent draw is worse than the tuned per-venue `DRAW_GAIN`). So the hand-tuned
-  car-following loop is retired — but the *physics it pointed at remains the right picture*, and it
-  did reproduce the qualitative draw/trip characteristics that the mean-field terms only approximate.
+The model is built on the causes only; it must **regenerate the stripped meta-signals as predicted
+consequences** on held-out data (PHILOSOPHY §5). Ability → form / figure / collateral; control →
+jockey-SR; prep → trainer-hot. **[VALIDATED, first re-emergence, `0049`]:** the field-coupled,
+de-confounded ability level predicts a horse's held-out ability (corr +0.33 ST / +0.40 HV) — the
+collateral-form mechanism re-derived from physics, with collateral never an input. A failure to
+re-emerge is a *pointer to a missing mechanism*, routed to a specific staging entry in
+`RESEARCH_PROGRAM`, not a defeat (PHILOSOPHY §5).
 
-**Draw and the interaction axis are DEFERRED, not rejected — the key open theory.** Draw is not a
-static geometric covariate: its effect is **deeply coupled to the control dimension** (the jockey's
-policy — how the gate is used to take up position, when to commit, how the trip is navigated). A
-regression / mean-field term (`DRAW_GAIN`, `DRAW_FS_GAIN`) can only capture the *first-order geometric
-shadow* of a fundamentally **geometry × control** phenomenon, which is why the simplistic relational
-treatments (front-runner fade ∝ rival front-runner count, tested four ways) do not yet convert — not
-because the mechanism is absent, but because we have not yet modelled geometry and control jointly.
-The proper treatment is a differential / mean-field **game of jockeys navigating the geometry** (the
-competition game of §3b), with draw as a boundary condition on that game. Until we have confidently
-modelled geometry + control together, treat the baked draw terms as **interim stopgaps** and keep the
-axis open. This is the single most promising piece of deep theory-building left.
+### V.2 The market — the LAST yardstick (parked during the rebuild)
 
-**Substrate when the axis is taken up** (also for place/exotic pricing, where whole-field ordering
-matters more than the knife-edge for first): an **interacting Plackett-Luce** (PL as the free theory)
-or condensed-matter machinery — exclusion processes (TASEP) for blocking, active-matter for drafting,
-mean-field games for the jockey-control policy — built jointly with the geometry, not a hand-tuned
-loop. Rebuild against the conversion test, and remember the methodology lesson: confirm every
-candidate with a **paired fixed-seed full-scale** backtest (the subsampled quick_eval over-stated the
-one surviving interim term ~4×).
+The market is the **final** measure of goodness-of-fit (PHILOSOPHY §6, §8): **% of market + ECE**,
+benchmarked on an **efficiency-weighted pool subset** [HYPOTHESIZED design] — the **win and place**
+sharp anchors, **one ordering pool** (forecast) and **one set pool** (quinella), each de-vigged;
+exotics softer so down-weighted. Confirmed at full scale with a **paired fixed-seed backtest**
+(`PYTHONHASHSEED=0`, both venues); `quick_eval` over-states ~4× so is direction-only. During the
+rebuild this is **measured to bound the accepted GoF fall** (PHILOSOPHY §6; `docs/CAUSAL_MODEL.md`
+§5.3), not optimized — optimizing it re-creates gate-calibrated couplings that masquerade as
+mechanism (the ANTI-REGRESSION rule, PHILOSOPHY forbidden-practice §5).
+
+### V.3 Why win is too coarse to identify — the under-discrimination finding (`0039`)
+
+This is the empirical root of "fit the dense surface, not the outcome" (PHILOSOPHY §3). Collapsing
+the identified ability channels into an *honest* precision posterior and coupling it at honest,
+Bayesian-shrunk strength **craters −35pp ST / −32pp HV** (§I.2): the win is a tail event where the
+honest posterior under-discriminates, because a channel predicts *winning* more strongly than it
+predicts a horse's own next measurement. The legacy additive gains `g_k` were, in retrospect,
+**win-calibrated couplings ~7× the honest slope** — not honest measurements. An intermediate design
+read this as a license to *gate-calibrate the coupling* of each path-identified latent on the
+market; that is **superseded** (§IV historical note): `0042`/`0043` showed the win AND pool-book
+gates *reject* a strongly path-identified latent (`a`) as a coupling, and the EOM core has no free
+coupling gain to calibrate. The lesson that survives is the *negative* one: **the win bit cannot
+identify mechanism — so identify from the dense surface and validate by re-emergence, with the
+market last.**
+
+---
+
+## VI. The staged research programme — see `docs/RESEARCH_PROGRAM.md`
+
+The staged roadmap and the falsifiable per-latent / per-surface research questions live in
+**`docs/RESEARCH_PROGRAM.md`** (owned there; not restated here). In one line: evolutionary, not
+big-bang — the causal model is **`hkjc.model`**, the ONLY model (the acausal additive model was
+DELETED, not frozen alongside; PHILOSOPHY §9), leak-free mechanically on every path, staged **Stage 1** physiology
+causes from the longitudinal path + FORM re-emergence → **Stage 2** trainer-prep + margins + the
+field-pace equilibrium → **Stage 3** CV lateral → jockey-control + the geometry × control game.
+Every mechanism is **physics/game-theory-derivable** (PHILOSOPHY §2) and validated **re-emergence
+first, the market last** (§V; PHILOSOPHY §6). The concrete first build is the pure-mechanism model of
+`docs/CAUSAL_MODEL.md` §6.
+
+---
+
+## Appendix A — what the additive-statistical approach ruled out (history worth keeping)
+
+Run leak-free walk-forward, the **flat fundamentals** — draw, carried weight, official rating, *crude*
+recent form, as static covariates — **add little or nothing** over the closing win line: the market
+prices the *main effects*. Gains came only from **measuring a latent better** (recency-weighted form ≫
+career mean — the single biggest lever) and **adding a missing mechanism** (bend ground-loss in the
+drift). The mean-field "saturation" was a saturation of *additive terms on the existing race panel* —
+every per-horse residual collinear with the priced ability channel. The break past it came from **new
+data** the market prices but the model never saw (barrier trials, training gallops) and **structural /
+relational signals** (opponent-adjusted collateral form — a scalar Elo had failed; the career-landmark
+peak-gap). All mechanism/measurement upgrades, never re-weightings. **The reformulation generalises
+this lesson:** if the win panel is exhausted of *identifiable* mechanism, change the **object of the
+likelihood** — fit the dense path that *can* identify what win cannot.
+
+Refuted as a *simple term* (not as an axis — "a dead first attempt ≠ a dead axis"): carried-weight,
+rest-days, weight-trajectory, physiology-from-race-history, sustained-speed trait, rating
+velocity/acceleration. Deferred (real mechanism, wrong tool): the draw / pace / competition
+**interaction** axis — geometry × control coupled, revisit as a joint theory build, not a scalar probe.
+
+## Appendix B — the agent-based-sim lineage (the EOM, now revived as the core)
+
+The project began as a literal **agent-based model** — interacting horses simulated step-by-step on the
+real geometry. Two early implementations (`hkjc.model.traffic`/`traffic_jax`, the kinematic
+car-following sim; `hkjc.model.eom`, an early power-balance EOM) were deprecated from the codebase in
+2026-06 once the production `wald` drift-diffusion law + per-venue mean-field calibration beat them on
+the *win surrogate* (the kinematic sim lost to `wald` at HV by −4.1pp — an engineering verdict on a
+hand-tuned loop, NOT a verdict on the interaction axis). **The physics they encoded was not retired —
+it is now the live generative core:**
+
+- **The power-balance EOM was REVIVED as the first-principles generative core** (§III.2,
+  `hkjc.model.dynamics`, `0047`). The same `m·dv/dt = P/v − F_resist` plant, now under the
+  bang–CP–bang optimal-control policy with inferred physical constants — it removes the level bias and
+  the opening-ramp defect by mechanism and recovers equine-plausible CP/W′_0/P_max. The allometric
+  mass law `v_c ∝ m^(b−1)` is part of it.
+- **The kinematic interaction sim** (car-following, gap-acceptance lane changes, bend ground-loss from
+  the draw-derived lateral offset; draw bias and trip-trouble *emerged* from geometry + traffic) is the
+  lineage of the **geometry × control game** (§III.4b), to be rebuilt jointly with the CV lateral paths
+  (Stage 3).
+
+**The interaction axis is built, not deferred-and-dead, and progressing.** The *longitudinal*
+mean-field pace/draft coupling is now built and validated first-principles on the EOM core
+(§III.4a, `0049`). The *lateral* geometry × control game (§III.4b) — draw as a boundary condition on
+the jockey's control policy, the interacting-Plackett-Luce on condensed-matter machinery (TASEP
+exclusion for blocking, active-matter for drafting, mean-field games for the policy) — remains the
+open layer, blocked on the CV lateral coordinate (Stage 3). Build every candidate as a *law*, not a
+scalar probe (PHILOSOPHY §2), and confirm any market read with a paired fixed-seed full-scale backtest.

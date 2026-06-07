@@ -1,0 +1,65 @@
+\documentclass[11pt,oneside]{report}
+\input{preamble}
+
+\title{\Huge\bfseries A Physics-Grounded Model of\\[2mm] Hong Kong Horse-Racing Win Probability\\[6mm]
+  \Large A First-Principles Treatment of the Generative Law,\\ the Latent Energetics, and the Calibration Programme}
+\author{The \texttt{hkjc-tools} modelling stack\\[2mm]\normalsize Internal technical primer}
+\date{June 2026}
+
+\begin{document}
+
+\pagenumbering{roman}
+\maketitle
+
+\begin{abstract}
+\noindent This primer is a complete, self-contained account of the production win-probability
+model for Hong Kong Jockey Club (HKJC) thoroughbred racing as it stands in mid-2026. The model
+is not a regression on engineered covariates; it is a \emph{generative} order-statistic model in
+which each horse's finishing time is the first-passage time of a drift--diffusion process, the
+winner is the runner whose first passage is earliest, and every input couples to one of three
+mechanistically-interpretable parameters of that process: the aerobic \emph{critical velocity}
+$\vc$, the finite \emph{anaerobic reserve} $\Wp$, and the \emph{diffusion} $\Ddiff$ governing
+race-to-race variance. We develop the model from the generative spine downward: the
+Inverse-Gaussian (Wald) first-passage law and its closed-form Plackett--Luce surrogate
+(Chapter~\ref{ch:gen}); the inverse problem of recovering $(\vc,\Wp)$ from sectional split times
+(Chapter~\ref{ch:energetics}); the hierarchical/empirical-Bayes population that turns noisy
+per-run estimates into leak-free, partially-pooled, rating-conditioned per-horse abilities
+(Chapter~\ref{ch:pop}); the full leak-free feature layer --- recency-weighted form, jockey and
+trainer signals, running-style and positional traits, velocity speed-figures, barrier-trial
+debut form, trajectory-shape traits, and rating-trajectory process features
+(Chapter~\ref{ch:features}); the coherent precision-fusion that folds heterogeneous velocity
+observations into a single $\vc$ posterior at each channel's own precision
+(Chapter~\ref{ch:fusion}); the relational opponent-adjusted Massey ``collateral-form'' rating
+that operationalises the competition axis (Chapter~\ref{ch:competition}); the geometry of the
+movable running rail and the bend ground-loss that draw imposes on both the drift and the
+diffusion (Chapter~\ref{ch:geometry}); and the assembled drift/reserve and the Monte-Carlo
+predict loop (Chapter~\ref{ch:assembly}). Chapter~\ref{ch:theory} sets out the theoretical
+frontier: the race as a mean-field differential game (the longitudinal pace game, the lateral
+geometry--control game, and the temporal phase structure of the trip). Chapter~\ref{ch:method}
+states the calibration philosophy and the paired fixed-seed conversion test that gates every
+change. Chapter~\ref{ch:state} reports the current calibration, the empirical results, and the
+open research queue. The throughline is a single discipline: \emph{fit the market} as a
+goodness-of-fit objective, regularised by physics and game theory so that every degree of
+freedom is a named mechanism rather than a free parameter.
+\end{abstract}
+
+\tableofcontents
+
+\cleardoublepage
+\pagenumbering{arabic}
+
+\input{ch1_intro}
+\input{ch2_generative}
+\input{ch3_energetics}
+\input{ch4_population}
+\input{ch5_features}
+\input{ch6_fusion}
+\input{ch7_competition}
+\input{ch8_geometry}
+\input{ch9_assembly}
+\input{ch10_theory}
+\input{ch11_method}
+\input{ch12_state}
+\input{appendix}
+
+\end{document}

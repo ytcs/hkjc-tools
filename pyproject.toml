@@ -41,6 +41,13 @@ vision = [
     "opencv-python>=4.10",
     "ultralytics>=8.3",
     "av>=12",
+    # OCR for the Aerial-Virtual-View saddlecloth-legend re-id (S0b). WINNER of the bake-off on
+    # OUR rendered legend (studies/cv_ocr_benchmark.py): RapidOCR (PP-OCRv5 det+rec
+    # on onnxruntime, no paddlepaddle, no torch; journal 0058). It read f85 100% incl. two-digit "10",
+    # 98% cross-frame validity, lowest CPU latency. easyocr (torch-heavy, dropped dark/thin glyphs:
+    # 50% on f85) and pytesseract (fails on the multi-colour render: 62% best-case, and the system
+    # tesseract ships no eng.traineddata here) were PRUNED to keep the group lean.
+    "rapidocr-onnxruntime>=1.3",
 ]
 
 [tool.pytest.ini_options]
@@ -57,4 +64,6 @@ ignore = ["E501"]   # long lines (mostly docstrings / GraphQL payloads) aren't w
 # Numerical / ML kernels use mathematical notation (X, N, P, W_obs, G, ...).
 "src/hkjc/model/harville_model.py" = ["N803", "N806"]
 "src/hkjc/model/conditional_logit.py" = ["N803", "N806"]
+"src/hkjc/model/generative.py" = ["N806"]   # L = first-passage barrier length (race trip)
 "tests/test_conditional_logit.py" = ["N806"]   # X = design matrix, mirrors the kernel
+"studies/*.py" = ["N803", "N806"]   # disposable scratch; physics notation (L = race length, ...)

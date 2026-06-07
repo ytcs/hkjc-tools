@@ -1,0 +1,78 @@
+\appendix
+
+\chapter{The baked calibration constants}
+\label{app:constants}
+
+Every value below lives in \code{hkjc.model.constants} as a mechanism-coupling gain set by the
+paired fixed-seed conversion test (Chapter~\ref{ch:method}), not a free regressor weight. Per-venue
+dictionaries resolve to the active value at predict time; per-surface values override the venue
+value where noted.
+
+\begin{longtable}{@{}p{0.27\textwidth}p{0.20\textwidth}p{0.45\textwidth}@{}}
+\toprule
+Constant & Value & Mechanism / knob \\
+\midrule
+\endhead
+\code{FORM\_HALF\_LIFE} & $2.0$ races & Recency half-life of exp-weighted relative-finish form; the single biggest lever ($+7.8$pp). $\vc$. \\
+\code{FORM\_GAIN\_BY\_VENUE} & ST $5.0$, HV $4.0$ & Form coupling; HV more weakly coupled (was over-weighted). $\vc$. \\
+\code{SHRINK\_MULT} & $0.5$ & Multiplier on the sectional-$\vc$ EB residual (it was over-trusted at $1.0$). $\vc$. \\
+\code{W\_PRIME\_GAIN} & $1.0$ & Amplifier on the per-horse reserve EB residual; reverted $2\to1$ once recency form absorbed the reserve signal. $\Wp$. \\
+\code{JOCKEY\_GAIN} & $6.0$ & Jockey trip/ability + information proxy. $\vc$. \\
+\code{DRAW\_GAIN\_BY\_VENUE} & ST $0.003$, HV $0.008$ & Bend ground-loss $\Leff = L(1+g(\mathrm{Dr}-1))$; HV bend-dominated wants $\sim\!2.7\times$ ST; zeroed on the straight chute. $\Leff$. \\
+\code{DRAW\_GAIN\_AWT} & $0.008$ & Per-surface draw (dirt rail bias stronger than turf); overrides venue. $\Leff$. \\
+\code{DRAW\_FS\_GAIN\_BY\_VENUE} & HV $0.25$, ST $0.0$ & Crowding $\times$ draw, clamped $\ge 0$; interim stopgap, HV-only ($+0.3$pp). $\Leff$. \\
+\code{DRAW\_VAR\_GAIN\_BY\_VENUE} & ST $0.5$, HV $0.0$ & Draw $\to$ diffusion $\Ddiff$ (trip variance); ST-only by the EVT field-size argument. $\Ddiff$. \\
+\code{ALLOMETRIC\_B\_BY\_VENUE} & ST $1.1$, HV $1.0$ & Allometric mass $\vc\propto m^{b-1}$; venue-invariant physiology, ST-only by leverage. $\vc$. \\
+\code{POS\_FADE\_GAIN} & $0.0$ (retired) & Positional fade on $\vc$ --- retired; moved to $\Wp$. \\
+\code{POSFADE\_W\_GAIN} & $-80.0$ & Front-runner reserve burn (negative); distance-aware via $\Wp/L$. $\Wp$. \\
+\code{FADE\_GAIN} & $0.0$ (retired) & Fade on $\vc$ --- retired; moved to $\Wp$. \\
+\code{FADE\_W\_GAIN} & $8.0$ & Late-speed-hold $\Rightarrow$ more reserve (positive). $\Wp$. \\
+\code{TRIAL\_GAIN\_BY\_VENUE} & ST $1.5$, HV $1.0$ & Additive barrier-trial debut figure; superseded by the fusion when active. $\vc$. \\
+\code{TRIAL\_PI\_RATIO\_BY\_VENUE} & ST $2.0$, HV $0.0$ & Coherent trial fusion precision ratio $\rho=\pi_{\text{trial}}/\pi_{\text{race}}$; no-op at $0$. $\vc$. \\
+\code{COLLAT\_GAIN\_BY\_VENUE} & ST $1.0$, HV $2.5$ & Relational Massey collateral-form coupling. $\vc$. \\
+\code{COLLAT\_CONSTRUCTION\_BY\_VENUE} & ST $\{3$ sweeps, hl $4$, band-par$\}$; HV $\{\}$ & Deepened collateral construction; ST $+1.3$pp. $\vc$. \\
+\code{PEAKGAP\_GAIN\_BY\_VENUE} & ST $-0.015$, HV $-0.025$ & Own-peak rating deficit (process feature). $\vc$. \\
+\code{TRN\_HOT\_GAIN\_BY\_VENUE} & ST $2.0$, HV $1.0$ & Trainer hot-streak / intent. $\vc$. \\
+\code{SPEED\_NOISE} & $0.12$ & Velocity-noise (log-normal time); ties the diffusion. $\Ddiff$. \\
+\code{awt\_diff\_mult} & $2.0$ & AWT is twice as diffusive as turf. $\Ddiff$. \\
+\code{diff\_coef} & $170$ & Base diffusion coefficient ($\mathrm{m^2/s}$). $\Ddiff$. \\
+\code{N\_SAMPLES} & $6000$ & Monte-Carlo samples per race. \\
+\bottomrule
+\end{longtable}
+
+\chapter{The data surface}
+\label{app:data}
+
+The model is built on several leak-free panels, each acquired and persisted by \code{hkjc.data} and
+keyed so the strictly-prior joins of Chapters~\ref{ch:pop}--\ref{ch:competition} are sound.
+
+\begin{itemize}
+  \item \textbf{Results (rich).} Per-runner finish position, finishing time, distance, going,
+        venue, course, draw, declared weight, official rating, jockey, trainer --- the spine of the
+        form, speed-figure, collateral, jockey/trainer, and geometry channels.
+  \item \textbf{Sectionals.} Per-section split times (final sections $\SI{400}{m}$, first the
+        remainder), the raw input to the energetics recovery (Chapter~\ref{ch:energetics}) and the
+        trajectory traits.
+  \item \textbf{Run-policy / trajectory.} Normalised early/late position, position gain, fade, kick
+        fraction, effort --- the leak-free policy panel behind the positional-fade and the
+        trajectory-shape traits, and the substrate for the (latent) control inference of
+        \S\ref{sec:geomgame}.
+  \item \textbf{Barrier trials.} Trial times, batch leader splits, going, distance --- the
+        debut-form channel and the trial-$\vc$ fusion (Chapters~\ref{ch:features},~\ref{ch:fusion}).
+        Keyed on the short stable brand.
+  \item \textbf{Rating series.} The dated official-rating time series per horse, behind the
+        peak-gap process feature.
+  \item \textbf{Trackwork (gallops).} $30\text{k}+$ Banister training-gallop sessions, scraped and
+        leak-free, the data for the gallop-fusion extension (queue \#30); not yet wired into the
+        drift.
+  \item \textbf{Geometry.} The venue $\times$ surface $\times$ course \code{TrackGeometry} table
+        (Chapter~\ref{ch:geometry}) --- widths, home straights, and bend segments, with the bend
+        fraction the draw terms read.
+  \item \textbf{Odds ticks.} Open-to-close win-pool ticks for the market yardstick and closing-line
+        value; the model never sees odds at fit time.
+\end{itemize}
+
+The deliberately-unmined surface --- continuous going (soil moisture), wind, track-bias / golden-rail
+state, and the lateral $(x,y,t)$ trajectory --- is the environment and geometry$\times$control
+frontier of Chapter~\ref{ch:theory}, and the target of the data and computer-vision items on the
+forward queue.

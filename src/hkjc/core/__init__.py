@@ -14,12 +14,14 @@ from .contracts import (CallableSource, DataSource, KEY_COLUMNS, RACE_KEYS,
                         RaceModel, make_race_id)
 from .race import Race, Runner
 from .simulation import RaceSimulator
-from .track import TRACKS, TrackGeometry, track_for
+from .track import (BARRIER_STALLS, HORSE_LANE_WIDTH_M, THOROUGHBRED_LENGTH_M,
+                    TRACKS, TrackGeometry, track_for)
 from .utils import pareto_filter
 
 __all__ = [
     "contracts", "hkjc_facts", "race", "simulation", "track", "utils",
     "RaceModel", "DataSource", "CallableSource", "KEY_COLUMNS", "RACE_KEYS", "make_race_id",
     "Race", "Runner", "RaceSimulator", "TrackGeometry", "track_for", "TRACKS",
+    "THOROUGHBRED_LENGTH_M", "HORSE_LANE_WIDTH_M", "BARRIER_STALLS",
     "pareto_filter",
 ]

@@ -1,0 +1,157 @@
+\chapter{The ability population: hierarchical empirical Bayes}
+\label{ch:pop}
+
+\section{The shrinkage problem}
+
+Chapter~\ref{ch:energetics} produced, for each run of each horse, a noisy pair
+$(\widehat\vc,\widehat\Wp)$. We need a per-horse \emph{estimate} of the latent ability to feed the
+drift, and it must satisfy three requirements simultaneously: it must (i) borrow strength across
+horses so a lightly-raced horse is not at the mercy of one fluke run, (ii) condition on the
+horse's class and trip so the prior it shrinks toward is appropriate, and (iii) be strictly
+leak-free for walk-forward backtesting. The classical tool is a one-way Normal--Normal
+random-effects model fitted by empirical Bayes, with a rating-conditioned fixed effect; this
+chapter develops it for each of $\vc$ and $\Wp$ independently.
+
+\section{The Normal--Normal random-effects model}
+
+Work with one parameter at a time (say $\vc$; $\Wp$ is identical). Let $y_{hr}$ denote the per-run
+estimate \eqref{eq:vc-est} for the $r$-th run of horse $h$. Model it as a fixed effect plus a
+horse random effect plus within-horse noise:
+\begin{equation}
+  y_{hr} \;=\; \underbrace{f(b_{hr}, R_{hr})}_{\text{fixed effect}}
+            \;+\; \underbrace{\theta_h}_{\text{horse effect}}
+            \;+\; \underbrace{\varepsilon_{hr}}_{\text{within-horse noise}},
+  \qquad
+  \theta_h \sim \Norm(0,\tau^2), \quad \varepsilon_{hr}\sim\Norm(0,\sigma^2).
+  \label{eq:randeff}
+\end{equation}
+Here $b_{hr}\in\{\text{sprint},\text{mile},\text{middle},\text{staying}\}$ is the distance band
+of the run and $R_{hr}$ is the horse's official rating going into it. The two variance components
+have direct interpretations: $\sigma^2$ is the \emph{within-horse} run-to-run variance (how noisy
+a single sectional estimate is), and $\tau^2$ is the \emph{between-horse} variance (how much
+genuine spread there is in true ability after conditioning on class and trip).
+
+\subsection{The rating-conditioned fixed effect}
+
+The fixed effect is not a single grand mean but a per-band intercept plus a global rating slope,
+\begin{equation}
+  f(b,R) \;=\; \beta_b \;+\; \gamma\,(R-\bar R),
+  \label{eq:fixed}
+\end{equation}
+so that a horse's prior centres on the value expected \emph{for its class and trip}, not on the
+global average. The band intercepts $\beta_b$ capture that $\vc$ falls with distance (a sprinter's
+sustainable velocity exceeds a stayer's); the slope $\gamma$ captures that a higher-rated horse
+has, on average, a higher critical velocity. The slope is estimated by an ordinary least-squares
+fit of the band-centred residual on the centred rating,
+\begin{equation}
+  \widehat\gamma
+   \;=\; \frac{\sum_{hr}(R_{hr}-\bar R)\,(y_{hr}-\beta_{b_{hr}})}{\sum_{hr}(R_{hr}-\bar R)^2},
+  \label{eq:slope}
+\end{equation}
+after which the rating-explained part is removed to form the pure horse-plus-noise residual
+$u_{hr} = y_{hr} - \beta_{b_{hr}} - \widehat\gamma(R_{hr}-\bar R)$. Conditioning on rating is what
+makes the population a \emph{segmented-by-class} prior rather than a mono-population; it matters
+because a debut or lightly-raced horse shrinks almost entirely to this prior, so the prior had
+better know the horse's class.
+
+\subsection{Estimating the variance components (ANOVA method of moments)}
+
+The two variance components are estimated by the ANOVA method of moments --- robust, closed-form,
+and assumption-light. The within-horse variance is the pooled sample variance over horses with at
+least two runs,
+\begin{equation}
+  \widehat{\sigma}^2
+   \;=\; \frac{\sum_{h:\,n_h\ge 2}(n_h-1)\,s_h^2}{\sum_{h:\,n_h\ge 2}(n_h-1)},
+  \qquad
+  s_h^2 = \frac{1}{n_h-1}\sum_{r}(u_{hr}-\bar u_{h})^2,
+  \label{eq:sigma2}
+\end{equation}
+where $n_h$ is horse $h$'s run count and $\bar u_h$ its mean residual. The between-horse component
+follows from equating the between-group mean square to its expectation. With
+$\mathrm{SSB}=\sum_h n_h \bar u_h^2$ (the residuals are already fixed-effect-centred so the grand
+mean is zero), $H$ horses, and total runs $n_\bullet=\sum_h n_h$,
+\begin{equation}
+  \mathrm{MSB} = \frac{\mathrm{SSB}}{H-1},
+  \qquad
+  n_0 = \frac{1}{H-1}\Bigl(n_\bullet - \frac{\sum_h n_h^2}{n_\bullet}\Bigr),
+  \qquad
+  \widehat{\tau}^2 = \max\!\Bigl(\frac{\mathrm{MSB}-\widehat\sigma^2}{n_0},\ \epsilon\Bigr),
+  \label{eq:tau2}
+\end{equation}
+where $n_0$ is the usual effective group size for unbalanced designs and the floor $\epsilon$
+keeps $\widehat\tau^2$ strictly positive. (The implementation, \code{calibration.py}, computes
+exactly these quantities in vectorised \code{polars}/\code{numpy}.)
+
+\section{The partially-pooled per-horse estimate}
+
+With the components in hand, the empirical-Bayes posterior mean for horse $h$ is the
+fixed-effect prediction plus a \emph{shrunken} version of its own mean residual,
+\begin{equation}
+  \boxed{\;\widehat{\vc}_h \;=\; f(b,R) \;+\; \lambda(n_h)\,\bar u_h,\qquad
+  \lambda(n_h) \;=\; \frac{\tau^2}{\tau^2 + \sigma^2/n_h}\;}
+  \label{eq:shrink}
+\end{equation}
+The shrinkage weight $\lambda(n_h)\in[0,1)$ is the heart of the model. Read its limits:
+\begin{itemize}
+  \item $n_h\to 0$ (debut): $\lambda\to 0$, the estimate is the pure rating-conditioned population
+        mean --- the horse has provided no evidence, so it is its class.
+  \item $n_h\to\infty$ (established): $\lambda\to 1$, the estimate trusts the horse's own runs
+        almost entirely.
+  \item Intermediate $n_h$: $\lambda$ interpolates, and the cross-over is governed by the
+        \emph{noise-to-signal ratio} $\sigma^2/\tau^2$: a noisier measurement (large $\sigma^2$)
+        or a more homogeneous population (small $\tau^2$) means more pooling for the same run
+        count.
+\end{itemize}
+The posterior also has a variance, used later by the precision-fusion of Chapter~\ref{ch:fusion}:
+\begin{equation}
+  \mathrm{sd}(\widehat{\vc}_h)
+   \;=\; \Bigl(\frac{n_h}{\sigma^2} + \frac{1}{\tau^2}\Bigr)^{-1/2},
+  \label{eq:postsd}
+\end{equation}
+the standard ``precisions add'' result: the posterior precision is the prior precision $1/\tau^2$
+plus $n_h$ run-precisions $1/\sigma^2$. This identity --- that each independent source of evidence
+contributes its precision additively --- is the conceptual seed of the entire fusion architecture.
+
+\section{Leak-free variants: leave-one-out and strictly-prior}
+
+The shrinkage formula \eqref{eq:shrink} must be made leak-free in two distinct settings, and the
+implementation provides both.
+
+\paragraph{Leave-one-out (for in-sample calibration targets).} When the energetics of a run are
+used to \emph{calibrate} against that same run's outcome, the run must be excluded from its own
+horse's pool. The LOO estimate replaces $\bar u_h$ and $n_h$ by their values with the current run
+dropped,
+\begin{equation}
+  \bar u_{h}^{(-r)} \;=\; \frac{\sum_{r'\ne r} u_{hr'}}{n_h-1},
+  \qquad
+  \lambda(n_h-1),
+  \label{eq:loo}
+\end{equation}
+computed in vectorised form as (group sum $-$ this run)/(group count $-1$). This is the quantity a
+race model may consume without a run's own outcome leaking into the fit that predicts it.
+
+\paragraph{Strictly-prior expanding window (for walk-forward forecasting).} For a genuine
+forecast of a race on date $d$, the estimate may use only runs \emph{strictly before} $d$. The
+trailing variant sorts each horse's runs by date and forms an expanding mean over earlier runs
+only,
+\begin{equation}
+  \widehat{\vc}_h(d) \;=\; f(b,R) \;+\; \lambda(n_{<d})\,
+   \frac{1}{n_{<d}}\!\!\sum_{r:\,\text{date}(r)<d}\!\! u_{hr},
+  \label{eq:trailing}
+\end{equation}
+with $n_{<d}$ the count of prior runs (and a fallback to the pure population mean when
+$n_{<d}=0$). The population parameters $(\beta_b,\gamma,\sigma^2,\tau^2)$ are themselves fit on the
+training window only, so the whole pipeline --- population and per-horse estimate --- is leak-free.
+This trailing estimate is the one the walk-forward backtest of Chapter~\ref{ch:method} actually
+consumes.
+
+\section{Output of the population layer}
+
+The population layer delivers, for every runner in every race, a leak-free
+$(\widehat\vc_h,\widehat\Wp_h)$ together with the horse's prior-run count $n_h$ (which the
+shrinkage and the later fusion both need) and the population's variance components. These are the
+\emph{baseline} drift and reserve --- the ``rating-conditioned mean plus shrunken own-history''
+that a horse carries into a race before any of the feature channels of the next chapters nudge it.
+In the assembled drift of Chapter~\ref{ch:assembly} this appears as the leading terms
+$\code{pop.v\_c.fixed}(b,R) + \texttt{SHRINK\_MULT}\cdot\lambda(n)\,u_{\vc}$ and the analogous
+reserve term, on top of which every ability channel adds.

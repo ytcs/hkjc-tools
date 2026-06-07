@@ -45,8 +45,9 @@ def test_ops_log_roundtrip(tmp_path):
 
 def test_prompts_carry_the_philosophy():
     text = prompts.load("modelling")
-    for must in ["fit the market first", "goodness-of-fit", "private-info",
-                 "mechanism", "diagnose"]:
+    # current (causal-pivot) philosophy keywords — replaces the deleted acausal "fit the market
+    # first / diagnose→recalibrate / private-info" phrasing (journals 0046, 0060).
+    for must in ["causal", "re-emerg", "mechanism", "ceiling", "epicycle"]:
         assert must.lower() in text.lower(), f"modelling prompt missing: {must}"
     assert "consume" in prompts.load("strategist").lower()
     assert "paper" in prompts.load("trading").lower()

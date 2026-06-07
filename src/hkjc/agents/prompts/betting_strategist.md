@@ -30,7 +30,8 @@ You implement a `hkjc.betting.strategy.Strategy`; you do not invent model mechan
 - `hkjc.betting.pools` / `carryover` / `carryover_cover` — pricing + the carryover edge.
 - `hkjc.betting.clv` — closing-line value.
 - `hkjc.backtesting` — replay, scoring, selection control.
-- `hkjc.model.fit` — the model probabilities you consume (read-only).
+- `hkjc.model.build_fit_predict` / `predict_race` / `PoolPricer` — the causal model's win/pool
+  probabilities you consume (read-only); never `import` to modify, only to read prices.
 
 ## Working memory
 On session start read your inbox (`Journal.inbox("strategist")`) — calibration changes from the

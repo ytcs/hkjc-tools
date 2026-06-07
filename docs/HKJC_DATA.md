@@ -164,7 +164,28 @@ https://racing.hkjc.com/contentAsset/videoplayer_v4/video-player-iframe_v4.html
 Media resolves to Akamai `streaminghkjc-a.akamaihd.net/hdflash/...` with renditions
 `_700kbps/_1200kbps/_2500kbps.mp4` and `.m3u8` (HLS). The **exact manifest path is built
 client-side in `JCPlayer.js`** — replay that construction or capture the network request
-to get a direct URL. `type=replay-aerial` is the overhead view best for trajectory CV.
+to get a direct URL.
+
+#### Confirmed direct-MP4 replay feeds (auth-free, deterministic — no player/JS needed)
+The renditions follow a **fixed, scrapable pattern** (verified by HEAD/range requests, 2026-06):
+```
+https://streaminghkjc-a.akamaihd.net/hdflash/{TOKEN}/{YYYY}/{YYYYMMDD}/{NN}/eng/{TOKEN}_{YYYYMMDD}_{NN}_eng_2500kbps.mp4
+   {NN} = zero-padded race number;  {YYYY} = year of {YYYYMMDD}
+```
+The player's documented `type=` list is INCOMPLETE — `replay-drone` is unlisted yet live, and the
+player even mis-guesses the drone filename. The four feeds we use, each a DIFFERENT instrument for a
+DIFFERENT part of the causal program (journal 0073 — they are complementary, not redundant):
+
+| `{TOKEN}` | Feed | Camera | Carries / best for |
+|---|---|---|---|
+| `replay-aerial` | **Aerial Virtual View** | synthetic 3D render of the tracking feed | render-inversion → clean (long, lat); legend running-order strip; odometer/distance markers; minimap; clock+splits. CONTROL (if faithful) + identity + sections. |
+| `replay-drone` | **Drone** | real, high, moving/zooming | real horse positions; lateral on the stable top-down back-straight; legible numbers at the finish-zoom. No global longitudinal (camera cuts/pans). |
+| `replay-full` | **Race film (RF)** | real, SIDE-ON tracking | longitudinal GAPS → MARGINS / beaten-lengths (→ the W'/spread surface); a clock-adjacent speed/section readout (velocity cross-check); legend strip; legible finish numbers. Lateral weak (foreshortened). |
+| `replay-patrol` | **Patrol** | real, FIXED high mount, head-on early | **FIXED camera ⇒ CONSTANT homography** (no per-frame rail jitter); **head-on ⇒ lateral = horizontal image coordinate directly**; the stewards' INTERFERENCE camera (bump/carried-wide events cross-check the official running commentary). Cleanest LATERAL geometry. Limits: 720p, head-on occlusion, identity head-on (bridge from finish), straight-only coverage. |
+
+Also live: `replay-aerial-virtual`, `trackwork`. The official per-horse **running commentary / stewards'
+trip notes** (the external lateral ground-truth: "caught wide", "bumped", "shifted across") are in the
+**results page HTML** (`...results...`), NOT the (JS-only, empty) sectional page — cache them alongside.
 Morning track-work clips: `…/twstarter/{YYYY}/{YYYYMMDD}/{RR}/novo/twstarter_…_2500kbps.mp4`
 (`{RR}` zero-padded). Pundit tips: `…/tipsindex/tips_index.asp?RaceNo={n}`.
 

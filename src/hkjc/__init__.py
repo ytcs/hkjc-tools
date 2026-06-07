@@ -8,9 +8,11 @@ from those below it); ``backtesting`` and ``agents`` sit on top and nothing impo
   (the single source for HKJC site quirks + betting rules).
 - **data** — connectors/scrapers (live + historical) and the persistence stores; acquires
   and persists only, computes no edge.
-- **model** — the production win model: the leak-free fit→predict pipeline
-  (:mod:`hkjc.model.fit`, the ``wald`` first-passage diffusion law + per-venue mean-field
-  terms), the ability features, the empirical-Bayes calibration, and the baked constants.
+- **model** — the causal-physics generative win model: latent physical CAUSES (physiology
+  via the EOM + critical-power energetics) → generative race dynamics → finishing ORDER →
+  every pool price. Identified from the path; meta-signals (form/jockey) are downstream
+  CONSEQUENCES that must RE-EMERGE, never inputs. The acausal regression model was purged
+  2026-06 (journal trail); this absorbed the former ``hkjc.statespace`` package.
 - **betting** — price pools, value the closing line, and stake against a ``Strategy``.
 - **backtesting** — replay history, enforce no-lookahead (``AsOfView`` + the leakage check),
   and score models/strategies (% of market, ECE, selection control).
@@ -19,7 +21,8 @@ from those below it); ``backtesting`` and ``agents`` sit on top and nothing impo
   and the cross-session :class:`Journal` they communicate through.
 
 Canonical import paths live under their concern, e.g. ``hkjc.core.track``,
-``hkjc.data.live``, ``hkjc.model.fit``, ``hkjc.betting.carryover``.
+``hkjc.data.live``, ``hkjc.model.generative`` / ``hkjc.model.pure_mechanism``,
+``hkjc.betting.carryover``.
 """
 from importlib.metadata import version as _version
 

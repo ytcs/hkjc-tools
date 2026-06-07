@@ -1,0 +1,175 @@
+\chapter{The theoretical frontier: the race as a game}
+\label{ch:theory}
+
+The production model is the \emph{free}, non-interacting theory: independent first-passage times
+with mean-field corrections. The remaining skill gap to the market lives in what that theory omits
+--- the \emph{interactions} between horses, which are products across dimensions, not main effects,
+and which a purely additive model cannot represent. This chapter sets out the theory of those
+interactions along three axes --- longitudinal (pace), lateral (geometry), and temporal (phase) ---
+each formulated as a differential / mean-field game. It is the source of the forward research
+queue.
+
+\section{The longitudinal pace game}
+\label{sec:pacegame}
+
+Fix a trip $L$. Each horse $i$ carries a reserve $\Wp_i$ above a critical velocity $\vc_i$, and its
+jockey chooses an effort/pace policy $\pi_i(t)$ --- a velocity profile, equivalently a
+reserve-depletion schedule --- to minimise its own finishing time
+$T_i = \int_0^L ds/v_i(t)$ subject to the reserve budget $\int (v_i-\vc_i)^{+}dt \le \Wp_i/k$ and
+the position dynamics $\dot x_i = v_i$. The payoff is a \emph{tournament}: only finishing
+\emph{order} pays. Because each horse's optimal effort is a best response to the others' (the value
+of leading depends on who contests the lead; the draft you get depends on who sits where), the
+field's tactics form a \emph{Nash equilibrium}. With many runners the rivals enter only through the
+aggregate \emph{pace}, so the large-field limit is a \emph{mean-field game}: each horse best-responds
+to the field's pace distribution, which is itself the aggregate of those responses --- a fixed point
+in pace-policy space.
+
+\paragraph{Two levels.} Above the tactical pace game sits the handicapper as a \emph{Stackelberg
+leader}: anticipating the equilibrium, the handicapper assigns weight to compress ability and
+engineer a blanket finish. Competition thus enters twice --- the handicapper compresses the
+\emph{mean} (already priced, hence tight win probabilities and an efficient rating channel), but the
+pace equilibrium reshuffles the \emph{conditional} outcome by style composition, which is
+\emph{not} fully priced. That residual is the opening.
+
+\paragraph{The positional fade is the equilibrium's mean-field shadow.} The non-interacting drift
+over-rates habitual front-runners (never charged for the contested-pace reserve burn) and
+under-rates closers (never credited the reserve they conserve). The baked positional-fade term
+(now on the $\Wp$ knob, Chapter~\ref{ch:assembly}) --- front horses winning $\approx 1$pp \emph{less}
+than the physics predicts, closers $\approx 1$pp \emph{more}, residual $t\approx -7$ at \emph{both}
+venues --- is exactly this bias, measured. The shared sign and magnitude across venues is the
+signature of a \emph{mean-field constant}: the field-averaged shadow of the pace equilibrium
+projected onto one per-horse scalar. The model has captured only the \emph{zeroth moment} (the
+field-mean style offset); the equilibrium's \emph{interaction} structure --- how the fade depends on
+\emph{who else} is in the race --- is the next layer.
+
+\paragraph{Testable predictions.} All inputs are pre-race and public, hence leak-free. Ranked:
+(1) the front-runner penalty \emph{scales with the count of rival front-runners} (pace
+contestedness $n_{\text{FR}}$) and vanishes or reverses at $n_{\text{FR}}=1$; (2) a lone-leader
+pace-control bonus (a sign flip, robustly expressed as the interaction with $n_{\text{FR}}$, not a
+threshold-fragile standalone cell); (3) closers' bonus scales with $n_{\text{FR}}$; (4) a single
+pace-pressure scalar per race summarising the early-position distribution, modulating the fade
+gain; (5) pairwise matchup / collateral terms (the interacting Plackett--Luce, highest ceiling,
+heaviest build). Predictions 1--3 are one mechanism --- the equilibrium's first moment,
+fade-scaling-with-contestedness --- from three angles, a single \texttt{contestedness}-modulated
+extension of the positional-fade gain. The first probes did not convert as bare scalars, which is
+the signal that the effect is geometry$\times$control coupled (next section), not a simple scalar.
+
+\section{The lateral geometry--control game}
+\label{sec:geomgame}
+
+Section~\ref{sec:pacegame} is the along-track direction; draw lives in the \emph{across-track}
+direction, which the scalar draw terms of Chapter~\ref{ch:geometry} only shadow. The thesis: draw
+is not a static geometric covariate but a \emph{boundary condition on the jockey's control policy}.
+Give each horse-jockey a 2-D state $s_i = (x_i, y_i, \Wp_i, v_i)$ --- along-track position, lateral
+offset from the rail, reserve, speed --- and two controls: the effort $u_i\ge 0$ above the aerobic
+ceiling (depleting $\Wp_i$) and the lateral steering rate $\dot y_i$ (the path: hug the rail vs.\
+peel out for clear air). The equations of motion are the 2-D version of the power-balance plant,
+with a bend ground-loss term $\propto \kappa(x_i)\,v_i^2\,y_i$ and a lateral \emph{exclusion}
+constraint (a horse cannot occupy a rival's lane --- a TASEP-like single-file occupancy in each
+lateral band).
+
+\paragraph{The draw is the initial lateral condition; its cost is the equilibrium value-gap.} The
+start fixes $y_i(0)=y_0(\mathrm{Dr}_i)$. To save ground a wide horse must \emph{cross} --- spend
+$\dot y_i<0$ early --- but crossing is contested: the rail is scarce and the gap must open. So a
+wide draw imposes a \emph{control dilemma} --- commit reserve early to cross (paying a $\Wp$ tax up
+front, risking being shuffled back) or stay wide (conceding arc length but keeping clear air and
+reserve). The realised draw cost is the equilibrium value-gap
+$\Delta V_i = V_i(\text{rail}) - V_i(\text{wide})$, a \emph{functional} of the curvature, the
+field's lateral congestion, and the style composition of the neighbours --- \emph{not} a constant
+$g_{\text{draw}}(\mathrm{Dr}-1)$. Identical draw, opposite cost, decided by who is inside you. This
+is why the scalar pace/draw probes did not convert, and why the baked draw terms are interim.
+
+\paragraph{Leak-free observables.} The binding constraint is that \emph{no panel stores the lateral
+coordinate} $y_i(t)$; the only across-track datum is the starting offset $\mathrm{Dr}$. What exists
+is the longitudinal rank trajectory (rank at several call points), the per-section velocity and
+position, and a derived run-policy panel (early/late position, position gain, fade, kick fraction,
+effort). The lateral path is therefore latent --- inferred from rank trajectory $\times$ draw
+$\times$ geometry. The ranked, tractable, leak-free observables this predicts: \textbf{O1}, a
+draw$\times$course (curvature/width) modulation of the draw gain (pure pre-race geometry --- but a
+scalar-mean version did \emph{not} convert, rejecting that structure, not the mechanism);
+\textbf{O2}, draw $\times$ field-pace-makeup (relational congestion built from the early-position
+table); \textbf{O3}, a control-quality / ground-saved trait (rank gained per unit of relative
+section velocity --- a jockeyship latent, no CV needed); \textbf{O4}, jockey policy-type clustering;
+\textbf{O5}, the full 2-D many-body cell (the simulator's domain). O3 (the control share, available
+from existing trajectory data) and the computer-vision lateral paths are the open work.
+
+\section{The temporal phase structure}
+\label{sec:phases}
+
+The production Wald law treats the trip as a \emph{single homogeneous} drift--diffusion with one
+drift and one diffusion. A real race is three dynamically distinct \emph{phases}, and collapsing
+them smears signals that live in different phases and load different knobs. Resolving the phases is a
+measurement upgrade with no new mechanism --- the kind of lever (like recency form) the theory says
+pays.
+
+\paragraph{Phase 1 --- the start transient.} From rest, acceleration-limited, off the gate; not the
+steady-state first-passage. It enters as a random initial condition $T_i = T_{0,i} + T_{\text{main},i}$
+with a per-horse \emph{mean} (gate speed / break quality, a stable leak-free trait loading the drift)
+and a per-horse \emph{variance} (gate temperament, loading $\Ddiff$). This is the ``start not
+explicit'' scorecard gap, given a structure. The break trait is \emph{not} early position: it is the
+position change \emph{across the break} --- first-call rank adjusted for draw --- and its
+wide-draw interaction is sharp (a slow break from a wide gate forfeits both longitudinal and lateral
+ground, missing the gap to cross). The convertible experiment is a leak-free trailing
+$\mathrm{gate\_break}$ trait (queue \#31), unmodelled today.
+
+\paragraph{Phase 2 --- the cruise.} Tactical: the pace duel and the lateral navigation. Least about
+raw ability, most about control --- which is exactly why the mid-race sectionals are the noisiest
+$\vc$ channel.
+
+\paragraph{Phase 3 --- the closing.} The reserve empties, every horse is maximally extended, nobody
+holds anything back --- the \emph{least tactically-contaminated} read of raw capacity in the race.
+The finishing sectional (last $\approx\SI{400}{m}$, normalised for the pace it was run into and the
+going) is therefore the \emph{highest-precision} $\vc$+$\Wp$ channel available, higher than the
+trip-average speed figure, which dilutes the clean closing signal with the tactical cruise. The
+convertible experiment is a finishing-speed figure entered as its own high-precision channel in the
+fusion of Chapter~\ref{ch:fusion} (queue \#32) --- ``give each \emph{phase} its own precision,'' the
+temporal analogue of the fusion's central lesson.
+
+\paragraph{Control is intertemporal.} The phase where a control choice is \emph{made} differs from
+the phase where its cost is \emph{paid}: reserve spent on an early forward position is reserve
+missing in the closing kick. This cross-phase debit is the mechanism behind the baked T1 recoupling
+(positional fade $\to \Wp$, distance-aware via $\Wp/L$): an early control decision (lead) debited
+from the late reserve. By the same logic fade-resistance, positional-fade, and kick-timing are
+facets of one intertemporal $\Wp$-deployment policy, resolved by phase --- their shared home is
+$\Wp$, and the phase a trait reads from tells you which sign it carries. A homogeneous single-drift
+law cannot carry this coupling; phase-resolving the trip exposes it.
+
+\section{The order-statistic corollaries of variance}
+\label{sec:evt}
+
+Two corollaries of the distance-law of variance (Section~\ref{sec:cvlaw}) sharpen the prioritisation
+of the variance knob.
+
+\paragraph{The distance-law, validated.} The Wald law predicts, parameter-free,
+$\mathrm{CV}(T)\propto 1/\sqrt{L}$ --- longer races intrinsically more predictable. An empirical
+study (queue \#33) confirms it on turf: the fitted slope of $\log\mathrm{CV}$ on $\log L$ is
+$-0.507$ (95\% CI $[-0.84,-0.17]$), and the backed-out diffusion $D$ shows \emph{no} significant
+trend with $L$ (slope $+0.12$, CI $[-0.27,+0.50]$), i.e.\ $D$ is constant in $L$ as the simplest
+form of the law predicts --- a clean theory-confirms-data check. The one exception is the
+all-weather surface, which is both more diffusive ($D_0\approx 0.94$ vs.\ turf $0.70\,\mathrm{m^2/s}$,
+consistent with the baked $\texttt{awt\_diff\_mult}=2$) and carries a large distance-\emph{independent}
+floor ($\sigma_0\approx\SI{0.46}{s}$, $\approx 36\%$ of AWT-sprint variance). So a distance-dependent
+$D(L)$ floor is \emph{not} warranted on turf but is the right structure for AWT (an additive
+$\Var \mathrel{+}= \sigma_0^2$).
+
+\paragraph{Field size amplifies the variance knob.} The winner is the left-tail extreme of $N$
+finishing-time draws. In a larger field the win requires a \emph{deeper} tail event, so per-horse
+variance $\Ddiff$ has \emph{more leverage on who wins the larger $N$ is}: a high-$\Ddiff$ horse's
+fat left tail is worth more in a 14-runner ST handicap than in a 6-runner HV field. The Monte-Carlo
+captures this exactly (it simulates argmin over the true field), so no new term is needed --- but it
+is a sharp prioritisation rule: \emph{the $\Ddiff$ knob pays in big fields and barely at all in
+small ones}. This retro-explains the baked draw$\to\Ddiff$ result converting on ST and being null on
+HV (ST runs the big fields), and it directs every future variance lever --- per-horse $\Ddiff_i$
+from figure variance (queue \#28), gate temperament, the AWT floor --- to ST and AWT first.
+
+\section{Why this is one programme}
+
+The three games share one structure: the production law is a mean-field projection, and the
+remaining signal is in the \emph{interactions} --- relational (who else is in the race), geometric
+(where on the track), and sequenced (which phase). Each is a differential game whose mean-field
+shadow the model already carries as a scalar (positional fade, draw gain, the homogeneous drift),
+and each promises its next increment of skill when the interaction itself --- not its shadow --- is
+modelled. The substrate, when these axes are taken up jointly, is an interacting Plackett--Luce with
+condensed-matter machinery (exclusion processes for blocking, active matter for drafting, mean-field
+games for jockey policy) built on the real geometry, validated against the same conversion test that
+gates everything else.

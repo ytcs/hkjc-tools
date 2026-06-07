@@ -70,6 +70,19 @@ class TrackGeometry:
         return sum(self.is_bend(d) for d in ds) / pts
 
 
+# ----------------------------------------------------------- physical scale constants
+# Race-agnostic physical sizes, in one place so margins, the CV reconstruction and the
+# draw anchor all share one source (no per-call magic numbers).
+THOROUGHBRED_LENGTH_M = 2.4    # nose-to-tail; the HKJC margin unit ("a length", ~8 ft)
+HORSE_LANE_WIDTH_M = 1.10      # effective lateral lane a galloping horse+jockey occupies
+                              # (barrel ~0.5-0.6 m + leg spread/safety) = min centre-to-centre
+
+# Barrier-stall count per venue: the gate has this many uniformly-spaced stalls across the
+# full track width; a horse drawn ``d`` sits in stall ``d`` (scratchings leave gaps, so this
+# is the venue standard, NOT the field size). Used to map draw -> start lateral.
+BARRIER_STALLS = {"HV": 14, "ST": 14}
+
+
 # --------------------------------------------------------------------------- venues
 # Happy Valley — turf, 1,450 m, right-handed, bend-dominated. Bend segments from the
 # sectional sampling points: home straight ~[0,300]; Sanatorium/Crescent/The Rock

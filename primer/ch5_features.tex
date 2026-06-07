@@ -1,0 +1,248 @@
+\chapter{The feature layer: leak-free ability channels}
+\label{ch:features}
+
+\section{Role of the feature layer}
+
+The population layer (Chapter~\ref{ch:pop}) gives each horse a baseline drift and reserve from its
+own sectional history shrunk toward a rating-conditioned prior. The feature layer supplies the
+\emph{additional} signals that move a horse's drift away from that baseline: measurements of
+ability, condition, intent, and style that the sectional history does not already capture. Every
+feature in this chapter obeys the leak-free invariant of Chapter~\ref{ch:intro} --- it is a
+function of a horse's strictly-prior runs (or of pre-race public boundary conditions) only --- and
+every feature is interpreted as loading one of the three knobs. This chapter catalogues the
+channels; Chapter~\ref{ch:fusion} explains the principled way to \emph{combine} the velocity-unit
+ability channels, and Chapter~\ref{ch:assembly} writes the assembled drift in full.
+
+A unifying remark frames what follows. The drift's ability channels --- rating, form, sectional
+$\vc$, collateral form, barrier trial, speed figure, allometric mass --- are all \emph{noisy
+measurements of the same latent}, the critical velocity $\vc$. The principled combination is a
+precision-weighted posterior mean,
+\begin{equation}
+  \vc \;=\; \frac{\sum_k \pi_k\,\vc^{(k)}}{\sum_k \pi_k},
+  \qquad \pi_k = 1/\sigma_k^2 ,
+  \label{eq:precision-fusion}
+\end{equation}
+and the production drift $\vc^{\mathrm{eff}} = \vc^{\text{base}} + \sum_k g_k\, s_k$ is the
+first-order linearisation of \eqref{eq:precision-fusion}, in which each gain $g_k$ is the relative
+precision of channel $k$. This is why the gains are \emph{calibrated, not free}: a channel that
+is collinear with one the market already prices adds no precision and earns a gain near zero, and
+over-coupling a channel past its true precision \emph{hurts}. Keep \eqref{eq:precision-fusion} in
+view; it is the logic behind every gain in the constants table.
+
+\section{Form: the dominant ability signal}
+
+\subsection{Career-mean relative finish}
+
+The single strongest feature is \emph{form} --- a horse's history of finishing well relative to
+its fields. The atom is the within-race \emph{relative finish}, which places a result on a
+$[0,1]$ scale invariant to field size,
+\begin{equation}
+  \mathrm{rf} \;=\; 1 - \frac{\text{finish\_pos}-1}{\text{field\_size}-1}
+  \quad\in[0,1], \qquad \mathrm{rf}=1 \text{ for a win.}
+  \label{eq:relfin}
+\end{equation}
+The career-mean form is the strictly-prior expanding mean of $\mathrm{rf}$ over a horse's earlier
+runs (all venues count),
+\begin{equation}
+  \mathrm{form}_h(t) \;=\;
+   \frac{\sum_{s\le t}\mathrm{rf}_s - \mathrm{rf}_t}{n_{\le t}-1},
+  \label{eq:form}
+\end{equation}
+the by-one-shifted expanding mean that excludes the current run; it is null on debut.
+
+\subsection{Recency weighting: the biggest single lever found}
+
+The career mean is stale: over the long careers typical in Hong Kong, a horse's form a dozen runs
+ago says little about today. Replacing the flat expanding mean by an \emph{exponentially-weighted}
+one --- recent runs weighted more --- is the largest single improvement in the model's history
+(roughly $+7.8$ percentage points of market). With a half-life $h$ measured in \emph{races}
+(not days), the recency form is
+\begin{equation}
+  \mathrm{form}^{\mathrm{rec}}_h(t)
+   \;=\; \frac{\sum_{s<t} w_{t-s}\,\mathrm{rf}_s}{\sum_{s<t} w_{t-s}},
+   \qquad w_{\Delta} = 2^{-\Delta/h},
+  \label{eq:recform}
+\end{equation}
+again strictly prior (the exponentially-weighted mean is shifted by one). The half-life is baked
+at $h=\texttt{FORM\_HALF\_LIFE}=2.0$ races: a clean optimum, with the career mean ($h\to\infty$)
+the worst case. Two mechanisms explain why recency wins: it tracks the horse's \emph{current}
+ability through the form cycle, and it matches how the market itself weights recent evidence.
+Form enters the drift with a per-venue gain $\texttt{FORM\_GAIN\_BY\_VENUE}$ (ST $5.0$, HV $4.0$;
+HV form is more weakly coupled because it was found to be over-weighted there), centred at the
+neutral value $0.5$:
+\begin{equation}
+  \Delta\vc^{\text{form}}_i \;=\; \texttt{FORM\_GAIN}\cdot\bigl(\mathrm{form}^{\mathrm{rec}}_i - 0.5\bigr).
+  \label{eq:formcoupling}
+\end{equation}
+
+\subsection{Prior-start count}
+
+A simple but structurally important companion is the strictly-prior count of official starts,
+$\text{prior\_starts}_h(t) = n_{\le t}-1$. A value of zero marks a \emph{debut} --- the rows for
+which the barrier-trial channel (Section~\ref{sec:trial}) is the only on-track form available, and
+the rows where the fusion of Chapter~\ref{ch:fusion} does its most distinctive work.
+
+\section{Jockey and trainer channels}
+
+\subsection{Jockey strike rate}
+
+The booked jockey carries a trip-quality signal (skill at pace judgement, path-finding,
+rail-saving) that is partly a real $\vc$ effect and partly an information proxy (fancied horses
+attract the best riders). It is measured as the jockey's strictly-prior expanding win strike rate,
+\begin{equation}
+  \mathrm{jky\_sr}_j(t) \;=\;
+   \frac{\sum_{s\le t}\mathbb{1}[\text{win}]_s - \mathbb{1}[\text{win}]_t}{n^{(j)}_{\le t}-1},
+  \label{eq:jky}
+\end{equation}
+keyed to each horse by the jockey riding it, and coupled with gain
+$\texttt{JOCKEY\_GAIN}=6.0$ centred on the field mean. Because the jockey signal is partly
+endogenous to the very market we fit, it is kept as a measurement but not treated as a clean single
+mechanism.
+
+\subsection{Trainer strike rate and the hot-streak overlay}
+
+The trainer analogue $\mathrm{trn\_sr}$ is the stable's strictly-prior expanding win rate, a
+career-level competence signal that turns out to be largely redundant with jockey and rating (it
+adds $\approx 0.2$pp and is parked). The sharper, \emph{recency}-weighted version --- the stable's
+\emph{hot streak} --- does convert, because it carries \emph{intent}: a yard suddenly winning
+races is placing horses to win, a pre-race public signal the market prices. It is an
+exponentially-weighted mean of the trainer's win indicator over its strictly-prior runners, with a
+half-life of $30$ runs,
+\begin{equation}
+  \mathrm{trn\_hot}_T(t) \;=\;
+   \frac{\sum_{s<t} 2^{-(t-s)/30}\,\mathbb{1}[\text{win}]_s}{\sum_{s<t} 2^{-(t-s)/30}},
+  \label{eq:trnhot}
+\end{equation}
+within-race centred and coupled with $\texttt{TRN\_HOT\_GAIN\_BY\_VENUE}$ (ST $2.0$, HV $1.0$).
+
+\section{Running-style and positional traits}
+
+Two distinct notions of ``running style'' are computed, and the distinction matters.
+
+\paragraph{Speed-based style.} $\mathrm{style}$ is the strictly-prior expanding mean of the
+normalised early \emph{relative velocity} $\mathrm{rel\_early}$ (front-runner high, closer low),
+from the sectional data. It is retained as a feature but is \emph{not} what the production
+positional term rides on.
+
+\paragraph{Position-based early position.} $\mathrm{early\_pos}$ is the strictly-prior expanding
+mean of the normalised early field \emph{position} $\mathrm{early\_pos\_norm}$ (1 = led early, 0 =
+settled last) from the run-policy dataset. Winners average $\approx 0.95$ against the
+$\approx 0.76$ field mean, so high values mean habitually nearer the front early. The two style
+notions correlate only $\approx 0.12$ --- position and speed are genuinely different traits ---
+and it is the positional one that feeds the production model, through the \emph{positional-fade}
+mechanism: the non-interacting drift--diffusion (Chapter~\ref{ch:gen}) over-rates habitual
+front-runners, because it never charges them for the anaerobic reserve they burn setting a
+contested pace with no cover, and symmetrically under-rates closers. The correction is to debit a
+front-runner's reserve, which in the production model loads the $\Wp$ knob
+(Chapter~\ref{ch:assembly}); $\mathrm{early\_pos}$ is the leak-free trait that drives it. This is
+the measured, mean-field shadow of the pace equilibrium developed in Chapter~\ref{ch:theory}.
+
+\section{Velocity speed figures}
+
+Rank-based form \eqref{eq:relfin} censors the winning margin --- a neck and ten lengths both
+score $\mathrm{rf}=1$. A complementary, kinematically-grounded channel is the \emph{speed figure},
+a horse's average velocity expressed relative to a condition par so that runs across different
+trips and going are comparable. With $v_{\text{run}} = L/\Tfin$ (m/s) and a par velocity
+$\mathrm{par}(\text{going},L)$ taken as the mean run velocity over all races at that
+going-and-distance,
+\begin{equation}
+  \mathrm{speed\_fig} \;=\; v_{\text{run}} - \mathrm{par}(\text{going},L),
+  \label{eq:speedfig}
+\end{equation}
+then the strictly-prior expanding mean per horse. Because $\mathrm{speed\_fig}$ is already in m/s,
+it couples to $\vc$ with a kinematic coefficient $\approx 1$ rather than a free gain --- a clean
+example of a velocity-unit channel. The par is a race-condition constant (not the horse's own
+outcome), so computing it over the full panel is leak-free. In practice the rank-form channel
+carries most of the win-relevant ability information (its pace/class invariance is an advantage),
+and the speed figure is largely redundant for win, but it is the template for the trial and
+collateral channels that are \emph{not}.
+
+\section{Barrier-trial debut form}
+\label{sec:trial}
+
+A barrier trial is an official, timed practice gallop --- crucially, it is a horse's \emph{only}
+on-track form before its racing debut, and a fitness read on a return from a layoff. For debutants
+the market is otherwise efficient with information the model never sees; the trial closes that gap
+and was the first new-data lever to convert (ST $+1.9$pp). The trial speed figure mirrors
+\eqref{eq:speedfig} on trial data: $v_{\text{trial}} = L/\text{trial\_time}$, a par
+$\mathrm{par}(\text{going},L)$ over all trials at that condition, the difference
+$\mathrm{trial\_fig} = v_{\text{trial}}-\mathrm{par}$, and the strictly-prior expanding mean per
+horse. Trials happen on mornings, races on race-days, so a horse's trial and race timelines never
+share a date and a backward as-of join is leak-free. A subtlety of the join key is recorded in the
+code: trial data carry the long registration id, but the model panels key on the short stable
+brand, so the table emits the brand aliased to \code{horse\_id}. The additive coupling is
+$\texttt{TRIAL\_GAIN\_BY\_VENUE}$ (ST $1.5$, HV $1.0$); Chapter~\ref{ch:fusion} replaces this
+additive form by the precision-fusion, which is its principled successor.
+
+\section{Trajectory-shape traits}
+
+The sectional $\vc$/speed-figure channels read a run's \emph{average} energetics; the full
+trajectory dataset carries the per-section velocity \emph{profile}, exposing the \emph{shape} of
+how a horse runs --- mechanics the average hides. Two physically-grounded traits are extracted per
+run and made strictly-prior:
+\begin{align}
+  \mathrm{sustain} &= \frac{\bar v_{\text{sections}}}{v_{\text{peak}}}\ \in(0,1],
+    && \text{sustained-speed ability (1 = flat cruise)};\\
+  \mathrm{fade} &= v_{\text{last}} - v_{\text{peak}}\ \le 0,
+    && \text{fade resistance (0 = no late deceleration)}.
+  \label{eq:trajtraits}
+\end{align}
+The fade is the kinematic signature of the reserve $\Wp$ emptying in the closing stages, so it is
+a \emph{reserve} phenomenon and belongs on the $\Wp$ knob. Each raw trait is within-race
+standardised (a contemporaneous condition normaliser, not an outcome) and then averaged
+strictly-prior per horse. Sustained-speed tests as already-priced (parked); fade resistance
+converts as a small reserve term ($\texttt{FADE\_W\_GAIN}=8.0$ on $\Wp$, Chapter~\ref{ch:assembly}).
+
+\section{Rating-trajectory process features}
+
+The official handicap rating is a \emph{time series} per horse, not just a latest point, and its
+\emph{trajectory} encodes the career cycle the point misses. From the dated rating series the model
+derives, per update, the velocity $\mathrm{rtg\_vel}=\Delta\mathrm{rtg}/k$, the acceleration
+$\mathrm{rtg\_accel}$, the maturity count $\mathrm{rtg\_nupd}$, and --- the one that converts ---
+the \emph{peak gap}
+\begin{equation}
+  \mathrm{rtg\_peakgap} \;=\; \mathrm{rtg}(t) - \max_{s\le t}\mathrm{rtg}(s) \ \le 0,
+  \label{eq:peakgap}
+\end{equation}
+how far the horse sits below its own career-best rating. This is a \emph{process} feature: it
+carries an \emph{absolute career landmark} the point rating cannot express. A horse declining off
+its peak runs below its (lagging) official rating, and the market discounts this; the model
+corrects it with a negative gain $\texttt{PEAKGAP\_GAIN\_BY\_VENUE}$ (ST $-0.015$, HV $-0.025$),
+within-race centred. The rating velocity and acceleration do \emph{not} convert --- they merely
+restate recent form, which the form channel already holds --- a clean illustration that a process
+feature pays only where it adds information orthogonal to the point and to form. The trajectory is
+attached by a strict backward as-of join with \code{allow\_exact\_matches=False}, so a race sees
+only rating updates strictly before it.
+
+\section{Summary of channels and their knobs}
+
+Table~\ref{tab:channels} collects the channels, their measured signal, and the knob each loads.
+The recurring discipline is visible in the rightmost column: \emph{ability} signals load $\vc$,
+\emph{reserve} signals load $\Wp$, and \emph{consistency} signals load $\Ddiff$ --- and the next
+chapter shows how the $\vc$ channels should be fused rather than merely summed.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Channel & Measured signal & Knob \\
+\midrule
+Recency form & exp-weighted prior relative finish & $\vc$ (drift) \\
+Sectional $\vc$ residual & shrunk own-history critical velocity & $\vc$ (drift) \\
+Jockey / trainer-hot & prior \& recency win strike rate & $\vc$ (drift), part info \\
+Speed figure & prior mean $v_{\text{run}}-\mathrm{par}$ (m/s) & $\vc$ (drift) \\
+Barrier trial & prior mean $v_{\text{trial}}-\mathrm{par}$ (m/s) & $\vc$ (drift, debut) \\
+Collateral form & opponent-adjusted Massey velocity (m/s) & $\vc$ (drift) \\
+Allometric mass & $(m/\bar m)^{b-1}$ & $\vc$ (drift, ST) \\
+Rating peak-gap & own-peak deficit ($\le 0$) & $\vc$ (drift, process) \\
+Fade resistance & late-vs-peak section velocity & $\Wp$ (reserve) \\
+Positional fade & habitual early position & $\Wp$ (reserve) \\
+Draw $\times$ field crowding & arc-length ground loss & $\Leff$ (drift, geometry) \\
+Draw $\times$ bend $\times$ extremity & lateral exposure & $\Ddiff$ (variance, ST) \\
+Surface (AWT) & dirt kickback & $\Ddiff$ (variance) \\
+\bottomrule
+\end{tabular}
+\caption{The feature channels, their leak-free signal, and the generative knob each loads.}
+\label{tab:channels}
+\end{table}

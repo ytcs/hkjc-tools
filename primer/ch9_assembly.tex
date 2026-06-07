@@ -1,0 +1,112 @@
+\chapter{Assembly: the production drift, reserve, and predict loop}
+\label{ch:assembly}
+
+\section{The assembled effective critical velocity}
+
+Collecting every $\vc$-loading channel from Chapters~\ref{ch:pop}--\ref{ch:competition}, the
+effective critical velocity each runner $i$ carries into the simulator is
+\begin{align}
+  \vc^{\mathrm{eff}}_i \;=\;\;
+   & \underbrace{f_{\vc}(b, R_i)}_{\text{rating-conditioned pop.\ mean}}
+   \;+\; \underbrace{\texttt{SHRINK\_MULT}\cdot\lambda_{\vc}(n_i)\,u_{\vc,i}}_{\text{shrunk own-history residual}}
+   \;+\; \underbrace{\widehat w(n_i,m_i)\,g_{\text{trial}}\,\mathrm{trial\_fig}_i}_{\text{trial fusion (Ch.\,\ref{ch:fusion})}}
+   \nonumber\\[1mm]
+   &\;+\; g_{\text{form}}\,\bigl(\mathrm{form}_i - 0.5\bigr)
+   \;+\; g_{\text{jky}}\,\bigl(\mathrm{jky}_i - \overline{\mathrm{jky}}\bigr)
+   \;+\; g_{\text{collat}}\,\widetilde{\mathrm{cfm}}_i
+   \nonumber\\[1mm]
+   &\;+\; g_{\text{pgap}}\,\widetilde{\mathrm{pgap}}_i
+   \;+\; g_{\text{thot}}\,\widetilde{\mathrm{thot}}_i
+   \;+\; (\text{speed-fig, trainer, sustain, additive-trial terms, mostly off}),
+  \label{eq:vc-eff}
+\end{align}
+where a tilde denotes within-race centring (a constant field shift cancels in the win
+probability), $b$ is the distance band, $R_i$ the rating, $n_i$ the prior-race count, $m_i$ the
+prior-trial count, and the gains are the per-venue baked constants of Appendix~\ref{app:constants}.
+The mass channel multiplies the whole drift allometrically (Section~\ref{sec:allo}). Equation
+\eqref{eq:vc-eff} is the linearised precision-weighted posterior \eqref{eq:precision-fusion}:
+every term is a channel's signal times its relative precision, and a channel collinear with one
+the market already prices contributes a gain near zero.
+
+\section{The assembled reserve}
+
+The anaerobic reserve carries the late-race / intertemporal phenomena. It is the
+rating-conditioned reserve mean plus the shrunk own-history reserve residual, plus the two
+reserve couplings moved onto this knob (the ``T1'' recoupling):
+\begin{equation}
+  \Wp^{\mathrm{eff}}_i \;=\;
+   f_{\Wp}(b,R_i)
+   \;+\; \texttt{W\_PRIME\_GAIN}\cdot\lambda_{\Wp}(n_i)\,u_{\Wp,i}
+   \;+\; \underbrace{\texttt{FADE\_W\_GAIN}\cdot\mathrm{fade}_i}_{>0:\ \text{holds speed}\Rightarrow\text{more reserve}}
+   \;+\; \underbrace{\texttt{POSFADE\_W\_GAIN}\cdot\widetilde{\mathrm{epos}}_i}_{<0:\ \text{front-runner burns}\,\Wp}.
+  \label{eq:wp-eff}
+\end{equation}
+The signs are mechanistic: a horse that holds its speed late ($\mathrm{fade}>0$ in the trait's
+sign convention) has demonstrated reserve, so $\texttt{FADE\_W\_GAIN}=+8.0$; a habitual
+front-runner (high $\mathrm{early\_pos}$) burns reserve setting the pace, so
+$\texttt{POSFADE\_W\_GAIN}=-80.0$. Placing these on $\Wp$ rather than $\vc$ is the
+right-signal-right-knob principle in action: their effect becomes \emph{distance-aware for free}
+through the $\Wp/L$ form of the late boost \eqref{eq:mu-wprime}, biting harder over sprints --- and
+indeed the gain from the recoupling lands in HV sprints ($+0.3$pp), the $\Wp/L$ signature. The
+predecessors $\texttt{FADE\_GAIN}$ and $\texttt{POS\_FADE\_GAIN}$ (which loaded $\vc$) are retired
+to zero.
+
+\section{Allometric mass}
+\label{sec:allo}
+
+Body mass enters through the power-balance derivation of critical velocity. With aerobic power
+scaling allometrically as $P_c = \kappa m^{b}$ and the steady-state balance
+$\vc = P_c/(K_{\text{LOCO}} m g)$, the sustainable velocity scales as
+\begin{equation}
+  \vc \;\propto\; m^{\,b-1},
+  \label{eq:allo}
+\end{equation}
+so the drift is multiplied by the field-relative factor $(m_i/\bar m)^{b-1}$, where $\bar m$ is the
+geometric-mean mass of the field and the declared weight is pre-race (hence leak-free). The
+exponent is one \emph{venue-invariant} physiological constant; it is applied where it converts
+(ST, $b=1.1$) and is off where other channels already price it (HV, $b=1.0$). That mass is
+low-leverage at HV is a statement about \emph{collinearity with already-priced channels}, not a
+claim that HV horses obey a different physiology --- a distinction the first-principle discipline
+insists on.
+
+\section{The predict loop}
+
+For each race in the test set the model:
+\begin{enumerate}[label=\arabic*.]
+  \item resolves the per-venue gains, the geometry \code{track\_for(venue, distance, surface)}, and
+        the per-race precision ratio $\rho$;
+  \item assembles $\vc^{\mathrm{eff}}_i$ and $\Wp^{\mathrm{eff}}_i$ from \eqref{eq:vc-eff} and
+        \eqref{eq:wp-eff};
+  \item forms the Wald parameters with the geometry of Chapter~\ref{ch:geometry},
+        \begin{equation}
+          \mu_i = \frac{\Leff_i}{\vc^{\mathrm{eff}}_i\,(1+\Wp^{\mathrm{eff}}_i/L)},
+          \qquad
+          \lambda_i = \frac{L^2}{2\,\Ddiff_i};
+        \end{equation}
+  \item draws $S$ Monte-Carlo finishing times per runner from the Inverse-Gaussian,
+        $t^{(s)}_i \sim \IG(\mu_i,\lambda_i)$, with a \emph{race-deterministic seed} so the noise
+        is identical across model variants (the basis of the paired conversion test of
+        Chapter~\ref{ch:method});
+  \item counts argmin wins across the $S$ samples and Laplace-smooths to a probability,
+        \begin{equation}
+          p_i \;=\; \frac{\#\{s: t^{(s)}_i = \min_j t^{(s)}_j\} + 1}{S + N},
+          \label{eq:laplace}
+        \end{equation}
+        the $+1/+N$ guaranteeing every runner a strictly positive probability (no $\log 0$ in the
+        scoring).
+\end{enumerate}
+The default sample count is $S=\texttt{N\_SAMPLES}=6000$. The Plackett--Luce branch
+\eqref{eq:pl} substitutes a closed-form softmax for steps 4--5 when an instant, sampling-free probe
+is wanted.
+
+\section{The constants are the calibration}
+
+Every gain in \eqref{eq:vc-eff}--\eqref{eq:wp-eff} and every geometry constant lives in the single
+module \code{hkjc.model.constants}, each a mechanism-coupling gain set by the conversion test of
+Chapter~\ref{ch:method}, not a free regressor weight. Many are per-venue dictionaries, because the
+two tracks are structurally different arenas (HV tight and bend-dominated with small fields; ST a
+galloping oval with big fields), and a few are per-surface. Appendix~\ref{app:constants} reproduces
+the full table with values and mechanisms. The discipline that keeps this from being an
+overfit pile of knobs is the subject of the next chapter: each constant must be both
+physics-derivable \emph{and} move the out-of-sample needle, confirmed by a paired fixed-seed test
+on both venues.

@@ -1,0 +1,190 @@
+\chapter{The generative law: first-passage finishing times}
+\label{ch:gen}
+\label{ch:generative}
+
+\section{From a velocity profile to a finishing time}
+
+Fix a race of geometric length $L$ (metres). A horse covers the trip by accumulating distance at
+a time-varying velocity $v_i(t)$, so its finishing time is the first time its accumulated
+distance reaches $L$:
+\begin{equation}
+  \Tfin_i \;=\; \inf\Big\{\, t \ge 0 : \textstyle\int_0^t v_i(s)\,ds \;\ge\; L \,\Big\}.
+  \label{eq:firstpassage-def}
+\end{equation}
+This is already a first-passage statement: the finishing time is the hitting time of a level $L$
+by the integrated-velocity process. Everything in the theory of racing is, in the end, a theory
+of \emph{what sets $v_i(t)$} --- how much speed the engine can produce, how that capacity is
+deployed across the trip, how the arena and the rival field perturb it, and what is irreducibly
+random. The chapters that follow populate $v_i(t)$ with mechanism. The present chapter fixes the
+\emph{stochastic} structure of \eqref{eq:firstpassage-def} that turns a per-horse velocity model
+into win probabilities.
+
+\section{The drift--diffusion idealisation and the Wald law}
+
+The production model idealises the accumulated-distance process $X_i(t) = \int_0^t v_i\,ds$ as a
+Brownian motion with drift: in increments,
+\begin{equation}
+  dX_i \;=\; v_i\, dt \;+\; \sqrt{2\Ddiff_i}\; dW_i,
+  \qquad X_i(0)=0,
+  \label{eq:sde}
+\end{equation}
+where $v_i>0$ is the (effective, trip-averaged) drift velocity, $\Ddiff_i>0$ is a per-horse
+diffusion coefficient with units of $\mathrm{m^2/s}$, and $W_i$ is a standard Wiener process. The
+finishing time is the first passage of $X_i$ to the absorbing level $L$,
+$\Tfin_i = \inf\{t : X_i(t)=L\}$. It is a classical result that the first-passage time of a
+drift--diffusion to a fixed positive level follows the \emph{Inverse-Gaussian} (Wald)
+distribution,
+\begin{equation}
+  \Tfin_i \;\sim\; \IG(\mu_i,\lambda_i),
+  \qquad
+  \mu_i \;=\; \frac{L}{v_i},
+  \qquad
+  \lambda_i \;=\; \frac{L^2}{2\Ddiff_i},
+  \label{eq:wald-params}
+\end{equation}
+with density, for $t>0$,
+\begin{equation}
+  f_{\IG}(t;\mu,\lambda)
+   \;=\; \sqrt{\frac{\lambda}{2\pi t^{3}}}\;
+   \exp\!\left(-\,\frac{\lambda\,(t-\mu)^2}{2\mu^{2}\,t}\right).
+  \label{eq:ig-density}
+\end{equation}
+
+Two derivation checks make the parameterisation transparent. First, the mean: the expected
+finishing time is the distance divided by the drift,
+$\E[\Tfin_i] = \mu_i = L/v_i$, exactly the deterministic ``run the trip at speed $v_i$'' answer.
+Second, the variance. For the Inverse-Gaussian, $\Var(\Tfin_i)=\mu_i^3/\lambda_i$, so
+substituting \eqref{eq:wald-params},
+\begin{equation}
+  \Var(\Tfin_i)
+   \;=\; \frac{\mu_i^3}{\lambda_i}
+   \;=\; \frac{(L/v_i)^3}{L^2/(2\Ddiff_i)}
+   \;=\; \frac{2\Ddiff_i\,L}{v_i^{3}}.
+  \label{eq:wald-var}
+\end{equation}
+The variance of the finishing time is set by the diffusion $\Ddiff_i$ and \emph{grows linearly in
+the trip length} $L$. This single fact has large downstream consequences (Section~\ref{sec:cvlaw}
+and Chapter~\ref{ch:theory}): it predicts, with \emph{no free parameter}, that longer races are
+intrinsically more predictable.
+
+\begin{remark}[Why first-passage, not additive Gaussian]
+One could model $\Tfin_i$ directly as $\mu_i + \varepsilon_i$ with Gaussian $\varepsilon_i$. That
+is rejected on physical grounds: finishing times are strictly positive and right-skewed (a horse
+can lose far more time to trouble than it can ever gain), and the first-passage construction
+delivers exactly that --- the Inverse-Gaussian is supported on $(0,\infty)$ and right-skewed,
+with the skew arising mechanically from the absorbing boundary. Empirically the additive-Gaussian
+``\code{time}'' surrogate scores worse than the Wald law, and the Wald law ties or beats the
+log-normal (velocity-multiplicative) surrogate while resting on a single physical diffusion
+constant.
+\end{remark}
+
+\section{The three knobs}
+\label{sec:threeknobs}
+
+Equations \eqref{eq:wald-params}--\eqref{eq:wald-var} expose precisely three places a covariate
+can act, and the entire feature programme is organised around them.
+
+\begin{enumerate}[label=\textbf{Knob \arabic*.},leftmargin=*]
+  \item \textbf{The drift $v_i$ (aerobic ceiling $\vc$).} Through $\mu_i=L/v_i$, anything that
+        raises the sustainable speed lowers the expected time. This is the channel of raw ability:
+        form, rating, sectional critical velocity, opponent-adjusted collateral form, speed
+        figures, barrier trials, mass. The drift is built up in
+        Chapters~\ref{ch:pop}--\ref{ch:competition} and assembled in Chapter~\ref{ch:assembly}.
+  \item \textbf{The reserve $\Wp$ (a late-race boost to the effective drift).} The anaerobic
+        reserve shortens the effective trip the aerobic engine must cover: a horse with reserve
+        $\Wp$ behaves as if running a distance $L$ but with an effective drift scaled up by
+        $(1+\Wp/L)$, so that
+        \begin{equation}
+          \mu_i \;=\; \frac{\Leff}{v_i\,\bigl(1+\Wp_i/L\bigr)},
+          \label{eq:mu-wprime}
+        \end{equation}
+        where $\Leff$ is the geometric length corrected for ground-loss (Chapter~\ref{ch:geometry}).
+        The factor $(1+\Wp/L)$ is the production form of Hill's critical-velocity law
+        $T=(L-\Wp)/v_c$ (Chapter~\ref{ch:energetics}): the reserve buys back distance, and
+        because it is divided by $L$ it \emph{bites harder over sprints than over staying trips},
+        which is exactly the distance-aware behaviour the physiology demands. Reserve phenomena
+        --- late-race fade resistance, the positional-fade cost a front-runner pays for setting
+        the pace --- load this knob (Chapter~\ref{ch:assembly}, the ``T1'' recoupling).
+  \item \textbf{The diffusion $\Ddiff_i$ (consistency / racing luck).} Through
+        $\lambda_i=L^2/2\Ddiff_i$, the diffusion sets the spread of a horse's time around its
+        mean. Because the winner is an \emph{order statistic}, variance is as load-bearing as the
+        mean: a high-$\Ddiff$ horse has a fat left tail and upsets more often than its drift
+        implies; a metronomic horse upsets less. This is the one knob the model exploited last and
+        least; the draw$\to\Ddiff$ trip-variance term (Chapter~\ref{ch:geometry}) and the
+        surface-dependent diffusion are its current uses.
+\end{enumerate}
+
+\begin{principle}[Right signal, right knob]
+A feature is correctly structured only when it loads the knob its mechanism acts on. Loading a
+reserve phenomenon (late fade) onto the aerobic ceiling $\vc$ is a \emph{correlated
+approximation} --- it raises or lowers the whole velocity curve instead of just the closing kick
+--- and is strictly dominated, where the data can resolve it, by loading $\Wp$. Likewise a
+consistency signal belongs on $\Ddiff$, not on the mean.
+\end{principle}
+
+\section{The closed-form Plackett--Luce surrogate}
+\label{sec:pl}
+
+For very wide parameter sweeps it is convenient to have a sampling-free win-probability map. If
+the finishing-time noise is taken to be Gumbel rather than Inverse-Gaussian, the argmin in
+\eqref{eq:argmin} has the closed-form multinomial-logit (Plackett--Luce) solution. Writing the
+deterministic mean times $\mu_i$ and a scale $\sigma_t$, the win probability is the softmax of the
+negative mean times,
+\begin{equation}
+  p_i \;=\; \frac{\exp(-\mu_i/\sigma_t)}{\sum_{j}\exp(-\mu_j/\sigma_t)} ,
+  \qquad \mu_i = \frac{\Leff}{v_i(1+\Wp_i/L)} .
+  \label{eq:pl}
+\end{equation}
+Plackett--Luce additionally hands back the \emph{entire} finishing-order distribution in closed
+form (the probability of any permutation factorises as a sequence of softmaxes over the remaining
+field), which makes it the natural probe for place and exotic structure. It is, however, the
+\emph{free / non-interacting} theory: independent finishing times, no traffic, no draft, no
+tactical coupling. The production model uses the Wald Monte-Carlo (Chapter~\ref{ch:assembly}); PL
+is retained as the instant scout and as the conceptual baseline against which the interaction
+programme of Chapter~\ref{ch:theory} is defined.
+
+\begin{remark}[The surrogate is faithful for win, by construction]
+Interactions (draw, mass, traffic) have repeatedly tested as low-leverage for the \emph{win}
+order statistic specifically --- the knife-edge for first place is dominated by the front of the
+field, where the mean-field treatment is adequate. The pure-\code{numpy} Wald/PL surrogates
+therefore match the full interacting Monte-Carlo on win to within noise while running roughly
+$35\times$ faster, which is what makes the diagnose/recalibrate loop of Chapter~\ref{ch:method}
+tractable. The interacting simulator is reserved for the place/exotic regime, where whole-field
+ordering --- and hence the many-body terms --- matters.
+\end{remark}
+
+\section{The distance law of variance}
+\label{sec:cvlaw}
+
+Combine the mean $\mu_i=L/v_i$ and the variance \eqref{eq:wald-var} into the coefficient of
+variation of the finishing time:
+\begin{equation}
+  \mathrm{CV}(\Tfin_i)
+   \;=\; \frac{\sqrt{\Var(\Tfin_i)}}{\E[\Tfin_i]}
+   \;=\; \frac{\sqrt{2\Ddiff_i L/v_i^3}}{L/v_i}
+   \;=\; \sqrt{\frac{2\Ddiff_i}{L\,v_i}}
+   \;\propto\; \frac{1}{\sqrt{L}} .
+  \label{eq:cvlaw}
+\end{equation}
+The relative spread of finishing times \emph{falls as one over the square root of the trip
+length}. Favourites should win more, and upsets should be rarer, over longer races --- a
+prediction that contains no fitted parameter, falling out purely from the geometry of
+first-passage. Chapter~\ref{ch:theory} develops the refinement (a distance-independent variance
+floor injected by the start and by traffic, which would make sprints \emph{excess}-dispersed
+relative to \eqref{eq:cvlaw}) and the order-statistic corollary that the $\Ddiff$ knob has more
+leverage in larger fields. This prediction is, at the time of writing, under empirical validation
+(queue item \#33).
+
+\section{Summary}
+
+The production win model is the map
+\[
+  \underbrace{(\vc_i,\ \Wp_i,\ \Ddiff_i)_{i=1}^N}_{\text{per-horse mechanism}}
+   \;\longmapsto\;
+  \Tfin_i\sim\IG\!\Big(\tfrac{\Leff_i}{\vc_i(1+\Wp_i/L)},\ \tfrac{L^2}{2\Ddiff_i}\Big)
+   \;\longmapsto\;
+  p_i = \Pr[\Tfin_i = \min_j \Tfin_j].
+\]
+The remainder of the document is devoted to the first arrow: how each of the three per-horse
+parameters is built, leak-free, from data and mechanism. The second arrow is the Wald law of this
+chapter; the third is the Monte-Carlo argmin of Chapter~\ref{ch:assembly}.

@@ -1,0 +1,118 @@
+\chapter{Recovering the latents: critical velocity and anaerobic reserve}
+\label{ch:energetics}
+
+\section{The critical-power model of a running horse}
+
+The drift $v_i$ and the reserve $\Wp_i$ of Chapter~\ref{ch:gen} are not free numbers; they are the
+two parameters of a \emph{critical-power} physiology, the standard mechanistic model of endurance
+performance imported from human exercise science. A horse is idealised as possessing
+\begin{itemize}
+  \item a \textbf{critical velocity} $\vc$ (m/s): the fastest pace it can hold purely
+        \emph{aerobically}, i.e.\ indefinitely on the timescale of a race; and
+  \item a finite \textbf{anaerobic reserve} $\Wp$: a fixed quantity of work it can spend running
+        \emph{above} $\vc$, after which it must drop back to (or below) $\vc$.
+\end{itemize}
+The defining relation of the critical-power model is hyperbolic: the distance $L$ a horse can
+cover in time $T$ satisfies $L = \vc\,T + \Wp$, i.e.\ it sustains $\vc$ for the whole trip and the
+reserve $\Wp$ buys an extra block of distance. Solving for time gives \emph{Hill's
+critical-velocity law},
+\begin{equation}
+  T \;=\; \frac{L - \Wp}{\vc},
+  \label{eq:hill}
+\end{equation}
+which is exactly the deterministic skeleton behind the production mean
+\eqref{eq:mu-wprime}: dividing numerator and denominator by $L$,
+$T = \frac{L}{\vc}\bigl(1 - \Wp/L\bigr) \approx \frac{L}{\vc(1+\Wp/L)^{-1}}$, and the production
+code carries the reserve as the multiplicative late boost $(1+\Wp/L)$ on the drift, which is the
+same first-order effect with a numerically gentler, strictly-positive form. The units used
+throughout are metres, seconds, and m/s; $\Wp$ is carried as the work proxy
+$\int (v-\vc)^{+}\,dt$ with units $\mathrm{m^2/s}$, which is monotone in the true energetic
+reserve and suffices for a relative model.
+
+\section{The inverse problem: $(\vc,\Wp)$ from one run's sectionals}
+
+HKJC publishes \emph{sectional} split times: a race is divided into segments, and the time to
+cover each segment is recorded. By HKJC's verified convention the final segments are each
+$\SI{400}{m}$ and the first segment carries the variable remainder, so for a race of length $L$
+split into $n$ sections the per-section distances are
+\begin{equation}
+  d_1 = L - 400(n-1), \qquad d_2=\dots=d_n = 400,
+  \label{eq:sectiondist}
+\end{equation}
+and the per-section velocities are $v_k = d_k / t_k$ from the published split times $t_k$. The
+velocity profile $(v_1,\dots,v_n)$ is the raw kinematic signature of a single run, and from it we
+recover that run's $(\vc,\Wp)$ by inverting the critical-power picture.
+
+\paragraph{Estimating $\vc$.} The critical velocity is the speed the horse \emph{settles to}
+once the reserve is spent --- the late-race sustainable pace. It is estimated robustly as the
+slower of the final two section velocities,
+\begin{equation}
+  \widehat{\vc} \;=\; \min(v_{n-1},\, v_{n}),
+  \label{eq:vc-est}
+\end{equation}
+the $\min$ guarding against a final-section sprint (a horse with reserve still in hand kicks on
+the line, which would over-read $\vc$). Typical recovered values sit around
+$\widehat{\vc}\approx \SI{16.8}{m/s}$.
+
+\paragraph{Estimating $\Wp$.} The reserve is the work run \emph{above} that critical velocity,
+accumulated over the sections where the horse exceeded it:
+\begin{equation}
+  \widehat{\Wp} \;=\; \sum_{k=1}^{n} \bigl(v_k - \widehat{\vc}\bigr)^{+}\, t_k,
+  \label{eq:wp-est}
+\end{equation}
+where $(\cdot)^{+}=\max(\cdot,0)$. Two auxiliary descriptors of the same profile are retained for
+the trajectory-shape features of Chapter~\ref{ch:features}: the peak section velocity
+$v_{\text{peak}}=\max_k v_k$ (the anaerobic ceiling) and the fade
+$v_{\text{peak}}/v_n - 1$ (how far the horse dropped from its peak by the line).
+
+\section{Why per-run estimates are noisy --- and must be pooled}
+
+The estimates \eqref{eq:vc-est}--\eqref{eq:wp-est} are \emph{per-run} and individually noisy, for
+reasons that are physical rather than statistical artefacts:
+\begin{itemize}
+  \item an easy winner is eased down through the line, depressing $v_{n}$ and hence under-reading
+        $\widehat{\vc}$;
+  \item a horse caught in traffic runs a distorted profile that reflects the race shape, not its
+        capacity;
+  \item the pace of the race --- which the horse does not choose alone --- sets how much of the
+        reserve is visible.
+\end{itemize}
+The latent $(\vc,\Wp)$ are properties of the \emph{horse}, approximately stable across its
+career; any single run is a noisy glimpse of them through the lens of that day's tactics. This is
+precisely the structure a hierarchical model is built for, and it motivates
+Chapter~\ref{ch:pop}: rather than trust one run, we pool a horse's runs toward a population that
+is itself conditioned on the horse's class and trip, with the degree of pooling set by how much
+evidence the horse has provided. The per-run estimator of this chapter is the \emph{measurement};
+the population model of the next chapter is the \emph{estimator of the latent} from those
+measurements.
+
+\begin{remark}[A note on what $\vc$ ``is'' in the production model]
+The production drift is built around $\vc$ as the organising latent, but $\vc$ should be read as
+a \emph{calibrated relative ability in velocity units}, not as a literal physiological constant
+measured to three significant figures. Its value is anchored by the sectional estimator above, but
+it is then shrunk, rating-conditioned, and nudged by the ability channels of
+Chapters~\ref{ch:features}--\ref{ch:competition}, all of which live in the same m/s units so that
+they add coherently. The physiology fixes the \emph{structure} (a sustainable ceiling plus a
+finite reserve, distance-aware through $\Wp/L$); the calibration fixes the \emph{numbers}.
+\end{remark}
+
+\section{A generative race model from $(\vc,\Wp)$ alone}
+
+Before the full stochastic apparatus of Chapter~\ref{ch:gen}, it is worth recording the simplest
+generative model the energetics already support, because it shows the mechanism cleanly. Given
+per-horse $(\vc_i,\Wp_i)$ and a trip $L$, Hill's law \eqref{eq:hill} gives a deterministic
+predicted time $\widehat T_i = (L-\Wp_i)/\vc_i$; adding race-day noise $\varepsilon_i$ and ranking
+yields a finishing order,
+\begin{equation}
+  \Tfin_i \;=\; \frac{L-\Wp_i}{\vc_i} + \varepsilon_i,
+  \qquad
+  \text{winner} = \argmin_i \Tfin_i .
+  \label{eq:naive-gen}
+\end{equation}
+This is dynamics, not regression: change the distance, or a horse's $(\vc_i,\Wp_i)$, and the
+whole finishing-order distribution moves mechanistically --- a horse with a large reserve gains
+relatively more over a sprint than over a staying trip, automatically, because $\Wp$ enters as
+$\Wp/L$. The production model replaces the additive-Gaussian noise of \eqref{eq:naive-gen} with
+the physically-correct first-passage (Wald) noise of Chapter~\ref{ch:gen} --- strictly positive,
+right-skewed, with a single diffusion constant and the $\Var\propto L$ law --- but the skeleton is
+this critical-power generator.

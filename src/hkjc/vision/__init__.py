@@ -1,14 +1,17 @@
-"""CV trajectory pipeline — SKELETON / SCAFFOLD.
+"""CV perception for race reconstruction — per-feed pixel -> observation.
 
-Extract per-horse dense track trajectories (d = metres-from-finish, off = lateral
-metres from the inner rail, speed) from race video pixels, to feed the physics
-energetics model (v_c, W'). Design doc: ``docs/HKJC_DATA.md (§ trajectory)``.
+Pure perception: the per-feed observation models (:mod:`~hkjc.vision.feeds`), the silk
+identity descriptor (:mod:`~hkjc.vision.silk`, :mod:`~hkjc.vision.identity`) and the
+shared CV primitives (:mod:`~hkjc.vision.geometry_cv`, :mod:`~hkjc.vision.ground_contact`,
+:mod:`~hkjc.vision.ocr`). The output coordinate schema (``d`` = metres-from-finish,
+``off`` = lateral metres from the inner rail, ``speed``) lives in :mod:`~hkjc.vision.schema`.
 
-Stages: ingest -> detect -> track -> identify -> homography -> project -> export(+qa).
+Orchestration — the shared clock, the fusion smoother and the ``Reconstructor`` that turns
+four feeds into per-horse trajectories — lives in :mod:`hkjc.reconstruction` (on top of this
+package + ``core``/``data``). This package NEVER imports ``data``.
 
-This package imports cleanly with NO heavy deps installed: cv2 / torch /
-ultralytics / pyav / pandas are imported *lazily inside functions*. Only the schema
-dataclasses (pure stdlib) are exported eagerly. Does NOT modify ``src/hkjc``.
+Imports cleanly with NO heavy CV deps: cv2 / av / rapidocr load *lazily inside functions*;
+only the pure-stdlib schema dataclasses are exported eagerly.
 """
 from __future__ import annotations
 

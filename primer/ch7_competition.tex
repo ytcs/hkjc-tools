@@ -1,0 +1,110 @@
+\chapter{The competition axis: relational collateral form}
+\label{ch:competition}
+
+\section{Why ability is relational}
+
+The hardest and most under-exploited dimension of the problem is \emph{competition}. The handicap
+system actively compresses the field --- the handicapper assigns weight to engineer a blanket
+finish --- which is precisely why win probabilities are close and why beating the market is hard.
+The consequence for modelling is that \emph{raw} ability is the wrong object: beating a strong
+field should count for more than the same performance against a weak one. The win model, at
+equilibrium, \emph{is itself a rating system}; the right ability measure is the consistent
+solution of an opponent-adjusted system.
+
+The first attempt at this axis --- a scalar Elo / relative-form rating --- failed, and the failure
+is instructive. A scalar rating is collinear ($\approx 0.70$) with the official rating the market
+already prices, and it discards the only thing competition actually does, which is to make outcomes
+\emph{relational}: a horse's effective ability is a \emph{function of the opponent set}, not a
+context-free number. A front-runner among closers steals an uncontested lead and arrives with
+reserve unspent; the same front-runner among other front-runners is forced into a contested duel
+that burns $\Wp$ against the air with no draft, and fades. Identical horse, different field,
+different result. A scalar cannot represent a quantity that depends on who else is in the race. The
+correct object is \emph{relational}, and the relational treatment converts strongly (HV $+2.3$pp,
+with ECE improving) where the scalar one vanished --- the canonical illustration that ``a dead
+first attempt is not a dead axis.''
+
+\section{The Massey collateral-form rating}
+
+\subsection{Construction}
+
+The collateral-form rating is an opponent-adjusted \emph{velocity} rating in m/s, built as an
+online Massey least-squares system so that it is strictly leak-free. The atom is again the
+condition-normalised speed figure of a run, $s_i = L/\Tfin_i - \mathrm{par}(\text{going},L)$ (m/s,
+the same kinematic figure as \eqref{eq:speedfig}). Races are processed in date order. The
+\emph{field strength} of a race $R$ is the mean \emph{prior} collateral rating $\bar R$ of its
+runners (unrated newcomers count as neutral $0$). A runner's observation from race $R$ combines its
+\emph{margin against the field it actually ran} with the \emph{strength of that field}:
+\begin{equation}
+  \mathrm{obs}_i \;=\; \underbrace{\bigl(s_i - \overline{s}_R\bigr)}_{\text{margin vs this field}}
+   \;+\; \kappa\,\underbrace{\bar R}_{\text{strength of this field}},
+  \label{eq:collat-obs}
+\end{equation}
+and the horse's rating is the expanding mean of its $\mathrm{obs}$ over its strictly-prior runs.
+The $\kappa\bar R$ term is the \emph{collateral propagation}: a margin posted against a strong
+field inherits that field's strength, which is one Gauss--Seidel sweep of the Massey
+least-squares system in date order. The least-squares value is $\kappa=1$; $\kappa<1$ damps the
+propagation. Leak-freeness is preserved by emitting the rating a horse carries \emph{into} a race
+(the running per-horse mean over strictly-prior runs) and only \emph{then} updating that running
+mean with the current race's observation --- the same strictly-prior guarantee as the form table,
+and the par is a condition constant rather than the horse's own outcome, so the full panel is safe.
+
+\subsection{Coupling}
+
+The emitted $\mathrm{collat\_form}$ is within-race centred (a field-mean shift cancels in the win
+probability) and coupled to the drift with a per-venue gain $\texttt{COLLAT\_GAIN\_BY\_VENUE}$ (ST
+$1.0$, HV $2.5$). The much larger HV gain is consistent with HV's tighter, more compressed fields
+making opponent adjustment more informative there; the collateral channel closes roughly a third
+of the ST--HV skill gap.
+
+\section{Deepening the rating (v2)}
+
+The production ST collateral rating uses a refined construction (\code{collateral\_form\_table\_v2})
+that pushes the Massey solution closer to its true fixed point and conditions it more carefully.
+All refinements preserve the strictly-prior / online leak-free discipline. The baked ST
+construction is $\{\,n_{\text{sweeps}}=3,\ \text{half\_life}=4.0,\ \text{band\_par}=\text{True}\,\}$;
+HV keeps the single-sweep table (band conditioning fragments its tight trip range). The four
+refinement axes:
+
+\begin{enumerate}[label=\textbf{R\arabic*.},leftmargin=*]
+  \item \textbf{Deeper propagation ($n_{\text{sweeps}}>1$).} A single online pass propagates
+        opponent strength only one hop along the collateral chain. Additional \emph{Jacobi}
+        fixed-point sweeps re-solve the strictly-prior race graph before each new race-date is
+        emitted, each sweep recomputing every prior race's observation using the previous sweep's
+        \emph{frozen} ratings as the field-strength source. Strength then propagates one more hop
+        per sweep, toward the true Massey fixed point. Crucially the extra sweeps touch only
+        strictly-prior races, so the rating emitted for a race still contains no information from
+        it or any later race. Baked at three sweeps on ST.
+  \item \textbf{Recency weighting (\emph{half\_life}).} The per-horse rating can be an
+        exponentially-weighted mean of its observations rather than a flat expanding mean, so a
+        stale opponent rating decays --- the recency-form lever (Section \ref{ch:features}) applied
+        to the competition channel. With decay $\delta = 2^{-1/\text{half\_life}}$ the running
+        numerator and denominator are updated as $\delta\cdot(\text{old}) + (\text{new})$. Baked at
+        a four-race half-life on ST.
+  \item \textbf{Nonlinear margin (\emph{margin\_pow}) and strength-of-schedule asymmetry
+        (\emph{asym}).} The within-race margin can be raised to a sign-preserving power
+        ($\mathrm{sign}(m)\,|m|^{p}$, $p>1$ rewards big margins, $p<1$ compresses), and the field
+        strength inherited on a \emph{loss} can be weighted differently from a \emph{win} (kept
+        term $\kappa\bar R$ for a beat, $\kappa\cdot\mathrm{asym}\cdot\bar R$ for a loss), encoding
+        that losing to a strong field tells you less than beating one. Both default to the linear,
+        symmetric baked values.
+  \item \textbf{Trip-band conditioning (\emph{band\_par}).} The par velocity and the margin are
+        computed within (going, distance-\emph{band}), and the field-strength inheritance is
+        conditioned on the trip band, so a 1200\,m margin feeds a horse's rating only for nearby
+        trips. Ability is partly trip-specific; band conditioning enforces like-for-like
+        comparison. A horse carries a per-band rating with a fallback to its global mean. Baked on
+        ST.
+\end{enumerate}
+
+The deepened ST construction added $+1.3$pp \emph{on top of} the trial fusion (super-additive),
+and was what broke ST through $65\%$; its ECE also improves. This is the competition axis,
+operationalised --- the relational rating the ``win model is a rating system at equilibrium''
+framing predicts, built jointly with the leak-free discipline rather than bolted on.
+
+\begin{remark}[The free theory and the interacting theory]
+The production Wald/PL surrogate is the \emph{free}, non-interacting theory: context-free drifts,
+no traffic, no draft. The collateral rating injects the \emph{first relational moment} of
+competition --- opponent strength --- into the per-horse drift, which is why it survives the
+collinearity that killed the scalar. The deeper relational structure --- how a horse's effective
+ability depends on the \emph{style composition} of \emph{this} field --- is the interacting theory
+of Chapter~\ref{ch:theory}, not yet in production.
+\end{remark}

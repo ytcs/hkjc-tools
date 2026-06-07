@@ -1,0 +1,143 @@
+\chapter{Coherent precision-fusion of velocity observations}
+\label{ch:fusion}
+
+\section{Why additive coupling is only the linearisation}
+
+The drift's ability channels are noisy measurements of one latent, $\vc$, and the exact Bayesian
+combination is the precision-weighted posterior \eqref{eq:precision-fusion}. The additive
+production drift is its first-order linearisation, adequate when every channel has a stable
+precision and a horse has a typical amount of evidence. It is \emph{not} adequate when a channel's
+relative informativeness \emph{changes with the amount of other evidence the horse has} --- which
+is exactly the situation for a barrier trial. A trial is enormously informative about a
+\emph{debutant} (it is the only on-track data that exists) and nearly worthless about a horse with
+forty races behind it (those races dominate). A single additive gain cannot express ``weight this
+a lot at debut and let it fade as races accumulate''. The coherent fusion does precisely that, by
+returning to the precision algebra of Chapter~\ref{ch:pop} and adding the trial as its own
+evidence channel with its own precision.
+
+\section{The fusion of an observation channel into the $\vc$ posterior}
+
+Recall the posterior precision identity \eqref{eq:postsd}: precisions add. Decompose the evidence
+about a horse's $\vc$ residual into three independent sources, each contributing its own
+precision:
+\begin{equation}
+  \pi_0 = \frac{1}{\tau^2}\ \text{(population prior)},\qquad
+  \pi_{\text{race}} = \frac{1}{\sigma^2}\ \text{(one race obs)},\qquad
+  \pi_{\text{trial}} = \rho\,\pi_{\text{race}}\ \text{(one trial obs)} ,
+  \label{eq:precisions}
+\end{equation}
+where $\rho = \pi_{\text{trial}}/\pi_{\text{race}}$ is the \emph{relative} precision of a trial
+observation versus a race observation --- the one new number the fusion introduces, baked as
+$\texttt{TRIAL\_PI\_RATIO}$. A horse carrying $n$ prior races and $m$ prior trials has a posterior
+$\vc$-residual that weights the trial evidence by
+\begin{equation}
+  \boxed{\;
+  w_{\text{trial}}(n,m)
+   \;=\; \frac{m\,\pi_{\text{trial}}}{\pi_0 + n\,\pi_{\text{race}} + m\,\pi_{\text{trial}}}
+   \;=\; \frac{m\rho\,\pi_{\text{race}}}{\pi_0 + n\,\pi_{\text{race}} + m\rho\,\pi_{\text{race}}}\; }
+  \label{eq:wtrial}
+\end{equation}
+This is the fraction of total posterior precision that the trial channel supplies. Read its
+behaviour: as the race count $n$ grows, the denominator grows and $w_{\text{trial}}\to 0$ --- the
+trial fades exactly as the horse's racing record accumulates, with no threshold or hand-tuned
+schedule. At debut ($n=0$, $m=1$) it takes its maximal value
+$w_0 = \rho\pi_{\text{race}}/(\pi_0+\rho\pi_{\text{race}})$.
+
+\subsection{Normalising to the additive coupling at debut}
+
+The fusion is designed so that for a debutant it reproduces the (calibrated, converting) additive
+trial coupling of Section~\ref{sec:trial}, and only \emph{deviates} from it by fading as the horse
+races. This is achieved by normalising $w_{\text{trial}}$ to unity at debut and multiplying the
+additive trial term by the normalised weight,
+\begin{equation}
+  \widehat w(n,m) \;=\; \frac{w_{\text{trial}}(n,m)}{w_0},
+  \qquad
+  \Delta\vc^{\text{trial}}_i \;=\; \widehat w(n_i,m_i)\cdot \texttt{TRIAL\_GAIN}\cdot \mathrm{trial\_fig}_i .
+  \label{eq:trialterm}
+\end{equation}
+At debut $\widehat w = 1$ and the fusion equals the additive coupling; as the horse races
+$\widehat w$ decays smoothly toward $0$. When the fusion is active ($\rho>0$) the plain additive
+trial term is switched off, so the two are mutually exclusive structural choices for the same
+signal. The result: the trial enters at \emph{its own} noise level, recovering the full additive
+signal for a debutant (ST $+6$pp on debut races specifically) and the calibration benefit of a
+denser prior for lightly-raced horses, while not contaminating the estimate of an established
+horse.
+
+\subsection{The structural lesson behind the fusion}
+
+The fusion's design encodes a hard-won negative result. An earlier attempt folded the barrier
+trial into the \emph{sectional-$\vc$ residual} channel, which the production model globally shrinks
+by $\texttt{SHRINK\_MULT}\approx 0.5$ (a multiplier calibrated to the \emph{noisy} sectional
+estimator). That diluted a comparatively \emph{high}-precision signal by forcing it through a
+shrinkage meant for a low-precision one, and it underperformed the direct additive coupling for the
+win order statistic --- even though it did tighten the ability estimate (improve ECE) for
+lightly-raced horses, confirming the denser-prior mechanism was real. The lesson is structural,
+not a refutation of the mechanism:
+
+\begin{principle}[Each observation type keeps its own precision]
+A fused observation must enter at its \emph{own} estimated precision. A shared shrinkage --- making
+a trial inherit the sectional channel's variance --- is the wrong structure. The correct fusion
+assigns each channel (races, trials, gallops, race \emph{phases}) its own precision component, so
+each enters at its own noise level. ``A feature failing under one coupling means \emph{that
+structure} is wrong, not that the mechanism is dead.''
+\end{principle}
+
+\section{Recovering the trial critical velocity on the race scale}
+
+For the fusion to be coherent, the trial's signal must be on the \emph{same physical scale} as the
+race $\vc$ residual, which requires recovering a per-horse critical velocity from a trial rather
+than just a relative figure. Trials are run in small batches that share a leader; the recovery
+proceeds in two steps:
+\begin{enumerate}[label=(\roman*)]
+  \item the batch leader's section split profile is passed through the \emph{same}
+        \code{estimate\_run\_energetics} machinery as race energetics (Chapter~\ref{ch:energetics})
+        to get a batch critical velocity $\vc^{\text{batch}}$ --- the settled late velocity the
+        field fades to;
+  \item each horse ran the same trial at its own \code{trial\_time}, so its critical velocity
+        scales with its average pace relative to the batch leader,
+        \begin{equation}
+          \vc^{\text{trial}}_i \;=\; \vc^{\text{batch}}\cdot
+           \frac{\text{batch\_time}}{\text{trial\_time}_i}.
+          \label{eq:trialvc}
+        \end{equation}
+\end{enumerate}
+By construction the resulting $\vc^{\text{trial}}$ has a mean near the race $\vc$ mean
+($\approx \SI{16.82}{m/s}$), so a single train-only affine map suffices to place it on the
+race-\emph{residual} scale (the map is fit on training rows only, hence leak-free). The table then
+emits the strictly-prior expanding mean $\mathrm{trial\_vc}$ and the prior trial count
+$\mathrm{trial\_m}=m$, the two quantities \eqref{eq:wtrial} consumes.
+
+\section{Extending the fusion to training gallops}
+\label{sec:gallop}
+
+The architecture was built explicitly as the \emph{substrate for a third channel}: routine
+training gallops. A gallop is the densest but noisiest velocity observation of a horse --- there
+are tens of thousands of them (the \code{trackwork.parquet} panel holds $30\text{k}+$ Banister
+gallop sessions), they happen continuously between races, but a solo morning gallop pace is not a
+contested race pace and carries far less information per observation than a trial. The coherent
+fusion accommodates this exactly by giving the gallop channel its own (low) precision ratio,
+\begin{equation}
+  \pi_{\text{gallop}} = \rho_g\,\pi_{\text{race}},\qquad
+  w_{\text{gallop}}(n,m,m_g)
+   = \frac{m_g\,\pi_{\text{gallop}}}
+          {\pi_0 + n\,\pi_{\text{race}} + m\,\pi_{\text{trial}} + m_g\,\pi_{\text{gallop}}},
+  \label{eq:gallopfusion}
+\end{equation}
+with $\rho_g$ small (gallops are noisy) and baked as $\texttt{GALLOP\_PI\_RATIO}$. This is an
+active work item (queue \#30): it requires a \code{gallop\_vc\_table} mirroring
+\eqref{eq:trialvc} --- careful, because a solo gallop has no opponents to set a par --- and a full
+$\sim\!1.5\text{k}$-horse backfill of the join. The hope, grounded in the precision algebra, is
+that the denser gallop prior converts where the sparse trial axis alone does not, particularly at
+Happy Valley. The same template generalises once more in Chapter~\ref{ch:theory}: a race's
+\emph{closing} phase is a higher-precision $\vc$ channel than its trip-average, so ``give each
+\emph{phase} its own precision'' is the temporal analogue of ``give each \emph{observation type}
+its own precision''.
+
+\begin{remark}[Fusion is the right home for all velocity-unit channels]
+The collateral-form rating (Chapter~\ref{ch:competition}), the speed figure, and the finishing
+sectional are all m/s measurements of $\vc$ and, in the limit of the programme, belong in one
+coherent shrinkage posterior over all velocity observations, each down-weighted by its own noise,
+with the correct nonlinear $\lambda(n_{\text{eff}})$. The current production drift realises this as
+a calibrated linear combination plus the explicit trial fusion; the unifying target is the single
+posterior of \eqref{eq:precision-fusion} made exact.
+\end{remark}

@@ -1,0 +1,126 @@
+\chapter{The arena: geometry, draw, and ground loss}
+\label{ch:geometry}
+
+\section{Track geometry and the movable rail}
+
+The draw bias is fundamentally \emph{geometric}: on a turn, an inner lane is a shorter path, so a
+low-drawn horse that holds the rail runs less ground. The model carries an explicit geometry,
+parameterised by \emph{venue $\times$ surface $\times$ course}, because HKJC turf tracks use a
+\emph{movable running rail} --- the race's \code{Course} (A, A+2, B, B+2, B+3, C, C+3) shifts the
+rail outward to spread wear, changing the usable width and slightly the home-straight length. Three
+structural regimes are encoded as \code{TrackGeometry} objects:
+\begin{itemize}
+  \item \textbf{Happy Valley} (turf, $\SI{1450}{m}$ circumference, right-handed): a tight,
+        bend-dominated circuit ($\approx 470 + 530\,\si{m}$ of turn within a $\SI{1450}{m}$ lap)
+        --- the strongest draw bias in Hong Kong.
+  \item \textbf{Sha Tin turf} (galloping oval, $\SI{1900}{m}$, right-handed, $\SI{430}{m}$ home
+        straight): long straights and two $\approx \SI{495}{m}$ bends, hence a \emph{weaker}
+        geometric draw bias than HV.
+  \item \textbf{Sha Tin straight $\SI{1000}{m}$ chute}: a separate course with \emph{no bends}, so
+        no bend-geometry draw bias at all (only going/watering gradients, deliberately unmodelled).
+  \item \textbf{Sha Tin all-weather} (dirt, $\SI{1560}{m}$, fixed single rail, uniform
+        $\SI{22.8}{m}$ width).
+\end{itemize}
+The geometry exposes a \emph{bend fraction} --- the fraction of a race of length $L$ run on turns,
+computed by sampling positions along the trip and testing each against the bend segments,
+\begin{equation}
+  \mathrm{bend\_fraction}(L) \;=\; \frac{1}{P}\sum_{p=1}^{P}\mathbb{1}\bigl[\text{position } d_p
+   \text{ is on a turn}\bigr],
+  \label{eq:bendfrac}
+\end{equation}
+which is the draw-bias exposure of the race. It is $\approx 0$ on the straight chute (which is why
+the draw term is zeroed there) and largest at HV.
+
+\section{Draw as ground loss on the drift}
+
+A horse drawn $\mathrm{Dr}$ positions off the rail runs a longer arc round the turns. The
+production model represents this as an \emph{effective lengthening} of the trip the drift must
+cover,
+\begin{equation}
+  \Leff \;=\; L\,\bigl(1 + g_{\text{draw}}\,(\mathrm{Dr}-1)\bigr),
+  \label{eq:leff}
+\end{equation}
+which feeds straight into the Wald mean \eqref{eq:mu-wprime}: a wider draw means a longer effective
+trip, a longer first-passage time, and a lower win probability. The gain $g_{\text{draw}}$ is
+\emph{per-venue and geometric}, baked as $\texttt{DRAW\_GAIN\_BY\_VENUE}$ (ST $0.003$, HV $0.008$):
+HV, bend-dominated, wants roughly $2.7\times$ the ST penalty. On the all-weather surface the rail
+bias is stronger and is overridden by $\texttt{DRAW\_GAIN\_AWT}=0.008$. On any course with
+$\mathrm{bend\_fraction}<0.05$ (the straight chute) the gain is set to zero --- no arc, no penalty.
+
+\begin{remark}[A lesson in always sweeping]
+An early diagnosis read the HV draw residual as ``over-weighted'' and proposed setting the gain to
+zero; the sweep proved the \emph{opposite} --- zeroing it craters HV to $41\%$, because HV was in
+fact massively \emph{under}-penalised by the old global $0.003$. The episode is the canonical
+reminder that the sign of a residual coupling must be established by a sweep against the production
+path, never assumed.
+\end{remark}
+
+\section{Draw $\times$ field size: the crowding interaction}
+
+The geometric penalty is amplified when the field is crowded: a wide draw costs more in a full
+field (more bodies to be trapped behind, fewer gaps to cross to the rail) than in a sparse one ---
+the first \emph{interaction} moment of the draw mechanism. The production form scales the draw gain
+by a field-size factor centred at twelve runners, clamped so the penalty never reverses in a small
+field:
+\begin{equation}
+  g_{\text{draw}}^{\text{eff}} \;=\; g_{\text{draw}}\cdot
+   \max\!\bigl(0,\ 1 + g_{\text{fs}}\,(N-12)\bigr),
+  \label{eq:drawfs}
+\end{equation}
+with $\texttt{DRAW\_FS\_GAIN\_BY\_VENUE}$ (HV $0.25$, ST $0.0$). It converts only at HV (the
+tightest track, where collision physics dominates: HV $+0.3$pp, flat at ST). It is explicitly an
+\emph{interim stopgap} --- a scalar shadow of a genuinely two-dimensional geometry$\times$control
+interaction (Chapter~\ref{ch:theory}) --- and is flagged as such pending the joint treatment.
+
+\section{Draw as variance: loading the diffusion knob}
+
+The deeper insight is that draw acts not only on the \emph{mean} (the arc-length drift penalty) but
+on the \emph{variance}: a wide-drawn horse in a big field has a more uncertain trip --- it may get
+across and save ground, or it may be hung wide and buried --- and that uncertainty is a property of
+$\Ddiff$, not of the drift. This is the first deliberate use of the third knob. Each horse's
+diffusion is inflated by a draw-derived ``trip risk'',
+\begin{equation}
+  \Ddiff_i \;=\; D_{\text{eff}}\,\bigl(1 + g_{\text{dvar}}\cdot
+   \mathrm{bend\_fraction}(L)\cdot \mathrm{extremity}_i\bigr),
+  \qquad
+  \mathrm{extremity}_i = \frac{2\,\bigl|\mathrm{Dr}_i - \tfrac{N+1}{2}\bigr|}{N-1},
+  \label{eq:drawvar}
+\end{equation}
+where $\mathrm{extremity}_i\in[0,1]$ is the field-normalised lateral extremity of the draw (a
+rail or widest-out horse is extreme, a midfield draw is not), and the risk is gated by the bend
+fraction (no bends, no trip risk). A larger $\Ddiff_i$ means a larger Wald variance
+\eqref{eq:wald-var} and so more upsets from that horse. The gain
+$\texttt{DRAW\_VAR\_GAIN\_BY\_VENUE}$ is ST $0.5$, HV $0.0$.
+
+The ST-only split is \emph{predicted by theory}, a clean theory-confirms-data check. The winner is
+the left-tail extreme of $N$ finishing-time draws; in a larger field the win requires a deeper tail
+event, so per-horse variance has more leverage on \emph{who wins the larger $N$ is}. ST runs the
+big fields, HV the small ones, so the variance knob should pay on ST and barely at all on HV ---
+exactly the observed split (see Chapter~\ref{ch:theory}, the extreme-value corollary).
+
+\section{Surface as diffusion}
+
+Surface enters the variance knob directly: the all-weather (dirt) surface is more diffusive than
+turf --- kickback and a less uniform surface make times less repeatable --- so its diffusion is
+scaled by $\texttt{awt\_diff\_mult}=2.0$,
+\begin{equation}
+  D_{\text{eff}} \;=\; \texttt{diff\_coef}\cdot
+   \begin{cases} 2.0 & \text{AWT}\\ 1.0 & \text{turf,}\end{cases}
+   \qquad \texttt{diff\_coef}=170,
+  \label{eq:awtdiff}
+\end{equation}
+which corrects a pronounced AWT over-confidence (raising the model's AWT win-probability dispersion
+from an over-tight $12.7\%$ toward a calibrated $23.7\%$). The empirical distance-law study of
+Chapter~\ref{ch:state} independently recovers an AWT diffusion roughly twice the turf value,
+vindicating this multiplier from data.
+
+\section{What geometry does and does not yet capture}
+
+The terms above --- $\Leff$ on the drift, the crowding amplifier, the draw$\to\Ddiff$ variance, and
+the surface diffusion --- are the \emph{mean-field shadows} of draw: per-horse scalars that capture
+the field-averaged, first-moment consequences of geometry. They do \emph{not} capture the genuine
+two-dimensional, many-body phenomenon in which the cost of a draw is a functional of the jockey's
+control policy and of the style composition of the neighbouring horses. That is the
+geometry$\times$control game of Chapter~\ref{ch:theory}, the single most promising piece of open
+theory, for which the baked draw terms are explicit interim stopgaps and for which the
+computer-vision trajectory programme is being built to supply the missing lateral coordinate.
