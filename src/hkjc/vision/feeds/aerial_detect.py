@@ -269,3 +269,116 @@ def detect_blobs(
         out.sort(key=lambda b: b.area, reverse=True)
         out = out[:max_blobs]
     return out
+
+
+# --------------------------------------------------------------------------- rail-bounded detector
+# The count-aware avatar detector (promoted from studies/cv_avatar_detect2.py, journal 0101). Replaces
+# the k-means-forces-the-count approach: rail-bound the ROI (drops background false-positives), close +
+# rail-parallel blur to reconnect each avatar's split body/silk pieces, then split only OVER-LARGE
+# blobs (genuine front-to-back merges) into round(area/single) centres via distance-transform NMS,
+# with the single-horse area solved from the known field/legend count. Count-aware, not count-forced.
+
+
+def _line_kernel(length: int, angle: float):
+    """Binary line structuring element of ``length`` px oriented at ``angle`` (rad)."""
+    import cv2
+    n = max(3, length | 1)
+    k = np.zeros((n, n), np.uint8)
+    c = n // 2
+    dx, dy = np.cos(angle), np.sin(angle)
+    cv2.line(k, (int(round(c - dx * c)), int(round(c - dy * c))),
+             (int(round(c + dx * c)), int(round(c + dy * c))), 1, 1)
+    return k
+
+
+def _rail_band_angle(panel, ty0, ty1):
+    """Track-region mask between the two main rails + the dominant rail tangent angle.
+
+    Field-INDEPENDENT (rail candidates only), so using it to bound horse detection is not circular.
+    """
+    import cv2
+    from .aerial_rail import enumerate_lines, line_candidates
+    lines = sorted([ln for ln in enumerate_lines(line_candidates(panel, ty0, ty1), 2)
+                    if 1.0 <= ln["coverage"] <= 5.0], key=lambda ln: -ln["coverage"])[:2]
+    if not lines:
+        return None, 0.0
+    u = lines[0]["frame"][1]
+    angle = float(np.arctan2(u[1], u[0]))
+    rmask = np.zeros((ty1 - ty0, panel.shape[1]), np.uint8)
+    for ln in lines:
+        p = ln["pts"]
+        for t in range(1, len(p)):
+            cv2.line(rmask, (int(p[t - 1, 0]), int(p[t - 1, 1]) - ty0),
+                     (int(p[t, 0]), int(p[t, 1]) - ty0), 1, 1)
+    band = cv2.dilate(rmask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+    band = cv2.dilate(band, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (181, 181)))  # ~track width
+    return band, angle
+
+
+def _split_blob(sub_mask, nsub: int, sep: int = 9):
+    """Distance-transform NMS: ``nsub`` well-separated centres inside one merged blob (band coords)."""
+    import cv2
+    dist = cv2.distanceTransform(sub_mask.astype(np.uint8), cv2.DIST_L2, 5)
+    out = []
+    for _ in range(nsub):
+        _mn, mx, _ml, loc = cv2.minMaxLoc(dist)
+        if mx <= 0:
+            break
+        out.append((float(loc[0]), float(loc[1])))
+        cv2.circle(dist, loc, sep, 0, -1)
+    return out
+
+
+def detect_avatars(panel: np.ndarray, ty0: int, ty1: int, field: int = FIELD_DEFAULT):
+    """Rail-bounded, count-aware avatar detection (no k-means). Returns ``(dets, debug)``.
+
+    ``dets`` = list of :class:`AerialBlob` (``cx`` panel-relative). ``debug = (mask, angle)``.
+    """
+    import cv2
+    band = panel[ty0:ty1]
+    hsv = cv2.cvtColor(band, cv2.COLOR_BGR2HSV)
+    h, s, v = hsv[:, :, 0].astype(int), hsv[:, :, 1], hsv[:, :, 2]
+    turf = (s > 50) & (v > 60)
+    turf_hue = int(np.bincount(h[turf].ravel(), minlength=180).argmax()) if turf.any() else 45
+    d_hue = np.minimum(np.abs(h - turf_hue), 180 - np.abs(h - turf_hue))
+    is_turf = (d_hue < 14) & (s > 35) & (v > 50)
+    bright = (v > 175) & (s < 55)
+    sup = band.copy()
+    sup[is_turf | bright] = 0
+    gray = cv2.cvtColor(sup, cv2.COLOR_BGR2GRAY)
+    edges = cv2.dilate(cv2.Canny(gray, 40, 120), np.ones((3, 3), np.uint8), 1)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE,
+                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+    fill = edges.copy()
+    cnts, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(fill, cnts, -1, 255, -1)
+    color = ((~is_turf) & (~bright)).astype(np.uint8)
+    base = ((fill > 0) & (color > 0)).astype(np.uint8) * 255
+    base = cv2.morphologyEx(base, cv2.MORPH_CLOSE,                  # (3) reconnect intra-avatar pieces
+                            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+    base = cv2.morphologyEx(base, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+    rband, angle = _rail_band_angle(panel, ty0, ty1)
+    if rband is not None:
+        base = base * rband
+    m = cv2.morphologyEx(base, cv2.MORPH_CLOSE, _line_kernel(9, angle))
+    n, lbl, stats, cent = cv2.connectedComponentsWithStats(m, 8)
+    comps = [(i, int(stats[i, cv2.CC_STAT_AREA])) for i in range(1, n)
+             if 40 <= int(stats[i, cv2.CC_STAT_AREA]) <= 8000]
+    if not comps:
+        return [], (m, angle)
+    areas = [a for _i, a in comps]
+    total = float(sum(areas))
+    single = total / max(1, field)                                 # anchor single-horse area to count
+    for cand in np.linspace(0.45 * total / field, 1.8 * total / field, 80):
+        if sum(max(1, int(round(a / cand))) for a in areas) == field:
+            single = cand
+            break
+    dets = []
+    for i, area in comps:
+        nsub = max(1, int(round(area / single)))
+        if nsub == 1:
+            dets.append(AerialBlob(float(cent[i, 0]), float(cent[i, 1] + ty0), angle, area))
+        else:
+            for (cx, cy) in _split_blob(lbl == i, nsub):
+                dets.append(AerialBlob(cx, cy + ty0, angle, area // nsub))
+    return dets, (m, angle)

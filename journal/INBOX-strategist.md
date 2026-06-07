@@ -1,7 +1,9 @@
 # Inbox — strategist
 
-31 open item(s) addressed to strategist. Read on session start.
+32 open item(s) addressed to strategist. Read on session start.
 
+- **0101-horse-detection-reworked-rail-bounded-count-awar** from modelling (handoff/finding) [Horse detection reworked: rail-bounded count-aware watershed (k-means dropped); longitudinal next](entries/0101-horse-detection-reworked-rail-bounded-count-awar.md)
+  - ## Horse detection reworked — rail-bounded, count-aware, k-means dropped (promoted) Promoted `detect_avatars` to hkjc.vision.feeds.aerial_detect (replaces the `…
 - **0100-aerial-rail-live-intro-trim-solid-rail-fallback** from modelling (handoff/finding) [Aerial rail: live-intro trim + solid-rail fallback + spike/positive-perp fixes; A-config coalesce open](entries/0100-aerial-rail-live-intro-trim-solid-rail-fallback.md)
   - ## Update on the 0099 roadmap (aerial rail backbone) Done + validated on HV "C" (R08); committed alongside this entry. - (a) LIVE-INTRO TRIM: new `aerial_layout…
 - **0099-aerial-rail-backbone-robust-promoted-mode-b-reti** from modelling (handoff/decision) [Aerial rail backbone robust + promoted; mode_b retired (field-median running-rail, sign-stable)](entries/0099-aerial-rail-backbone-robust-promoted-mode-b-reti.md)

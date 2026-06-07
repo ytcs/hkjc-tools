@@ -59,7 +59,7 @@ def main() -> None:
     from cv_rigid_rail import build_rail_geometry, local_radius
     from hkjc.vision.aerial_layout import render_active
     from hkjc.vision.feeds.aerial import track_band
-    from hkjc.vision.feeds.aerial_detect import detect_edgefill
+    from hkjc.vision.feeds.aerial_detect import detect_avatars
     from hkjc.vision.feeds.aerial_rail import line_candidates, select_running_rail
     from hkjc.vision.geometry_cv import project_to_polyline
     os.makedirs(DIAG, exist_ok=True)
@@ -91,7 +91,7 @@ def main() -> None:
             continue
         ph = panel.shape[0]
         ty0, ty1 = track_band(panel)
-        dets, _b, _d = detect_edgefill(panel, ty0, ty1, field=FIELD)
+        dets, _dbg = detect_avatars(panel, ty0, ty1, field=FIELD)
         if len(dets) < 3:
             continue
         # RUNNING-RAIL selection: of the two main rails pick the one CLOSEST (median dist) to the

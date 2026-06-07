@@ -84,14 +84,18 @@ def _green_both_sides(model, band):
     return min(fr)
 
 
+def rail_role(model, band):
+    """PER-FRAME ABSOLUTE label: inner rail has infield green on BOTH sides; outer has clutter on its
+    far side. Returns ('inner'|'outer', min_green_fraction)."""
+    g = _green_both_sides(model, band)
+    return ("inner" if g > 0.5 else "outer"), g
+
+
 def label_pair(ma, mb, prev_in, prev_out, band):
-    """Assign the two rail models to inner/outer: by temporal proximity to prev, else green-side."""
-    if prev_in is not None:
-        da = cdist(ma["sample"](40), prev_in["sample"](40))
-        db = cdist(mb["sample"](40), prev_in["sample"](40))
-        return (ma, mb) if da < db else (mb, ma)
+    """Assign the two rail models to inner/outer by the green-side test ALONE (no temporal chaining,
+    so a label swap cannot propagate); inner = the rail that is greener on both sides."""
     ga, gb = _green_both_sides(ma, band), _green_both_sides(mb, band)
-    return (ma, mb) if ga >= gb else (mb, ma)        # inner = greener-both-sides
+    return (ma, mb) if ga >= gb else (mb, ma)
 
 
 def shift_toward(model, width_px, ref):
@@ -131,6 +135,7 @@ def run(t0=48.0, t1=74.0, stride=3, strip="data_cache/diag/drone_scan/04_rail_tr
     i = -1
     tiles = []
     res_all = []
+    loo = []
     cov = {"both": 0, "fill-in": 0, "fill-out": 0, "hold": 0, "seed": 0}
     for fr in cont.decode(st):
         i += 1
@@ -150,6 +155,10 @@ def run(t0=48.0, t1=74.0, stride=3, strip="data_cache/diag/drone_scan/04_rail_tr
                 inner, outer, kind = mi, mo, "both"
                 sel_px = np.vstack([np.c_[ca["xs"], ca["ys"]], np.c_[cb["xs"], cb["ys"]]])
                 w = cdist(mi["sample"](60), mo["sample"](60))
+                # leave-one-out fill accuracy: predict each rail from the OTHER + width, vs truth
+                if width is not None:
+                    loo.append(cdist(shift_toward(mo, width, mi)["sample"](60), mi["sample"](60)))
+                    loo.append(cdist(shift_toward(mi, width, mo)["sample"](60), mo["sample"](60)))
                 width = w if width is None else 0.85 * width + 0.15 * w
             elif ca is not None and inner is not None and width is not None:
                 # one rail only -> identify it by prev proximity, fill the partner from tracked width
@@ -185,10 +194,165 @@ def run(t0=48.0, t1=74.0, stride=3, strip="data_cache/diag/drone_scan/04_rail_tr
                 for r in range(0, len(tiles), cols)]
         cv2.imwrite(strip, np.vstack(rows))
     ra = np.array(res_all)
+    la = np.array(loo) if loo else np.array([float("nan")])
     print(f"window {t0}-{t1}: frames {sum(cov.values())}  coverage {cov}")
-    print(f"  resid(selected px) med {np.median(ra):.1f}px  mean {ra.mean():.1f}  "
-          f"p90 {np.percentile(ra, 90):.1f}  worst {ra.max():.1f}")
+    print(f"  resid(selected px) med {np.median(ra):.1f}px  p90 {np.percentile(ra, 90):.1f}  worst {ra.max():.1f}")
+    print(f"  LOO fill error    med {np.median(la):.1f}px  p90 {np.percentile(la, 90):.1f}  worst {la.max():.1f}  (n={len(loo)})")
+
+
+def _orient(pts, ref):
+    if ref is None:
+        return pts
+    if cdist(pts, ref) > cdist(pts[::-1], ref):
+        return pts[::-1]
+    return pts
+
+
+def _clean_series(series, real_idx, thresh, iters=3):
+    """Reject outlier detections (label swaps / orientation flips / bad pairs) by temporal
+    consistency: a real frame whose curve deviates from its neighbours' interpolated prediction by
+    >> the norm is not a real rail. Returns the cleaned real-index list (outliers -> set None)."""
+    real = list(real_idx)
+    for _ in range(iters):
+        bad = set()
+        for k in real:
+            bef = [j for j in real if j < k]
+            aft = [j for j in real if j > k]
+            if bef and aft:
+                a, b = bef[-1], aft[0]
+                f = (k - a) / (b - a)
+                if cdist((1 - f) * series[a] + f * series[b], series[k]) > thresh:
+                    bad.add(k)
+        if not bad:
+            break
+        real = [k for k in real if k not in bad]
+    for k in list(range(len(series))):
+        if series[k] is not None and k not in set(real):
+            series[k] = None
+    return real
+
+
+def _fill_series(series, real_idx):
+    """Fill None gaps by linear temporal interpolation between bracketing REAL frames (motion is
+    ~linear over the brief occlusion); hold nearest at the ends."""
+    out = list(series)
+    for k in range(len(out)):
+        if series[k] is not None:
+            continue
+        bef = [j for j in real_idx if j < k]
+        aft = [j for j in real_idx if j > k]
+        if bef and aft:
+            a, b = bef[-1], aft[0]
+            f = (k - a) / (b - a)
+            out[k] = (1 - f) * series[a] + f * series[b]
+        elif bef:
+            out[k] = series[bef[-1]]
+        elif aft:
+            out[k] = series[aft[0]]
+    return out
+
+
+def run_smooth(t0=0.0, t1=113.0, stride=3, strip="data_cache/diag/drone_scan/04_rail_track.png"):
+    """Two-pass rail-space SMOOTHER: pass1 detect+label each rail per frame; pass2 fill each rail's
+    gaps by temporal interpolation from the frames where THAT rail was actually seen."""
+    cont = av.open(VIDEO)
+    st = cont.streams.video[0]
+    N = 80
+    i = -1
+    rec = []                       # per kept-frame record
+    last_in = last_out = None
+    for fr in cont.decode(st):
+        i += 1
+        t = i / 25.0
+        if t > t1:
+            break
+        if i % stride or t < t0:
+            continue
+        bgr = fr.to_ndarray(format="bgr24")
+        cands, band, _ = detect(bgr)
+        in_pts = out_pts = sel_px = None
+        if band is not None and cands:
+            ca, cb = select_pair(cands)
+            if ca is not None and cb is not None:
+                mi, mo = label_pair(ca["model"], cb["model"], None, None, band)  # per-frame green-side
+                in_pts = _orient(mi["sample"](N), last_in)
+                out_pts = _orient(mo["sample"](N), last_out)
+                sel_px = np.vstack([np.c_[ca["xs"], ca["ys"]], np.c_[cb["xs"], cb["ys"]]])
+            elif ca is not None:
+                role, _ = rail_role(ca["model"], band)              # per-frame absolute role
+                if role == "inner":
+                    in_pts = _orient(ca["model"]["sample"](N), last_in)
+                else:
+                    out_pts = _orient(ca["model"]["sample"](N), last_out)
+                sel_px = np.c_[ca["xs"], ca["ys"]]
+        if in_pts is not None:
+            last_in = in_pts
+        if out_pts is not None:
+            last_out = out_pts
+        rec.append({"i": i, "t": t, "in": in_pts, "out": out_pts, "sel": sel_px,
+                    "bgr": bgr if i % 96 == 0 else None})
+    # PASS 2: temporal fill per rail
+    in_series = [r["in"] for r in rec]
+    out_series = [r["out"] for r in rec]
+    thr = 20.0 * cdr.SCALE
+    in_real = _clean_series(in_series, [k for k, p in enumerate(in_series) if p is not None], thr)
+    out_real = _clean_series(out_series, [k for k, p in enumerate(out_series) if p is not None], thr)
+    in_full = _fill_series(in_series, in_real)
+    out_full = _fill_series(out_series, out_real)
+    # METRIC: LOO temporal fill error (drop a real rail, interpolate from its OTHER real frames)
+    loo = []
+    for ser, real in ((in_series, in_real), (out_series, out_real)):
+        rset = set(real)
+        for k in real:
+            bef = [j for j in real if j < k and j in rset]
+            aft = [j for j in real if j > k]
+            if bef and aft:
+                a, b = bef[-1], aft[0]
+                f = (k - a) / (b - a)
+                pred = (1 - f) * ser[a] + f * ser[b]
+                loo.append(cdist(pred, ser[k]))
+    res = []
+    for k, r in enumerate(rec):
+        if r["sel"] is not None and in_full[k] is not None:
+            rail = np.vstack([in_full[k], out_full[k]])
+            d, _ = cKDTree(rail).query(r["sel"])
+            res.append(float(np.median(d)))
+    # strip
+    tiles = []
+    for k, r in enumerate(rec):
+        if r["bgr"] is None or in_full[k] is None:
+            continue
+        ov = (r["bgr"] // 2).copy()
+        if r["sel"] is not None:
+            ov[r["sel"][:, 1], r["sel"][:, 0]] = (0, 140, 255)
+        cv2.polylines(ov, [out_full[k].astype(np.int32)], False, (255, 0, 255), 2)
+        cv2.polylines(ov, [in_full[k].astype(np.int32)], False, (255, 255, 0), 2)
+        kk = "both" if (k in set(in_real) and k in set(out_real)) else "fill"
+        cv2.putText(ov, f"t={r['t']:.1f} {kk}", (8, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        tiles.append(cv2.resize(ov, (560, 315)))
+    if tiles:
+        cols = 4
+        rows = [np.hstack(tiles[r:r + cols] + [np.zeros_like(tiles[0])] * (cols - len(tiles[r:r + cols])))
+                for r in range(0, len(tiles), cols)]
+        cv2.imwrite(strip, np.vstack(rows))
+    ra, la = np.array(res), np.array(loo)
+    nb = len(set(in_real) & set(out_real))
+    print(f"smooth {t0}-{t1}: frames {len(rec)}  both-real {nb} ({100*nb/len(rec):.0f}%)  filled {len(rec)-nb}")
+    print(f"  resid(real px) med {np.median(ra):.1f}px p90 {np.percentile(ra,90):.1f}")
+    print(f"  LOO temporal-fill err med {np.median(la):.1f}px p90 {np.percentile(la,90):.1f} worst {la.max():.1f} (n={len(la)})")
+
+
+def _model_of(pts):
+    if pts is None:
+        return None
+    return {"type": "line", "sample": lambda nn=80, _p=pts: _p}
 
 
 if __name__ == "__main__":
-    run()
+    import sys
+    if "--full" in sys.argv:
+        run_smooth(t0=0.0, t1=113.0, strip="data_cache/diag/drone_scan/04_rail_track_full.png")
+    elif "--oldfull" in sys.argv:
+        run(t0=0.0, t1=113.0, strip="data_cache/diag/drone_scan/04_rail_track_full.png")
+    else:
+        run_smooth(t0=48.0, t1=74.0)
