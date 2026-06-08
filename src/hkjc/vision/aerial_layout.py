@@ -95,7 +95,9 @@ def find_layout(img, *, min_legend_sat: int = 120) -> Layout:
         # The distance-to-go odometer sits in a dark map box at the top-RIGHT of the
         # synthetic panel; the official clock + published splits live at the top of the
         # LEFT (broadcast) panel. Both are at fixed fractional positions in this product.
-        odo_x0=int(0.80 * w),
+        # x0 starts at 0.83 (not 0.80): the left ~1/4 of the box is sponsor "headphones"
+        # text — pure OCR noise; dropping it tightens precision without clipping the numerals.
+        odo_x0=int(0.83 * w),
         odo_x1=int(0.92 * w),
         odo_y0=int(0.27 * h),
         odo_y1=int(0.34 * h),
