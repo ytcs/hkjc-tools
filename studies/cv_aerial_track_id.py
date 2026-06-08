@@ -50,12 +50,17 @@ def _ry_side(perps):
 
 
 def _medfilt(a, w=5):
-    """Rolling-median filter — suppresses the isolated per-frame outlier spikes (resolution clean-up)."""
+    """NaN-aware rolling-median filter — de-spikes; NaN (rejected/invalid) points stay gaps."""
     a = np.asarray(a, float)
     if len(a) < 3:
         return a
     h = w // 2
-    return np.array([float(np.median(a[max(0, i - h):i + h + 1])) for i in range(len(a))])
+    out = np.empty(len(a))
+    for i in range(len(a)):
+        win = a[max(0, i - h):i + h + 1]
+        win = win[np.isfinite(win)]
+        out[i] = float(np.median(win)) if len(win) else np.nan
+    return out
 
 
 def main() -> None:
@@ -282,13 +287,28 @@ def main() -> None:
     # with y_lat. odo_arclen / s_head / scale / metric() were defined above (shared with association).
     fig2, (axA, axL, axR) = plt.subplots(1, 3, figsize=(20, 5))
     n_paths = 0
+    # VALIDITY gate (from the spike audit): the per-frame metric is trustworthy only when the two-rail
+    # ruler is resolvable (sep not foreshortened to ~nothing), the projection isn't degenerate (s off
+    # the curve ends), and the result is physically possible. Failures -> NaN (gaps the backbone fills).
+    SEP_MIN, S_MIN, YLAT_MAX, OFF_MAX = 60.0, 3.0, 25.0, 40.0
+
+    def _recon(f, s, perp):
+        if sep_by_f.get(f, sep_global) < SEP_MIN or s < S_MIN:   # scale untrustworthy / degenerate proj
+            return np.nan, np.nan
+        sc = scale_f(f)
+        off, yl = -(s_head[f] - s) * sc, perp * sc
+        if abs(off) > OFF_MAX or yl > YLAT_MAX:                  # physically impossible -> reject
+            return np.nan, np.nan
+        return off, yl
+
     for pts in tracks.values():
         if len(pts) < 8:
             continue
         n_paths += 1
         ff = [p[0] for p in pts]
-        offset = _medfilt([-(s_head[f] - s) * scale_f(f) for (f, _cx, _cy, s, _p) in pts])  # de-spike
-        ylat = _medfilt([perp * scale_f(fp) for (fp, _cx, _cy, _s, perp) in pts])           # de-spike
+        rec = [_recon(f, s, perp) for (f, _cx, _cy, s, perp) in pts]
+        offset = _medfilt([r[0] for r in rec])
+        ylat = _medfilt([r[1] for r in rec])
         arclen = [odo_arclen(f) + o for f, o in zip(ff, offset)]
         axA.plot(ff, arclen, "-", lw=1.0, alpha=0.7)
         axL.plot(ff, offset, "-", lw=1.0, alpha=0.7)
@@ -305,6 +325,26 @@ def main() -> None:
     axR.set_title("Reconstructed 2D path: lateral trip vs arclen")
     fig2.savefig(f"{DIAG}/cv_recon_2d.png", dpi=110, bbox_inches="tight")
     print(f"[fig] {DIAG}/cv_recon_2d.png  ({n_paths} paths, scale~={RAIL_W/sep_global:.3f} m/px (per-frame))")
+
+    # ---- AUDIT: pinpoint the gigantic glitch spikes — which stage fails at each? ----------------
+    audit = []
+    for pts in tracks.values():
+        for (f, cx, cy, s, perp) in pts:
+            sc = scale_f(f)
+            offset = -(s_head[f] - s) * sc
+            ylat = perp * sc
+            if ylat > 25.0 or abs(offset) > 50.0:   # physically impossible -> a failure
+                cv = curves[f]
+                audit.append((round(ylat, 1), round(offset), f, round(perp, 1), round(s, 1),
+                              round(s_head[f], 1), round(sep_by_f.get(f, sep_global), 1), round(sc, 3),
+                              round(float(cv[:, 1].mean())), outers.get(f) is not None))
+    audit.sort(key=lambda a: -(a[0] + abs(a[1])))
+    print(f"AUDIT: {len(audit)} spike points (ylat>25m or |offset|>50m). worst 15:")
+    print("  ylat  offset frame  perp_px  s_px  s_head  sep_px  scale  railmidy  outer?")
+    for a in audit[:15]:
+        print("  {:6} {:6} {:5} {:7} {:6} {:6} {:6} {:6} {:8} {}".format(*a))
+    spike_frames = sorted({a[2] for a in audit[:8]})
+    print(f"worst spike frames -> {spike_frames}")
 
     # ---- PASS 4: RESOLUTION diagnostic — top tracks' raw perp & s (px) + worst-jump frames -------
     top = sorted(tracks.values(), key=len, reverse=True)[:3]

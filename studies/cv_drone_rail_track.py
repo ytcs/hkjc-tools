@@ -282,7 +282,7 @@ def _fill_series(series, real_idx):
 CACHE = "data_cache/diag/drone_scan/_rec_pass1.pkl"
 
 
-def pass1(t0=0.0, t1=113.0, stride=3, video=VIDEO, cache=CACHE):
+def pass1(t0=0.0, t1=113.0, stride=1, video=VIDEO, cache=CACHE):
     """Expensive detection pass (decode + detect + label per frame) -> cache to disk so the cheap
     pass-2 fill experiments run in seconds instead of a 6-min re-decode."""
     import pickle
@@ -449,7 +449,7 @@ def _temporal_fill(series, real, max_gap):
     return out
 
 
-def pass2(max_gap=8, thr=50.0, cache=CACHE, strip="data_cache/diag/drone_scan/04_rail_track_full.png"):
+def pass2(max_gap=24, thr=50.0, cache=CACHE, strip="data_cache/diag/drone_scan/04_rail_track_full.png"):
     """Fast pass-2 on the cached detections: outlier-reject -> HYBRID fill (temporal for short
     occlusions, geometry [other rail + width] for long gaps) -> metrics + strip."""
     import pickle
@@ -459,8 +459,7 @@ def pass2(max_gap=8, thr=50.0, cache=CACHE, strip="data_cache/diag/drone_scan/04
     in_s = [r["in"] for r in rec]
     out_s = [r["out"] for r in rec]
     # OUTER fallback: where the white-outer is absent, use the band-boundary outer curve (a real
-    # outer-rail observation, just lower-contrast) before resorting to fill. Then orient the whole
-    # series consistently so cleaning/interpolation are valid; bad boundary curves get rejected.
+    # outer-rail observation) -> orient consistently; validated below against the track width.
     nfb = 0
     for k in range(n):
         if out_s[k] is None and rec[k].get("outb") is not None:
@@ -471,10 +470,8 @@ def pass2(max_gap=8, thr=50.0, cache=CACHE, strip="data_cache/diag/drone_scan/04
         if out_s[k] is not None:
             out_s[k] = _orient(out_s[k], prev)
             prev = out_s[k]
-    # WIDTH-CONSISTENCY reject: the two real rails sit ~track-width apart. A "both" frame whose
-    # separation deviates far from the median width = the detector grabbed a wrong feature (e.g. the
-    # far boundary on a wide-green bend) -> drop BOTH so it gets filled instead. (Source fix for the
-    # occlusion tail; pass2-only.)
+    # WIDTH-CONSISTENCY reject: a both-frame whose rail separation deviates far from the median track
+    # width = the detector grabbed a wrong feature (far boundary / verge / wrong rail) -> drop both.
     med_w0 = np.median([cdist(in_s[k], out_s[k]) for k in range(n)
                         if in_s[k] is not None and out_s[k] is not None])
     nbad = 0
