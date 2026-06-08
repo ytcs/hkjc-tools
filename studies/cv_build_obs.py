@@ -23,6 +23,7 @@ RACES = {                                   # race -> (aerial video, distance m)
     "R03": ("data_cache/video/aerial_20260603_03.mp4", 1200.0),
     "R06": ("data_cache/video/aerial_20260603_06.mp4", 1200.0),
     "R01": ("data_cache/video/aerial_20260603_01.mp4", 1650.0),
+    "R02A": ("data_cache/video/aerial_20260520_02.mp4", 1500.0),   # A-config (single-rail-dominant)
 }
 RACE = os.environ.get("RACE", "R03")
 VIDEO, DIST = RACES[RACE]

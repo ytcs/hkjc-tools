@@ -38,6 +38,7 @@ RACES = {
     "R03": ("aerial_20260603_03", 1200.0, 12, "C"),
     "R06": ("aerial_20260603_06", 1200.0, 13, "C"),
     "R01": ("aerial_20260603_01", 1650.0, 12, "C"),
+    "R02A": ("aerial_20260520_02", 1500.0, 12, "A"),   # A-config: single-rail-dominant (outer ~28% only)
 }
 RACE = os.environ.get("RACE", "R08")
 _vid, DIST, FIELD, COURSE = RACES[RACE]
@@ -402,7 +403,9 @@ def main() -> None:
     # VALIDITY gate (from the spike audit): the per-frame metric is trustworthy only when the two-rail
     # ruler is resolvable (sep not foreshortened to ~nothing), the projection isn't degenerate (s off
     # the curve ends), and the result is physically possible. Failures -> NaN (gaps the backbone fills).
-    SEP_MIN, S_MIN, YLAT_MAX, OFF_MAX = 60.0, 3.0, 25.0, 40.0
+    # SEP_MIN is RELATIVE to the race's own zoom (sep_global) — an absolute 60 px was R08-specific and
+    # over-rejected the more zoomed-out R02A (sep ~61 px), blanking whole stretches (journal 0109).
+    SEP_MIN, S_MIN, YLAT_MAX, OFF_MAX = 0.45 * sep_global, 3.0, 25.0, 40.0
 
     def _recon(f, s, perp):
         sc = scale_f(f)
