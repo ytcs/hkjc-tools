@@ -1,7 +1,9 @@
 # Inbox — trading
 
-33 open item(s) addressed to trading. Read on session start.
+34 open item(s) addressed to trading. Read on session start.
 
+- **0103-pose-backbone-core-validated-free-homography-smo** from modelling (handoff/finding) [Pose backbone: core validated; free-homography smoothing fails -> solvePnP pose + EKF is the path](entries/0103-pose-backbone-core-validated-free-homography-smo.md)
+  - ## Pose backbone (task #101): core validated, but FREE-homography smoothing fails -> need solvePnP Built studies/cv_pose_backbone.py: per-frame two-rail homogra…
 - **0102-2d-reconstruction-resolution-root-cause-sota-bac** from modelling (handoff/decision) [2D reconstruction: resolution root cause + SOTA backbone blueprint (BHITK camera-pose tracker)](entries/0102-2d-reconstruction-resolution-root-cause-sota-bac.md)
   - ## 2D reconstruction: resolution diagnosis + the backbone revamp blueprint (SOTA-informed) ### Where we are (committed thru 8bc8bfc + WIP) detect_avatars (rail-…
 - **0101-horse-detection-reworked-rail-bounded-count-awar** from modelling (handoff/finding) [Horse detection reworked: rail-bounded count-aware watershed (k-means dropped); longitudinal next](entries/0101-horse-detection-reworked-rail-bounded-count-awar.md)

@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-100 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+101 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -104,3 +104,4 @@
 - **0100-aerial-rail-live-intro-trim-solid-rail-fallback** →modelling,all (handoff/open) [Aerial rail: live-intro trim + solid-rail fallback + spike/positive-perp fixes; A-config coalesce open](entries/0100-aerial-rail-live-intro-trim-solid-rail-fallback.md) — _cv, aerial, rail, reconstruction, handoff_
 - **0101-horse-detection-reworked-rail-bounded-count-awar** →modelling,all (handoff/open) [Horse detection reworked: rail-bounded count-aware watershed (k-means dropped); longitudinal next](entries/0101-horse-detection-reworked-rail-bounded-count-awar.md) — _cv, aerial, detection, reconstruction, handoff_
 - **0102-2d-reconstruction-resolution-root-cause-sota-bac** →modelling,all (handoff/open) [2D reconstruction: resolution root cause + SOTA backbone blueprint (BHITK camera-pose tracker)](entries/0102-2d-reconstruction-resolution-root-cause-sota-bac.md) — _cv, aerial, reconstruction, homography, handoff_
+- **0103-pose-backbone-core-validated-free-homography-smo** →modelling,all (handoff/open) [Pose backbone: core validated; free-homography smoothing fails -> solvePnP pose + EKF is the path](entries/0103-pose-backbone-core-validated-free-homography-smo.md) — _cv, aerial, reconstruction, homography, handoff_

@@ -499,6 +499,12 @@ def pass2(max_gap=24, thr=50.0, cache=CACHE, strip="data_cache/diag/drone_scan/0
             out_geo += 1
     in_f = _fill_series(in_f, [k for k, p in enumerate(in_f) if p is not None])
     out_f = _fill_series(out_f, [k for k, p in enumerate(out_f) if p is not None])
+    # EXPORT the filled per-frame rails (full coverage) for downstream horse lane-bounding
+    nanp = np.full((80, 2), np.nan, np.float32)
+    np.savez(cache.replace(".pkl", "_rails.npz"),
+             idx=np.array([r["i"] for r in rec]),
+             inner=np.array([(p if p is not None else nanp) for p in in_f], np.float32),
+             outer=np.array([(p if p is not None else nanp) for p in out_f], np.float32))
     # METRICS
     loo, gaps = [], []
     for ser, real in ((in_s, in_real), (out_s, out_real)):
