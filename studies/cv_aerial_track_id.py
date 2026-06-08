@@ -283,6 +283,53 @@ def main() -> None:
             active[next_tid] = dict(last_f=f, arclen=d[4], ylat=d[5])
             next_tid += 1
 
+    # ---- FRAGMENT RE-LINK: a horse whose detection drops out for > GRACE restarts as a new tid. Re-join
+    # B after A when their ODOMETER-PREDICTED (arclen, y_lat) trajectories are continuous across the gap.
+    # STRICT gates + one-successor/one-predecessor greedy-by-cost => no ambiguous fusion of two horses
+    # (the user's mis-ID caution). Predicting A forward by the odometer delta makes long holes linkable.
+    LINK_GAP, LINK_ARC, LINK_LAT = 250, 6.0, 3.0    # max hole (frames ~10 s); metric gates (m)
+
+    def _endpt(pts, k=5):
+        def mp(seg):
+            ms = [metric(f, s, perp) for (f, _cx, _cy, s, perp) in seg]
+            return float(np.median([m[0] for m in ms])), float(np.median([m[1] for m in ms]))
+        return mp(pts[:k]), mp(pts[-k:])
+
+    relinkable = {t: v for t, v in tracks.items() if len(v) >= 12}
+    ends = {t: (v[0][0], v[-1][0], *_endpt(v)) for t, v in relinkable.items()}  # t->(sf,ef,startm,endm)
+    links = []
+    for a, (_saf, eaf, _sam, eam) in ends.items():
+        for b, (sbf, _ebf, sbm, _ebm) in ends.items():
+            gap = sbf - eaf
+            if a == b or not (0 < gap <= LINK_GAP):
+                continue
+            pred_arc = eam[0] + (odo_arclen(sbf) - odo_arclen(eaf))   # A advances with the odometer
+            da, dl = abs(sbm[0] - pred_arc), abs(sbm[1] - eam[1])
+            if da <= LINK_ARC and dl <= LINK_LAT:
+                links.append((da / LINK_ARC + dl / LINK_LAT, a, b))
+    links.sort()
+    parent = {t: t for t in tracks}
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    succ_used, pred_used, n_link = set(), set(), 0
+    for _cost, a, b in links:                       # greedy by cost; each end links at most once
+        if a in succ_used or b in pred_used or _find(a) == _find(b):
+            continue
+        parent[_find(b)] = _find(a)
+        succ_used.add(a)
+        pred_used.add(b)
+        n_link += 1
+    merged = {}
+    for t, v in tracks.items():
+        merged.setdefault(_find(t), []).extend(v)
+    tracks = {t: sorted(v) for t, v in merged.items()}
+    print(f"re-link: {n_link} joins -> {len(tracks)} tracklets (from {len(ends)} relinkable fragments)")
+
     lengths = sorted((len(v) for v in tracks.values()), reverse=True)
     long_tracks = [v for v in tracks.values() if len(v) >= 5]
     span = max(frames) - min(frames)
