@@ -37,7 +37,7 @@ DIAG = "data_cache/diag"
 HALF = 960
 DIST = 1800.0
 FIELD = 11
-STRIDE = 4
+STRIDE = 1               # process EVERY frame (25 fps native) for max temporal resolution
 GATE_PX = 60.0           # max avatar displacement between stride-4 frames (panel px) for association
 LANE_K = 1.35            # lane half-width = LANE_K * p98(field |perp|): data-driven, not hand-tuned
 SAVE_FRAMES = [None, 1080, 1760, 2440]   # None -> seed frame; rest = mid-race ID overlays
@@ -86,6 +86,7 @@ def main() -> None:
     # per frame store: dict(frame -> list of (cx, cy, s, perp)), and the rail curve + panel (for saves)
     per_frame = {}
     curves = {}
+    outers = {}          # the OTHER main rail (outer) per frame -> local 22.5 m metric ruler
     saved_panels = {}
     want_panels = set()  # resolved after we know the seed frame; collect a superset now
     prev_tang = None     # carried travel tangent -> keeps the perp SIGN consistent across frames
@@ -116,6 +117,7 @@ def main() -> None:
         if curve is None:
             continue
         prev_curve = curve
+        outers[i] = (_info or {}).get("outer")
         proj = [(d.cx, d.cy, *project_to_polyline(curve, d.cx, d.cy)) for d in dets]
         perps = np.array([p[3] for p in proj])
         side = _ry_side(perps)          # the field's running side of the rail (per-frame median sign)
@@ -147,19 +149,47 @@ def main() -> None:
     # robust head reference: the 96th percentile of s, NOT max(s) (a single spurious lead detection
     # makes max jitter and snaps the longitudinal baseline). p96 ~ the leader but outlier-resistant.
     s_head = {f: float(np.percentile([p[2] for p in per_frame[f]], 96)) for f in frames}
+
+    # ASSOCIATION uses a STABLE global scale (a varying scale would jitter the matching coordinate and
+    # shatter the tracks). metric() below feeds PASS 2 only.
     spreads = [max(p[2] for p in per_frame[f]) - min(p[2] for p in per_frame[f])
                for f in frames if len(per_frame[f]) > 2]
-    scale = 15.0 / max(1.0, float(np.median(spreads)))   # s-px offset -> ~m (typical field ~15 m long)
+    scale_assoc = 15.0 / max(1.0, float(np.median(spreads)))
 
     def metric(f, s, perp):
-        return odo_arclen(f) - (s_head[f] - s) * scale, perp * scale   # (arclen, y_lat) in metres
+        return odo_arclen(f) - (s_head[f] - s) * scale_assoc, perp * scale_assoc
+
+    # OUTPUT uses a PERSPECTIVE-CORRECT per-frame scale: the inner->outer rail separation is a KNOWN
+    # 22.5 m, so local px->m varies with foreshortening. Temporally SMOOTHED (camera distance changes
+    # slowly; the raw per-frame sep is noisy because the outer rail is the fainter one).
+    RAIL_W = 22.5
+
+    def _sep_px(f):
+        inner, outer = curves[f], outers.get(f)
+        if outer is None or len(outer) == 0:
+            return None
+        d2 = (inner[:, None, 0] - outer[None, :, 0]) ** 2 + (inner[:, None, 1] - outer[None, :, 1]) ** 2
+        return float(np.median(np.sqrt(d2.min(1))))
+
+    sep_raw = np.array([_sep_px(f) if _sep_px(f) else np.nan for f in frames])
+    sep_global = float(np.nanmedian(sep_raw)) if np.isfinite(sep_raw).any() else 200.0
+    ok = np.isfinite(sep_raw)
+    if ok.sum() >= 2:                      # fill gaps, then WIDE temporal median (camera dist is slow)
+        sep_raw = np.interp(np.arange(len(frames)), np.where(ok)[0], sep_raw[ok])
+    else:
+        sep_raw = np.full(len(frames), sep_global)
+    sep_sm = _medfilt(sep_raw, w=15)
+    sep_by_f = {f: float(sep_sm[k]) for k, f in enumerate(frames)}
+
+    def scale_f(f):
+        return RAIL_W / max(20.0, sep_by_f.get(f, sep_global))
 
     # ---- PASS 2: METRIC-SPACE association with the ODOMETER as the motion prior ----------------
     # Match detections in (arclen, y_lat) METRES. Each track is predicted forward by the odometer
     # delta (a horse advances with the field; its residual drift between stride-4 frames is small), so
     # association survives bends, zoom and short holes far better than panel-pixel NN. Holes bridged
     # up to GRACE frames; gates are in metres.
-    GATE_ARC, GATE_LAT, GRACE = 6.0, 4.0, 6 * STRIDE
+    GATE_ARC, GATE_LAT, GRACE = 6.0, 4.0, 24   # gates in metres; GRACE ~1 s (stride-independent)
     tracks = {}            # tid -> list of (frame, cx, cy, s, perp)
     active = {}            # tid -> dict(last_f, arclen, ylat)
     next_tid = 0
@@ -257,8 +287,8 @@ def main() -> None:
             continue
         n_paths += 1
         ff = [p[0] for p in pts]
-        offset = _medfilt([-(s_head[f] - s) * scale for (f, _cx, _cy, s, _p) in pts])  # de-spike
-        ylat = _medfilt([perp * scale for (_f, _cx, _cy, _s, perp) in pts])            # de-spike
+        offset = _medfilt([-(s_head[f] - s) * scale_f(f) for (f, _cx, _cy, s, _p) in pts])  # de-spike
+        ylat = _medfilt([perp * scale_f(fp) for (fp, _cx, _cy, _s, perp) in pts])           # de-spike
         arclen = [odo_arclen(f) + o for f, o in zip(ff, offset)]
         axA.plot(ff, arclen, "-", lw=1.0, alpha=0.7)
         axL.plot(ff, offset, "-", lw=1.0, alpha=0.7)
@@ -274,7 +304,7 @@ def main() -> None:
     axR.set_ylabel("y_lat (m), clipped 8")
     axR.set_title("Reconstructed 2D path: lateral trip vs arclen")
     fig2.savefig(f"{DIAG}/cv_recon_2d.png", dpi=110, bbox_inches="tight")
-    print(f"[fig] {DIAG}/cv_recon_2d.png  ({n_paths} paths, scale={scale:.3f} m/px)")
+    print(f"[fig] {DIAG}/cv_recon_2d.png  ({n_paths} paths, scale~={RAIL_W/sep_global:.3f} m/px (per-frame))")
 
     # ---- PASS 4: RESOLUTION diagnostic — top tracks' raw perp & s (px) + worst-jump frames -------
     top = sorted(tracks.values(), key=len, reverse=True)[:3]

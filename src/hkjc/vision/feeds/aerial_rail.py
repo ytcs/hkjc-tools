@@ -249,4 +249,7 @@ def select_running_rail(cands, deg, field_pts, prev_tang=None, prev_curve=None, 
         curve = _orient(curve, prev_tang)
     tang = curve[-1] - curve[0]
     tang = tang / (np.hypot(*tang) + 1e-9)
-    return curve, tang, {"basis": basis}
+    # expose the OTHER main rail (the outer): it sits a KNOWN 22.5 m from the inner, so the local
+    # inner->outer pixel separation is the metric ruler for a perspective-correct y_lat.
+    outer = main[1 - pick]["pts"] if len(main) == 2 else None
+    return curve, tang, {"basis": basis, "outer": outer}
