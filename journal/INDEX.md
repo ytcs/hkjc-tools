@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-101 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+102 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -105,3 +105,4 @@
 - **0101-horse-detection-reworked-rail-bounded-count-awar** →modelling,all (handoff/open) [Horse detection reworked: rail-bounded count-aware watershed (k-means dropped); longitudinal next](entries/0101-horse-detection-reworked-rail-bounded-count-awar.md) — _cv, aerial, detection, reconstruction, handoff_
 - **0102-2d-reconstruction-resolution-root-cause-sota-bac** →modelling,all (handoff/open) [2D reconstruction: resolution root cause + SOTA backbone blueprint (BHITK camera-pose tracker)](entries/0102-2d-reconstruction-resolution-root-cause-sota-bac.md) — _cv, aerial, reconstruction, homography, handoff_
 - **0103-pose-backbone-core-validated-free-homography-smo** →modelling,all (handoff/open) [Pose backbone: core validated; free-homography smoothing fails -> solvePnP pose + EKF is the path](entries/0103-pose-backbone-core-validated-free-homography-smo.md) — _cv, aerial, reconstruction, homography, handoff_
+- **0104-pose-backbone-affine-model-validated-top-down-bl** →modelling,all (handoff/open) [Pose backbone: AFFINE model validated (top-down); blocker is unreliable outer rail -> EKF + outlier-reject next](entries/0104-pose-backbone-affine-model-validated-top-down-bl.md) — _cv, aerial, reconstruction, homography, handoff_

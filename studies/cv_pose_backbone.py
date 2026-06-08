@@ -75,8 +75,10 @@ def _affine_init(inner_px, outer_px):
 def fit_homography(inner_px, outer_px, R, init_H=None, n_iter=20, trim=0.30):
     """ICP fit of the two-rail template to detected inner/outer rail pixels. Returns (H, resid).
 
-    Init from ``init_H`` (the previous frame's pose — SOTA temporal init) if given, else an affine
-    guess from the rails' PCA + the known RAIL_W ruler; then iterated DLT refine on nearest matches.
+    The render is a tilted/anisotropic TOP-DOWN view, NOT a perspective camera, so we fit a 6-DOF
+    AFFINE (estimateAffine2D) — it matches the free homography's accuracy (and beats it on the home
+    turn) while its parameters live in a FLAT, SMOOTHABLE space (the free homography did not). Init
+    from ``init_H`` (previous pose) if given, else the affine guess from the rails' PCA + RAIL_W ruler.
     """
     import cv2
     plane, label = build_template(R)
@@ -105,10 +107,10 @@ def fit_homography(inner_px, outer_px, R, init_H=None, n_iter=20, trim=0.30):
         dst = np.vstack(keep_dst).astype(np.float32)
         if len(src) < 8:                          # too few correspondences -> keep current H
             break
-        Hn, _m = cv2.findHomography(src, dst, 0)
-        if Hn is None or not np.isfinite(Hn).all():
+        M, _m = cv2.estimateAffine2D(src, dst, method=cv2.LMEDS)   # 6-DOF affine (smoothable)
+        if M is None or not np.isfinite(M).all():
             break
-        H = Hn
+        H = np.vstack([M, [0.0, 0.0, 1.0]])
     proj = _project_h(plane, H)
     d2 = ((pix[:, None, 0] - proj[None, :, 0]) ** 2 + (pix[:, None, 1] - proj[None, :, 1]) ** 2)
     resid = float(np.median(np.sqrt(d2.min(1))))
@@ -173,18 +175,17 @@ def main():
     # ---- TEMPORAL SMOOTHING (SOTA layer C, batch): smooth the anchor poses, INTERPOLATE H to every
     # frame. Fixes both the per-frame fit jitter and the frozen one-rail stretches (a stuck carry).
     af = np.array([a[0] for a in anchors])
-    hp = np.array([a[1].flatten()[:8] for a in anchors])      # 8 free homography params per anchor
-    win = 9
-    hp_s = np.empty_like(hp)
-    for c in range(8):
-        col = hp[:, c]
-        hp_s[:, c] = [np.median(col[max(0, k - win // 2):k + win // 2 + 1]) for k in range(len(col))]
+    hp = np.array([a[1].flatten()[:8] for a in anchors])      # 6 affine params (+2 zeros) per anchor
+    fw = 30                                                    # frame half-window (~1.2 s)
 
     def h_at(f):
-        params = [np.interp(f, af, hp_s[:, c]) for c in range(8)]
-        return np.array([[params[0], params[1], params[2]],
-                         [params[3], params[4], params[5]],
-                         [params[6], params[7], 1.0]])
+        m = np.abs(af - f) <= fw                              # FRAME-windowed robust median: outlier-
+        if m.sum() < 3:                                       # resistant + no linear-ramp interpolation
+            order = np.argsort(np.abs(af - f))[:5]
+            m = np.zeros(len(af), bool)
+            m[order] = True
+        p = np.median(hp[m], axis=0)
+        return np.array([[p[0], p[1], p[2]], [p[3], p[4], p[5]], [p[6], p[7], 1.0]])
 
     rows = []
     for f in sorted(frame_fpts):

@@ -1,7 +1,9 @@
 # Inbox — trading
 
-34 open item(s) addressed to trading. Read on session start.
+35 open item(s) addressed to trading. Read on session start.
 
+- **0104-pose-backbone-affine-model-validated-top-down-bl** from modelling (handoff/finding) [Pose backbone: AFFINE model validated (top-down); blocker is unreliable outer rail -> EKF + outlier-reject next](entries/0104-pose-backbone-affine-model-validated-top-down-bl.md)
+  - ## Pose backbone: AFFINE is the right model (user's top-down insight); blocker = unreliable OUTER rail ### KEY FINDING — the render is a tilted top-down view, f…
 - **0103-pose-backbone-core-validated-free-homography-smo** from modelling (handoff/finding) [Pose backbone: core validated; free-homography smoothing fails -> solvePnP pose + EKF is the path](entries/0103-pose-backbone-core-validated-free-homography-smo.md)
   - ## Pose backbone (task #101): core validated, but FREE-homography smoothing fails -> need solvePnP Built studies/cv_pose_backbone.py: per-frame two-rail homogra…
 - **0102-2d-reconstruction-resolution-root-cause-sota-bac** from modelling (handoff/decision) [2D reconstruction: resolution root cause + SOTA backbone blueprint (BHITK camera-pose tracker)](entries/0102-2d-reconstruction-resolution-root-cause-sota-bac.md)
