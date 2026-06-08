@@ -33,6 +33,7 @@ sys.path.insert(0, "studies")
 
 AERIAL_VIDEO = "data_cache/video/aerial_20260603_08.mp4"
 OBS = "data_cache/cv_joint_aerial_R08_obs.npz"
+PASS1_CACHE = "data_cache/cv_trackid_pass1.npz"   # cached per-frame detect+rail (skip the 12-min decode)
 DIAG = "data_cache/diag"
 HALF = 960
 DIST = 1800.0
@@ -123,57 +124,66 @@ def main() -> None:
         return np.isfinite(local_radius(geom, d_from_finish))
 
     # ---- PASS 1: per-frame detect + rail + project + lane-bound -------------------------------
-    # per frame store: dict(frame -> list of (cx, cy, s, perp)), and the rail curve + panel (for saves)
+    # per frame store: dict(frame -> list of (cx, cy, s, perp)) + the rail curve + the outer rail.
+    # Cached to PASS1_CACHE (the 12-min decode) so the association/recon (PASS 2+) iterate instantly.
     per_frame = {}
     curves = {}
     outers = {}          # the OTHER main rail (outer) per frame -> local 22.5 m metric ruler
-    saved_panels = {}
-    want_panels = set()  # resolved after we know the seed frame; collect a superset now
-    prev_tang = None     # carried travel tangent -> keeps the perp SIGN consistent across frames
-    prev_curve = None    # carried rail -> temporal continuity disambiguates equidistant-field frames
-    container = av.open(AERIAL_VIDEO)
-    for i, fr in enumerate(container.decode(video=0)):
-        if i % STRIDE:
-            continue
-        img = fr.to_ndarray(format="bgr24")
-        panel = img[:, HALF:]
-        if not render_active(panel):     # skip the live-broadcast intro (find_layout is unreliable)
-            continue
-        ph = panel.shape[0]
-        ty0, ty1 = track_band(panel)
-        dets, _dbg = detect_avatars(panel, ty0, ty1, field=FIELD)
-        if len(dets) < 3:
-            continue
-        # RUNNING-RAIL selection: of the two main rails pick the one CLOSEST (median dist) to the
-        # field. detect_edgefill blobs come from track_band (green turf), NOT the rail -> non-circular;
-        # the median is robust to scattered background false-positives. The returned curve is
-        # tangent-oriented so project_to_polyline's perp SIGN is stable across frames.
-        rb0, rb1 = int(0.28 * ph), int(0.82 * ph)
-        cands = line_candidates(panel, rb0, rb1)
-        field_pts = np.array([[d.cx, d.cy] for d in dets], float)
-        curve, prev_tang, _info = select_running_rail(
-            cands, deg=(2 if is_bend(i) else 1), field_pts=field_pts,
-            prev_tang=prev_tang, prev_curve=prev_curve)
-        if curve is None:
-            continue
-        prev_curve = curve
-        outers[i] = (_info or {}).get("outer")
-        proj = [(d.cx, d.cy, *project_to_polyline(curve, d.cx, d.cy)) for d in dets]
-        perps = np.array([p[3] for p in proj])
-        side = _ry_side(perps)          # the field's running side of the rail (per-frame median sign)
-        on_side = np.array([p[3] * side for p in proj])   # signed onto the running side (+ = on track)
-        lane = LANE_K * float(np.percentile(np.abs(perps), 98))
-        # store y_lat as a POSITIVE distance from the rail (the infield side has no runners, so a
-        # signed lateral is unphysical). Keep only running-side blobs within the lane (small rail
-        # overlap allowed), clamped to >= 0.
-        keep = [(p[0], p[1], p[2], max(0.0, o)) for p, o in zip(proj, on_side) if -8.0 <= o <= lane]
-        per_frame[i] = keep
-        curves[i] = curve
-        saved_panels[i] = None  # placeholder; fill panel only for frames we will draw
-        want_panels.add(i)
-        if i in [f for f in SAVE_FRAMES if f is not None]:
-            saved_panels[i] = panel.copy()
-    container.close()
+    if os.path.exists(PASS1_CACHE):
+        c = np.load(PASS1_CACHE, allow_pickle=True)
+        keys = list(c["keys"])
+        per_frame = {k: [tuple(r) for r in v] for k, v in zip(keys, c["per_frame"], strict=True)}
+        curves = {k: np.asarray(v, float) for k, v in zip(keys, c["curves"], strict=True)}
+        outers = {k: (None if v is None or len(v) == 0 else np.asarray(v, float))
+                  for k, v in zip(keys, c["outers"], strict=True)}
+    else:
+        prev_tang = None     # carried travel tangent -> keeps the perp SIGN consistent across frames
+        prev_curve = None    # carried rail -> temporal continuity disambiguates equidistant-field frames
+        container = av.open(AERIAL_VIDEO)
+        for i, fr in enumerate(container.decode(video=0)):
+            if i % STRIDE:
+                continue
+            img = fr.to_ndarray(format="bgr24")
+            panel = img[:, HALF:]
+            if not render_active(panel):     # skip the live-broadcast intro (find_layout is unreliable)
+                continue
+            ph = panel.shape[0]
+            ty0, ty1 = track_band(panel)
+            dets, _dbg = detect_avatars(panel, ty0, ty1, field=FIELD)
+            if len(dets) < 3:
+                continue
+            # RUNNING-RAIL selection: of the two main rails pick the one CLOSEST (median dist) to the
+            # field. detect_edgefill blobs come from track_band (green turf), NOT the rail -> non-circular;
+            # the median is robust to scattered background false-positives. The returned curve is
+            # tangent-oriented so project_to_polyline's perp SIGN is stable across frames.
+            rb0, rb1 = int(0.28 * ph), int(0.82 * ph)
+            cands = line_candidates(panel, rb0, rb1)
+            field_pts = np.array([[d.cx, d.cy] for d in dets], float)
+            curve, prev_tang, _info = select_running_rail(
+                cands, deg=(2 if is_bend(i) else 1), field_pts=field_pts,
+                prev_tang=prev_tang, prev_curve=prev_curve)
+            if curve is None:
+                continue
+            prev_curve = curve
+            outers[i] = (_info or {}).get("outer")
+            proj = [(d.cx, d.cy, *project_to_polyline(curve, d.cx, d.cy)) for d in dets]
+            perps = np.array([p[3] for p in proj])
+            side = _ry_side(perps)          # the field's running side of the rail (per-frame median sign)
+            on_side = np.array([p[3] * side for p in proj])   # signed onto the running side (+ = on track)
+            lane = LANE_K * float(np.percentile(np.abs(perps), 98))
+            # store y_lat as a POSITIVE distance from the rail (the infield side has no runners, so a
+            # signed lateral is unphysical). Keep only running-side blobs within the lane (small rail
+            # overlap allowed), clamped to >= 0.
+            keep = [(p[0], p[1], p[2], max(0.0, o)) for p, o in zip(proj, on_side) if -8.0 <= o <= lane]
+            per_frame[i] = keep
+            curves[i] = curve
+        container.close()
+        keys = sorted(per_frame)
+        np.savez(PASS1_CACHE, keys=np.array(keys),
+                 per_frame=np.array([np.array(per_frame[k], float) for k in keys], dtype=object),
+                 curves=np.array([curves[k] for k in keys], dtype=object),
+                 outers=np.array([outers.get(k) if outers.get(k) is not None else np.empty((0, 2))
+                                  for k in keys], dtype=object))
 
     frames = sorted(per_frame)
     print(f"aerial-active processed: {len(frames)} frames")
@@ -218,6 +228,20 @@ def main() -> None:
 
     def scale_f(f):
         return RAIL_W / max(20.0, sep_by_f.get(f, sep_global))
+
+    # LONGITUDINAL trust: the rail polyline's arc-length L_px swings wildly (the detected span collapses
+    # to ~140 px or jumps ~700 px frame-to-frame) and s_px CLAMPS to its ends -> the head reference and
+    # every gap step. So gate the longitudinal where the rail is too short to span the field or a point
+    # clamps to an endpoint (journal 0105: leader front-clamped 18% of frames, back-clamped 11%).
+    def _poly_len(f):
+        cv = curves[f]
+        return float(np.sum(np.hypot(np.diff(cv[:, 0]), np.diff(cv[:, 1]))))
+
+    len_by_f = {f: _poly_len(f) for f in frames}
+    len_med = float(np.median(list(len_by_f.values())))
+    CLAMP_PX, SHORT_FRAC = 25.0, 0.6
+    # leader clamped to the visible front end (s_head near L) -> the whole frame's gap reference is wrong
+    lead_clamp = {f: s_head[f] > len_by_f[f] - CLAMP_PX for f in frames}
 
     # ---- PASS 2: METRIC-SPACE association with the ODOMETER as the motion prior ----------------
     # Match detections in (arclen, y_lat) METRES. Each track is predicted forward by the odometer
@@ -286,17 +310,19 @@ def main() -> None:
         return vis
 
     save_set = {f for f in SAVE_FRAMES if f is not None} | {frames[0]}
-    for i, fr in enumerate(av.open(AERIAL_VIDEO).decode(video=0)):
-        if i in save_set and saved_panels.get(i) is None:
-            saved_panels[i] = fr.to_ndarray(format="bgr24")[:, HALF:].copy()
-        if all(saved_panels.get(s) is not None for s in save_set):
-            break
-    for f in sorted(save_set):
-        if f not in per_frame or saved_panels.get(f) is None:
-            continue
-        out = f"{DIAG}/cv_track_id_f{f:04d}.png"
-        cv2.imwrite(out, draw_overlay(f, saved_panels[f]))
-        print(f"[overlay] {out}")
+    saved_panels = {}    # overlay panels are re-decoded here (PASS 1 no longer keeps frames in memory)
+    if os.environ.get("OVERLAYS", "1") == "1":   # OVERLAYS=0 skips the 10-min re-decode while iterating
+        for i, fr in enumerate(av.open(AERIAL_VIDEO).decode(video=0)):
+            if i in save_set and saved_panels.get(i) is None:
+                saved_panels[i] = fr.to_ndarray(format="bgr24")[:, HALF:].copy()
+            if all(saved_panels.get(s) is not None for s in save_set):
+                break
+        for f in sorted(save_set):
+            if f not in per_frame or saved_panels.get(f) is None:
+                continue
+            out = f"{DIAG}/cv_track_id_f{f:04d}.png"
+            cv2.imwrite(out, draw_overlay(f, saved_panels[f]))
+            print(f"[overlay] {out}")
 
     # anonymous tracklet perp-vs-frame plot (each line = one anonymous runner segment)
     fig, ax = plt.subplots(figsize=(12, 5))
@@ -315,7 +341,7 @@ def main() -> None:
     # arclen_h(f) = odo(f) - (s_head - s_h)*scale: the head sits at the odometer, each trailing horse
     # its own offset behind -> arclen IS the odometer PLUS the relative position, co-stamped by frame
     # with y_lat. odo_arclen / s_head / scale / metric() were defined above (shared with association).
-    fig2, (axA, axL, axR) = plt.subplots(1, 3, figsize=(20, 5))
+    fig2, (axA, axL, axR) = plt.subplots(1, 3, figsize=(24, 7))
     n_paths = 0
     # VALIDITY gate (from the spike audit): the per-frame metric is trustworthy only when the two-rail
     # ruler is resolvable (sep not foreshortened to ~nothing), the projection isn't degenerate (s off
@@ -323,22 +349,30 @@ def main() -> None:
     SEP_MIN, S_MIN, YLAT_MAX, OFF_MAX = 60.0, 3.0, 25.0, 40.0
 
     def _recon(f, s, perp):
-        if sep_by_f.get(f, sep_global) < SEP_MIN or s < S_MIN:   # scale untrustworthy / degenerate proj
-            return np.nan, np.nan
         sc = scale_f(f)
-        off, yl = -(s_head[f] - s) * sc, perp * sc
-        if abs(off) > OFF_MAX or yl > YLAT_MAX:                  # physically impossible -> reject
-            return np.nan, np.nan
+        yl = perp * sc
+        if sep_by_f.get(f, sep_global) < SEP_MIN or yl > YLAT_MAX:   # scale untrustworthy / off-track
+            yl = np.nan
+        # LONGITUDINAL gates (journal 0105): rail too short, leader clamped, or this point clamped to an
+        # end -> the gap (s_head - s) is corrupted, so drop the offset (keep ylat where still valid).
+        lp = len_by_f.get(f, len_med)
+        clamped = s < S_MIN or s > lp - CLAMP_PX or lp < SHORT_FRAC * len_med or lead_clamp.get(f, False)
+        off = np.nan if clamped else -(s_head[f] - s) * sc
+        if np.isfinite(off) and abs(off) > OFF_MAX:                  # physically impossible -> reject
+            off = np.nan
         return off, yl
 
-    for pts in tracks.values():
-        if len(pts) < 8:
+    # plot only SUBSTANTIAL tracklets (the ~11 real runners are 550-1300 frames; the ~156 short
+    # fragments are brief spurious detections that only clutter the paths). No merging (avoid mis-ID).
+    MIN_TRACK = 60
+    for pts in sorted(tracks.values(), key=len, reverse=True):
+        if len(pts) < MIN_TRACK:
             continue
         n_paths += 1
         ff = [p[0] for p in pts]
         rec = [_recon(f, s, perp) for (f, _cx, _cy, s, perp) in pts]
-        offset = _medfilt([r[0] for r in rec])
-        ylat = _medfilt([r[1] for r in rec])
+        offset = _medfilt([r[0] for r in rec], w=9)   # offset (position behind head) varies slowly
+        ylat = _medfilt([r[1] for r in rec], w=7)     # lateral trip: de-spike per-frame perp outliers
         arclen = [odo_arclen(f) + o for f, o in zip(ff, offset)]
         axA.plot(ff, arclen, "-", lw=1.0, alpha=0.7)
         axL.plot(ff, offset, "-", lw=1.0, alpha=0.7)
@@ -353,7 +387,7 @@ def main() -> None:
     axR.set_xlabel("arclen run (m)")
     axR.set_ylabel("y_lat (m), clipped 8")
     axR.set_title("Reconstructed 2D path: lateral trip vs arclen")
-    fig2.savefig(f"{DIAG}/cv_recon_2d.png", dpi=110, bbox_inches="tight")
+    fig2.savefig(f"{DIAG}/cv_recon_2d.png", dpi=145, bbox_inches="tight")
     print(f"[fig] {DIAG}/cv_recon_2d.png  ({n_paths} paths, scale~={RAIL_W/sep_global:.3f} m/px (per-frame))")
 
     # ---- AUDIT: pinpoint the gigantic glitch spikes — which stage fails at each? ----------------
