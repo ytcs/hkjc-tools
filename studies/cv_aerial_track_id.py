@@ -31,13 +31,22 @@ import numpy as np
 
 sys.path.insert(0, "studies")
 
-AERIAL_VIDEO = "data_cache/video/aerial_20260603_08.mp4"
-OBS = "data_cache/cv_joint_aerial_R08_obs.npz"
-PASS1_CACHE = "data_cache/cv_trackid_pass1.npz"   # cached per-frame detect+rail (skip the 12-min decode)
+# RACE env selects the validation race; all are HV "C" (same rail geometry) -> tests field-size +
+# distance generalisation. (video, dist m, field size, course)
+RACES = {
+    "R08": ("aerial_20260603_08", 1800.0, 11, "C"),
+    "R03": ("aerial_20260603_03", 1200.0, 12, "C"),
+    "R06": ("aerial_20260603_06", 1200.0, 13, "C"),
+    "R01": ("aerial_20260603_01", 1650.0, 12, "C"),
+}
+RACE = os.environ.get("RACE", "R08")
+_vid, DIST, FIELD, COURSE = RACES[RACE]
+AERIAL_VIDEO = f"data_cache/video/{_vid}.mp4"
+OBS = f"data_cache/cv_joint_aerial_{RACE}_obs.npz"
+PASS1_CACHE = f"data_cache/cv_trackid_pass1_{RACE}.npz"   # per-frame detect+rail cache (skip 12-min decode)
 DIAG = "data_cache/diag"
+SFX = "" if RACE == "R08" else f"_{RACE}"     # race suffix on diag outputs (keep R08 canonical names)
 HALF = 960
-DIST = 1800.0
-FIELD = 11
 STRIDE = 1               # process EVERY frame (25 fps native) for max temporal resolution
 GATE_PX = 60.0           # max avatar displacement between stride-4 frames (panel px) for association
 LANE_K = 1.35            # lane half-width = LANE_K * p98(field |perp|): data-driven, not hand-tuned
@@ -117,7 +126,7 @@ def main() -> None:
     z = np.load(OBS, allow_pickle=True)
     FR, ODO = z["frames"], z["odo"]
     fin = np.isfinite(ODO)
-    geom = build_rail_geometry("HV", "C")
+    geom = build_rail_geometry("HV", COURSE)
 
     def is_bend(f):
         d_from_finish = DIST - float(np.interp(f, FR[fin], ODO[fin]))
@@ -367,7 +376,7 @@ def main() -> None:
         for f in sorted(save_set):
             if f not in per_frame or saved_panels.get(f) is None:
                 continue
-            out = f"{DIAG}/cv_track_id_f{f:04d}.png"
+            out = f"{DIAG}/cv_track_id_f{f:04d}{SFX}.png"
             cv2.imwrite(out, draw_overlay(f, saved_panels[f]))
             print(f"[overlay] {out}")
 
@@ -381,8 +390,8 @@ def main() -> None:
     ax.set_ylabel("perp from rail (px)  [lateral trip]")
     ax.set_title("Anonymous tracklets (|perp| vs frame) — field-median running rail, positive "
                  "lateral distance (px scale not yet normalised)")
-    fig.savefig(f"{DIAG}/cv_track_id_tracklets.png", dpi=110, bbox_inches="tight")
-    print(f"[fig] {DIAG}/cv_track_id_tracklets.png")
+    fig.savefig(f"{DIAG}/cv_track_id_tracklets{SFX}.png", dpi=110, bbox_inches="tight")
+    print(f"[fig] {DIAG}/cv_track_id_tracklets{SFX}.png")
 
     # ---- PASS 3: ODOMETER-anchored longitudinal reconstruction -> metric-ish 2D paths -----------
     # arclen_h(f) = odo(f) - (s_head - s_h)*scale: the head sits at the odometer, each trailing horse
@@ -434,8 +443,8 @@ def main() -> None:
     axR.set_xlabel("arclen run (m)")
     axR.set_ylabel("y_lat (m), clipped 8")
     axR.set_title("Reconstructed 2D path: lateral trip vs arclen")
-    fig2.savefig(f"{DIAG}/cv_recon_2d.png", dpi=145, bbox_inches="tight")
-    print(f"[fig] {DIAG}/cv_recon_2d.png  ({n_paths} paths, scale~={RAIL_W/sep_global:.3f} m/px (per-frame))")
+    fig2.savefig(f"{DIAG}/cv_recon_2d{SFX}.png", dpi=145, bbox_inches="tight")
+    print(f"[fig] {DIAG}/cv_recon_2d{SFX}.png  ({n_paths} paths, scale~={RAIL_W/sep_global:.3f} m/px (per-frame))")
 
     # ---- AUDIT: pinpoint the gigantic glitch spikes — which stage fails at each? ----------------
     audit = []
@@ -476,8 +485,8 @@ def main() -> None:
     axP.set_title("Top-3 tracks RAW resolution — perp (px) and s-offset (px) vs frame (jitter/quant?)")
     axS.set_ylabel("s offset behind head (px) [longitudinal]")
     axS.set_xlabel("aerial frame")
-    fig3.savefig(f"{DIAG}/cv_recon_res.png", dpi=110, bbox_inches="tight")
-    print(f"[fig] {DIAG}/cv_recon_res.png")
+    fig3.savefig(f"{DIAG}/cv_recon_res{SFX}.png", dpi=110, bbox_inches="tight")
+    print(f"[fig] {DIAG}/cv_recon_res{SFX}.png")
     worst.sort(key=lambda w: -abs(w[2]) - abs(w[3]))
     print(f"worst per-frame jumps (frame, track, dperp_px, ds_px): {worst[:12]}")
 
