@@ -63,6 +63,41 @@ def _medfilt(a, w=5):
     return out
 
 
+def _robust_zoom_track(sep_raw, fw=90, mad_k=2.5):
+    """Robust near-constant-zoom inner->outer separation track (journal 0105 — THE metric fix).
+
+    The virtual camera holds a near-CONSTANT zoom, so the true 22.5 m rail separation is a smooth,
+    slowly-varying px curve. A wrong outer (the rail's shadow / a parallel marker -> too NEAR; a far
+    background line -> too FAR) injects a separation off that curve for WHOLE stretches, which a local
+    rolling median cannot reject (it chases the regional bias). So gate GLOBALLY first against the
+    robust zoom level (kills both-direction gross outliers even where most outers are wrong), then a
+    gentle local median tracks the slow drift among survivors, and interp the rejected gaps.
+    """
+    n = len(sep_raw)
+    idx = np.arange(n)
+    ok = np.isfinite(sep_raw)
+    if ok.sum() < 5:
+        g = float(np.nanmedian(sep_raw)) if ok.any() else 200.0
+        return np.full(n, g)
+    f = idx[ok].astype(float)
+    v = np.asarray(sep_raw, float)[ok]
+    m0 = np.median(v)
+    mad0 = np.median(np.abs(v - m0)) + 1e-6
+    glob = np.abs(v - m0) <= mad_k * 1.4826 * mad0
+    keep = glob.copy()
+    smooth = np.full(len(v), m0)
+    for _ in range(2):
+        for j in range(len(v)):
+            w = keep & (np.abs(f - f[j]) <= fw)
+            smooth[j] = np.median(v[w]) if w.sum() >= 5 else m0
+        resid = v - smooth
+        mad = np.median(np.abs(resid[keep])) + 1e-6
+        keep = glob & (np.abs(resid) <= mad_k * 1.4826 * mad)
+        if keep.sum() < 5:
+            break
+    return np.interp(idx, f[keep], smooth[keep])
+
+
 def main() -> None:
     import av
     import cv2
@@ -176,14 +211,9 @@ def main() -> None:
         d2 = (inner[:, None, 0] - outer[None, :, 0]) ** 2 + (inner[:, None, 1] - outer[None, :, 1]) ** 2
         return float(np.median(np.sqrt(d2.min(1))))
 
-    sep_raw = np.array([_sep_px(f) if _sep_px(f) else np.nan for f in frames])
+    sep_raw = np.array([(lambda s: s if s else np.nan)(_sep_px(f)) for f in frames])
     sep_global = float(np.nanmedian(sep_raw)) if np.isfinite(sep_raw).any() else 200.0
-    ok = np.isfinite(sep_raw)
-    if ok.sum() >= 2:                      # fill gaps, then WIDE temporal median (camera dist is slow)
-        sep_raw = np.interp(np.arange(len(frames)), np.where(ok)[0], sep_raw[ok])
-    else:
-        sep_raw = np.full(len(frames), sep_global)
-    sep_sm = _medfilt(sep_raw, w=15)
+    sep_sm = _robust_zoom_track(sep_raw)   # global-gated robust track (rejects wrong-outer stretches)
     sep_by_f = {f: float(sep_sm[k]) for k, f in enumerate(frames)}
 
     def scale_f(f):

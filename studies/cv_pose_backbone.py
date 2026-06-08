@@ -1,14 +1,22 @@
-"""Pose backbone (task #101) — per-frame homography track-plane->image, the FUNDAMENTAL metric fix.
+"""Pose backbone v2 — FIXED-anisotropy lateral scale (the fundamental metric fix; journal 0105).
 
-Replaces the per-frame frame-local-s + jittery head-reference + scalar-scale reconstruction with a
-homography H that maps the KNOWN rigid track plane (inner rail b=0, outer rail b=22.5 m) into the
-image. Then every horse pixel -> H^-1 -> metric (along, lateral) DIRECTLY: no per-frame origin, no
-s_head jitter, and a perspective-correct (depth-varying) scale baked into H.
+The AVV is a tilted top-down render whose virtual camera only PANS / ZOOMS to follow the field, so
+the lateral pixels-per-metre ``s_lat(f) = (inner->outer pixel separation) / 22.5`` is a SMOOTH,
+slowly-varying function of frame. The residual lateral-recon noise (journal 0104) was NOT a smoothing
+problem: it came from per-frame OUTER-rail mis-detections (the rail's shadow / a parallel marker, not
+the true 22.5 m outer) injecting a wrong ``s_lat`` for whole stretches (f750-1000, f1700-2150). Batch
+smoothing could not reject it because the error is regionally SYSTEMATIC, not zero-mean jitter.
 
-This module validates the CORE per-frame fit (the temporal optical-flow init + EKF/RTS smoothing are
-the next layers). For each test frame: detect the two main rails, build the rigid two-rail template
-for the local geometry (straight or arc R), fit H by ICP (affine init -> DLT refine), overlay the
-back-projected rails, and report the field's lateral spread in metres.
+The fix exploits the slow zoom directly: measure ``s_lat`` on every two-rail frame, then build a
+ROBUST s_lat(f) track that REJECTS the wrong-outer outliers (a fake-outer separation is far smaller
+than the true 22.5 m one, so it sits well BELOW the slowly-varying zoom curve) and INTERPOLATES the
+scale through the bad stretches from the good neighbours. Lateral distance is then
+
+    y_lat(m) = |perp-to-inner-rail (px)| / s_lat(f)
+
+measured against the inner rail CURVE (so the bend is handled by the perpendicular itself) and never
+depending on a per-frame outer detection. This is strictly simpler than the affine/EKF backbone and
+attacks the exact root cause from journal 0104.
 
     PYTHONHASHSEED=0 uv run --group bayes python studies/cv_pose_backbone.py
 """
@@ -23,98 +31,51 @@ sys.path.insert(0, "studies")
 
 AERIAL_VIDEO = "data_cache/video/aerial_20260603_08.mp4"
 OBS = "data_cache/cv_joint_aerial_R08_obs.npz"
+PASS1 = "data_cache/cv_pose_pass1.npz"     # cached per-frame detection (skip the 12-min decode)
 DIAG = "data_cache/diag"
 HALF = 960
 DIST = 1800.0
 FIELD = 11
 RAIL_W = 22.5
-FRAMES = [1080, 1760, 2200, 2440]
+SEP_MIN_PX = 30.0     # an inner->outer separation below this is too small to be the true 22.5 m rail
+FW = 90               # robust-median half-window (frames, ~3.6 s) for the slow zoom track
+MAD_K = 2.5           # reject an s_lat measurement this many robust-sigmas off the zoom level
 
 
-def build_template(R, window=120.0, step=3.0):
-    """Two-rail template in track-plane metres: inner (b=0) + outer (b=RAIL_W), labelled.
+def _sep_px(inner, outer):
+    """Median perpendicular separation (px) of the outer rail polyline from the inner rail curve."""
+    from hkjc.vision.geometry_cv import project_to_polyline
+    perps = [abs(project_to_polyline(inner, float(x), float(y))[1]) for x, y in outer]
+    return float(np.median(perps)) if perps else float("nan")
 
-    Straight => R=inf (lines); bend => concentric arcs of radius R and R+RAIL_W. ``a`` is along-track
-    metres about the visible centre; returns (plane (M,2), label (M,) 0=inner 1=outer).
+
+def _robust_track(frames, vals, fw, mad_k):
+    """Robust slow-zoom s_lat track. Returns ``(gated_frames, smoothed_vals)`` for np.interp.
+
+    The virtual camera holds a near-CONSTANT zoom, so a GLOBAL robust gate kills the gross wrong-outer
+    spikes in BOTH directions (a shadow/marker outer reads too NEAR -> s_lat too small; a far
+    background line reads too FAR -> s_lat too large) — crucially this survives stretches where MOST
+    measurements are wrong, which a local-window median cannot (it chases the regional bias). Among the
+    survivors a gentle local median then tracks the slow drift, and the returned values are smoothed so
+    interpolation through the rejected gaps is clean.
     """
-    a = np.arange(-window, window + step, step)
-    pts, lab = [], []
-    if not np.isfinite(R):
-        for b, lb in ((0.0, 0), (RAIL_W, 1)):
-            pts.append(np.column_stack([a, np.full_like(a, b)]))
-            lab.append(np.full(len(a), lb))
-    else:
-        phi = a / R
-        for b, lb in ((0.0, 0), (RAIL_W, 1)):
-            rad = R + b
-            pts.append(np.column_stack([rad * np.sin(phi), R - rad * np.cos(phi)]))
-            lab.append(np.full(len(a), lb))
-    return np.vstack(pts), np.concatenate(lab)
-
-
-def _project_h(plane, H):
-    q = np.column_stack([plane, np.ones(len(plane))]) @ H.T
-    w = q[:, 2:3]
-    w = np.where(np.abs(w) < 1e-9, np.nan, w)     # guard degenerate poses (points at infinity)
-    return q[:, :2] / w
-
-
-def _affine_init(inner_px, outer_px):
-    """Affine track-plane->image init from the rails' PCA + the known 22.5 m lateral ruler."""
-    p0 = inner_px.mean(0)
-    e1 = np.linalg.svd(inner_px - p0, full_matrices=False)[2][0]
-    nrm = np.array([-e1[1], e1[0]])
-    sep = float((outer_px.mean(0) - p0) @ nrm)
-    s_along = float(np.percentile(np.abs((inner_px - p0) @ e1), 95)) / 100.0 + 1e-6
-    H = np.eye(3)
-    H[:2, :2] = np.column_stack([s_along * e1, (sep / RAIL_W) * nrm])
-    H[:2, 2] = p0
-    return H
-
-
-def fit_homography(inner_px, outer_px, R, init_H=None, n_iter=20, trim=0.30):
-    """ICP fit of the two-rail template to detected inner/outer rail pixels. Returns (H, resid).
-
-    The render is a tilted/anisotropic TOP-DOWN view, NOT a perspective camera, so we fit a 6-DOF
-    AFFINE (estimateAffine2D) — it matches the free homography's accuracy (and beats it on the home
-    turn) while its parameters live in a FLAT, SMOOTHABLE space (the free homography did not). Init
-    from ``init_H`` (previous pose) if given, else the affine guess from the rails' PCA + RAIL_W ruler.
-    """
-    import cv2
-    plane, label = build_template(R)
-    pix = np.vstack([inner_px, outer_px])
-    plab = np.r_[np.zeros(len(inner_px)), np.ones(len(outer_px))]
-    H = init_H.copy() if init_H is not None else _affine_init(inner_px, outer_px)
-    for _ in range(n_iter):
-        proj = _project_h(plane, H)
-        # nearest template point of the SAME label for each pixel
-        keep_src, keep_dst = [], []
-        for lb in (0, 1):
-            tp = plane[label == lb]
-            tq = proj[label == lb]
-            px = pix[plab == lb]
-            if len(px) == 0 or len(tq) == 0:
-                continue
-            d2 = ((px[:, None, 0] - tq[None, :, 0]) ** 2 + (px[:, None, 1] - tq[None, :, 1]) ** 2)
-            nn = d2.argmin(1)
-            res = np.sqrt(d2[np.arange(len(px)), nn])
-            ok = res <= np.quantile(res, 1 - trim)
-            keep_src.append(tp[nn[ok]])
-            keep_dst.append(px[ok])
-        if not keep_src:
+    f = np.asarray(frames, float)
+    v = np.asarray(vals, float)
+    m0 = np.median(v)
+    mad0 = np.median(np.abs(v - m0)) + 1e-6
+    glob = np.abs(v - m0) <= mad_k * 1.4826 * mad0     # global gate: zoom is near-constant
+    keep = glob.copy()
+    smooth = np.full(len(f), m0)
+    for _ in range(2):
+        for j in range(len(f)):
+            w = keep & (np.abs(f - f[j]) <= fw)
+            smooth[j] = np.median(v[w]) if w.sum() >= 5 else m0
+        resid = v - smooth
+        mad = np.median(np.abs(resid[keep])) + 1e-6
+        keep = glob & (np.abs(resid) <= mad_k * 1.4826 * mad)   # gross gate AND local-consistency gate
+        if keep.sum() < 5:
             break
-        src = np.vstack(keep_src).astype(np.float32)
-        dst = np.vstack(keep_dst).astype(np.float32)
-        if len(src) < 8:                          # too few correspondences -> keep current H
-            break
-        M, _m = cv2.estimateAffine2D(src, dst, method=cv2.LMEDS)   # 6-DOF affine (smoothable)
-        if M is None or not np.isfinite(M).all():
-            break
-        H = np.vstack([M, [0.0, 0.0, 1.0]])
-    proj = _project_h(plane, H)
-    d2 = ((pix[:, None, 0] - proj[None, :, 0]) ** 2 + (pix[:, None, 1] - proj[None, :, 1]) ** 2)
-    resid = float(np.median(np.sqrt(d2.min(1))))
-    return H, resid
+    return f[keep], smooth[keep]
 
 
 def main():
@@ -128,85 +89,104 @@ def main():
     from hkjc.vision.feeds.aerial import track_band
     from hkjc.vision.feeds.aerial_detect import detect_avatars
     from hkjc.vision.feeds.aerial_rail import line_candidates, select_running_rail
+    from hkjc.vision.geometry_cv import project_to_polyline
     os.makedirs(DIAG, exist_ok=True)
     z = np.load(OBS, allow_pickle=True)
-    FR, ODO = z["frames"], z["odo"]
-    fin = np.isfinite(ODO)
+    fr_all, odo = z["frames"], z["odo"]
+    fin = np.isfinite(odo)
     geom = build_rail_geometry("HV", "C")
 
-    # ACROSS-RACE pass 1: collect a reliable two-rail homography ANCHOR per good frame, plus every
-    # frame's field pixels. (Temporal init from the previous anchor speeds convergence.)
-    prev_H = None
-    anchors = []              # (frame, H normalised so H[2,2]=1)
-    frame_fpts = {}           # frame -> field pixels (read y_lat after smoothing)
-    for i, fr in enumerate(av.open(AERIAL_VIDEO).decode(video=0)):
-        img = fr.to_ndarray(format="bgr24")
-        panel = img[:, HALF:]
-        if not render_active(panel):
-            continue
-        ph = panel.shape[0]
-        ty0, ty1 = track_band(panel)
-        dets, _d = detect_avatars(panel, ty0, ty1, field=FIELD)
-        if len(dets) < 3:
-            continue
-        rb0, rb1 = int(0.28 * ph), int(0.82 * ph)
-        cands = line_candidates(panel, rb0, rb1)
-        fpts = np.array([[d.cx, d.cy] for d in dets], float)
-        d_ff = DIST - float(np.interp(i, FR[fin], ODO[fin]))
-        R = local_radius(geom, d_ff)
-        inner, _t, info = select_running_rail(cands, deg=(2 if np.isfinite(R) else 1), field_pts=fpts)
-        if inner is None:
-            continue
-        frame_fpts[i] = fpts
-        outer = (info or {}).get("outer")
-        if outer is None:
-            continue
-        H, resid = None, 1e9
-        for init in (prev_H, None):
-            hc, rc = fit_homography(inner, outer, R, init_H=init)
-            if np.isfinite(hc).all() and rc < resid:
-                H, resid = hc, rc
-            if resid < 20:
-                break
-        if H is not None and resid < 25.0 and abs(H[2, 2]) > 1e-9:
-            prev_H = H
-            anchors.append((i, H / H[2, 2]))
+    # PASS 1 — per render frame: inner rail (always), field pixels, and the raw two-rail s_lat where
+    # an outer is detected. Inner selection runs temporally (carry the previous pick/tangent). Cached
+    # to PASS1 (the 12-min decode) so the gate/recon (PASS 2/3) can be iterated instantly.
+    if os.path.exists(PASS1):
+        c = np.load(PASS1, allow_pickle=True)
+        keys = list(c["keys"])
+        frame_inner = dict(zip(keys, c["inner"], strict=True))
+        frame_fpts = dict(zip(keys, c["fpts"], strict=True))
+        meas_f, meas_slat = list(c["meas_f"]), list(c["meas_slat"])
+    else:
+        frame_inner, frame_fpts = {}, {}
+        meas_f, meas_slat = [], []
+        prev_tang = prev_curve = None
+        for i, fr in enumerate(av.open(AERIAL_VIDEO).decode(video=0)):
+            img = fr.to_ndarray(format="bgr24")
+            panel = img[:, HALF:]
+            if not render_active(panel):
+                continue
+            ph = panel.shape[0]
+            ty0, ty1 = track_band(panel)
+            dets, _d = detect_avatars(panel, ty0, ty1, field=FIELD)
+            if len(dets) < 3:
+                continue
+            fpts = np.array([[d.cx, d.cy] for d in dets], float)
+            d_ff = DIST - float(np.interp(i, fr_all[fin], odo[fin]))
+            radius = local_radius(geom, d_ff)
+            rb0, rb1 = int(0.28 * ph), int(0.82 * ph)
+            cands = line_candidates(panel, rb0, rb1)
+            inner, tang, info = select_running_rail(
+                cands, deg=(2 if np.isfinite(radius) else 1), field_pts=fpts,
+                prev_tang=prev_tang, prev_curve=prev_curve)
+            if inner is None:
+                continue
+            prev_tang, prev_curve = tang, inner
+            frame_inner[i] = inner
+            frame_fpts[i] = fpts
+            outer = (info or {}).get("outer")
+            if outer is not None:
+                sep = _sep_px(inner, outer)
+                if np.isfinite(sep) and sep >= SEP_MIN_PX:
+                    meas_f.append(i)
+                    meas_slat.append(sep / RAIL_W)
+        keys = sorted(frame_inner)
+        np.savez(PASS1, keys=np.array(keys),
+                 inner=np.array([frame_inner[k] for k in keys], dtype=object),
+                 fpts=np.array([frame_fpts[k] for k in keys], dtype=object),
+                 meas_f=np.array(meas_f), meas_slat=np.array(meas_slat))
 
-    # ---- TEMPORAL SMOOTHING (SOTA layer C, batch): smooth the anchor poses, INTERPOLATE H to every
-    # frame. Fixes both the per-frame fit jitter and the frozen one-rail stretches (a stuck carry).
-    af = np.array([a[0] for a in anchors])
-    hp = np.array([a[1].flatten()[:8] for a in anchors])      # 6 affine params (+2 zeros) per anchor
-    fw = 30                                                    # frame half-window (~1.2 s)
+    # PASS 2 — robust slow-zoom s_lat track: gate the wrong-outer outliers, interpolate to any frame.
+    gf, gv = _robust_track(meas_f, meas_slat, FW, MAD_K)
 
-    def h_at(f):
-        m = np.abs(af - f) <= fw                              # FRAME-windowed robust median: outlier-
-        if m.sum() < 3:                                       # resistant + no linear-ramp interpolation
-            order = np.argsort(np.abs(af - f))[:5]
-            m = np.zeros(len(af), bool)
-            m[order] = True
-        p = np.median(hp[m], axis=0)
-        return np.array([[p[0], p[1], p[2]], [p[3], p[4], p[5]], [p[6], p[7], 1.0]])
+    def s_lat_at(f):
+        return float(np.interp(f, gf, gv))
 
+    # PASS 3 — lateral reconstruction: |perp to inner curve| / s_lat(f), perspective/zoom corrected.
+    # ON-TRACK gate: with a validated rail + scale, any detection beyond the 22.5 m running surface is
+    # background (the detector occasionally grabs apron/grandstand blobs at 30-40 m), so drop it.
     rows = []
-    for f in sorted(frame_fpts):
-        b = np.abs(_project_h(frame_fpts[f], np.linalg.inv(h_at(f)))[:, 1])
-        if not np.isfinite(b).all() or b.max() > 60.0:
+    for f in sorted(frame_inner):
+        inner, fpts = np.asarray(frame_inner[f], float), np.asarray(frame_fpts[f], float)
+        s_lat = s_lat_at(f)
+        b = np.array([abs(project_to_polyline(inner, float(x), float(y))[1]) for x, y in fpts]) / s_lat
+        b = b[np.isfinite(b) & (b <= RAIL_W + 2.5)]
+        if len(b) < 3:
             continue
         rows.append((f, float(np.median(b)), float(np.percentile(b, 10)), float(np.percentile(b, 90))))
     rows = np.array(rows)
-    print(f"anchors (two-rail)={len(anchors)}; frames reconstructed={len(rows)}")
-    fig, ax = plt.subplots(figsize=(15, 5))
-    ax.fill_between(rows[:, 0], rows[:, 2], rows[:, 3], alpha=0.3, label="field 10-90 pct")
-    ax.plot(rows[:, 0], rows[:, 1], lw=1.0, label="field median y_lat")
-    ax.set_xlabel("aerial frame")
-    ax.set_ylabel("y_lat from running rail (m)  [homography backbone]")
-    ax.set_title("Pose-backbone LATERAL reconstruction — perspective-correct, two-rail metric "
-                 "(anchor-smoothed + interpolated pose)")
-    ax.set_ylim(0, 30)
-    ax.legend()
+    drop = len(meas_f) - len(gf)
+    print(f"two-rail s_lat measured={len(meas_f)}; wrong-outer rejected={drop}; "
+          f"frames reconstructed={len(rows)} of inner-rail {len(frame_inner)}")
+    print(f"lateral median over race = {np.median(rows[:, 1]):.1f} m  (10-90 spread "
+          f"{np.median(rows[:, 3] - rows[:, 2]):.1f} m)")
+
+    fig, (ax0, ax1) = plt.subplots(2, 1, figsize=(15, 8), sharex=True)
+    ax0.scatter(meas_f, meas_slat, s=6, c="0.7", label="raw two-rail s_lat")
+    ax0.plot(gf, gv, ".", ms=3, c="C1", label="gated (wrong-outer rejected)")
+    fg = np.array(sorted(frame_inner))
+    ax0.plot(fg, [s_lat_at(f) for f in fg], lw=1.2, c="C3", label="s_lat(f) track (interp)")
+    ax0.set_ylabel("s_lat (px per metre)")
+    ax0.set_title("Slow-zoom lateral scale — wrong-outer outliers gated, interpolated through gaps")
+    ax0.legend(loc="upper left")
+    ax1.fill_between(rows[:, 0], rows[:, 2], rows[:, 3], alpha=0.3, label="field 10-90 pct")
+    ax1.plot(rows[:, 0], rows[:, 1], lw=1.0, label="field median y_lat")
+    ax1.set_xlabel("aerial frame")
+    ax1.set_ylabel("y_lat from running rail (m)")
+    ax1.set_title("Pose-backbone v2 LATERAL reconstruction — fixed-anisotropy s_lat, perp-to-inner")
+    ax1.set_ylim(0, 30)
+    ax1.legend(loc="upper left")
     out = f"{DIAG}/cv_pose_lateral.png"
     fig.savefig(out, dpi=110, bbox_inches="tight")
-    print(f"[fig] {out}  median y_lat over race = {np.median(rows[:, 1]):.1f} m")
+    print(f"[fig] {out}")
 
 
 if __name__ == "__main__":
