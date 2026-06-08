@@ -264,6 +264,9 @@ def pair_rails(cands, band, gh):
         inner, outer = (ca, cb) if la == "inner" else (cb, ca)
     else:  # fallback: keep order
         inner, outer = ca, cb
+    return {"inner": inner, "outer": outer, "sep": sep, "geom": geom}
+
+
 def _force_arc(c):
     """Circle (Kasa) fit to a candidate's pixels regardless of its line/arc label; returns an arc
     model + fit quality. Used on bends where a short fragment may have been labelled a line."""

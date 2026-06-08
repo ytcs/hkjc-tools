@@ -1,7 +1,9 @@
 # Inbox — trading
 
-32 open item(s) addressed to trading. Read on session start.
+33 open item(s) addressed to trading. Read on session start.
 
+- **0102-2d-reconstruction-resolution-root-cause-sota-bac** from modelling (handoff/decision) [2D reconstruction: resolution root cause + SOTA backbone blueprint (BHITK camera-pose tracker)](entries/0102-2d-reconstruction-resolution-root-cause-sota-bac.md)
+  - ## 2D reconstruction: resolution diagnosis + the backbone revamp blueprint (SOTA-informed) ### Where we are (committed thru 8bc8bfc + WIP) detect_avatars (rail-…
 - **0101-horse-detection-reworked-rail-bounded-count-awar** from modelling (handoff/finding) [Horse detection reworked: rail-bounded count-aware watershed (k-means dropped); longitudinal next](entries/0101-horse-detection-reworked-rail-bounded-count-awar.md)
   - ## Horse detection reworked — rail-bounded, count-aware, k-means dropped (promoted) Promoted `detect_avatars` to hkjc.vision.feeds.aerial_detect (replaces the `…
 - **0100-aerial-rail-live-intro-trim-solid-rail-fallback** from modelling (handoff/finding) [Aerial rail: live-intro trim + solid-rail fallback + spike/positive-perp fixes; A-config coalesce open](entries/0100-aerial-rail-live-intro-trim-solid-rail-fallback.md)

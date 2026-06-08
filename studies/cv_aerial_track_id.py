@@ -49,6 +49,15 @@ def _ry_side(perps):
     return 1.0 if m >= 0 else -1.0
 
 
+def _medfilt(a, w=5):
+    """Rolling-median filter — suppresses the isolated per-frame outlier spikes (resolution clean-up)."""
+    a = np.asarray(a, float)
+    if len(a) < 3:
+        return a
+    h = w // 2
+    return np.array([float(np.median(a[max(0, i - h):i + h + 1])) for i in range(len(a))])
+
+
 def main() -> None:
     import av
     import cv2
@@ -131,48 +140,59 @@ def main() -> None:
           f"min {min(in_counts)}, max {max(in_counts)}; "
           f"frames with exactly {FIELD}: {sum(c == FIELD for c in in_counts)}")
 
-    # ---- PASS 2: greedy tracklet association (panel px, motion-gated) -------------------------
+    # ---- metric anchor (shared by association + reconstruction): odo + head-relative offset -----
+    def odo_arclen(f):
+        return float(np.interp(f, FR[fin], ODO[fin]))   # HEAD horse metres-run (1800 - M-to-finish)
+
+    # robust head reference: the 96th percentile of s, NOT max(s) (a single spurious lead detection
+    # makes max jitter and snaps the longitudinal baseline). p96 ~ the leader but outlier-resistant.
+    s_head = {f: float(np.percentile([p[2] for p in per_frame[f]], 96)) for f in frames}
+    spreads = [max(p[2] for p in per_frame[f]) - min(p[2] for p in per_frame[f])
+               for f in frames if len(per_frame[f]) > 2]
+    scale = 15.0 / max(1.0, float(np.median(spreads)))   # s-px offset -> ~m (typical field ~15 m long)
+
+    def metric(f, s, perp):
+        return odo_arclen(f) - (s_head[f] - s) * scale, perp * scale   # (arclen, y_lat) in metres
+
+    # ---- PASS 2: METRIC-SPACE association with the ODOMETER as the motion prior ----------------
+    # Match detections in (arclen, y_lat) METRES. Each track is predicted forward by the odometer
+    # delta (a horse advances with the field; its residual drift between stride-4 frames is small), so
+    # association survives bends, zoom and short holes far better than panel-pixel NN. Holes bridged
+    # up to GRACE frames; gates are in metres.
+    GATE_ARC, GATE_LAT, GRACE = 6.0, 4.0, 6 * STRIDE
     tracks = {}            # tid -> list of (frame, cx, cy, s, perp)
-    active = {}            # tid -> (cx, cy) last position
+    active = {}            # tid -> dict(last_f, arclen, ylat)
     next_tid = 0
     for f in frames:
-        blobs = per_frame[f]
-        if not active:
-            for (cx, cy, s, perp) in blobs:
-                tracks[next_tid] = [(f, cx, cy, s, perp)]
-                active[next_tid] = (cx, cy)
-                next_tid += 1
-            continue
-        tids = list(active)
-        ap = np.array([active[t] for t in tids])
-        used = set()
-        # match each blob to nearest active track within gate (greedy by ascending distance)
-        cand = []
-        for bi, (cx, cy, s, perp) in enumerate(blobs):
-            d2 = (ap[:, 0] - cx) ** 2 + (ap[:, 1] - cy) ** 2
-            j = int(np.argmin(d2))
-            cand.append((float(np.sqrt(d2[j])), bi, tids[j]))
-        cand.sort()
-        matched_blob = set()
-        for dist, bi, tid in cand:
-            if dist > GATE_PX or bi in matched_blob or tid in used:
-                continue
-            cx, cy, s, perp = blobs[bi]
-            tracks[tid].append((f, cx, cy, s, perp))
-            active[tid] = (cx, cy)
-            used.add(tid)
-            matched_blob.add(bi)
-        # unmatched blobs -> new tracklets
-        for bi, (cx, cy, s, perp) in enumerate(blobs):
-            if bi in matched_blob:
-                continue
-            tracks[next_tid] = [(f, cx, cy, s, perp)]
-            active[next_tid] = (cx, cy)
+        dets = [(cx, cy, s, perp, *metric(f, s, perp)) for (cx, cy, s, perp) in per_frame[f]]
+        if active:
+            tids = list(active)
+            pred = {t: (active[t]["arclen"] + (odo_arclen(f) - odo_arclen(active[t]["last_f"])),
+                        active[t]["ylat"]) for t in tids}
+            cand = []
+            for di, d in enumerate(dets):
+                for t in tids:
+                    da, dl = abs(d[4] - pred[t][0]), abs(d[5] - pred[t][1])
+                    if da < GATE_ARC and dl < GATE_LAT:
+                        cand.append((da / GATE_ARC + dl / GATE_LAT, di, t))
+            cand.sort()
+            used, matched = set(), set()
+            for _cost, di, t in cand:
+                if di in matched or t in used:
+                    continue
+                d = dets[di]
+                tracks[t].append((f, d[0], d[1], d[2], d[3]))
+                active[t] = dict(last_f=f, arclen=d[4], ylat=d[5])
+                used.add(t)
+                matched.add(di)
+            for t in tids:                         # bridge holes; drop only after the grace gap
+                if t not in used and active[t]["last_f"] < f - GRACE:
+                    active.pop(t, None)
+            dets = [d for di, d in enumerate(dets) if di not in matched]
+        for d in dets:                             # unmatched -> new track
+            tracks[next_tid] = [(f, d[0], d[1], d[2], d[3])]
+            active[next_tid] = dict(last_f=f, arclen=d[4], ylat=d[5])
             next_tid += 1
-        # drop tracks that went stale (not seen this frame) after a grace gap
-        for tid in tids:
-            if tid not in used and tracks[tid][-1][0] < f - 3 * STRIDE:
-                active.pop(tid, None)
 
     lengths = sorted((len(v) for v in tracks.values()), reverse=True)
     long_tracks = [v for v in tracks.values() if len(v) >= 5]
@@ -225,6 +245,60 @@ def main() -> None:
                  "lateral distance (px scale not yet normalised)")
     fig.savefig(f"{DIAG}/cv_track_id_tracklets.png", dpi=110, bbox_inches="tight")
     print(f"[fig] {DIAG}/cv_track_id_tracklets.png")
+
+    # ---- PASS 3: ODOMETER-anchored longitudinal reconstruction -> metric-ish 2D paths -----------
+    # arclen_h(f) = odo(f) - (s_head - s_h)*scale: the head sits at the odometer, each trailing horse
+    # its own offset behind -> arclen IS the odometer PLUS the relative position, co-stamped by frame
+    # with y_lat. odo_arclen / s_head / scale / metric() were defined above (shared with association).
+    fig2, (axA, axL, axR) = plt.subplots(1, 3, figsize=(20, 5))
+    n_paths = 0
+    for pts in tracks.values():
+        if len(pts) < 8:
+            continue
+        n_paths += 1
+        ff = [p[0] for p in pts]
+        offset = _medfilt([-(s_head[f] - s) * scale for (f, _cx, _cy, s, _p) in pts])  # de-spike
+        ylat = _medfilt([perp * scale for (_f, _cx, _cy, _s, perp) in pts])            # de-spike
+        arclen = [odo_arclen(f) + o for f, o in zip(ff, offset)]
+        axA.plot(ff, arclen, "-", lw=1.0, alpha=0.7)
+        axL.plot(ff, offset, "-", lw=1.0, alpha=0.7)
+        axR.plot(arclen, ylat, "-", lw=1.0, alpha=0.7)
+    axA.set_xlabel("aerial frame")
+    axA.set_ylabel("arclen run (m)")
+    axA.set_title("Absolute arclen (odometer-anchored, monotonic)")
+    axL.set_xlabel("aerial frame")
+    axL.set_ylabel("longitudinal offset in field (m)")
+    axL.set_title("Per-horse position behind the head (0 = leader) — the race dynamics")
+    axL.axhline(0, color="k", lw=0.5)
+    axR.set_xlabel("arclen run (m)")
+    axR.set_ylabel("y_lat (m), clipped 8")
+    axR.set_title("Reconstructed 2D path: lateral trip vs arclen")
+    fig2.savefig(f"{DIAG}/cv_recon_2d.png", dpi=110, bbox_inches="tight")
+    print(f"[fig] {DIAG}/cv_recon_2d.png  ({n_paths} paths, scale={scale:.3f} m/px)")
+
+    # ---- PASS 4: RESOLUTION diagnostic — top tracks' raw perp & s (px) + worst-jump frames -------
+    top = sorted(tracks.values(), key=len, reverse=True)[:3]
+    fig3, (axP, axS) = plt.subplots(2, 1, figsize=(15, 8), sharex=True)
+    worst = []
+    for ti, pts in enumerate(top):
+        ff = [p[0] for p in pts]
+        pr = [p[4] for p in pts]                       # raw perp (px)
+        so = [p[3] - s_head[p[0]] for p in pts]        # raw s offset behind head (px)
+        axP.plot(ff, pr, "-o", ms=2, lw=0.8, label=f"track{ti} (n={len(pts)})")
+        axS.plot(ff, so, "-o", ms=2, lw=0.8)
+        for k in range(1, len(pts)):
+            dfr = ff[k] - ff[k - 1]
+            if dfr <= 2 * STRIDE and (abs(pr[k] - pr[k - 1]) > 25 or abs(so[k] - so[k - 1]) > 40):
+                worst.append((ff[k], ti, round(pr[k] - pr[k - 1]), round(so[k] - so[k - 1])))
+    axP.set_ylabel("perp (px) [lateral]")
+    axP.legend(fontsize=8)
+    axP.set_title("Top-3 tracks RAW resolution — perp (px) and s-offset (px) vs frame (jitter/quant?)")
+    axS.set_ylabel("s offset behind head (px) [longitudinal]")
+    axS.set_xlabel("aerial frame")
+    fig3.savefig(f"{DIAG}/cv_recon_res.png", dpi=110, bbox_inches="tight")
+    print(f"[fig] {DIAG}/cv_recon_res.png")
+    worst.sort(key=lambda w: -abs(w[2]) - abs(w[3]))
+    print(f"worst per-frame jumps (frame, track, dperp_px, ds_px): {worst[:12]}")
 
 
 if __name__ == "__main__":

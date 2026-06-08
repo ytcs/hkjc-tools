@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-99 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+100 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -103,3 +103,4 @@
 - **0099-aerial-rail-backbone-robust-promoted-mode-b-reti** →modelling,all (handoff/open) [Aerial rail backbone robust + promoted; mode_b retired (field-median running-rail, sign-stable)](entries/0099-aerial-rail-backbone-robust-promoted-mode-b-reti.md) — _cv, aerial, rail, reconstruction, refactor, handoff_
 - **0100-aerial-rail-live-intro-trim-solid-rail-fallback** →modelling,all (handoff/open) [Aerial rail: live-intro trim + solid-rail fallback + spike/positive-perp fixes; A-config coalesce open](entries/0100-aerial-rail-live-intro-trim-solid-rail-fallback.md) — _cv, aerial, rail, reconstruction, handoff_
 - **0101-horse-detection-reworked-rail-bounded-count-awar** →modelling,all (handoff/open) [Horse detection reworked: rail-bounded count-aware watershed (k-means dropped); longitudinal next](entries/0101-horse-detection-reworked-rail-bounded-count-awar.md) — _cv, aerial, detection, reconstruction, handoff_
+- **0102-2d-reconstruction-resolution-root-cause-sota-bac** →modelling,all (handoff/open) [2D reconstruction: resolution root cause + SOTA backbone blueprint (BHITK camera-pose tracker)](entries/0102-2d-reconstruction-resolution-root-cause-sota-bac.md) — _cv, aerial, reconstruction, homography, handoff_

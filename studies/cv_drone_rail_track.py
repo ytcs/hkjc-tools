@@ -115,6 +115,31 @@ def shift_toward(model, width_px, ref):
     return {"type": model["type"], "synth": True, "sample": lambda nn=120, _p=best: _p}
 
 
+def band_outer_curve(band, n=80):
+    """The band's outer boundary (green->road/stands) = the OUTER rail, as a fitted curve. Kept
+    SEPARATE from the candidate pool (used only as an outer fallback) so it can't pollute the
+    high-quality interior-white inner detection."""
+    import cv2 as _cv
+    bw = (band > 0).astype(np.uint8)
+    edge = bw - _cv.erode(bw, np.ones((5, 5), np.uint8))
+    m = int(round(10 * cdr.SCALE)) + 1
+    edge[:m] = 0
+    edge[-m:] = 0
+    edge[:, :m] = 0
+    edge[:, -m:] = 0
+    nn, lab, stats, _ = _cv.connectedComponentsWithStats(edge, 8)
+    best = None
+    for k in range(1, nn):
+        ys, xs = np.where(lab == k)
+        if len(xs) < 80 * cdr.SCALE:
+            continue
+        _, _, ratio, ext, w = cdr._pca(ys, xs)
+        if ratio > 3 and ext > 100 * cdr.SCALE and w < 18 * cdr.SCALE:
+            if best is None or ext > best[0]:
+                best = (ext, cdr.fit_model(xs, ys))
+    return best[1]["sample"](n) if best else None
+
+
 def detect(bgr):
     cands, band, _ = cdr.rail_candidates(bgr)
     if len(cands) < 2:
@@ -208,17 +233,19 @@ def _orient(pts, ref):
     return pts
 
 
-def _clean_series(series, real_idx, thresh, iters=3):
-    """Reject outlier detections (label swaps / orientation flips / bad pairs) by temporal
-    consistency: a real frame whose curve deviates from its neighbours' interpolated prediction by
-    >> the norm is not a real rail. Returns the cleaned real-index list (outliers -> set None)."""
+def _clean_series(series, real_idx, thresh, iters=3, bracket_gap=4):
+    """Reject outlier detections (the detector locking onto the wrong line) by CLOSE-BRACKET temporal
+    consistency: only judge a frame when it has real neighbours within `bracket_gap` on BOTH sides
+    (so the interpolated prediction is reliable) — a frame that jumps >> thresh from close neighbours
+    is a bad detection. Frames with only far brackets are NOT judged (avoids penalising legitimate
+    fast-pan over long gaps). Outliers -> set None; returns the cleaned real-index list."""
     real = list(real_idx)
     for _ in range(iters):
         bad = set()
         for k in real:
             bef = [j for j in real if j < k]
             aft = [j for j in real if j > k]
-            if bef and aft:
+            if bef and aft and (aft[0] - bef[-1]) <= bracket_gap:
                 a, b = bef[-1], aft[0]
                 f = (k - a) / (b - a)
                 if cdist((1 - f) * series[a] + f * series[b], series[k]) > thresh:
@@ -252,9 +279,58 @@ def _fill_series(series, real_idx):
     return out
 
 
+CACHE = "data_cache/diag/drone_scan/_rec_pass1.pkl"
+
+
+def pass1(t0=0.0, t1=113.0, stride=3, video=VIDEO, cache=CACHE):
+    """Expensive detection pass (decode + detect + label per frame) -> cache to disk so the cheap
+    pass-2 fill experiments run in seconds instead of a 6-min re-decode."""
+    import pickle
+    cont = av.open(video)
+    st = cont.streams.video[0]
+    N = 80
+    i = -1
+    rec = []
+    last_in = last_out = None
+    for fr in cont.decode(st):
+        i += 1
+        t = i / 25.0
+        if t > t1:
+            break
+        if i % stride or t < t0:
+            continue
+        bgr = fr.to_ndarray(format="bgr24")
+        cands, band, _ = detect(bgr)
+        in_pts = out_pts = sel_px = None
+        if band is not None and cands:
+            ca, cb = select_pair(cands)
+            if ca is not None and cb is not None:
+                mi, mo = label_pair(ca["model"], cb["model"], None, None, band)
+                in_pts = _orient(mi["sample"](N), last_in)
+                out_pts = _orient(mo["sample"](N), last_out)
+                sel_px = np.vstack([np.c_[ca["xs"], ca["ys"]], np.c_[cb["xs"], cb["ys"]]])
+            elif ca is not None:
+                role, _ = rail_role(ca["model"], band)
+                if role == "inner":
+                    in_pts = _orient(ca["model"]["sample"](N), last_in)
+                else:
+                    out_pts = _orient(ca["model"]["sample"](N), last_out)
+                sel_px = np.c_[ca["xs"], ca["ys"]]
+        outb = band_outer_curve(band, N) if band is not None else None  # separate outer fallback
+        if in_pts is not None:
+            last_in = in_pts
+        if out_pts is not None:
+            last_out = out_pts
+        rec.append({"i": i, "t": t, "in": in_pts, "out": out_pts, "outb": outb, "sel": sel_px,
+                    "thumb": cv2.resize(bgr, (560, 315)) if i % 96 == 0 else None})
+    with open(cache, "wb") as f:
+        pickle.dump(rec, f)
+    print(f"pass1 cached {len(rec)} frames -> {cache}")
+    return rec
+
+
 def run_smooth(t0=0.0, t1=113.0, stride=3, strip="data_cache/diag/drone_scan/04_rail_track.png"):
-    """Two-pass rail-space SMOOTHER: pass1 detect+label each rail per frame; pass2 fill each rail's
-    gaps by temporal interpolation from the frames where THAT rail was actually seen."""
+    """LEGACY single-pass entry (kept for reference)."""
     cont = av.open(VIDEO)
     st = cont.streams.video[0]
     N = 80
@@ -348,11 +424,137 @@ def _model_of(pts):
     return {"type": "line", "sample": lambda nn=80, _p=pts: _p}
 
 
+def _shift_pts(pts, width, ref):
+    """Offset a polyline perpendicular by width toward `ref` (geometry fill of the partner rail)."""
+    d = np.gradient(pts, axis=0)
+    perp = np.c_[-d[:, 1], d[:, 0]]
+    perp /= (np.linalg.norm(perp, axis=1, keepdims=True) + 1e-6)
+    a, b = pts + perp * width, pts - perp * width
+    return a if cdist(a, ref) < cdist(b, ref) else b
+
+
+def _temporal_fill(series, real, max_gap):
+    """Interpolate Nones from bracketing reals ONLY when the gap <= max_gap (short occlusion);
+    longer gaps stay None for the geometry stage."""
+    out = list(series)
+    for k in range(len(out)):
+        if series[k] is not None:
+            continue
+        bef = [j for j in real if j < k]
+        aft = [j for j in real if j > k]
+        if bef and aft and (aft[0] - bef[-1]) <= max_gap:
+            a, b = bef[-1], aft[0]
+            f = (k - a) / (b - a)
+            out[k] = (1 - f) * series[a] + f * series[b]
+    return out
+
+
+def pass2(max_gap=8, thr=50.0, cache=CACHE, strip="data_cache/diag/drone_scan/04_rail_track_full.png"):
+    """Fast pass-2 on the cached detections: outlier-reject -> HYBRID fill (temporal for short
+    occlusions, geometry [other rail + width] for long gaps) -> metrics + strip."""
+    import pickle
+    with open(cache, "rb") as f:
+        rec = pickle.load(f)
+    n = len(rec)
+    in_s = [r["in"] for r in rec]
+    out_s = [r["out"] for r in rec]
+    # OUTER fallback: where the white-outer is absent, use the band-boundary outer curve (a real
+    # outer-rail observation, just lower-contrast) before resorting to fill. Then orient the whole
+    # series consistently so cleaning/interpolation are valid; bad boundary curves get rejected.
+    nfb = 0
+    for k in range(n):
+        if out_s[k] is None and rec[k].get("outb") is not None:
+            out_s[k] = rec[k]["outb"]
+            nfb += 1
+    prev = None
+    for k in range(n):
+        if out_s[k] is not None:
+            out_s[k] = _orient(out_s[k], prev)
+            prev = out_s[k]
+    # WIDTH-CONSISTENCY reject: the two real rails sit ~track-width apart. A "both" frame whose
+    # separation deviates far from the median width = the detector grabbed a wrong feature (e.g. the
+    # far boundary on a wide-green bend) -> drop BOTH so it gets filled instead. (Source fix for the
+    # occlusion tail; pass2-only.)
+    med_w0 = np.median([cdist(in_s[k], out_s[k]) for k in range(n)
+                        if in_s[k] is not None and out_s[k] is not None])
+    nbad = 0
+    for k in range(n):
+        if in_s[k] is not None and out_s[k] is not None:
+            if abs(cdist(in_s[k], out_s[k]) - med_w0) > 0.4 * med_w0:
+                in_s[k] = out_s[k] = None
+                nbad += 1
+    in_real = _clean_series(in_s, [k for k, p in enumerate(in_s) if p is not None], thr)
+    out_real = _clean_series(out_s, [k for k, p in enumerate(out_s) if p is not None], thr)
+    both = sorted(set(in_real) & set(out_real))
+    width = float(np.median([cdist(in_s[k], out_s[k]) for k in both])) if both else 50.0
+    in_f = _temporal_fill(in_s, in_real, max_gap)
+    out_f = _temporal_fill(out_s, out_real, max_gap)
+    # geometry fill for long gaps from the partner rail (+ a uncapped temporal last resort)
+    in_geo = out_geo = 0
+    for k in range(n):
+        ref_in = in_s[in_real[np.argmin([abs(j - k) for j in in_real])]] if in_real else None
+        ref_out = out_s[out_real[np.argmin([abs(j - k) for j in out_real])]] if out_real else None
+        if in_f[k] is None and out_f[k] is not None and ref_in is not None:
+            in_f[k] = _shift_pts(out_f[k], width, ref_in)
+            in_geo += 1
+        if out_f[k] is None and in_f[k] is not None and ref_out is not None:
+            out_f[k] = _shift_pts(in_f[k], width, ref_out)
+            out_geo += 1
+    in_f = _fill_series(in_f, [k for k, p in enumerate(in_f) if p is not None])
+    out_f = _fill_series(out_f, [k for k, p in enumerate(out_f) if p is not None])
+    # METRICS
+    loo, gaps = [], []
+    for ser, real in ((in_s, in_real), (out_s, out_real)):
+        for idx, k in enumerate(real):
+            if 0 < idx < len(real) - 1:
+                a, b = real[idx - 1], real[idx + 1]
+                f = (k - a) / (b - a)
+                loo.append(cdist((1 - f) * ser[a] + f * ser[b], ser[k]))
+    res = []
+    for k, r in enumerate(rec):
+        if r["sel"] is not None and k in set(in_real) | set(out_real) and in_f[k] is not None:
+            d, _ = cKDTree(np.vstack([in_f[k], out_f[k]])).query(r["sel"])
+            res.append(float(np.median(d)))
+    # gap-length histogram for filled frames
+    for ser, real in ((in_s, in_real), (out_s, out_real)):
+        rset = set(real)
+        for k in range(n):
+            if k not in rset:
+                bef = [j for j in real if j < k]
+                aft = [j for j in real if j > k]
+                if bef and aft:
+                    gaps.append(aft[0] - bef[-1])
+    tiles = []
+    for k, r in enumerate(rec):
+        if r["thumb"] is None or in_f[k] is None:
+            continue
+        sc = 560 / 960
+        ov = (r["thumb"] // 2).copy()
+        kk = "both" if (k in set(in_real) and k in set(out_real)) else "fill"
+        cv2.polylines(ov, [(out_f[k] * sc).astype(np.int32)], False, (255, 0, 255), 2)
+        cv2.polylines(ov, [(in_f[k] * sc).astype(np.int32)], False, (255, 255, 0), 2)
+        cv2.putText(ov, f"t={r['t']:.0f} {kk}", (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
+        tiles.append(ov)
+    if tiles:
+        cols = 4
+        rows = [np.hstack(tiles[r:r + cols] + [np.zeros_like(tiles[0])] * (cols - len(tiles[r:r + cols])))
+                for r in range(0, len(tiles), cols)]
+        cv2.imwrite(strip, np.vstack(rows))
+    ra, la, ga = np.array(res), np.array(loo), np.array(gaps) if gaps else np.array([0])
+    nb = len(both)
+    print(f"pass2 (max_gap={max_gap}, thr={thr}): frames {n}  both-real {nb} ({100*nb/n:.0f}%)  "
+          f"width-rej {nbad}  outer-boundary-fallback {nfb}  geo-fill in {in_geo}/out {out_geo}")
+    print(f"  resid(real px) med {np.median(ra):.1f} p90 {np.percentile(ra,90):.1f}")
+    print(f"  LOO temporal med {np.median(la):.1f} p90 {np.percentile(la,90):.1f} worst {la.max():.0f}")
+    print(f"  fill-gap frames: <={max_gap}f {int((ga<=max_gap).sum())}  >{max_gap}f {int((ga>max_gap).sum())}  max {ga.max()}f")
+
+
 if __name__ == "__main__":
     import sys
-    if "--full" in sys.argv:
-        run_smooth(t0=0.0, t1=113.0, strip="data_cache/diag/drone_scan/04_rail_track_full.png")
-    elif "--oldfull" in sys.argv:
-        run(t0=0.0, t1=113.0, strip="data_cache/diag/drone_scan/04_rail_track_full.png")
+    if "--pass1" in sys.argv:
+        pass1(t0=0.0, t1=113.0)
+    elif "--pass2" in sys.argv:
+        pass2()
     else:
-        run_smooth(t0=48.0, t1=74.0)
+        pass1(t0=0.0, t1=113.0)
+        pass2()
