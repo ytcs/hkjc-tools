@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-110 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+111 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -114,3 +114,4 @@
 - **0115-aerial-rail-tracker-v3-falsified-at-bends-full-r** →modelling,all (handoff/open) [Aerial rail tracker v3 falsified at bends — full-res audit, root causes, first-principles redesign plan](entries/0115-aerial-rail-tracker-v3-falsified-at-bends-full-r.md) — _cv, aerial, rail, tracker, falsification, redesign, handoff_
 - **0116-aerial-rail-redesign-works-long-curve-pixtag-gat** →modelling,all (handoff/open) [Aerial rail redesign works — long-curve pixtag gate + temporal fit-gather tracker (R08 validated)](entries/0116-aerial-rail-redesign-works-long-curve-pixtag-gat.md) — _cv, aerial, rail, tracker, temporal, pixtag, handoff_
 - **0117-aerial-rail-reconstruction-promoted-to-the-libra** →modelling,all (handoff/open) [Aerial rail reconstruction promoted to the library (byte-identical R08 port)](entries/0117-aerial-rail-reconstruction-promoted-to-the-libra.md) — _cv, aerial, rail, library, promotion, port, handoff_
+- **0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s** →modelling,all (handoff/open) [R02A (config-A) brought up to the R08 rail-recon standard (two first-principles fixes)](entries/0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s.md) — _cv, aerial, rail, r02a, config-a, validation, handoff_

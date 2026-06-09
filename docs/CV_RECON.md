@@ -249,8 +249,14 @@ rail → project to `(s, perp)` → associate into tracklets → **odometer-anch
     pre-port baseline; R08 still 0-rail 0 / 2-rail 1226 / f768=2; f768+f2158 visually re-confirmed). The legacy
     per-frame `select_running_rail` is retained (demarcated) only for the not-yet-ablated full aerial pipeline
     (`cv_aerial_track_id.py`/`cv_pose_backbone.py`) — remove once the new perception is wired in (integrate-then-ablate).
-  - Open: validate R02A to the R08 standard (the config-A single-rail + visual-style gap — active work); wire into
-    the 4-feed fusion; the absolute bend METRIC (§7) still needs the homography.
+  - **R02A (config-A) brought up to the R08 standard (journal 0118, branch `cv-aerial-r02a-recon`).** Two
+    first-principles fixes in `aerial_rail`: (1) re-assert RUNNING = the rail the field hugs each frame (the
+    config-A wide view had the running LABEL temporally locked onto the far rail); (2) keep SOLID-coverage rails
+    up to the 2D-block ceiling + iterate fit→gather along sharp arcs (the striped near rail was knife-edged out
+    by the thin-far-line-driven adaptive spread on bends). Running-rail-far-from-field frames 439→2, zero-rail
+    20→1; visually confirmed correct across every phase; R08 unchanged (no-op/additive). Both fixes are R08-safe.
+  - Open: wire the promoted perception into the 4-feed fusion + ablate the legacy `select_running_rail`; the
+    absolute bend METRIC (§7) still needs the homography.
 
 ## 9. Journal trail
 
