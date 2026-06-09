@@ -302,6 +302,11 @@ SEED_FAC = 0.0126           # temporal seed band, ~12 px @949
 NOCROSS_FAC = 0.021         # min rail-rail gap (no-cross), ~20 px @949
 MAXSEP_FAC = 0.36           # max plausible rail separation, ~340 px @949
 RLINE_FAC = 8.4             # straight-vs-arc radius threshold, ~8000 px @949 (x W)
+RUNSWAP_FAC = 0.7           # re-assert RUNNING = field-nearest rail: swap the running/outer LABEL only
+                            # if the partner is clearly (<0.7x) nearer the field. The field always races
+                            # along the inner/running rail, so the label must follow the field, not lock
+                            # to the temporal seed (fixes the config-A far-rail inversion; no-op on R08
+                            # where the running rail is already field-nearest). Hysteresis avoids jitter.
 
 
 # --------------------------------------------------------------------------- LOOP 1: pixel cleaning
@@ -598,6 +603,19 @@ def track_sequence(keys, clean, field_of, box=None):
                          run_curve[:, None, 1] - out_curve[None, :, 1]).min(1)
             if not (g.min() > nocross and float(np.median(g)) < maxsep):
                 out_curve = None
+        # RE-ASSERT the running label by FIELD PROXIMITY (first-principles: the field always races
+        # along the inner/running rail). Temporal seeding stabilises the rail GEOMETRY but must not
+        # lock the LABEL -- on the wide config-A view the running thread otherwise sticks to the FAR
+        # rail while the field hugs the near one. If the partner is clearly nearer the field, swap the
+        # label AND the carried threads (so the running thread tracks the field-hugged rail thereafter).
+        fp = field_of.get(fi)
+        if out_curve is not None and fp is not None and len(fp):
+            fpa = np.asarray(fp, float)
+            d_run = float(np.median(_dist_to_curve(fpa, run_curve)))
+            d_out = float(np.median(_dist_to_curve(fpa, out_curve)))
+            if d_out < RUNSWAP_FAC * d_run:
+                run_curve, out_curve = out_curve, run_curve
+                run_pix, out_pix = out_pix, run_pix
         sel = [dict(pts=run_curve, running=True, pix=run_pix)]
         if out_curve is not None:
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))
