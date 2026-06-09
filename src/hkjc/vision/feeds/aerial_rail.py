@@ -299,9 +299,13 @@ FIT_MINCOMP_FAC = 0.0126    # min connected-component length in the fit enumerat
 MIN_RAIL_FAC = 0.026        # min rail pixel count, ~25 @949
 GATHER_FAC = 0.0084         # gather band, ~8 px @949
 SEED_FAC = 0.0126           # temporal seed band, ~12 px @949
-NOCROSS_FAC = 0.021         # min rail-rail gap (no-cross), ~20 px @949
+NOCROSS_FAC = 0.006        # min rail-rail gap: reject coincident/crossing (gap~0); ALLOW a close parallel pair (~6px+@949). Config-A near+far rails sit ~15px apart -> must pass.
 MAXSEP_FAC = 0.36           # max plausible rail separation, ~340 px @949
 RLINE_FAC = 8.4             # straight-vs-arc radius threshold, ~8000 px @949 (x W)
+PAIR_SEP_FAC = 0.011        # min near<->far rail separation to RESOLVE a close pair, ~10 px @949. The
+                            # venue has a fixed FAR + movable NEAR rail; in config A they sit ~15-20 px apart
+                            # on straights (joined by cross-braces, fit as ONE band) and must be split back
+                            # into two. Below this they are treated as coincident (one observable rail).
 
 
 # --------------------------------------------------------------------------- LOOP 1: pixel cleaning
@@ -493,6 +497,49 @@ def _enumerate_curves(pts, box, deg=2):
     return out
 
 
+def _split_pair(pix, box):
+    """Resolve a close fixed+racing rail PAIR that was fit as ONE band (config-A straights: two parallel
+    rails ~15-20 px apart joined by cross-braces). The two rails are two DENSITY MODES in the band's
+    PERPENDICULAR cross-section; the periodic cross-braces are the sparse valley between them. Split by
+    1-D 2-means on the perpendicular (PCA-minor) coordinate, accept only if the two modes are clearly
+    separated (>= PAIR_SEP_FAC*W, < MAXSEP) with a SPARSE valley between (a single fat rail stays one).
+    Returns [(curve, pix), (curve, pix)] for the two rails, or None. FIELD-FREE."""
+    P = np.asarray(pix, float)
+    mr = _mr(box)
+    W = _cw(box)
+    if len(P) < 2 * mr:
+        return None
+    mu, u, v = _frame_axes(P)
+    w = (P - mu) @ v
+    c0, c1 = float(np.percentile(w, 5)), float(np.percentile(w, 95))   # seed 2-means at the extremes
+    for _ in range(25):
+        a = np.abs(w - c0) <= np.abs(w - c1)
+        if a.sum() == 0 or (~a).sum() == 0:
+            return None
+        nc0, nc1 = float(w[a].mean()), float(w[~a].mean())
+        if abs(nc0 - c0) < 1e-3 and abs(nc1 - c1) < 1e-3:
+            break
+        c0, c1 = nc0, nc1
+    a = np.abs(w - c0) <= np.abs(w - c1)
+    sep = abs(c1 - c0)
+    if sep < PAIR_SEP_FAC * W or sep > MAXSEP_FAC * W or a.sum() < mr or (~a).sum() < mr:
+        return None
+    # VALLEY test: the mid third between the two modes must be sparser than the modes themselves, else this
+    # is one fat/noisy rail, not a brace-joined pair.
+    mid = 0.5 * (c0 + c1)
+    band_q = sep / 6.0
+    dens_mid = float(np.mean(np.abs(w - mid) < band_q)) + 1e-9
+    dens_pk = 0.5 * (float(np.mean(np.abs(w - c0) < band_q)) + float(np.mean(np.abs(w - c1) < band_q)))
+    if dens_mid > 0.6 * dens_pk:
+        return None
+    out = []
+    for mask in (a, ~a):
+        sub = P[mask]
+        m2, u2, v2 = _frame_axes(sub)
+        out.append((_fit_extend(sub, m2, u2, v2, box), sub))
+    return out
+
+
 def _fit_gather(pts, seed_mask, box, band=None, iters=4):
     """Fit a rail to seed pixels, then iteratively GATHER all clean pixels within ``band`` of the curve
     and refit -- bridges fragmentation so the curve covers the WHOLE rail. Returns (curve, member_mask)."""
@@ -630,12 +677,45 @@ def track_sequence(keys, clean, box=None):
                          run_curve[:, None, 1] - out_curve[None, :, 1]).min(1)
             if not (g.min() > nocross and float(np.median(g)) < maxsep):
                 out_curve = None
+        if out_curve is None:                           # only ONE band found -> maybe a close fixed+racing
+            pair = _split_pair(run_pix, box)            # PAIR fit as one (config-A straight, brace-joined)
+            if pair is not None:
+                (run_curve, run_pix), (out_curve, out_pix) = pair
         sel = [dict(pts=run_curve, running=True, pix=run_pix)]
         if out_curve is not None:
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))
         out[fi] = sel
         prev_run, prev_out = run_curve, out_curve
+    _assign_racing_by_radius(out)
     return out
+
+
+def _assign_racing_by_radius(seq):
+    """FIELD-FREE global near/far identity. Track fact (owner): the venue has a fixed FAR rail and a
+    movable NEAR/RACING rail; the horses race just OUTSIDE the racing rail, which is the WIDER-radius of
+    the two. Per-frame image radius is perspective-noisy, so take a CONFIDENCE-WEIGHTED MAJORITY vote over
+    every two-rail frame: if the continuity-primary ('running') thread is the NARROWER (far/fixed) rail in
+    the majority, flip the running flag across ALL frames so the 'running' reference is the racing rail.
+    ONE global decision -- no per-frame flipping (that was the swap bandaid). No field used."""
+    wnum = wden = 0.0
+    for v in seq.values():
+        r = [c for c in v if c["running"]]
+        o = [c for c in v if not c["running"]]
+        if not r or not o:
+            continue
+        kr, _ = _signed_curvature(r[0]["pts"])
+        ko, _ = _signed_curvature(o[0]["pts"])
+        if not (np.isfinite(kr) and np.isfinite(ko)) or kr == 0 or ko == 0:
+            continue
+        rr, ro = 1.0 / abs(kr), 1.0 / abs(ko)            # image radii of the two rails
+        w = abs(rr - ro) / (0.5 * (rr + ro) + 1e-9)      # vote weight = radius separation (confidence)
+        wden += w
+        if rr > ro:                                      # running thread is the wider (racing) rail
+            wnum += w
+    if wden > 0 and wnum < 0.5 * wden:                   # primary is the narrower (far) rail -> flip globally
+        for v in seq.values():
+            for c in v:
+                c["running"] = not c["running"]
 
 
 # ------------------------------------------------------ GLOBAL geometry: kappa(s) + fixed-R back-proj
