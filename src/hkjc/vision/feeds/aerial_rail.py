@@ -351,6 +351,22 @@ def _thin_components(panel, y0, y1, content_w):
     return cands
 
 
+def _gather_curve(cands, frame, band, iters=4):
+    """Iterated fit->gather: gather thin pixels within ``band`` of the curve, refit a deg-2 on them, and
+    re-gather -- so the parabola WALKS along a sharp arc that a single PCA fit clips. Grows monotonically;
+    stops when the inlier set stabilises. Used only for the curving/striped (high-spread) config-A rails."""
+    gx, gy = _gather_inliers(cands, frame, band_px=band)
+    for _ in range(iters):
+        if len(gx) < 20:
+            break
+        _, frame = fit_curve_pca(gx, gy, deg=2)
+        ngx, ngy = _gather_inliers(cands, frame, band_px=band)
+        if len(ngx) <= len(gx):
+            break
+        gx, gy = ngx, ngy
+    return gx, gy
+
+
 def clean_pixels(panel, y0, y1, content_w, deg=2):
     """Keep only pixels lying on a LONG, LOW-SPREAD smooth curve (a rail). Returns (kept_xy, dropped_xy)."""
     cands = _thin_components(panel, y0, y1, content_w)
@@ -369,10 +385,25 @@ def clean_pixels(panel, y0, y1, content_w, deg=2):
         best = min(ln["spread"] for ln in spanning)
         thr = min(s_ceil, max(s_base, best + s_margin))
         for ln in spanning:
-            # in the loosened regime (spread > base) demand SOLID coverage -> a sparse aligned-text row
-            # (e.g. R08 disclaimer: spread ~6 but coverage ~0.4) is still rejected.
-            if ln["spread"] <= thr and (ln["spread"] <= s_base or ln["coverage"] >= COV_SOLID):
-                gx, gy = _gather_inliers(cands, ln["frame"])
+            # KEEP a spanning line if EITHER:
+            #  (a) it is thin enough for the adaptive threshold (thin crisp rail / dash), with the
+            #      loosened-regime coverage guard so a sparse aligned-text row is still rejected; OR
+            #  (b) it has SOLID coverage (cov >= COV_SOLID) up to the 2D-block ceiling -- a dense-support
+            #      line IS a rail regardless of the thin-line-driven adaptive `thr`. This is what saves the
+            #      striped config-A near rail (spread ~4.8, cov ~2.5): a thin FAR line was setting `best`
+            #      low, knife-edging `thr` just under 4.8 and dropping the real rail on some frames.
+            # (b) is purely ADDITIVE (only keeps MORE solid rails) so R08 cannot regress; text (cov<2) stays out.
+            thin_ok = ln["spread"] <= thr and (ln["spread"] <= s_base or ln["coverage"] >= COV_SOLID)
+            solid_ok = ln["coverage"] >= COV_SOLID and ln["spread"] <= s_ceil
+            if thin_ok or solid_ok:
+                if ln["spread"] <= s_base:                 # CRISP rail (R08): the single deg-2 gather suffices
+                    gx, gy = _gather_inliers(cands, ln["frame"])
+                else:                                      # CURVING/striped rail (config-A bends): a single
+                    # deg-2 PCA fit can't follow a sharp arc, so the 12 px perp gather keeps only the straight
+                    # middle and the curved ends are dropped (R02A f1700: 317 of 4500 rail px). Iterate
+                    # fit->gather with a spread-scaled band so the parabola WALKS along the arc and recovers
+                    # the ends. R08 never enters this branch (its rails are below s_base), so it is unchanged.
+                    gx, gy = _gather_curve(cands, ln["frame"], band=max(25.0, 8.0 * ln["spread"]))
                 if len(gx):
                     kept_xy.append(np.column_stack([gx, gy]))
     kept = np.unique(np.vstack(kept_xy), axis=0) if kept_xy else np.zeros((0, 2))
