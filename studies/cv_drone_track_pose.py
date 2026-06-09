@@ -36,7 +36,7 @@ def arc_model(span, n=120, R=R_BEND_M):
     return inner, outer
 
 
-def apply_H(H, pts):
+def apply_h(H, pts):
     p = np.c_[pts, np.ones(len(pts))] @ H.T
     return p[:, :2] / p[:, 2:3]
 
@@ -60,7 +60,7 @@ def detect(bgr):
     return cands, det
 
 
-def seed_H(cands):
+def seed_h(cands):
     """Fit H from the two longest detected arcs (param-matched findHomography), like the POC."""
     cands = sorted(cands, key=lambda c: -c["len"])[:2]
     A = cdr.fit_model(cands[0]["xs"], cands[0]["ys"])
@@ -84,18 +84,18 @@ def seed_H(cands):
 def refine(H_prev, det, model, anchors, gate, lam=0.06):
     """Gated chamfer (model->data) + reprojection-anchored regulariser toward H_prev."""
     tree = cKDTree(det)
-    anch_prev = apply_H(H_prev, anchors)
+    anch_prev = apply_h(H_prev, anchors)
 
     def resid(h):
         H = np.append(h, 1).reshape(3, 3)
-        d, _ = tree.query(apply_H(H, model))
+        d, _ = tree.query(apply_h(H, model))
         d = np.where(d < gate, d, 0.0)                  # unmatched model pts don't pull
-        reg = lam * (apply_H(H, anchors) - anch_prev).ravel()
+        reg = lam * (apply_h(H, anchors) - anch_prev).ravel()
         return np.concatenate([d, reg])
 
     sol = least_squares(resid, H_prev.flatten()[:8], loss="soft_l1", f_scale=4.0, max_nfev=80)
     H = np.append(sol.x, 1).reshape(3, 3)
-    d, _ = tree.query(apply_H(H, model))
+    d, _ = tree.query(apply_h(H, model))
     matched = d < gate
     return H, float(np.median(d[matched])) if matched.any() else 1e9, float(matched.mean())
 
@@ -105,7 +105,7 @@ def draw(bgr, det, H, mi, mo, t, tag):
     if det is not None:
         ov[det[:, 1], det[:, 0]] = (0, 120, 180)
     if H is not None:
-        po, pi = apply_H(H, mo), apply_H(H, mi)
+        po, pi = apply_h(H, mo), apply_h(H, mi)
         cv2.polylines(ov, [po.astype(np.int32)], False, (255, 0, 255), 2)
         cv2.polylines(ov, [pi.astype(np.int32)], False, (255, 255, 0), 2)
         spm = float(np.median(np.linalg.norm(pi - po, axis=1))) / WIDTH_M
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         tag = ""
         if H is None:
             if len(cands) >= 2:
-                H = seed_H(cands)
+                H = seed_h(cands)
                 tag = "SEED"
                 n_seed += 1
         elif det is not None:

@@ -65,5 +65,6 @@ ignore = ["E501"]   # long lines (mostly docstrings / GraphQL payloads) aren't w
 "src/hkjc/model/harville_model.py" = ["N803", "N806"]
 "src/hkjc/model/conditional_logit.py" = ["N803", "N806"]
 "src/hkjc/model/generative.py" = ["N806"]   # L = first-passage barrier length (race trip)
+"src/hkjc/vision/feeds/aerial_rail.py" = ["N803", "N806"]   # CV kernel math notation (W=width, P/Q=point arrays, R=radius, J=Jacobian)
 "tests/test_conditional_logit.py" = ["N806"]   # X = design matrix, mirrors the kernel
 "studies/*.py" = ["N803", "N806"]   # disposable scratch; physics notation (L = race length, ...)

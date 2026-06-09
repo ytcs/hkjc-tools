@@ -41,7 +41,7 @@ def _resample(poly, n):
                  np.interp(np.linspace(0, s[-1], n), s, poly[:, 1])]
 
 
-def apply_H(H, pts):
+def apply_h(H, pts):
     p = np.c_[pts, np.ones(len(pts))] @ H.T
     return p[:, :2] / p[:, 2:3]
 
@@ -68,7 +68,8 @@ def run_frame(bgr, t):
     # bend if BOTH fit arcs of plausible (image) radius; assign outer = larger radius
     is_bend = A["type"] == "arc" and B["type"] == "arc"
     if is_bend:
-        aA = cdr._force_arc(cands[0]); aB = cdr._force_arc(cands[1])
+        aA = cdr._force_arc(cands[0])
+        aB = cdr._force_arc(cands[1])
         span = max(aA["span"], aB["span"])
         a = np.linspace(-span / 2, span / 2, N)
         m_out = np.c_[(R_BEND_M + HALF_W) * np.cos(a), (R_BEND_M + HALF_W) * np.sin(a)]
@@ -94,12 +95,12 @@ def run_frame(bgr, t):
     tree = cKDTree(det)
 
     def resid(h):
-        d, _ = tree.query(apply_H(np.append(h, 1).reshape(3, 3), model))
+        d, _ = tree.query(apply_h(np.append(h, 1).reshape(3, 3), model))
         return d
     sol = least_squares(resid, H.flatten()[:8], loss="soft_l1", f_scale=6.0, max_nfev=120)
     H = np.append(sol.x, 1).reshape(3, 3)
     med = float(np.median(resid(sol.x)))
-    pi, po = apply_H(H, m_in), apply_H(H, m_out)
+    pi, po = apply_h(H, m_in), apply_h(H, m_out)
     cv2.polylines(ov, [po.astype(np.int32)], False, (255, 0, 255), 2)   # OUTER magenta
     cv2.polylines(ov, [pi.astype(np.int32)], False, (255, 255, 0), 2)   # INNER cyan
     scale_px_m = float(np.median(np.linalg.norm(pi - po, axis=1))) / WIDTH_M

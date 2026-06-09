@@ -1,18 +1,14 @@
-"""Aerial-render horse detector — EDGE+FILL → exactly one solid blob per runner.
+"""Aerial-render horse detectors on the AVV top-down green render.
 
-The dialed-in replacement for the legacy ``detect_blobs`` on the AVV green render. From the
-preprocessing bake-off, *suppress turf+rail → Canny edges → fill contours → ∩ non-turf colour →
-field-ROI → PCA rail-rejection → k-means-to-field* yields the cleanest whole-horse silhouettes
-(no silk-colour fragmentation, no rail-bar leak). See ``docs/CV_RECON.md`` §2 and the study
-``studies/cv_avatar_edgefill.py`` it was dialled in from.
+Pipeline: suppress turf+rail -> Canny edges -> fill contours -> intersect non-turf colour ->
+field-ROI -> PCA rail-rejection -> partition to the field count. Yields whole-horse silhouettes
+without silk-colour fragmentation or rail-bar leak.
 
-Two centroid variants are returned per horse (the choice is the caller's; ``A`` is the validated
-default):
-  * ``A`` = PIXEL centroid of the cluster (pixel-weighted; leans to the larger fragment);
-  * ``B`` = mean of the per-connected-component piece centroids (= the midpoint of a silk-split).
+``detect_edgefill`` returns two centroid variants per horse (caller's choice; ``A`` is the default):
+  * ``A`` = pixel centroid of the cluster; ``B`` = mean of the per-component piece centroids.
+``detect_avatars`` is the count-aware variant (rail-bounded ROI, no k-means).
 
-Pure numpy at import; cv2 is lazy. Nothing here is hand-tuned per race — the turf hue is read
-from the frame and every threshold is a physical/graphics constant of the render.
+Pure numpy at import; cv2 is lazy. The turf hue is read per frame; the rest are graphics constants.
 """
 from __future__ import annotations
 
@@ -272,11 +268,10 @@ def detect_blobs(
 
 
 # --------------------------------------------------------------------------- rail-bounded detector
-# The count-aware avatar detector (promoted from studies/cv_avatar_detect2.py, journal 0101). Replaces
-# the k-means-forces-the-count approach: rail-bound the ROI (drops background false-positives), close +
-# rail-parallel blur to reconnect each avatar's split body/silk pieces, then split only OVER-LARGE
-# blobs (genuine front-to-back merges) into round(area/single) centres via distance-transform NMS,
-# with the single-horse area solved from the known field/legend count. Count-aware, not count-forced.
+# Count-aware avatar detector: rail-bound the ROI (drops background false-positives), close +
+# rail-parallel blur to reconnect each avatar's split body/silk pieces, then split only over-large
+# blobs (front-to-back merges) into round(area/single) centres via distance-transform NMS, with the
+# single-horse area solved from the known field count.
 
 
 def _line_kernel(length: int, angle: float):

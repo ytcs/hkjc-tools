@@ -48,7 +48,9 @@ PASS1_CACHE = f"data_cache/cv_trackid_pass1_{RACE}.npz"   # per-frame detect+rai
 DIAG = "data_cache/diag"
 SFX = "" if RACE == "R08" else f"_{RACE}"     # race suffix on diag outputs (keep R08 canonical names)
 HALF = 960
-STRIDE = 1               # process EVERY frame (25 fps native) for max temporal resolution
+STRIDE = 2               # the render visibly updates only ~every 2nd frame at 25 fps -> stride-2 is
+                         # lossless and halves decode/processing. Gates are in VIDEO-frame units
+                         # (frame index i), so they stay valid under any stride.
 GATE_PX = 60.0           # max avatar displacement between stride-4 frames (panel px) for association
 LANE_K = 1.35            # lane half-width = LANE_K * p98(field |perp|): data-driven, not hand-tuned
 SAVE_FRAMES = [None, 1080, 1760, 2440]   # None -> seed frame; rest = mid-race ID overlays
@@ -74,8 +76,8 @@ def _medfilt(a, w=5):
     return out
 
 
-def _robust_zoom_track(sep_raw, fw=90, mad_k=2.5):
-    """Robust near-constant-zoom inner->outer separation track (journal 0105 — THE metric fix).
+def _robust_zoom_track(sep_raw, fw=90, mad_k=2.5, return_trust=False):
+    """Robust near-constant-zoom inner->outer separation track.
 
     The virtual camera holds a near-CONSTANT zoom, so the true 22.5 m rail separation is a smooth,
     slowly-varying px curve. A wrong outer (the rail's shadow / a parallel marker -> too NEAR; a far
@@ -83,13 +85,17 @@ def _robust_zoom_track(sep_raw, fw=90, mad_k=2.5):
     rolling median cannot reject (it chases the regional bias). So gate GLOBALLY first against the
     robust zoom level (kills both-direction gross outliers even where most outers are wrong), then a
     gentle local median tracks the slow drift among survivors, and interp the rejected gaps.
+
+    With ``return_trust`` also returns a per-frame bool: True where the raw outer SURVIVED the gate
+    (the scale is anchored on a believed-good 22.5 m ruler), False where it was interpolated.
     """
     n = len(sep_raw)
     idx = np.arange(n)
     ok = np.isfinite(sep_raw)
     if ok.sum() < 5:
         g = float(np.nanmedian(sep_raw)) if ok.any() else 200.0
-        return np.full(n, g)
+        out = np.full(n, g)
+        return (out, np.zeros(n, bool)) if return_trust else out
     f = idx[ok].astype(float)
     v = np.asarray(sep_raw, float)[ok]
     m0 = np.median(v)
@@ -106,7 +112,117 @@ def _robust_zoom_track(sep_raw, fw=90, mad_k=2.5):
         keep = glob & (np.abs(resid) <= mad_k * 1.4826 * mad)
         if keep.sum() < 5:
             break
-    return np.interp(idx, f[keep], smooth[keep])
+    out = np.interp(idx, f[keep], smooth[keep])
+    if not return_trust:
+        return out
+    trust = np.zeros(n, bool)
+    trust[idx[ok][keep]] = True
+    return out, trust
+
+
+def _nanmedfilt(a, w):
+    """NaN-aware rolling-median over an array (de-spike; gaps stay gaps)."""
+    a = np.asarray(a, float)
+    h = w // 2
+    out = np.full(len(a), np.nan)
+    for i in range(len(a)):
+        win = a[max(0, i - h):i + h + 1]
+        win = win[np.isfinite(win)]
+        if len(win):
+            out[i] = np.median(win)
+    return out
+
+
+def _consensus(M, min_n):
+    """Per-frame median over tracks, only where >= ``min_n`` tracks contribute; else NaN -> interp.
+
+    The robustness core: a per-frame nuisance (rail baseline / longitudinal origin / scale) is taken
+    from the FIELD CONSENSUS (median over all co-visible horses), never one fragile reference, so a
+    single mis-detected/-associated track cannot move it.
+    """
+    cnt = np.isfinite(M).sum(0)
+    med = np.full(M.shape[1], np.nan)
+    good = cnt >= min_n
+    if good.any():
+        med[good] = np.nanmedian(M[:, good], 0)
+        med = np.interp(np.arange(M.shape[1]), np.where(good)[0], med[good])
+    return med
+
+
+def field_consensus_recon(S, P, odo, scale0, trust, rail_w, sep_global, ylat_max=25.0,
+                          min_cons=4, scale_tol=0.06, n_iter=5):
+    """Field-consensus FACTORISATION of the per-horse 2D path.
+
+    Replaces the two fragile SINGLE-reference per-frame anchors (p96 leader for longitudinal; one
+    outer line for lateral scale) with N-horse consensus nuisances + ONE absolute anchor each:
+
+      LATERAL    perp_i(f) = b(f) + lane_px_i(f);  y_lat_i = lane_px_i * scale(f).
+                 b(f) = common-mode inner-rail baseline jitter (consensus); scale(f) trusted from the
+                 outer rail where the zoom-gate believed it, else FILLED from the field (horses hold
+                 their lane -> lane/perp is a per-horse scale; median over horses, clamped to a tight
+                 band since zoom is near-constant). Absolute level anchored by the 22.5 m outer sep.
+      LONGITUD.  A_i(f) = s_i(f)*scale(f) + C(f).  C(f) = per-frame origin (polyline-origin shift +
+                 leader gauge) from the consensus of ALL tracks + a smooth odometer front re-pin.
+                 Absolute level anchored by the odometer (leader metres-run).
+
+    S/P are (n_track, n_frame) px matrices (NaN = absent/invalid); odo/scale0/trust are per-frame.
+    Returns (A, off, ylat, info) where A=absolute arclen, off=A-odo (position behind leader, <=0),
+    ylat>=0 metres, info has the b/scale/C nuisance tracks.
+    """
+    nt, nfr = S.shape
+    L = rail_w / sep_global                        # global scale level (m/px), near-constant
+
+    # ---- LATERAL: remove common-mode rail baseline b(f); scale = trusted-outer / field-filled -----
+    b = np.zeros(nfr)
+    scale = scale0.copy()
+    for _ in range(n_iter):
+        lane_m = np.vstack([_nanmedfilt((P[i] - b) * scale, 15) for i in range(nt)])
+        lane_px = lane_m / scale[None, :]
+        b = b + _consensus(P - (lane_px + b[None, :]), min_cons)
+        b = b - np.nanmedian(b[np.isfinite(b)])    # gauge: rail baseline mean = 0
+        denom = P - b[None, :]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            sc_field = _consensus(np.where(np.abs(denom) > 3.0, lane_m / denom, np.nan), min_cons)
+        sc_field = np.clip(sc_field, L * (1 - scale_tol), L * (1 + scale_tol))
+        scale = np.where(trust, scale0, sc_field)
+        bad = ~np.isfinite(scale)
+        if bad.any():
+            scale[bad] = np.interp(np.where(bad)[0], np.where(~bad)[0], scale[~bad])
+    ylat = (P - b[None, :]) * scale[None, :]
+    ylat[ylat > ylat_max] = np.nan
+    ylat = np.clip(ylat, 0.0, None)
+
+    # ---- LONGITUDINAL: consensus origin C(f) + smooth odometer front anchor -----------------------
+    g = S * scale[None, :]
+    p96g = np.array([np.nanpercentile(g[:, k], 96) if np.isfinite(g[:, k]).any() else np.nan
+                     for k in range(nfr)])
+    C = odo - p96g
+    fin = np.isfinite(C)
+    C = np.interp(np.arange(nfr), np.where(fin)[0], C[fin]) if fin.any() else np.zeros(nfr)
+    for _ in range(n_iter):
+        A = g + C[None, :]
+        Abar = np.vstack([_nanmedfilt(A[i], 9) for i in range(nt)])
+        C = _consensus(Abar - g, min_cons)
+        front = np.array([np.nanpercentile(Abar[:, k], 96) if np.isfinite(Abar[:, k]).any()
+                          else np.nan for k in range(nfr)])
+        corr = _nanmedfilt(odo - front, 31)
+        cf = np.isfinite(corr)
+        corr = np.interp(np.arange(nfr), np.where(cf)[0], corr[cf]) if cf.any() else np.zeros(nfr)
+        C = C + corr
+    A = g + C[None, :]
+    off = A - odo[None, :]
+
+    # ---- SAFE per-track robust cleanup: NaN non-physical excursions (association swaps / glitches);
+    # never REASSIGN identity. Lateral < ~2 m/s -> >4 m over ~1.2 s is a swap; longitudinal
+    # differential > 8 m over 1.2 s is impossible.
+    def _lane_clean(M, tol, w=31):
+        for i in range(nt):
+            tr = _nanmedfilt(M[i], w)
+            M[i][np.isfinite(M[i]) & (np.abs(M[i] - tr) > tol)] = np.nan
+    _lane_clean(ylat, 4.0)
+    _lane_clean(off, 8.0)
+    A = off + odo[None, :]
+    return A, off, ylat, {"b": b, "scale": scale, "C": C}
 
 
 def main() -> None:
@@ -233,8 +349,9 @@ def main() -> None:
 
     sep_raw = np.array([(lambda s: s if s else np.nan)(_sep_px(f)) for f in frames])
     sep_global = float(np.nanmedian(sep_raw)) if np.isfinite(sep_raw).any() else 200.0
-    sep_sm = _robust_zoom_track(sep_raw)   # global-gated robust track (rejects wrong-outer stretches)
+    sep_sm, sep_trust = _robust_zoom_track(sep_raw, return_trust=True)   # + per-frame outer-trusted mask
     sep_by_f = {f: float(sep_sm[k]) for k, f in enumerate(frames)}
+    trust_by_f = {f: bool(sep_trust[k]) for k, f in enumerate(frames)}
 
     def scale_f(f):
         return RAIL_W / max(20.0, sep_by_f.get(f, sep_global))
@@ -249,9 +366,7 @@ def main() -> None:
 
     len_by_f = {f: _poly_len(f) for f in frames}
     len_med = float(np.median(list(len_by_f.values())))
-    CLAMP_PX, SHORT_FRAC = 25.0, 0.6
-    # leader clamped to the visible front end (s_head near L) -> the whole frame's gap reference is wrong
-    lead_clamp = {f: s_head[f] > len_by_f[f] - CLAMP_PX for f in frames}
+    CLAMP_PX, SHORT_FRAC = 25.0, 0.6   # a point clamped within CLAMP_PX of a polyline end has a bad s
 
     # ---- PASS 2: METRIC-SPACE association with the ODOMETER as the motion prior ----------------
     # Match detections in (arclen, y_lat) METRES. Each track is predicted forward by the odometer
@@ -340,6 +455,23 @@ def main() -> None:
     tracks = {t: sorted(v) for t, v in merged.items()}
     print(f"re-link: {n_link} joins -> {len(tracks)} tracklets (from {len(ends)} relinkable fragments)")
 
+    # DUMP the substantial-track matrix + per-frame nuisances (DUMP_TRACKS=1) for offline estimator work.
+    if os.environ.get("DUMP_TRACKS", "0") == "1":
+        sub = [v for v in tracks.values() if len(v) >= 60]
+        np.savez(
+            f"data_cache/cv_tracks_{RACE}.npz",
+            frames=np.array(frames),
+            odo=np.array([odo_arclen(f) for f in frames]),
+            sep=np.array([sep_by_f[f] for f in frames]),
+            trust=np.array([trust_by_f[f] for f in frames]),
+            plen=np.array([len_by_f[f] for f in frames]),
+            len_med=len_med, sep_global=sep_global, rail_w=RAIL_W, dist=DIST,
+            tf=np.array([np.array([p[0] for p in v]) for v in sub], dtype=object),
+            ts=np.array([np.array([p[3] for p in v]) for v in sub], dtype=object),
+            tp=np.array([np.array([p[4] for p in v]) for v in sub], dtype=object),
+        )
+        print(f"[dump] data_cache/cv_tracks_{RACE}.npz  ({len(sub)} substantial tracks)")
+
     lengths = sorted((len(v) for v in tracks.values()), reverse=True)
     long_tracks = [v for v in tracks.values() if len(v) >= 5]
     span = max(frames) - min(frames)
@@ -394,48 +526,43 @@ def main() -> None:
     fig.savefig(f"{DIAG}/cv_track_id_tracklets{SFX}.png", dpi=110, bbox_inches="tight")
     print(f"[fig] {DIAG}/cv_track_id_tracklets{SFX}.png")
 
-    # ---- PASS 3: ODOMETER-anchored longitudinal reconstruction -> metric-ish 2D paths -----------
-    # arclen_h(f) = odo(f) - (s_head - s_h)*scale: the head sits at the odometer, each trailing horse
-    # its own offset behind -> arclen IS the odometer PLUS the relative position, co-stamped by frame
-    # with y_lat. odo_arclen / s_head / scale / metric() were defined above (shared with association).
-    fig2, (axA, axL, axR) = plt.subplots(1, 3, figsize=(24, 7))
-    n_paths = 0
-    # VALIDITY gate (from the spike audit): the per-frame metric is trustworthy only when the two-rail
-    # ruler is resolvable (sep not foreshortened to ~nothing), the projection isn't degenerate (s off
-    # the curve ends), and the result is physically possible. Failures -> NaN (gaps the backbone fills).
-    # SEP_MIN is RELATIVE to the race's own zoom (sep_global) — an absolute 60 px was R08-specific and
-    # over-rejected the more zoomed-out R02A (sep ~61 px), blanking whole stretches (journal 0109).
-    SEP_MIN, S_MIN, YLAT_MAX, OFF_MAX = 0.45 * sep_global, 3.0, 25.0, 40.0
-
-    def _recon(f, s, perp):
-        sc = scale_f(f)
-        yl = perp * sc
-        if sep_by_f.get(f, sep_global) < SEP_MIN or yl > YLAT_MAX:   # scale untrustworthy / off-track
-            yl = np.nan
-        # LONGITUDINAL gates (journal 0105): rail too short, leader clamped, or this point clamped to an
-        # end -> the gap (s_head - s) is corrupted, so drop the offset (keep ylat where still valid).
-        lp = len_by_f.get(f, len_med)
-        clamped = s < S_MIN or s > lp - CLAMP_PX or lp < SHORT_FRAC * len_med or lead_clamp.get(f, False)
-        off = np.nan if clamped else -(s_head[f] - s) * sc
-        if np.isfinite(off) and abs(off) > OFF_MAX:                  # physically impossible -> reject
-            off = np.nan
-        return off, yl
-
-    # plot only SUBSTANTIAL tracklets (the ~11 real runners are 550-1300 frames; the ~156 short
-    # fragments are brief spurious detections that only clutter the paths). No merging (avoid mis-ID).
+    # ---- PASS 3: FIELD-CONSENSUS FACTORISATION reconstruction -> metric 2D paths -----------------
+    # Build the (track x frame) px matrices for the SUBSTANTIAL tracklets, gate the longitudinal s where
+    # a point clamps to a polyline end (corrupt arc-length), then let field_consensus_recon infer
+    # b(f)/scale(f)/C(f) from the field. Replaces the old per-frame _recon (single p96 leader + single
+    # outer line) with the N-horse consensus estimator.
     MIN_TRACK = 60
-    for pts in sorted(tracks.values(), key=len, reverse=True):
-        if len(pts) < MIN_TRACK:
-            continue
-        n_paths += 1
-        ff = [p[0] for p in pts]
-        rec = [_recon(f, s, perp) for (f, _cx, _cy, s, perp) in pts]
-        offset = _medfilt([r[0] for r in rec], w=9)   # offset (position behind head) varies slowly
-        ylat = _medfilt([r[1] for r in rec], w=7)     # lateral trip: de-spike per-frame perp outliers
-        arclen = [odo_arclen(f) + o for f, o in zip(ff, offset)]
-        axA.plot(ff, arclen, "-", lw=1.0, alpha=0.7)
-        axL.plot(ff, offset, "-", lw=1.0, alpha=0.7)
-        axR.plot(arclen, ylat, "-", lw=1.0, alpha=0.7)
+    S_MIN, YLAT_MAX = 3.0, 25.0
+    sub = [v for v in sorted(tracks.values(), key=len, reverse=True) if len(v) >= MIN_TRACK]
+    fcol = {f: k for k, f in enumerate(frames)}
+    nt, nfr = len(sub), len(frames)
+    Smat = np.full((nt, nfr), np.nan)
+    Pmat = np.full((nt, nfr), np.nan)
+    for i, pts in enumerate(sub):
+        for (f, _cx, _cy, s, perp) in pts:
+            k = fcol[f]
+            lp = len_by_f.get(f, len_med)
+            if not (s < S_MIN or s > lp - CLAMP_PX or lp < SHORT_FRAC * len_med):
+                Smat[i, k] = s
+            Pmat[i, k] = perp
+    odo_arr = np.array([odo_arclen(f) for f in frames])
+    scale0_arr = np.array([scale_f(f) for f in frames])
+    trust_arr = np.array([trust_by_f[f] for f in frames])
+    A_mat, off_mat, ylat_mat, info = field_consensus_recon(
+        Smat, Pmat, odo_arr, scale0_arr, trust_arr, RAIL_W, sep_global, ylat_max=YLAT_MAX)
+    n_paths = nt
+
+    fig2, (axA, axL, axR) = plt.subplots(1, 3, figsize=(24, 7))
+    Ff = np.array(frames)
+    for i in range(nt):
+        mA = np.isfinite(A_mat[i])
+        axA.plot(Ff[mA], A_mat[i][mA], "-", lw=1.0, alpha=0.7)
+        off = _medfilt(off_mat[i], w=5)
+        mO = np.isfinite(off)
+        axL.plot(Ff[mO], off[mO], "-", lw=1.0, alpha=0.7)
+        yl = _medfilt(ylat_mat[i], w=5)
+        mY = np.isfinite(yl) & mA
+        axR.plot(A_mat[i][mY], yl[mY], "-", lw=1.0, alpha=0.7)
     axA.set_xlabel("aerial frame")
     axA.set_ylabel("arclen run (m)")
     axA.set_title("Absolute arclen (odometer-anchored, monotonic)")
@@ -444,30 +571,11 @@ def main() -> None:
     axL.set_title("Per-horse position behind the head (0 = leader) — the race dynamics")
     axL.axhline(0, color="k", lw=0.5)
     axR.set_xlabel("arclen run (m)")
-    axR.set_ylabel("y_lat (m), clipped 8")
-    axR.set_title("Reconstructed 2D path: lateral trip vs arclen")
+    axR.set_ylabel("y_lat (m)")
+    axR.set_title("Reconstructed 2D path: lateral trip vs arclen (field-consensus)")
     fig2.savefig(f"{DIAG}/cv_recon_2d{SFX}.png", dpi=145, bbox_inches="tight")
-    print(f"[fig] {DIAG}/cv_recon_2d{SFX}.png  ({n_paths} paths, scale~={RAIL_W/sep_global:.3f} m/px (per-frame))")
-
-    # ---- AUDIT: pinpoint the gigantic glitch spikes — which stage fails at each? ----------------
-    audit = []
-    for pts in tracks.values():
-        for (f, cx, cy, s, perp) in pts:
-            sc = scale_f(f)
-            offset = -(s_head[f] - s) * sc
-            ylat = perp * sc
-            if ylat > 25.0 or abs(offset) > 50.0:   # physically impossible -> a failure
-                cv = curves[f]
-                audit.append((round(ylat, 1), round(offset), f, round(perp, 1), round(s, 1),
-                              round(s_head[f], 1), round(sep_by_f.get(f, sep_global), 1), round(sc, 3),
-                              round(float(cv[:, 1].mean())), outers.get(f) is not None))
-    audit.sort(key=lambda a: -(a[0] + abs(a[1])))
-    print(f"AUDIT: {len(audit)} spike points (ylat>25m or |offset|>50m). worst 15:")
-    print("  ylat  offset frame  perp_px  s_px  s_head  sep_px  scale  railmidy  outer?")
-    for a in audit[:15]:
-        print("  {:6} {:6} {:5} {:7} {:6} {:6} {:6} {:6} {:8} {}".format(*a))
-    spike_frames = sorted({a[2] for a in audit[:8]})
-    print(f"worst spike frames -> {spike_frames}")
+    print(f"[fig] {DIAG}/cv_recon_2d{SFX}.png  ({n_paths} paths, scale~={RAIL_W/sep_global:.3f} m/px; "
+          f"b|max {np.nanmax(np.abs(info['b'])):.0f}px, scale-filled {(~trust_arr).mean()*100:.0f}%)")
 
     # ---- PASS 4: RESOLUTION diagnostic — top tracks' raw perp & s (px) + worst-jump frames -------
     top = sorted(tracks.values(), key=len, reverse=True)[:3]

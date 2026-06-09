@@ -26,8 +26,10 @@ def test_recon_modules_import_without_cv_deps():
     # promoted aerial primitives: dialed-in detector + field-selected rigid rail curve
     assert geom.candidate_rail_curves and geom.fit_rail_curve and geom.project_to_polyline
     assert adet.detect_edgefill and adet.AerialBlob
-    # promoted running-rail backbone + relocated AVV layout (ex mode_b)
+    # rail primitives + the promoted reconstruction layer (clean -> temporal fit -> global kappa)
     assert arail.line_candidates and arail.enumerate_lines and arail.select_running_rail
+    assert arail.clean_pixels and arail.track_sequence and arail.fit_rails
+    assert arail.build_kappa and arail.backproject_fixed_r and arail.radius_at
     assert alayout.find_layout and alayout.Layout
     assert gc.shadow_base and gc.plumb_to_hoof
     assert ocr.ocr_numbers and ocr.best_per_number

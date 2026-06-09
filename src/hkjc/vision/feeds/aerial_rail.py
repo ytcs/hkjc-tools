@@ -1,24 +1,39 @@
-"""Aerial-render rail detection + RUNNING-rail selection (the racing inner rail).
+"""Aerial-render rail detection, RUNNING-rail selection, and full rail RECONSTRUCTION.
 
-Promoted from ``studies/cv_rail_robust.py`` (the 2026-06 rail-backbone work; journal 0099). The AVV
-right panel draws the rails as bright lines, but the per-frame fit must survive camera angle ROTATION
-(the rail goes diagonal / near-vertical), BACKGROUND clutter entering as the camera pans (grandstand
+The AVV right panel draws the rails as bright lines. The per-frame fit must survive camera-angle
+ROTATION (the rail goes diagonal / near-vertical), BACKGROUND clutter as the camera pans (grandstand
 apron / hedge -> big bright blobs), and the rail's SHADOW / a parallel marker line (a near-parallel
 twin). There is NO occlusion — the field runs on the turf BESIDE the rail, not on it.
 
-Pipeline:
+This module has three layers (one rail home — no module sprawl):
+
+PRIMITIVES (shape gates + orientation-free curve fitting, reused everywhere incl. ``aerial_detect``):
   ``line_candidates``   -> every bright connected component in the track band, with shape stats
                            (elongation, mean width) classifying THIN rail pieces vs fat blobs/text.
   ``fit_curve_pca``     -> orientation-free robust curve: parametrise along the PCA major axis and fit
                            minor = poly(major). No x-vs-y switch, so the perpendicular SIGN is stable.
   ``enumerate_lines``   -> grow every distinct rail line by gathering collinear thin pixels (dashes
                            re-joined), each with descriptors (coverage/solidity, curvature, brightness).
-  ``select_running_rail`` -> of the two main rails (top-2 coverage), pick the one the field hugs by
-                           MEDIAN distance to the (rail-independent) detect_edgefill blobs, run
-                           TEMPORALLY (carry the previous pick; let field distance override only when
-                           confident) so equidistant-field bend frames don't flip. Returns a
-                           tangent-oriented curve so ``geometry_cv.project_to_polyline``'s perp sign is
-                           consistent across the race.
+
+RECONSTRUCTION (the 0115/0116 redesign — the CURRENT promoted path, validated R08):
+  ``clean_pixels``      -> LOOP 1: candidate-pixel precision by a LONG-SMOOTH-CURVE gate (turf-relative
+                           colour + colour-context rejection + adaptive spread). Replaces the per-pixel
+                           tagger AND the bottom-legend cut.
+  ``track_sequence``    -> LOOP 2: per-frame two-rail fit by temporal fit+gather+refit (carry the prev
+                           curve as the gather SEED, refit on the CURRENT frame's pixels -> bridges
+                           occluded bends with no smearing). Rails fit INDEPENDENTLY; partner accepted
+                           only if it does not CROSS the running rail (the one bend-robust discriminator).
+  ``build_kappa`` + ``backproject_fixed_r`` -> GLOBAL geometry: reconstruct the rail's signed
+                           image-curvature profile kappa(s) vs odometer arclength, pin R = 1/kappa(s)
+                           per frame, fit only the pose, draw across the box -> full span even from a
+                           sliver / single rail (config-A). All pixel constants are fractions of the
+                           content width and colour gates are turf-MEDIAN-relative (robust on bends),
+                           so the pipeline survives render drift. See journals 0115 / 0116.
+
+LEGACY (``select_running_rail`` — the per-frame field-proximity selector, superseded by
+  ``track_sequence``). Retained only because the not-yet-ablated full aerial pipeline
+  (``studies/cv_aerial_track_id.py``, ``cv_pose_backbone.py``) still rides on it; slated for removal
+  once the reconstruction layer is wired into that pipeline (CV_RECON §10 roadmap: integrate-then-ablate).
 
 Pure numpy at import; cv2 is imported lazily inside the functions that need it. See ``docs/CV_RECON.md``.
 """
@@ -183,7 +198,9 @@ def enumerate_lines(cands, deg: int, gray=None) -> list[dict]:
     return [ln for ln in lines if ln["ext"] > 80]    # drop stubs that never grew into a line
 
 
-# --------------------------------------------------------------------------- running-rail selection
+# ===================== LEGACY: per-frame running-rail selection (superseded by track_sequence) ======
+# Retained only for the not-yet-ablated full aerial pipeline (studies/cv_aerial_track_id.py,
+# cv_pose_backbone.py). The current promoted path is clean_pixels + track_sequence + build_kappa below.
 def _orient(pts, direction):
     """Return the polyline ordered so its end-to-start tangent aligns with ``direction``."""
     return pts[::-1] if float((pts[-1] - pts[0]) @ direction) < 0 else pts
@@ -235,7 +252,7 @@ def select_running_rail(cands, deg, field_pts, prev_tang=None, prev_curve=None, 
     dists = [_median_dist_to_field(ln["pts"], field_pts) for ln in main]
     i_near = int(np.argmin(dists))
     if dists[i_near] > 150.0:        # nearest rail implausibly far from the field -> bad fit, skip
-        return None, prev_tang, None  # (applies to the single-rail case too: kills the f1280 stub)
+        return None, prev_tang, None  # (also rejects a lone far stub in the single-rail case)
     if len(main) == 1:
         pick, basis = 0, "single"
     elif prev_curve is None:
@@ -253,3 +270,429 @@ def select_running_rail(cands, deg, field_pts, prev_tang=None, prev_curve=None, 
     # inner->outer pixel separation is the metric ruler for a perspective-correct y_lat.
     outer = main[1 - pick]["pts"] if len(main) == 2 else None
     return curve, tang, {"basis": basis, "outer": outer}
+
+
+# =================================================================================================
+# RECONSTRUCTION — the 0115/0116 redesign (current promoted path). Pixel cleaning -> temporal
+# fit-gather two-rail tracker -> global kappa(s) back-projection. All pixel constants are fractions
+# of content width W; colour gates are turf-MEDIAN-relative (robust on bends — tying to the std
+# over-tightens where the band includes dark fence/shadows, journal 0116 addendum 5). Factors are
+# calibrated to reproduce the prior absolute values at the current AVV scale (W~949, turf gray~150).
+# =================================================================================================
+
+# --- shared adaptive-spread + coverage gate (identical in LOOP 1 and LOOP 2) ---
+SPREAD_BASE_FAC = 0.0042    # rail max thickness, fraction of W (~4 px @949) -- this thin = a rail outright
+SPREAD_MARGIN_FAC = 0.0021  # ADAPTIVE tolerance above the frame's OWN thinnest spanning line (~2 px @949)
+SPREAD_CEIL_FAC = 0.0095    # hard thinness ceiling, fraction of W (~9 px @949) -- beyond this it is a 2D block
+COV_SOLID = 2.0             # min coverage (support px / length) in the loosened regime -- rejects sparse text rows
+# --- LOOP 1 (pixel cleaning) ---
+PIX_MIN_EXT_FRAC = 0.33     # a kept curve must span >= this fraction of W
+PIX_MINCOMP_FAC = 0.008     # min thin-component length, fraction of W (~8 px @949)
+BRIGHT_FAC = 0.19           # brightness threshold = turf_gray_median * (1 + BRIGHT_FAC); turf-MEDIAN-relative
+WHITE_S_FAC = 0.58          # rail whiteness: saturation < this * turf_saturation_median (~75 @ R08)
+VIVID_S_FAC = 1.08          # vivid silk/legend: saturation > this * turf_saturation_median (~140 @ R08) + hue far
+VIVID_V_FAC = 0.50          # vivid silk/legend: value > this * turf_value_median (~80 @ R08)
+ADJ_FAC = 0.017             # silk-adjacency reject radius, fraction of W (~16 px @949)
+# --- LOOP 2 (rail fit) + global geometry ---
+FIT_MIN_EXT_FRAC = 0.30     # a line must span >= this fraction of W to be a rail
+FIT_MINCOMP_FAC = 0.0126    # min connected-component length in the fit enumerate, ~12 px @949
+MIN_RAIL_FAC = 0.026        # min rail pixel count, ~25 @949
+GATHER_FAC = 0.0084         # gather band, ~8 px @949
+SEED_FAC = 0.0126           # temporal seed band, ~12 px @949
+NOCROSS_FAC = 0.021         # min rail-rail gap (no-cross), ~20 px @949
+MAXSEP_FAC = 0.36           # max plausible rail separation, ~340 px @949
+RLINE_FAC = 8.4             # straight-vs-arc radius threshold, ~8000 px @949 (x W)
+
+
+# --------------------------------------------------------------------------- LOOP 1: pixel cleaning
+def _thin_components(panel, y0, y1, content_w):
+    """Bright THIN connected components, with pixels + shape stats. NO legend cut. All thresholds are
+    DATA-RELATIVE (no absolute px/colour magic numbers) so the algo survives render drift:
+      * brightness  = turf_median * (1 + BRIGHT_FAC)       (turf-relative; robust to bend shadows)
+      * whiteness   = s < WHITE_S_FAC * turf_sat_median    (rail is far less saturated than turf)
+      * vivid colour= s > VIVID_S_FAC * turf_sat_median AND v > VIVID_V_FAC * turf_val_median AND
+                      hue far (>20 deg) from turf -> silks / legend swatches
+    COLOUR-CONTEXT rejection: drop white within ADJ_FAC*W px of a vivid non-turf blob (legend sleeve /
+    jockey silk sits beside vivid colour; a real rail sits on turf). ADJ and the min-component length
+    are fractions of the content width W -> resolution-invariant."""
+    import cv2
+    band = panel[y0:y1]
+    gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(band, cv2.COLOR_BGR2HSV)
+    s, v, h = hsv[:, :, 1], hsv[:, :, 2], hsv[:, :, 0]
+    turf = s > 40                                         # coloured (turf) pixels for the per-frame stats
+    turf_g = float(np.median(gray[turf])) if turf.any() else 120.0
+    turf_s = float(np.median(s[turf])) if turf.any() else 130.0
+    turf_v = float(np.median(v[turf])) if turf.any() else 150.0
+    thr = turf_g * (1.0 + BRIGHT_FAC)                     # rail brighter than turf by a turf-relative margin
+    turf_h = float(np.median(h[turf & (s < 120)])) if (turf & (s < 120)).any() else 60.0
+    dh = np.minimum(np.abs(h.astype(int) - turf_h), 180 - np.abs(h.astype(int) - turf_h))
+    vivid = ((s > VIVID_S_FAC * turf_s) & (v > VIVID_V_FAC * turf_v) & (dh > 20)).astype(np.uint8)
+    adj = max(3, int(round(ADJ_FAC * content_w)))
+    vivid_near = cv2.dilate(vivid, np.ones((2 * adj + 1, 2 * adj + 1), np.uint8))
+    white = ((gray > thr) & (s < WHITE_S_FAC * turf_s) & (vivid_near == 0)).astype(np.uint8)
+    white = cv2.morphologyEx(white, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+    n, lbl, st, _c = cv2.connectedComponentsWithStats(white, 8)
+    min_ext = max(5, int(round(PIX_MINCOMP_FAC * content_w)))
+    cands = []
+    for i in range(1, n):
+        ext = max(st[i, cv2.CC_STAT_WIDTH], st[i, cv2.CC_STAT_HEIGHT])
+        area = st[i, cv2.CC_STAT_AREA]
+        if ext < min_ext or area / (ext + 1e-6) > 6.0:   # not thin (width ratio is dimensionless)
+            continue
+        ys, xs = np.where(lbl == i)
+        cands.append(dict(xs=xs.astype(float), ys=ys.astype(float) + y0, is_thin=True,
+                          ext=int(ext), ctr=(float(xs.mean()), float(ys.mean()) + y0)))
+    return cands
+
+
+def clean_pixels(panel, y0, y1, content_w, deg=2):
+    """Keep only pixels lying on a LONG, LOW-SPREAD smooth curve (a rail). Returns (kept_xy, dropped_xy)."""
+    cands = _thin_components(panel, y0, y1, content_w)
+    allpts = np.column_stack([np.concatenate([c["xs"] for c in cands]),
+                              np.concatenate([c["ys"] for c in cands])]) if cands else np.zeros((0, 2))
+    if not cands:
+        return allpts, allpts
+    s_base, s_margin, s_ceil = SPREAD_BASE_FAC * content_w, SPREAD_MARGIN_FAC * content_w, SPREAD_CEIL_FAC * content_w
+    lines = enumerate_lines(cands, deg)
+    spanning = [ln for ln in lines if ln["ext"] >= PIX_MIN_EXT_FRAC * content_w]
+    kept_xy = []
+    if spanning:
+        # ADAPTIVE spread: the running rail is ALWAYS present and spanning, so the spread tolerance is set
+        # RELATIVE to the frame's own thinnest spanning line -- crisp renders (R08, best ~0.7) stay tight
+        # at s_base; noisy renders (R02A, best ~4.5) loosen automatically. No per-venue magic number.
+        best = min(ln["spread"] for ln in spanning)
+        thr = min(s_ceil, max(s_base, best + s_margin))
+        for ln in spanning:
+            # in the loosened regime (spread > base) demand SOLID coverage -> a sparse aligned-text row
+            # (e.g. R08 disclaimer: spread ~6 but coverage ~0.4) is still rejected.
+            if ln["spread"] <= thr and (ln["spread"] <= s_base or ln["coverage"] >= COV_SOLID):
+                gx, gy = _gather_inliers(cands, ln["frame"])
+                if len(gx):
+                    kept_xy.append(np.column_stack([gx, gy]))
+    kept = np.unique(np.vstack(kept_xy), axis=0) if kept_xy else np.zeros((0, 2))
+    if len(kept):
+        ks = set(map(tuple, kept.round().astype(int)))
+        dmask = np.array([tuple(p.round().astype(int)) not in ks for p in allpts])
+        dropped = allpts[dmask]
+    else:
+        dropped = allpts
+    return kept, dropped
+
+
+# ------------------------------------------------------------- LOOP 2: two-rail fit + temporal tracker
+def _cw(box):
+    return float(box[1] - box[0])
+
+
+def _mr(box):                # min rail pixel count for this frame's scale
+    return max(12, int(round(MIN_RAIL_FAC * _cw(box))))
+
+
+def _frame_axes(pts):
+    mu = pts.mean(0)
+    _u, _s, vt = np.linalg.svd(pts - mu, full_matrices=False)
+    return mu, vt[0], vt[1]
+
+
+def _fit_extend(pts, mu, u, v, box, deg=2):
+    """Orientation-free fit of one rail, evaluated across the pixel SUPPORT along the PCA major axis.
+    NO extrapolation: clean rail pixels already span the frame, so the support-fit spans edge-to-edge;
+    blind extension across the box shoots tilted segments diagonally (the f600 X-crossing artifact)."""
+    q = pts - mu
+    t, w = q @ u, q @ v
+    c = np.polyfit(t, w, deg)
+    for _ in range(3):
+        r = w - np.polyval(c, t)
+        s = np.std(r) + 1e-6
+        keep = np.abs(r) < 2.5 * s
+        if keep.sum() < deg + 3:
+            break
+        c = np.polyfit(t[keep], w[keep], deg)
+    t_lo, t_hi = float(t.min()), float(t.max())
+    tg = np.linspace(t_lo, t_hi, 240)
+    return mu[None] + tg[:, None] * u[None] + np.polyval(c, tg)[:, None] * v[None]
+
+
+def _dist_to_curve(pts, curve):
+    return np.sqrt(((pts[:, None, 0] - curve[None, :, 0]) ** 2
+                    + (pts[:, None, 1] - curve[None, :, 1]) ** 2).min(1))
+
+
+def _enumerate_curves(pts, box, deg=2):
+    """Rasterise clean pixels -> connected components -> enumerate distinct smooth rail lines.
+    Returns long, low-spread lines (each dict: pts(support-span), raw pixels, ext, mid)."""
+    import cv2
+    W = _cw(box)
+    Hm, Wm = int(pts[:, 1].max()) + 2, int(pts[:, 0].max()) + 2   # mask sized to the data (no resolution literal)
+    mask = np.zeros((Hm, Wm), np.uint8)
+    mask[np.clip(pts[:, 1].astype(int), 0, Hm - 1), np.clip(pts[:, 0].astype(int), 0, Wm - 1)] = 1
+    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8))
+    n, lbl, st, _c = cv2.connectedComponentsWithStats(mask, 8)
+    cands = []
+    min_comp = max(6, int(round(FIT_MINCOMP_FAC * W)))
+    for i in range(1, n):
+        ext = max(st[i, cv2.CC_STAT_WIDTH], st[i, cv2.CC_STAT_HEIGHT])
+        if ext < min_comp:
+            continue
+        cy, cx = np.where(lbl == i)
+        cands.append(dict(xs=cx.astype(float), ys=cy.astype(float), is_thin=True,
+                          ext=int(ext), ctr=(float(cx.mean()), float(cy.mean()))))
+    if not cands:
+        return []
+    lines = enumerate_lines(cands, deg)
+    spanning = [ln for ln in lines if ln["ext"] >= FIT_MIN_EXT_FRAC * W]
+    if not spanning:
+        return []
+    # ADAPTIVE spread (same rule as the pixtag gate): tolerance relative to the frame's OWN thinnest
+    # spanning line, so the fit accepts R02A's noisier rails (spread ~4.5-6) that crisp R08 wouldn't need.
+    s_base, s_ceil = SPREAD_BASE_FAC * W, SPREAD_CEIL_FAC * W
+    best = min(ln["spread"] for ln in spanning)
+    thr = min(s_ceil, max(s_base, best + SPREAD_MARGIN_FAC * W))
+    out = []
+    for ln in spanning:
+        if ln["spread"] > thr or (ln["spread"] > s_base and ln["coverage"] < COV_SOLID):
+            continue
+        gx, gy = _gather_inliers(cands, ln["frame"])
+        if len(gx) < _mr(box):
+            continue
+        raw = np.column_stack([gx, gy])
+        mu, u, v = _frame_axes(raw)
+        out.append(dict(pts=_fit_extend(raw, mu, u, v, box), raw=raw, ext=ln["ext"], mid=ln["mid"]))
+    return out
+
+
+def _fit_gather(pts, seed_mask, box, band=None, iters=4):
+    """Fit a rail to seed pixels, then iteratively GATHER all clean pixels within ``band`` of the curve
+    and refit -- bridges fragmentation so the curve covers the WHOLE rail. Returns (curve, member_mask)."""
+    if band is None:
+        band = GATHER_FAC * _cw(box)
+    mr = _mr(box)
+    mem = seed_mask.copy()
+    curve = None
+    for _ in range(iters):
+        sub = pts[mem]
+        if len(sub) < mr:
+            return None, mem
+        mu, u, v = _frame_axes(sub)
+        curve = _fit_extend(sub, mu, u, v, box)
+        d = _dist_to_curve(pts, curve)
+        new = d < band
+        if new.sum() == mem.sum() and np.array_equal(new, mem):
+            mem = new
+            break
+        mem = new
+    return curve, mem
+
+
+def fit_rails(pts, box, field=None):
+    """Two-rail extraction by fit+gather+refit: seed the running rail (nearest field), gather its whole
+    extent, remove it, then fit the partner from the residual pixels. Robust to fragmentation; no fragile
+    parallel threshold. Returns list of dicts with 'pts' and 'running' flag (or None)."""
+    W = _cw(box)
+    mr = _mr(box)
+    gather = GATHER_FAC * W
+    nocross, maxsep = NOCROSS_FAC * W, MAXSEP_FAC * W
+    if len(pts) < mr:
+        return None
+    seeds = _enumerate_curves(pts, box)
+    if not seeds:
+        return None
+    # choose the running-rail SEED: the long line nearest the field median (else longest)
+    if field is not None and len(field):
+        fm = np.median(np.asarray(field, float), 0)
+        run_seed = min(seeds, key=lambda c: float(np.min(np.hypot(c["raw"][:, 0] - fm[0],
+                                                                  c["raw"][:, 1] - fm[1]))))
+    else:
+        run_seed = max(seeds, key=lambda c: c["ext"])
+    seed_mask = _dist_to_curve(pts, run_seed["pts"]) < gather
+    run_curve, run_mem = _fit_gather(pts, seed_mask, box)
+    if run_curve is None:
+        return None
+    sel = [dict(pts=run_curve, running=True)]
+
+    def _gaps(a, b):                            # nearest-distance from each vertex of a to polyline b
+        return np.hypot(a[:, None, 0] - b[None, :, 0], a[:, None, 1] - b[None, :, 1]).min(1)
+
+    rest = pts[~run_mem]
+    if len(rest) >= mr:
+        rseeds = _enumerate_curves(rest, box)
+        if rseeds:
+            pseed = max(rseeds, key=lambda c: c["ext"])
+            pmask = _dist_to_curve(rest, pseed["pts"]) < gather
+            p_curve, _pm = _fit_gather(rest, pmask, box)
+            if p_curve is not None:
+                # The ONE robust discriminator (works on bends, where concentric arcs have different chord
+                # directions so parallelism/constant-gap tests fail): concentric rails NEVER CROSS. A
+                # spurious diagonal / overlay line crosses the running rail (min gap ~0). So accept the
+                # partner iff it stays clear of the running rail along the whole overlap and isn't absurdly far.
+                g = _gaps(run_curve, p_curve)
+                if g.min() > nocross and float(np.median(g)) < maxsep:
+                    sel.append(dict(pts=p_curve, running=False))
+    return sel
+
+
+def track_sequence(keys, clean, field_of, box=None):
+    """Stateful pass: carry the previous frame's rail curves as GATHER SEEDS for the current frame.
+    The rail moves smoothly, so the prev curve is a good seed -> bridges fragmented/occluded frames
+    WITHOUT smearing (gather refits on the CURRENT frame's pixels only). Per-frame enumerate is the
+    fallback for acquisition / after a miss. Returns {frame: [dict(pts, running, pix)]}."""
+    if box is None:                                  # data-driven content box (no resolution literal)
+        allp = np.vstack([np.asarray(c, np.float32) for c in clean if len(np.asarray(c))])
+        box = (0, int(allp[:, 0].max()) + 1, int(allp[:, 1].min()), int(allp[:, 1].max()) + 1)
+    prev_run = prev_out = None
+    miss = 0
+    out = {}
+    W = _cw(box)
+    mr = _mr(box)
+    gather, seed = GATHER_FAC * W, SEED_FAC * W
+    nocross, maxsep = NOCROSS_FAC * W, MAXSEP_FAC * W
+    for j, fi in enumerate(keys):
+        fi = int(fi)
+        pts = np.asarray(clean[j], np.float32)
+        if len(pts) < mr:
+            out[fi] = []
+            miss += 1
+            if miss > 4:
+                prev_run = prev_out = None
+            continue
+        # --- running rail: prefer temporal seed, else per-frame (nearest field) ---
+        run_curve = None
+        if prev_run is not None:
+            sm = _dist_to_curve(pts, prev_run) < seed
+            if sm.sum() >= mr:
+                run_curve, run_mem = _fit_gather(pts, sm, box)
+        if run_curve is None:                          # acquire per-frame
+            res = fit_rails(pts, box, field=field_of.get(fi))
+            if res:
+                run_curve = res[0]["pts"]
+                run_mem = _dist_to_curve(pts, run_curve) < gather
+                if len(res) > 1 and prev_out is None:
+                    prev_out = res[1]["pts"]
+        if run_curve is None:
+            out[fi] = []
+            miss += 1
+            if miss > 4:
+                prev_run = prev_out = None
+            continue
+        miss = 0
+        run_pix = pts[run_mem]
+        rest = pts[~run_mem]
+        # --- outer rail: temporal seed from prev_out, else dominant residual line; no-cross gate ---
+        out_curve, out_pix = None, None
+        if prev_out is not None:
+            so = _dist_to_curve(rest, prev_out) < seed if len(rest) else np.zeros(0, bool)
+            if so.sum() >= mr:
+                out_curve, om = _fit_gather(rest, so, box)
+                if out_curve is not None:
+                    out_pix = rest[om]
+        if out_curve is None and len(rest) >= mr:
+            rseeds = _enumerate_curves(rest, box)
+            if rseeds:
+                pseed = max(rseeds, key=lambda c: c["ext"])
+                out_curve, om = _fit_gather(rest, _dist_to_curve(rest, pseed["pts"]) < gather, box)
+                if out_curve is not None:
+                    out_pix = rest[om]
+        if out_curve is not None:                       # accept partner only if it never crosses the running rail
+            g = np.hypot(run_curve[:, None, 0] - out_curve[None, :, 0],
+                         run_curve[:, None, 1] - out_curve[None, :, 1]).min(1)
+            if not (g.min() > nocross and float(np.median(g)) < maxsep):
+                out_curve = None
+        sel = [dict(pts=run_curve, running=True, pix=run_pix)]
+        if out_curve is not None:
+            sel.append(dict(pts=out_curve, running=False, pix=out_pix))
+        out[fi] = sel
+        prev_run, prev_out = run_curve, out_curve
+    return out
+
+
+# ------------------------------------------------------ GLOBAL geometry: kappa(s) + fixed-R back-proj
+def _signed_curvature(curve):
+    """Signed image curvature (1/px) of a polyline via a circle fit; ~0 for a line. (+span px.)"""
+    P = np.asarray(curve, float)
+    if len(P) < 8:
+        return np.nan, 0.0
+    x, y = P[:, 0], P[:, 1]
+    sol, *_ = np.linalg.lstsq(np.column_stack([2 * x, 2 * y, np.ones(len(P))]), x * x + y * y, rcond=None)
+    cx, cy = sol[0], sol[1]
+    r2 = sol[2] + cx * cx + cy * cy
+    if r2 <= 0:
+        return 0.0, float(np.hypot(P[-1, 0] - P[0, 0], P[-1, 1] - P[0, 1]))
+    d = np.diff(P, axis=0)
+    cross = d[:-1, 0] * d[1:, 1] - d[:-1, 1] * d[1:, 0]
+    sign = np.sign(np.sum(cross)) or 1.0
+    return float(sign / np.sqrt(r2)), float(np.hypot(P[-1, 0] - P[0, 0], P[-1, 1] - P[0, 1]))
+
+
+def build_kappa(seq, odo_of, running=True):
+    """Global geometry: smooth signed-image-curvature profile kappa(s) of one rail, from the WELL-SEEN
+    frames (long span), median over a sliding s-window so short/bent frames inherit it from neighbours."""
+    s_l, k_l, sp_l = [], [], []
+    for fi, v in seq.items():
+        c = [x for x in v if x["running"] == running]
+        s = odo_of.get(int(fi), np.nan)
+        if not c or not np.isfinite(s):
+            continue
+        k, sp = _signed_curvature(c[0]["pts"])
+        if np.isfinite(k):
+            s_l.append(s)
+            k_l.append(k)
+            sp_l.append(sp)
+    s_a, k_a, sp_a = np.array(s_l), np.array(k_l), np.array(sp_l)
+    well = sp_a > np.percentile(sp_a, 40)
+    s_grid = np.linspace(s_a.min(), s_a.max(), 500)
+    win = (s_a.max() - s_a.min()) / 40.0
+    k_g = np.full_like(s_grid, np.nan)
+    for i, sg in enumerate(s_grid):
+        m = well & (np.abs(s_a - sg) < win)
+        if m.sum() >= 3:
+            k_g[i] = np.median(k_a[m])
+    ok = np.isfinite(k_g)
+    return s_grid, np.interp(s_grid, s_grid[ok], k_g[ok])
+
+
+def _in_box(P, box, m=2):
+    cx0, cx1, cy0, cy1 = box
+    return (P[:, 0] >= cx0 - m) & (P[:, 0] <= cx1 + m) & (P[:, 1] >= cy0 - m) & (P[:, 1] <= cy1 + m)
+
+
+def backproject_fixed_r(pix, R_signed, box, R_LINE=None):
+    """Map the global geometry into a frame: fit a curve of GLOBALLY-PINNED radius |R_signed| (pose=center,
+    2 DOF) to the rail's own pixels, then draw it across the content box. R=inf/large -> straight line.
+    Pinning R from kappa(s) (not the local sliver) is what stops the looping AND spans the short frames."""
+    if R_LINE is None:
+        R_LINE = RLINE_FAC * _cw(box)             # straight-vs-arc radius, relative to content width
+    P = np.asarray(pix, float)
+    if len(P) < _mr(box):
+        return None
+    mu, u, v = _frame_axes(P)
+    cx0, cx1, cy0, cy1 = box
+    corners = np.array([[cx0, cy0], [cx1, cy0], [cx0, cy1], [cx1, cy1]], float)
+    tcb = (corners - mu) @ u
+    tg = np.linspace(float(tcb.min()), float(tcb.max()), 300)
+    if not np.isfinite(R_signed) or abs(R_signed) > R_LINE:        # STRAIGHT -> line
+        t, w = (P - mu) @ u, (P - mu) @ v
+        Q = mu[None] + tg[:, None] * u[None] + np.polyval(np.polyfit(t, w, 1), tg)[:, None] * v[None]
+        return Q[_in_box(Q, box)]
+    R = abs(R_signed)
+    cen = P.mean(0) + R * np.array([-u[1], u[0]]) * np.sign(R_signed)   # seed center on the concave side
+    for _ in range(40):                                            # Gauss-Newton on center, R fixed
+        dvec = P - cen
+        dist = np.hypot(dvec[:, 0], dvec[:, 1]) + 1e-9
+        J = -dvec / dist[:, None]
+        cen = cen - np.linalg.solve(J.T @ J + 1e-6 * np.eye(2), J.T @ (dist - R))
+    th = np.unwrap(np.sort(np.arctan2(P[:, 1] - cen[1], P[:, 0] - cen[0])))
+    grid = np.linspace(th.min() - 2.0, th.max() + 2.0, 3000)
+    Q = np.column_stack([cen[0] + R * np.cos(grid), cen[1] + R * np.sin(grid)])
+    ib = _in_box(Q, box)
+    if ib.any():
+        idx = np.where(ib)[0]
+        return Q[idx[0]:idx[-1] + 1]
+    return None
+
+
+def radius_at(s, s_grid, k_grid, W):
+    """Signed rail radius R(s) from the kappa(s) profile; inf (straight) below the line threshold so the
+    back-projection draws a line, not a huge-radius arc."""
+    k = float(np.interp(s, s_grid, k_grid))
+    return np.inf if abs(k) < 1.0 / (RLINE_FAC * W) else 1.0 / k

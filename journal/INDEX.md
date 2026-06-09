@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-102 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+110 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -105,4 +105,12 @@
 - **0101-horse-detection-reworked-rail-bounded-count-awar** →modelling,all (handoff/open) [Horse detection reworked: rail-bounded count-aware watershed (k-means dropped); longitudinal next](entries/0101-horse-detection-reworked-rail-bounded-count-awar.md) — _cv, aerial, detection, reconstruction, handoff_
 - **0102-2d-reconstruction-resolution-root-cause-sota-bac** →modelling,all (handoff/open) [2D reconstruction: resolution root cause + SOTA backbone blueprint (BHITK camera-pose tracker)](entries/0102-2d-reconstruction-resolution-root-cause-sota-bac.md) — _cv, aerial, reconstruction, homography, handoff_
 - **0103-pose-backbone-core-validated-free-homography-smo** →modelling,all (handoff/open) [Pose backbone: core validated; free-homography smoothing fails -> solvePnP pose + EKF is the path](entries/0103-pose-backbone-core-validated-free-homography-smo.md) — _cv, aerial, reconstruction, homography, handoff_
-- **0104-pose-backbone-affine-model-validated-top-down-bl** →modelling,all (handoff/open) [Pose backbone: AFFINE model validated (top-down); blocker is unreliable outer rail -> EKF + outlier-reject next](entries/0104-pose-backbone-affine-model-validated-top-down-bl.md) — _cv, aerial, reconstruction, homography, handoff_
+- **0107-aerial-fragment-relink-and-anisotropy-negative-result** →modelling,all (handoff/open) [Aerial recon — conservative fragment re-link consolidates the 11 horses; longitudinal anisotropy is NOT recoverable](entries/0107-aerial-fragment-relink-and-anisotropy-negative-result.md) — _cv, aerial, reconstruction, tracking, handoff_
+- **0108-aerial-recon-generalises-R03-green-box-odometer** →modelling,all (handoff/open) [Aerial recon GENERALISES to R03 (1200 m, 12 runners) — green-box odometer locator + parameterised tracker](entries/0108-aerial-recon-generalises-R03-green-box-odometer.md) — _cv, aerial, reconstruction, validation, handoff_
+- **0109-aerial-recon-A-config-validation-relative-gate** →modelling,all (handoff/open) [Aerial recon validation — A-config single-rail (R02A) runs but degrades; SEP_MIN gate made relative](entries/0109-aerial-recon-A-config-validation-relative-gate.md) — _cv, aerial, reconstruction, validation, handoff_
+- **0111-aerial-render-active-dissolve-frames** →modelling,all (handoff/open) [Aerial frame classification — render_active now rejects the live->render cross-dissolve frames](entries/0111-aerial-render-active-dissolve-frames.md) — _cv, aerial, classification, render_active, handoff_
+- **0112-legend-templated-silk-detection-rnd** →modelling,all (handoff/open) [Legend-templated silk detection — shadow-invariant runner anchor (R&D finding)](entries/0112-legend-templated-silk-detection-rnd.md) — _cv, aerial, detection, silk, legend, shadows, handoff_
+- **0113-shape-template-avatar-detection-rnd** →modelling,all (handoff/open) [Shape-template avatar detection — whole-avatar silhouette + silk verifier (R&D finding)](entries/0113-shape-template-avatar-detection-rnd.md) — _cv, aerial, detection, shape, template, silk, shadows, bunching, handoff_
+- **0115-aerial-rail-tracker-v3-falsified-at-bends-full-r** →modelling,all (handoff/open) [Aerial rail tracker v3 falsified at bends — full-res audit, root causes, first-principles redesign plan](entries/0115-aerial-rail-tracker-v3-falsified-at-bends-full-r.md) — _cv, aerial, rail, tracker, falsification, redesign, handoff_
+- **0116-aerial-rail-redesign-works-long-curve-pixtag-gat** →modelling,all (handoff/open) [Aerial rail redesign works — long-curve pixtag gate + temporal fit-gather tracker (R08 validated)](entries/0116-aerial-rail-redesign-works-long-curve-pixtag-gat.md) — _cv, aerial, rail, tracker, temporal, pixtag, handoff_
+- **0117-aerial-rail-reconstruction-promoted-to-the-libra** →modelling,all (handoff/open) [Aerial rail reconstruction promoted to the library (byte-identical R08 port)](entries/0117-aerial-rail-reconstruction-promoted-to-the-libra.md) — _cv, aerial, rail, library, promotion, port, handoff_

@@ -108,15 +108,34 @@ def find_layout(img, *, min_legend_sat: int = 120) -> Layout:
     )
 
 
-def render_active(panel) -> bool:
-    """Is the AVV 3D render present in this RIGHT panel (vs the live broadcast intro)?
+# Clean-render gate thresholds (AVV product constants). The two gates catch complementary signatures of
+# the live->render cross-dissolve that the legend strip alone misses:
+#   * TOP_GREEN_MAX  the render's top strip is the dark odometer/clock box (low green fraction); a
+#                    blended/live frame leaks turf into it (high green fraction).
+#   * TRACK_LAP_MIN  a clean top-down render is sharp; a blended frame is smooth/ghosted (low texture).
+TOP_GREEN_MAX = 0.30
+TRACK_LAP_MIN = 240.0
 
-    The replay opens full-width with the live TV broadcast (start gate + early run) before it
-    switches to the split-screen render. ``find_layout.aerial_active`` is unreliable there (it fires
-    on the live gate). The render-only tell is the bottom SILK-LEGEND strip — a row of distinct
-    saturated NON-green silk boxes that the live footage never has. We count those boxes in the
-    panel's lower strip; >=1 means the render is up. (Validated across HV "C" and "A" replays:
-    0 through the whole live intro, >=1 for every render frame incl. the mid-race solid-rail stretch.)
+
+def _green_frac(hsv_band) -> float:
+    """Fraction of a HSV band that is turf-green (hue 35-90, sat>60)."""
+    h, s = hsv_band[:, :, 0], hsv_band[:, :, 1]
+    return float(((h > 35) & (h < 90) & (s > 60)).mean())
+
+
+def render_active(panel) -> bool:
+    """Is a CLEAN AVV 3D render present in this RIGHT panel (vs the live broadcast / a dissolve frame)?
+
+    The replay opens with the live broadcast before switching to the split-screen render, with a short
+    cross-dissolve between. Three gates, all required:
+
+      (1) the SILK-LEGEND strip is present (a row of saturated non-green boxes the live footage lacks);
+      (2) the TOP strip is the dark odometer box, not turf (``_green_frac`` <= TOP_GREEN_MAX);
+      (3) the TRACK band has render-level detail, not a smooth/ghosted blend (Laplacian var >=
+          TRACK_LAP_MIN).
+
+    The legend (1) flickers on during the dissolve, so (2)+(3) reject the blended frames it lets
+    through. numpy/cv2 lazy-imported.
     """
     import cv2
     import numpy as np
@@ -130,4 +149,9 @@ def render_active(panel) -> bool:
     n, _lbl, st, _c = cv2.connectedComponentsWithStats(nongreen, 8)
     boxes = sum(1 for k in range(1, n)
                 if st[k, cv2.CC_STAT_AREA] > 120 and st[k, cv2.CC_STAT_WIDTH] > 8)
-    return boxes >= 1
+    if boxes < 1:
+        return False
+    if _green_frac(hsv[:int(0.30 * ph)]) > TOP_GREEN_MAX:    # live turf/horses leak into the top strip
+        return False
+    gray = cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY)[int(0.34 * ph):int(0.70 * ph)]
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= TRACK_LAP_MIN
