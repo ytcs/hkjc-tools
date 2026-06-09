@@ -33,9 +33,8 @@ def main():
     z = np.load(CLEAN, allow_pickle=True)
     keys, clean = list(z["keys"]), z["clean"]
     zp = np.load(PREP, allow_pickle=True)
-    odo_of = {int(k): float(o) for k, o in zip(zp["keys"], zp["odo"])}
-    field_of = {int(k): pf for k, pf in zip(zp["keys"], zp["field"])}
-    seq = track_sequence(keys, clean, field_of)
+    odo_of = {int(k): float(o) for k, o in zip(zp["keys"], zp["odo"])}   # odometer only (NO field)
+    seq = track_sequence(keys, clean)
 
     rows = []
     for fi in keys:

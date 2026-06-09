@@ -302,11 +302,6 @@ SEED_FAC = 0.0126           # temporal seed band, ~12 px @949
 NOCROSS_FAC = 0.021         # min rail-rail gap (no-cross), ~20 px @949
 MAXSEP_FAC = 0.36           # max plausible rail separation, ~340 px @949
 RLINE_FAC = 8.4             # straight-vs-arc radius threshold, ~8000 px @949 (x W)
-RUNSWAP_FAC = 0.7           # re-assert RUNNING = field-nearest rail: swap the running/outer LABEL only
-                            # if the partner is clearly (<0.7x) nearer the field. The field always races
-                            # along the inner/running rail, so the label must follow the field, not lock
-                            # to the temporal seed (fixes the config-A far-rail inversion; no-op on R08
-                            # where the running rail is already field-nearest). Hysteresis avoids jitter.
 
 
 # --------------------------------------------------------------------------- LOOP 1: pixel cleaning
@@ -521,10 +516,13 @@ def _fit_gather(pts, seed_mask, box, band=None, iters=4):
     return curve, mem
 
 
-def fit_rails(pts, box, field=None):
-    """Two-rail extraction by fit+gather+refit: seed the running rail (nearest field), gather its whole
-    extent, remove it, then fit the partner from the residual pixels. Robust to fragmentation; no fragile
-    parallel threshold. Returns list of dicts with 'pts' and 'running' flag (or None)."""
+def fit_rails(pts, box):
+    """Two-rail extraction by fit+gather+refit: seed the PRIMARY rail (the longest spanning curve),
+    gather its whole extent, remove it, then fit the partner from the residual pixels. FIELD-FREE: the
+    field detector is not dialled in and the field does not reliably sit on the inner rail anyway, so
+    acquisition uses only rail pixels. Identity (which thread is which) is maintained by CONTINUITY in
+    ``track_sequence``; inner/outer NAMING is a separate global decision. Robust to fragmentation; no
+    fragile parallel threshold. Returns list of dicts with 'pts' and 'running' flag (or None)."""
     W = _cw(box)
     mr = _mr(box)
     gather = GATHER_FAC * W
@@ -534,13 +532,10 @@ def fit_rails(pts, box, field=None):
     seeds = _enumerate_curves(pts, box)
     if not seeds:
         return None
-    # choose the running-rail SEED: the long line nearest the field median (else longest)
-    if field is not None and len(field):
-        fm = np.median(np.asarray(field, float), 0)
-        run_seed = min(seeds, key=lambda c: float(np.min(np.hypot(c["raw"][:, 0] - fm[0],
-                                                                  c["raw"][:, 1] - fm[1]))))
-    else:
-        run_seed = max(seeds, key=lambda c: c["ext"])
+    # primary = the curve spanning the most in the TRACK direction. The rail runs ACROSS the frame
+    # (large horizontal extent); a vertical blob (the bunched start field, a gate post, a shadow column)
+    # is "long" only via its height and must not be acquired as the rail. Field-free, geometric.
+    run_seed = max(seeds, key=lambda c: float(np.ptp(c["raw"][:, 0])))
     seed_mask = _dist_to_curve(pts, run_seed["pts"]) < gather
     run_curve, run_mem = _fit_gather(pts, seed_mask, box)
     if run_curve is None:
@@ -554,7 +549,7 @@ def fit_rails(pts, box, field=None):
     if len(rest) >= mr:
         rseeds = _enumerate_curves(rest, box)
         if rseeds:
-            pseed = max(rseeds, key=lambda c: c["ext"])
+            pseed = max(rseeds, key=lambda c: float(np.ptp(c["raw"][:, 0])))  # horizontal span
             pmask = _dist_to_curve(rest, pseed["pts"]) < gather
             p_curve, _pm = _fit_gather(rest, pmask, box)
             if p_curve is not None:
@@ -568,11 +563,12 @@ def fit_rails(pts, box, field=None):
     return sel
 
 
-def track_sequence(keys, clean, field_of, box=None):
+def track_sequence(keys, clean, box=None):
     """Stateful pass: carry the previous frame's rail curves as GATHER SEEDS for the current frame.
     The rail moves smoothly, so the prev curve is a good seed -> bridges fragmented/occluded frames
     WITHOUT smearing (gather refits on the CURRENT frame's pixels only). Per-frame enumerate is the
-    fallback for acquisition / after a miss. Returns {frame: [dict(pts, running, pix)]}."""
+    fallback for acquisition / after a miss. FIELD-FREE: identity is maintained purely by continuity.
+    Returns {frame: [dict(pts, running, pix)]}."""
     if box is None:                                  # data-driven content box (no resolution literal)
         allp = np.vstack([np.asarray(c, np.float32) for c in clean if len(np.asarray(c))])
         box = (0, int(allp[:, 0].max()) + 1, int(allp[:, 1].min()), int(allp[:, 1].max()) + 1)
@@ -592,14 +588,14 @@ def track_sequence(keys, clean, field_of, box=None):
             if miss > 4:
                 prev_run = prev_out = None
             continue
-        # --- running rail: prefer temporal seed, else per-frame (nearest field) ---
+        # --- primary rail: prefer temporal seed (continuity), else per-frame acquire (longest) ---
         run_curve = None
         if prev_run is not None:
             sm = _dist_to_curve(pts, prev_run) < seed
             if sm.sum() >= mr:
                 run_curve, run_mem = _fit_gather(pts, sm, box)
-        if run_curve is None:                          # acquire per-frame
-            res = fit_rails(pts, box, field=field_of.get(fi))
+        if run_curve is None:                          # acquire per-frame (field-free)
+            res = fit_rails(pts, box)
             if res:
                 run_curve = res[0]["pts"]
                 run_mem = _dist_to_curve(pts, run_curve) < gather
@@ -625,7 +621,7 @@ def track_sequence(keys, clean, field_of, box=None):
         if out_curve is None and len(rest) >= mr:
             rseeds = _enumerate_curves(rest, box)
             if rseeds:
-                pseed = max(rseeds, key=lambda c: c["ext"])
+                pseed = max(rseeds, key=lambda c: float(np.ptp(c["raw"][:, 0])))  # horizontal span
                 out_curve, om = _fit_gather(rest, _dist_to_curve(rest, pseed["pts"]) < gather, box)
                 if out_curve is not None:
                     out_pix = rest[om]
@@ -634,19 +630,6 @@ def track_sequence(keys, clean, field_of, box=None):
                          run_curve[:, None, 1] - out_curve[None, :, 1]).min(1)
             if not (g.min() > nocross and float(np.median(g)) < maxsep):
                 out_curve = None
-        # RE-ASSERT the running label by FIELD PROXIMITY (first-principles: the field always races
-        # along the inner/running rail). Temporal seeding stabilises the rail GEOMETRY but must not
-        # lock the LABEL -- on the wide config-A view the running thread otherwise sticks to the FAR
-        # rail while the field hugs the near one. If the partner is clearly nearer the field, swap the
-        # label AND the carried threads (so the running thread tracks the field-hugged rail thereafter).
-        fp = field_of.get(fi)
-        if out_curve is not None and fp is not None and len(fp):
-            fpa = np.asarray(fp, float)
-            d_run = float(np.median(_dist_to_curve(fpa, run_curve)))
-            d_out = float(np.median(_dist_to_curve(fpa, out_curve)))
-            if d_out < RUNSWAP_FAC * d_run:
-                run_curve, out_curve = out_curve, run_curve
-                run_pix, out_pix = out_pix, run_pix
         sel = [dict(pts=run_curve, running=True, pix=run_pix)]
         if out_curve is not None:
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))

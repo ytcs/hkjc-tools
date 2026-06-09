@@ -31,20 +31,21 @@ def main():
     import cv2
     from cv_rail_prep import _content_box
 
-    from hkjc.vision.feeds.aerial_rail import _cw, backproject_fixed_r, build_kappa, radius_at, track_sequence
+    from hkjc.vision.feeds.aerial_rail import (
+        _cw, _dist_to_curve, backproject_fixed_r, build_kappa, radius_at, track_sequence,
+    )
     os.makedirs(OUTDIR, exist_ok=True)
     for p in os.listdir(OUTDIR):
         os.remove(os.path.join(OUTDIR, p))
     zc = np.load(CLEAN, allow_pickle=True)
     keys, clean = list(zc["keys"]), zc["clean"]
-    field_of, odo_of = {}, {}
+    odo_of = {}
     if PREP:
         zp = np.load(PREP, allow_pickle=True)
-        field_of = {int(k): pf for k, pf in zip(zp["keys"], zp["field"])}
-        odo_of = {int(k): float(o) for k, o in zip(zp["keys"], zp["odo"])}
+        odo_of = {int(k): float(o) for k, o in zip(zp["keys"], zp["odo"])}   # odometer only (NO field)
 
     want = set(int(k) for k in keys)
-    seq = track_sequence(keys, clean, field_of)        # PASS 1: support-only fits (carries temporal seeds)
+    seq = track_sequence(keys, clean)                  # PASS 1: field-free continuity tracking
     s_run, k_run = build_kappa(seq, odo_of, running=True)   # GLOBAL geometry: kappa(s) per rail
     s_out, k_out = build_kappa(seq, odo_of, running=False)
 
@@ -65,10 +66,24 @@ def main():
         nrails = 0
         for c in res:
             run = c.get("running")
-            R = radius_at(s, s_run, k_run, Wb) if run else radius_at(s, s_out, k_out, Wb)
-            Q = backproject_fixed_r(c["pix"], R, box) if np.isfinite(s) else None   # PASS 2: map global geom back
-            if Q is None or len(Q) < 2:
-                Q = c["pts"]                           # fall back to the support-only fit
+            # The rail curve is the DIRECT support fit by default -- it is fit straight to this frame's own
+            # rail pixels and, after pixtag, usually already spans the frame. The GLOBAL-kappa back-projection
+            # is invoked ONLY to fill a genuinely SHORT support (a sliver), and only if it stays consistent
+            # with the pixels. This is first-principles: trust the local observation; use global geometry to
+            # fill what is missing, never to override a good local fit. Kills the diagonal jumps (a spurious
+            # edge/noise kappa back-projects an arc that wanders off where there are no pixels): f340, f1750.
+            sup = np.asarray(c["pts"], float)
+            Q = sup
+            sup_span = float(np.ptp(sup[:, 0]))
+            if sup_span < 0.6 * Wb and np.isfinite(s):     # short sliver -> try the global-geometry fill
+                R = radius_at(s, s_run, k_run, Wb) if run else radius_at(s, s_out, k_out, Wb)
+                bp = backproject_fixed_r(c["pix"], R, box)
+                if bp is not None and len(bp) >= 2:
+                    pix = np.asarray(c["pix"], float)
+                    d_bp = float(np.median(_dist_to_curve(pix, bp)))
+                    d_sup = float(np.median(_dist_to_curve(pix, sup)))
+                    if d_bp <= max(4.0, 2.0 * d_sup + 2.0) and float(np.ptp(bp[:, 0])) > sup_span:
+                        Q = bp                             # global fill spans more and fits the pixels
             nrails += 1
             col = (0, 255, 0) if run else (255, 140, 0)
             pl = Q.astype(int)
