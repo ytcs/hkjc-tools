@@ -19,10 +19,13 @@ Two layers of CV recon exist:
 
 2. **Aerial-feed deep revamp (current frontier, §10).** A from-scratch rebuild of the AERIAL feed's
    perception to fix §7 at the source — make the aerial feed alone yield clean 2D paths through bends.
-   The v3 rail tracker was falsified at the rotating bend (journal 0115); the **first-principles redesign
-   (long-curve pixtag + temporal fit-gather + global-κ back-projection) is built, validated on R08, and
-   now PROMOTED to `hkjc.vision.feeds.aerial_rail`** (journals 0116→0117). Current open work: bring **R02A**
-   (config-A single-rail + a slightly different render style) up to the R08 standard; then wire into the fusion.
+   The v3 rail tracker was falsified at the rotating bend (journal 0115); the redesign was built, validated
+   on R08, and **PROMOTED to `hkjc.vision.feeds.aerial_rail`** (journals 0116→0117). It is now being made
+   **FIELD-FREE and unified on the correct two-rail venue model** (fixed far + movable near/racing rail) to
+   bring **R02A (config A)** up to the R08 standard — see §10 "CURRENT STATE" for the live state, the hard
+   constraints (no field, no circle fits, visual-gate-only), the remaining pathologies, and the next-wave
+   plan (pixtag continuity gate, then a non-circular global smooth-curve second pass). Work is on branch
+   `cv-aerial-r02a-recon`; R08 (1227/1227) is the frozen gold standard. Then wire into the 4-feed fusion.
 
 **Where things live now:** the aerial pipeline is `studies/cv_aerial_track_id.py` (detection → rail →
 odometer-anchored field-consensus recon); the rail tracker is `studies/cv_rail_track{3,4}.py`
@@ -249,14 +252,67 @@ rail → project to `(s, perp)` → associate into tracklets → **odometer-anch
     pre-port baseline; R08 still 0-rail 0 / 2-rail 1226 / f768=2; f768+f2158 visually re-confirmed). The legacy
     per-frame `select_running_rail` is retained (demarcated) only for the not-yet-ablated full aerial pipeline
     (`cv_aerial_track_id.py`/`cv_pose_backbone.py`) — remove once the new perception is wired in (integrate-then-ablate).
-  - **R02A (config-A) brought up to the R08 standard (journal 0118, branch `cv-aerial-r02a-recon`).** Two
-    first-principles fixes in `aerial_rail`: (1) re-assert RUNNING = the rail the field hugs each frame (the
-    config-A wide view had the running LABEL temporally locked onto the far rail); (2) keep SOLID-coverage rails
-    up to the 2D-block ceiling + iterate fit→gather along sharp arcs (the striped near rail was knife-edged out
-    by the thin-far-line-driven adaptive spread on bends). Running-rail-far-from-field frames 439→2, zero-rail
-    20→1; visually confirmed correct across every phase; R08 unchanged (no-op/additive). Both fixes are R08-safe.
-  - Open: wire the promoted perception into the 4-feed fusion + ablate the legacy `select_running_rail`; the
-    absolute bend METRIC (§7) still needs the homography.
+  - **R02A field-proximity swap (journal 0118) — SUPERSEDED + reverted.** It re-asserted RUNNING = the
+    rail nearest the FIELD each frame. It helped R02A but **REGRESSED R08 (f796–818)**: there the bunch runs
+    WIDE, so the nearest rail is the WRONG one. Lesson banked: **field proximity is not just noisy, it is the
+    wrong signal** for near/far. Removed.
+
+### CURRENT STATE — field-free two-rail model (branch `cv-aerial-r02a-recon`, HEAD `17a50d2`)
+The CORRECT venue model (owner + HKJC_SPECS §1 + raw-frame inspection): the track has a **FIXED far rail
+and a MOVABLE near/RACING rail**. The horses race just **OUTSIDE** the racing rail, which is the rail of
+**WIDER radius** (the fixed rail is the narrower, infield boundary). **Config C (R08)** separates the pair
+cleanly; **config A (R02A)** sits them ~15–20 px apart on straights (joined by V cross-braces, easily fit
+as ONE band) and they **diverge on bends**. The **grandstand apron/tiers below the rails are NOT a rail.**
+
+The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled in). `track_sequence`:
+  - **Acquisition (field-free):** primary rail = the curve of largest HORIZONTAL (track-direction) span —
+    a vertical blob (bunched-start field, gate post, shadow column) is "long" only via height and is rejected.
+  - **Identity by CONTINUITY** (temporal gather-seed), not field; the running/outer LABEL is never flipped per
+    frame (the swap is gone).
+  - **Two-rail pair handling:** no-cross gate lowered 20 px → 6 px so a legitimately CLOSE parallel pair
+    (~15 px) is accepted while coincident/crossing (gap≈0) is still rejected; `_split_pair` resolves a
+    brace-joined close band into two rails by the BIMODAL perpendicular density (braces = sparse valley).
+  - **NEAR/FAR naming (field-free, GLOBAL):** `_assign_racing_by_radius` — racing = wider-radius rail by a
+    confidence-weighted MAJORITY vote over all two-rail frames (per-frame image radius is perspective-noisy;
+    the global vote is robust: R08 72% / R02A 89%). ONE global decision, flipped once if needed.
+  - **Rail curve = the DIRECT support fit** (fit to the frame's own pixels); the global-κ `backproject_fixed_r`
+    is invoked ONLY to fill a genuinely short sliver and only if consistent with the pixels.
+  - Metrics (triage only; visual is the gate): **R08 1227/1227 two-rail, f768/f2158=2** (≥ the 1226 pre-port
+    best, no regression); **R02A 772/1126 two-rail** (was 542 before the pair handling), 1 zero-rail.
+
+### HARD CONSTRAINTS / lessons (do NOT violate)
+  - **NO field detector, anywhere** — not dialled in, and the field runs wide so proximity mislabels near/far.
+  - **NO circle fitting** — proven disastrous historically. The rails are GENERAL smooth curves, not arcs.
+    The current `backproject_fixed_r` (a fixed-radius CIRCLE) is therefore suspect and slated for removal.
+  - **VISUAL inspection on full-res frames is the only gate**; counts/spans are for TRIAGE (selecting frames).
+  - **Continuity** cleanly separates rails from HUD text: a real rail's along-length support occupancy is
+    ~0.96–1.0; disclaimer-text / text-contaminated curves are ~0.25–0.54 (word/glyph gaps).
+
+### REMAINING PATHOLOGIES (visually identified, owner-confirmed)
+  1. **Green-on-artifacts** (R02A f340, f2052–2088): the racing thread fits the disclaimer TEXT / odometer
+     box. Root = PIXTAG: gappy text survives `clean_pixels` and forms a low-continuity spanning line; at f2052
+     the rail was not tagged at all (only text kept). The far/blue rail is correct in these frames.
+  2. **Rail-separation weave/crossing** (R02A f694–710): as the two close rails diverge into the bend, the two
+     threads lose association — each curve follows one rail then crosses to the other (green/blue intersect).
+     Root = per-frame association with no GLOBAL non-crossing constraint.
+  3. Residual R02A single-rail frames (~353) — believed true-overlap / far rail genuinely out of band; verify.
+
+### NEXT WAVE (planned, not yet built — owner-reviewed direction)
+  - **Phase 1 — PIXTAG precision (first; cheap, field-free, gate on R08 = 1227/f768=2):** add a CONTINUITY
+    gate (reject gappy text lines; guard against bunched-field occlusion making a real rail gappy) and recover
+    the faint/occluded rail where only text survives (loosen for the rail signature, not the text). Expected to
+    fix the green-on-artifacts class at the source.
+  - **Phase 2 — GLOBAL geometry + physics second pass (GENERAL SMOOTH CURVES, NO circles):** model each rail
+    as a smooth curve evolving smoothly with odometer arclength `s`; COUPLE the pair (concentric, NON-CROSSING,
+    separation a smooth positive function of `s`); robust global fit to Phase-1 per-frame curves (outliers —
+    crossings, jumps, text residue — get zero weight and are re-derived from the model). Vetoes the f694–710
+    weave (non-crossing), residual jumps (`s`-smoothness), fills overlap/single-rail. Image-space first;
+    ground-space (odometer-anchored, non-circular) is the eventual home and also yields the §7 absolute metre.
+  - Then: wire the promoted perception into the 4-feed fusion + ablate the legacy `select_running_rail`.
+
+**Diag sets (current, regenerated from HEAD):** `data_cache/diag/exp_railfit{,_R02A}/` (rail fit) +
+`exp_pixtag{,_R02A}/` (kept=green/dropped=red). Caches `data_cache/_railclean_{R08,R02A}.npz`. Studies are
+thin drivers `studies/cv_rail_exp_{pixtag,fit,global}.py`; algorithm lives in `hkjc.vision.feeds.aerial_rail`.
 
 ## 9. Journal trail
 
