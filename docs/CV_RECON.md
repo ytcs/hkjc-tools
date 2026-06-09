@@ -257,7 +257,7 @@ rail → project to `(s, perp)` → associate into tracklets → **odometer-anch
     WIDE, so the nearest rail is the WRONG one. Lesson banked: **field proximity is not just noisy, it is the
     wrong signal** for near/far. Removed.
 
-### CURRENT STATE — field-free two-rail model (branch `cv-aerial-r02a-recon`, HEAD `17a50d2`)
+### CURRENT STATE — field-free two-rail model (branch `cv-aerial-r02a-recon`)
 The CORRECT venue model (owner + HKJC_SPECS §1 + raw-frame inspection): the track has a **FIXED far rail
 and a MOVABLE near/RACING rail**. The horses race just **OUTSIDE** the racing rail, which is the rail of
 **WIDER radius** (the fixed rail is the narrower, infield boundary). **Config C (R08)** separates the pair
@@ -277,8 +277,14 @@ The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled
     the global vote is robust: R08 72% / R02A 89%). ONE global decision, flipped once if needed.
   - **Rail curve = the DIRECT support fit** (fit to the frame's own pixels); the global-κ `backproject_fixed_r`
     is invoked ONLY to fill a genuinely short sliver and only if consistent with the pixels.
-  - Metrics (triage only; visual is the gate): **R08 1227/1227 two-rail, f768/f2158=2** (≥ the 1226 pre-port
-    best, no regression); **R02A 772/1126 two-rail** (was 542 before the pair handling), 1 zero-rail.
+  - **PIXTAG continuity gate (Phase 1, journal 0119 — DONE).** `clean_pixels` keeps a spanning line iff it is
+    **THIN** (`spread ≤ S_THIN`, ~1.2 px — a razor-thin line IS a rail even when a bend cuts it gappy) **OR
+    CONTINUOUS** (`occ ≥ OCC_HI = 0.80` — one near-complete curve; HUD/disclaimer text scatters to occ ≤ 0.7),
+    capped at the 2D-block ceiling. This REPLACES the old coverage+adaptive-thr keep (which let thin text leak
+    AND let a thin text line knife-edge the real rail out). `_occupancy()` lives in `enumerate_lines`.
+  - Metrics (triage only; visual is the gate): **R08 gold HELD** — f768/f2158/f734/f800/f860 all two-rail,
+    zero-rail 0 (5 frames slipped two→one: 3 are text-artifact removals, 2 are a gappy far rail → Phase-2 fill).
+    **R02A zero-rail 22 → 0**; rails/frame 0:0 / 1:651 / 2:475 (singles are the genuine config-A reality).
 
 ### HARD CONSTRAINTS / lessons (do NOT violate)
   - **NO field detector, anywhere** — not dialled in, and the field runs wide so proximity mislabels near/far.
@@ -289,19 +295,18 @@ The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled
     ~0.96–1.0; disclaimer-text / text-contaminated curves are ~0.25–0.54 (word/glyph gaps).
 
 ### REMAINING PATHOLOGIES (visually identified, owner-confirmed)
-  1. **Green-on-artifacts** (R02A f340, f2052–2088): the racing thread fits the disclaimer TEXT / odometer
-     box. Root = PIXTAG: gappy text survives `clean_pixels` and forms a low-continuity spanning line; at f2052
-     the rail was not tagged at all (only text kept). The far/blue rail is correct in these frames.
+  1. ~~**Green-on-artifacts** (R02A f340, f2052–2088)~~ — **RESOLVED by the Phase-1 pixtag continuity gate
+     (journal 0119).** f340/f2052/f2070 now show only the correct racing rail; the disclaimer-text / grandstand /
+     minimap band is dropped. The far/blue rail stays correct.
   2. **Rail-separation weave/crossing** (R02A f694–710): as the two close rails diverge into the bend, the two
      threads lose association — each curve follows one rail then crosses to the other (green/blue intersect).
-     Root = per-frame association with no GLOBAL non-crossing constraint.
-  3. Residual R02A single-rail frames (~353) — believed true-overlap / far rail genuinely out of band; verify.
+     Root = per-frame association with no GLOBAL non-crossing constraint. **(→ Phase 2; unchanged by pixtag.)**
+  3. R02A single-rail FILL (651 frames) + R08 f816/f956 — the far rail is faint/gappy / out-of-band but smooth
+     in odometer-s and present in neighbours. **(→ Phase 2 fill; not chased with a gate bandaid — that re-admits text.)**
 
-### NEXT WAVE (planned, not yet built — owner-reviewed direction)
-  - **Phase 1 — PIXTAG precision (first; cheap, field-free, gate on R08 = 1227/f768=2):** add a CONTINUITY
-    gate (reject gappy text lines; guard against bunched-field occlusion making a real rail gappy) and recover
-    the faint/occluded rail where only text survives (loosen for the rail signature, not the text). Expected to
-    fix the green-on-artifacts class at the source.
+### NEXT WAVE
+  - **Phase 1 — PIXTAG precision — DONE (journal 0119).** Continuity (occ) OR thinness (spread) keep rule;
+    killed the green-on-artifacts class; R08 gold held, R02A zero-rail 22→0. See CURRENT STATE above.
   - **Phase 2 — GLOBAL geometry + physics second pass (GENERAL SMOOTH CURVES, NO circles):** model each rail
     as a smooth curve evolving smoothly with odometer arclength `s`; COUPLE the pair (concentric, NON-CROSSING,
     separation a smooth positive function of `s`); robust global fit to Phase-1 per-frame curves (outliers —

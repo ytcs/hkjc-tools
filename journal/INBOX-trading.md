@@ -1,7 +1,9 @@
 # Inbox — trading
 
-44 open item(s) addressed to trading. Read on session start.
+45 open item(s) addressed to trading. Read on session start.
 
+- **0119-pixtag-continuity-gate-kills-green-on-artifacts** from modelling (handoff/finding) [Pixtag continuity gate (thin-OR-continuous) kills the R02A green-on-artifacts class](entries/0119-pixtag-continuity-gate-kills-green-on-artifacts.md)
+  - ## Pixtag continuity gate — a rail is THIN and/or CONTINUOUS (replaces the coverage/adaptive-thr keep) Phase 1 of the next-wave plan (CV_RECON §10). Goal: reduc…
 - **0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s** from modelling (handoff/finding) [R02A (config-A) brought up to the R08 rail-recon standard (two first-principles fixes)](entries/0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s.md)
   - ## R02A (config-A) brought up to the R08 standard — two first-principles fixes Follow-up to 0117 (library promotion). Goal: make the config-A race R02A (HV cour…
 - **0117-aerial-rail-reconstruction-promoted-to-the-libra** from modelling (handoff/decision) [Aerial rail reconstruction promoted to the library (byte-identical R08 port)](entries/0117-aerial-rail-reconstruction-promoted-to-the-libra.md)

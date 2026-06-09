@@ -148,6 +148,22 @@ def _gather_inliers(cands, frame, band_px: float = 12.0, t_margin: float = 600.0
     return np.concatenate(keep_x), np.concatenate(keep_y)
 
 
+OCC_NBINS = 20            # along-length bins for the continuity (occupancy) metric
+
+
+def _occupancy(t, t_lo, t_hi, nb: int = OCC_NBINS) -> float:
+    """Fraction of ``nb`` equal bins along the line's MAJOR axis that hold >=1 support pixel.
+
+    A rail is ONE continuous curve, so it fills ~all bins (occ ~0.9-1.0) even when dashed (gaps < a
+    bin) or noisy; HUD/disclaimer text scatters into words/glyphs with large gaps (occ ~0.3-0.5). This
+    is the owner's continuity discriminator. Independent of thinness, so it certifies a THICK but
+    continuous arc (config-A bend rail) that the spread gate alone would reject."""
+    if len(t) == 0 or t_hi <= t_lo:
+        return 0.0
+    b = np.clip(((np.asarray(t) - t_lo) / (t_hi - t_lo + 1e-9) * nb).astype(int), 0, nb - 1)
+    return len(np.unique(b)) / float(nb)
+
+
 # --------------------------------------------------------------------------- line enumeration
 def enumerate_lines(cands, deg: int, gray=None) -> list[dict]:
     """Grow every distinct rail line from the thin components (dashes merged into full lines).
@@ -189,11 +205,13 @@ def enumerate_lines(cands, deg: int, gray=None) -> list[dict]:
         gx, gy = _gather_inliers(thin, frame)   # thinness: perp spread of the line's own pixels
         if len(gx) >= 10:
             qq = np.column_stack([gx, gy]) - mu
-            spread = float(np.median(np.abs((qq @ v) - np.polyval(coeffs, qq @ u))))
+            tt = qq @ u
+            spread = float(np.median(np.abs((qq @ v) - np.polyval(coeffs, tt))))
+            occ = _occupancy(tt, t_lo, t_hi)    # along-length continuity: rail ~1, gappy text ~0.3-0.5
         else:
-            spread = 99.0
+            spread, occ = 99.0, 0.0
         lines.append(dict(pts=pts, frame=frame, npix=npix, ndash=nabs, ext=float(t_hi - t_lo),
-                          curv=curv, meanV=mean_v, coverage=coverage, spread=spread,
+                          curv=curv, meanV=mean_v, coverage=coverage, spread=spread, occ=occ,
                           mid=(float(pts[:, 0].mean()), float(pts[:, 1].mean()))))
     return [ln for ln in lines if ln["ext"] > 80]    # drop stubs that never grew into a line
 
@@ -287,6 +305,11 @@ SPREAD_CEIL_FAC = 0.0095    # hard thinness ceiling, fraction of W (~9 px @949) 
 COV_SOLID = 2.0             # min coverage (support px / length) in the loosened regime -- rejects sparse text rows
 # --- LOOP 1 (pixel cleaning) ---
 PIX_MIN_EXT_FRAC = 0.33     # a kept curve must span >= this fraction of W
+S_THIN_FAC = 0.00126        # crisp-rail thinness FLOOR, fraction of W (~1.2 px @949): a spanning line THIS
+                            # thin IS a rail regardless of continuity (rescues R08 bend rails that go gappy
+                            # -- occ~0.6 -- but stay razor-thin spread~0.7). Set below R02A thin-text (~1.6).
+OCC_HI = 0.80               # continuity FLOOR: a thick/noisy line is a rail only if it is one CONTINUOUS
+                            # curve (config-A bend arc occ~1.0); HUD/disclaimer text scatters to occ<=0.7.
 PIX_MINCOMP_FAC = 0.008     # min thin-component length, fraction of W (~8 px @949)
 BRIGHT_FAC = 0.19           # brightness threshold = turf_gray_median * (1 + BRIGHT_FAC); turf-MEDIAN-relative
 WHITE_S_FAC = 0.58          # rail whiteness: saturation < this * turf_saturation_median (~75 @ R08)
@@ -373,28 +396,23 @@ def clean_pixels(panel, y0, y1, content_w, deg=2):
                               np.concatenate([c["ys"] for c in cands])]) if cands else np.zeros((0, 2))
     if not cands:
         return allpts, allpts
-    s_base, s_margin, s_ceil = SPREAD_BASE_FAC * content_w, SPREAD_MARGIN_FAC * content_w, SPREAD_CEIL_FAC * content_w
+    s_base, s_ceil = SPREAD_BASE_FAC * content_w, SPREAD_CEIL_FAC * content_w
+    s_thin = S_THIN_FAC * content_w
     lines = enumerate_lines(cands, deg)
     spanning = [ln for ln in lines if ln["ext"] >= PIX_MIN_EXT_FRAC * content_w]
     kept_xy = []
     if spanning:
-        # ADAPTIVE spread: the running rail is ALWAYS present and spanning, so the spread tolerance is set
-        # RELATIVE to the frame's own thinnest spanning line -- crisp renders (R08, best ~0.7) stay tight
-        # at s_base; noisy renders (R02A, best ~4.5) loosen automatically. No per-venue magic number.
-        best = min(ln["spread"] for ln in spanning)
-        thr = min(s_ceil, max(s_base, best + s_margin))
         for ln in spanning:
-            # KEEP a spanning line if EITHER:
-            #  (a) it is thin enough for the adaptive threshold (thin crisp rail / dash), with the
-            #      loosened-regime coverage guard so a sparse aligned-text row is still rejected; OR
-            #  (b) it has SOLID coverage (cov >= COV_SOLID) up to the 2D-block ceiling -- a dense-support
-            #      line IS a rail regardless of the thin-line-driven adaptive `thr`. This is what saves the
-            #      striped config-A near rail (spread ~4.8, cov ~2.5): a thin FAR line was setting `best`
-            #      low, knife-edging `thr` just under 4.8 and dropping the real rail on some frames.
-            # (b) is purely ADDITIVE (only keeps MORE solid rails) so R08 cannot regress; text (cov<2) stays out.
-            thin_ok = ln["spread"] <= thr and (ln["spread"] <= s_base or ln["coverage"] >= COV_SOLID)
-            solid_ok = ln["coverage"] >= COV_SOLID and ln["spread"] <= s_ceil
-            if thin_ok or solid_ok:
+            # A rail is THIN and/or CONTINUOUS. Two first-principles classes of genuine rail (validated
+            # across both venues + all phases by the line-descriptor probe, journal next):
+            #   * CRISP: spread <= s_thin -- razor-thin spanning lines ARE rails, even when the bend cuts
+            #     them gappy (R08 f734/f2158 rails: spread ~0.7, occ ~0.6). Text never gets this thin.
+            #   * CONTINUOUS: occ >= OCC_HI -- a thick/noisy line that is ONE near-complete curve is a rail
+            #     (config-A bend arc: spread ~4.5, occ ~1.0). HUD/disclaimer text scatters to occ <= 0.7.
+            # The 2D-block ceiling (s_ceil) drops a dense field/grandstand blob that is continuous but fat.
+            # This REPLACES the old coverage+adaptive-thr gate, which let thin text leak (it passed the
+            # thin test) AND let a thin TEXT line set the adaptive thr low, knife-edging the real rail out.
+            if (ln["spread"] <= s_thin or ln["occ"] >= OCC_HI) and ln["spread"] <= s_ceil:
                 if ln["spread"] <= s_base:                 # CRISP rail (R08): the single deg-2 gather suffices
                     gx, gy = _gather_inliers(cands, ln["frame"])
                 else:                                      # CURVING/striped rail (config-A bends): a single
