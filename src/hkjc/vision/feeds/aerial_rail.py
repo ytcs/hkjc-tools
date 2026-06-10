@@ -325,6 +325,10 @@ SEED_FAC = 0.0126           # temporal seed band, ~12 px @949
 NOCROSS_FAC = 0.006        # min rail-rail gap: reject coincident/crossing (gap~0); ALLOW a close parallel pair (~6px+@949). Config-A near+far rails sit ~15px apart -> must pass.
 MAXSEP_FAC = 0.36           # max plausible rail separation, ~340 px @949
 RLINE_FAC = 8.4             # straight-vs-arc radius threshold, ~8000 px @949 (x W)
+WEAVE_FAC = 0.0084          # running-support residual-about-its-fit (frac of W, ~8 px @949) above which
+                            # the thread has absorbed BOTH close rails (one deg-2 can't follow the pair, so
+                            # the residual blows up ~15-20 px) -> trigger the coupled de-weave. A single
+                            # rail hugs its fit (~1-4 px) even when sharply curved -> never triggers (R08).
 PAIR_SEP_FAC = 0.011        # min near<->far rail separation to RESOLVE a close pair, ~10 px @949. The
                             # venue has a fixed FAR + movable NEAR rail; in config A they sit ~15-20 px apart
                             # on straights (joined by cross-braces, fit as ONE band) and must be split back
@@ -558,6 +562,37 @@ def _split_pair(pix, box):
     return out
 
 
+def _support_resid(pix, curve):
+    """Median perpendicular distance of a thread's support pixels to its OWN fitted curve. A single thin
+    rail hugs its fit (~1-4 px) even when sharply CURVED (the deg-2 follows the arc); a thread that has
+    absorbed BOTH close rails cannot be followed by one deg-2, so the residual blows up (~half the pair
+    separation, ~15-20 px). Curvature-INVARIANT (unlike a PCA-minor spread, which a bend inflates)."""
+    P = np.asarray(pix, float)
+    if len(P) < 6 or curve is None or len(curve) < 2:
+        return 0.0
+    return float(np.median(_dist_to_curve(P, curve)))
+
+
+def _decouple_pair(run_pix, out_pix, run_curve, out_curve, box, iters=4):
+    """De-WEAVE two CLOSE rails that the running thread swallowed into one blob (its support spans both,
+    so the deg-2 fit zig-zags between them -- the config-A bend weave, journal 0120). Repartition the
+    UNION of both threads' pixels by NEAREST curve and refit each thread on its EXCLUSIVE set, iterating:
+    two curves cannot both own the same pixel, so they relax onto the two separate rails. Field-free,
+    non-circular (general deg-2 curves, no arc/centre fit). Returns (run_curve, run_pix, out_curve, out_pix)."""
+    mr = _mr(box)
+    pool = np.vstack([np.asarray(run_pix, float), np.asarray(out_pix, float)]) if len(out_pix) else np.asarray(run_pix, float)
+    rc, oc = run_curve, out_curve
+    for _ in range(iters):
+        rmask = _dist_to_curve(pool, rc) <= _dist_to_curve(pool, oc)
+        if rmask.sum() < mr or (~rmask).sum() < mr:
+            break
+        rp, op = pool[rmask], pool[~rmask]
+        rc = _fit_extend(rp, *_frame_axes(rp), box)
+        oc = _fit_extend(op, *_frame_axes(op), box)
+    rmask = _dist_to_curve(pool, rc) <= _dist_to_curve(pool, oc)
+    return rc, pool[rmask], oc, pool[~rmask]
+
+
 def _fit_gather(pts, seed_mask, box, band=None, iters=4):
     """Fit a rail to seed pixels, then iteratively GATHER all clean pixels within ``band`` of the curve
     and refit -- bridges fragmentation so the curve covers the WHOLE rail. Returns (curve, member_mask)."""
@@ -699,6 +734,12 @@ def track_sequence(keys, clean, box=None):
             pair = _split_pair(run_pix, box)            # PAIR fit as one (config-A straight, brace-joined)
             if pair is not None:
                 (run_curve, run_pix), (out_curve, out_pix) = pair
+        # DE-WEAVE: if the running thread swallowed BOTH close rails (support spans the pair), the deg-2
+        # fit weaves between them (config-A bends, f690-840). Repartition the pair's pixels by nearest
+        # curve and refit each exclusively -> the two curves relax onto the two rails. R08's separated
+        # crisp rails keep a single-rail spread, so this never triggers there.
+        if out_curve is not None and _support_resid(run_pix, run_curve) > WEAVE_FAC * W:
+            run_curve, run_pix, out_curve, out_pix = _decouple_pair(run_pix, out_pix, run_curve, out_curve, box)
         sel = [dict(pts=run_curve, running=True, pix=run_pix)]
         if out_curve is not None:
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))
