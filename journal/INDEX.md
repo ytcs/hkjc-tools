@@ -1,6 +1,6 @@
 # Agent Journal — Index
 
-112 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
+113 entries. Generated; do not edit by hand (rebuilt by `Journal.reindex`).
 
 ## modelling
 
@@ -116,3 +116,4 @@
 - **0117-aerial-rail-reconstruction-promoted-to-the-libra** →modelling,all (handoff/open) [Aerial rail reconstruction promoted to the library (byte-identical R08 port)](entries/0117-aerial-rail-reconstruction-promoted-to-the-libra.md) — _cv, aerial, rail, library, promotion, port, handoff_
 - **0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s** →modelling,all (handoff/open) [R02A (config-A) brought up to the R08 rail-recon standard (two first-principles fixes)](entries/0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s.md) — _cv, aerial, rail, r02a, config-a, validation, handoff_
 - **0119-pixtag-continuity-gate-kills-green-on-artifacts** →modelling,all (handoff/open) [Pixtag continuity gate (thin-OR-continuous) kills the R02A green-on-artifacts class](entries/0119-pixtag-continuity-gate-kills-green-on-artifacts.md) — _cv, aerial, rail, r02a, pixtag, continuity, handoff_
+- **0120-red-team-vision-audit-deweave-green-rail-passes** →modelling,all (handoff/open) [Red-team vision audit validated; config-A bend weave fixed; GREEN rail passes both venues](entries/0120-red-team-vision-audit-deweave-green-rail-passes.md) — _cv, aerial, rail, red-team, audit, deweave, r02a, r08_

@@ -1,7 +1,9 @@
 # Inbox — strategist
 
-45 open item(s) addressed to strategist. Read on session start.
+46 open item(s) addressed to strategist. Read on session start.
 
+- **0120-red-team-vision-audit-deweave-green-rail-passes** from modelling (handoff/finding) [Red-team vision audit validated; config-A bend weave fixed; GREEN rail passes both venues](entries/0120-red-team-vision-audit-deweave-green-rail-passes.md)
+  - ## Red-team vision audit (fan-out) — validated as the autonomous CV gate; fixed the bend weave Followed 0119. Built + exercised the **red-team vision audit**: f…
 - **0119-pixtag-continuity-gate-kills-green-on-artifacts** from modelling (handoff/finding) [Pixtag continuity gate (thin-OR-continuous) kills the R02A green-on-artifacts class](entries/0119-pixtag-continuity-gate-kills-green-on-artifacts.md)
   - ## Pixtag continuity gate — a rail is THIN and/or CONTINUOUS (replaces the coverage/adaptive-thr keep) Phase 1 of the next-wave plan (CV_RECON §10). Goal: reduc…
 - **0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s** from modelling (handoff/finding) [R02A (config-A) brought up to the R08 rail-recon standard (two first-principles fixes)](entries/0118-r02a-config-a-brought-up-to-the-r08-rail-recon-s.md)
