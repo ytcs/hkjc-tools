@@ -58,6 +58,36 @@ pixels. So: (1) overlay every intermediate (boxes, masks, rail, candidates) on t
 bunched, strung, distant) — failures hide in the un-checked phase; (4) scrutinize EACH sampled
 frame, not a spot-check. Fixes follow from looking, not from metrics.
 
+### 0b. RED-TEAM VISION AUDIT — fan out parallel subagents to scrutinise the overlays
+
+The single reviewer (me) misses things: I closed the f694–710 "weave" as an overlay-fill artifact and
+never re-checked f760/840/900, where the two rail threads genuinely CROSS. A fan-out of independent
+red-team reviewers caught it. This is now the standing audit gate, and the loop that lets the CV work
+**iterate end-to-end without the human in the detection step**:
+
+```
+re-render the diag overlays  →  fan out N red-team subagents (parallel, small batches, native vision)
+   →  AGGREGATE their per-frame verdicts  →  VERIFY each checkable claim myself by eye (the safeguard;
+   subagents are calibrated but make interpretive near/far calls)  →  fix the confirmed issues at root
+   →  re-render  →  re-audit.  Done only when every batch returns clean.
+```
+
+How to run it (proven on R02A, journal 0119/0120):
+- Spawn **6-ish `general-purpose` Agents in ONE message** (so they run concurrently), each a *small batch*
+  (~6 frames) spanning one race phase (start / early bend / back straight / late bend / turn / run-in).
+- Each agent gets: the colour legend (GREEN=running rail / BLUE=other / CYAN=clean px), the **venue model**
+  (fixed far + movable near/racing rail; racing rail = nearest the field; config-A close-on-straight,
+  diverge-on-bend), the **NOT-rails list** (grandstand/apron, disclaimer text, odometer minimap, silks,
+  shadows), and **what CORRECT looks like** (every curve ON a real rail; short/single-rail is allowed).
+- Tell them to **crop+zoom** with `studies`-adjacent helper (`/tmp/crop.py IN OUT x0 y0 x1 y1 scale`, or any
+  NEAREST-upscale) — rails are thin, the full thumbnail hides everything; read the full frame first, then
+  zoom the curve region (upper-mid band Y~300-560, or the bottom edge Y~520-720 on zoomed bends).
+- Demand a **compact per-frame verdict** (`fNNNNN: OK` | `ISSUE [hi|med|lo] — which curve, what, where`)
+  + a one-line worst-issue summary, every claim backed by a crop they viewed.
+- **Redundancy is the point**: overlapping batches that independently flag the same frame = high-confidence
+  real issue; a lone interpretive call = verify before acting. Trust the literal-geometry calls (a crossing,
+  a floating curve, a curve on text) over the interpretive ones (near/far identity from camera reasoning).
+
 ## 1. What it delivers (validated) vs what it does not
 
 Validated across a 3-race distance spread (HV 2026-06-03 — **R01 1650m, R03 1200m, R06 1200m,
