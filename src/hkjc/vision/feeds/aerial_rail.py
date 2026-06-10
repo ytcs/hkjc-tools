@@ -26,6 +26,10 @@ RECONSTRUCTION (the 0115/0116 redesign — the CURRENT promoted path, validated 
                            curve as the gather SEED, refit on the CURRENT frame's pixels -> bridges
                            occluded bends with no smearing). Rails fit INDEPENDENTLY; partner accepted
                            only if it does not CROSS the running rail (the one bend-robust discriminator).
+  ``thread_rails``      -> GLOBAL identity (the second pass): link the per-frame curves into two
+                           persistent world THREADS by relative continuity, then name the racing thread
+                           ONCE (wider-radius majority; HKJC venue model). Identity never re-decides
+                           per frame, so a mid-video racing<->fixed swap is impossible by construction.
   ``build_kappa`` + ``backproject_fixed_r`` -> GLOBAL geometry: reconstruct the rail's signed
                            image-curvature profile kappa(s) vs odometer arclength, pin R = 1/kappa(s)
                            per frame, fit only the pose, draw across the box -> full span even from a
@@ -529,47 +533,40 @@ def _enumerate_curves(pts, box, deg=2):
     return out
 
 
-def _split_pair(pix, box):
-    """Resolve a close fixed+racing rail PAIR that was fit as ONE band (config-A straights: two parallel
-    rails ~15-20 px apart joined by cross-braces). The two rails are two DENSITY MODES in the band's
-    PERPENDICULAR cross-section; the periodic cross-braces are the sparse valley between them. Split by
-    1-D 2-means on the perpendicular (PCA-minor) coordinate, accept only if the two modes are clearly
-    separated (>= PAIR_SEP_FAC*W, < MAXSEP) with a SPARSE valley between (a single fat rail stays one).
-    Returns [(curve, pix), (curve, pix)] for the two rails, or None. FIELD-FREE."""
-    P = np.asarray(pix, float)
+def _split_band(pool, box, min_sep):
+    """ONE mechanism for every "two rails fit as one structure" case: partition the pixel pool by SIDE of
+    its joint MIDLINE (one robust deg-2 through everything), refit each side, and accept iff both sides
+    have rail-grade support and the two refit curves are genuinely SEPARATED (median gap in
+    [``min_sep``, MAXSEP]). Side is consistent along the whole span (unlike nearest-curve, which is a
+    fixed point under a crossing; unlike a perp 2-means, which merges as the pair diverges), so the same
+    split resolves: the brace-joined config-A straight pair fit as one band (a genuine pair refits to two
+    curves a mode-separation apart; a single fat rail refits to two curves inside its own thickness ->
+    rejected by ``min_sep``), the WEAVE (one thread zig-zagging between both rails), and the smooth CROSS
+    (f826). Side-split curves cannot cross by construction. Field-free, non-circular.
+    Returns (curve_a, pix_a, curve_b, pix_b) or None."""
+    P = np.asarray(pool, float)
     mr = _mr(box)
-    W = _cw(box)
     if len(P) < 2 * mr:
         return None
     mu, u, v = _frame_axes(P)
-    w = (P - mu) @ v
-    c0, c1 = float(np.percentile(w, 5)), float(np.percentile(w, 95))   # seed 2-means at the extremes
-    for _ in range(25):
-        a = np.abs(w - c0) <= np.abs(w - c1)
-        if a.sum() == 0 or (~a).sum() == 0:
-            return None
-        nc0, nc1 = float(w[a].mean()), float(w[~a].mean())
-        if abs(nc0 - c0) < 1e-3 and abs(nc1 - c1) < 1e-3:
-            break
-        c0, c1 = nc0, nc1
-    a = np.abs(w - c0) <= np.abs(w - c1)
-    sep = abs(c1 - c0)
-    if sep < PAIR_SEP_FAC * W or sep > MAXSEP_FAC * W or a.sum() < mr or (~a).sum() < mr:
+    t, w = (P - mu) @ u, (P - mu) @ v
+    c = np.polyfit(t, w, 2)                          # midline through BOTH rails
+    for _ in range(3):                               # robustify the midline against the wider rail's pull
+        r = w - np.polyval(c, t)
+        s = np.std(r) + 1e-6
+        keep = np.abs(r) < 2.5 * s
+        if keep.sum() > 10:
+            c = np.polyfit(t[keep], w[keep], 2)
+    side = (w - np.polyval(c, t)) >= 0               # signed perpendicular offset from the midline
+    if side.sum() < mr or (~side).sum() < mr:        # not cleanly two-sided -> not a pair
         return None
-    # VALLEY test: the mid third between the two modes must be sparser than the modes themselves, else this
-    # is one fat/noisy rail, not a brace-joined pair.
-    mid = 0.5 * (c0 + c1)
-    band_q = sep / 6.0
-    dens_mid = float(np.mean(np.abs(w - mid) < band_q)) + 1e-9
-    dens_pk = 0.5 * (float(np.mean(np.abs(w - c0) < band_q)) + float(np.mean(np.abs(w - c1) < band_q)))
-    if dens_mid > 0.6 * dens_pk:
+    pa, pb = P[side], P[~side]
+    ca = _fit_extend(pa, *_frame_axes(pa), box)
+    cb = _fit_extend(pb, *_frame_axes(pb), box)
+    g = np.hypot(ca[:, None, 0] - cb[None, :, 0], ca[:, None, 1] - cb[None, :, 1]).min(1)
+    if not (min_sep <= float(np.median(g)) <= MAXSEP_FAC * _cw(box)):
         return None
-    out = []
-    for mask in (a, ~a):
-        sub = P[mask]
-        m2, u2, v2 = _frame_axes(sub)
-        out.append((_fit_extend(sub, m2, u2, v2, box), sub))
-    return out
+    return ca, pa, cb, pb
 
 
 def _support_resid(pix, curve):
@@ -584,34 +581,16 @@ def _support_resid(pix, curve):
 
 
 def _decouple_pair(run_pix, out_pix, run_curve, out_curve, box):
-    """Separate two CLOSE rails the threads may have WEAVED or CROSSED across (config-A bends: f826 green
-    rides the fixed rail at one end and the racing rail at the other -- a smooth CROSS). Split by SIDE of
-    the pair's joint MIDLINE: fit one deg-2 through the UNION of both threads' pixels, then assign each
-    pixel by the SIGN of its perpendicular offset from that midline. Side is consistent along the whole
-    span (unlike nearest-curve, which is a fixed point under a crossing and cannot undo it; unlike a
-    global perp 2-means, which merges as the pair diverges), so this UNCROSSES a crossing AND separates a
-    diverging pair. Running <- the side nearer the original running curve. Field-free, non-circular.
-    Returns (run_curve, run_pix, out_curve, out_pix); unchanged if the split is not cleanly two-sided."""
-    mr = _mr(box)
+    """De-weave/uncross two CLOSE rails via ``_split_band`` on the UNION of both threads' pixels
+    (config-A bends: f826 green rides the fixed rail at one end and the racing rail at the other -- a
+    smooth CROSS). Running <- the side nearer the original running curve (continuity for the temporal
+    seed; the global naming is ``thread_rails``'s job). Returns (run_curve, run_pix, out_curve, out_pix);
+    unchanged if the split is not cleanly two-sided."""
     pool = np.vstack([np.asarray(run_pix, float), np.asarray(out_pix, float)]) if len(out_pix) else np.asarray(run_pix, float)
-    if len(pool) < 2 * mr:
+    sp = _split_band(pool, box, min_sep=NOCROSS_FAC * _cw(box))
+    if sp is None:
         return run_curve, run_pix, out_curve, out_pix
-    mu, u, v = _frame_axes(pool)
-    t, w = (pool - mu) @ u, (pool - mu) @ v
-    c = np.polyfit(t, w, 2)                          # midline through BOTH rails
-    for _ in range(3):                               # robustify the midline against the wider rail's pull
-        r = w - np.polyval(c, t)
-        s = np.std(r) + 1e-6
-        keep = np.abs(r) < 2.5 * s
-        if keep.sum() > 10:
-            c = np.polyfit(t[keep], w[keep], 2)
-    off = w - np.polyval(c, t)                       # signed perpendicular offset from the midline
-    side = off >= 0
-    if side.sum() < mr or (~side).sum() < mr:        # not cleanly two-sided -> leave as-is
-        return run_curve, run_pix, out_curve, out_pix
-    pa, pb = pool[side], pool[~side]
-    ca = _fit_extend(pa, *_frame_axes(pa), box)
-    cb = _fit_extend(pb, *_frame_axes(pb), box)
+    ca, pa, cb, pb = sp
     if np.median(_dist_to_curve(pa, run_curve)) <= np.median(_dist_to_curve(pb, run_curve)):
         return ca, pa, cb, pb
     return cb, pb, ca, pa
@@ -777,9 +756,13 @@ def track_sequence(keys, clean, box=None):
             if not (gmin > nocross and float(np.median(g)) < maxsep):
                 out_curve = None
         if out_curve is None:                           # only ONE band found -> maybe a close fixed+racing
-            pair = _split_pair(run_pix, box)            # PAIR fit as one (config-A straight, brace-joined)
+            pair = _split_band(run_pix, box, min_sep=PAIR_SEP_FAC * W)   # PAIR fit as one (config-A straight)
             if pair is not None:
-                (run_curve, run_pix), (out_curve, out_pix) = pair
+                ca, pa, cb, pb = pair                   # run <- side nearer the prior fit (temporal-seed continuity)
+                if np.median(_dist_to_curve(pa, run_curve)) <= np.median(_dist_to_curve(pb, run_curve)):
+                    run_curve, run_pix, out_curve, out_pix = ca, pa, cb, pb
+                else:
+                    run_curve, run_pix, out_curve, out_pix = cb, pb, ca, pa
         # DE-WEAVE: the running thread can ride BOTH close rails -- either a high-residual zig-zag (it
         # swallowed the pair) OR a low-residual smooth STRAY where it rides the fixed rail at one end and
         # the racing rail at the other (f826). Trigger when the support residual is high OR the two rails
@@ -797,50 +780,15 @@ def track_sequence(keys, clean, box=None):
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))
         out[fi] = sel
         prev_run, prev_out = run_curve, out_curve
-    _assign_racing_by_radius(out)        # GLOBAL near/far identity (which side is racing)
-    couple_rails(out, box)               # PER-FRAME temporal coherence: swap flips, repair glitches
+    thread_rails(out)                    # GLOBAL identity: two world threads + ONE racing/fixed naming
     return out
 
 
-def _assign_racing_by_radius(seq):
-    """FIELD-FREE global near/far identity. Track fact (owner): the venue has a fixed FAR rail and a
-    movable NEAR/RACING rail; the horses race just OUTSIDE the racing rail, which is the WIDER-radius of
-    the two. Per-frame image radius is perspective-noisy, so take a CONFIDENCE-WEIGHTED MAJORITY vote over
-    every two-rail frame: if the continuity-primary ('running') thread is the NARROWER (far/fixed) rail in
-    the majority, flip the running flag across ALL frames so the 'running' reference is the racing rail.
-    ONE global decision -- no per-frame flipping (that was the swap bandaid). No field used."""
-    wnum = wden = 0.0
-    for v in seq.values():
-        r = [c for c in v if c["running"]]
-        o = [c for c in v if not c["running"]]
-        if not r or not o:
-            continue
-        kr, _ = _signed_curvature(r[0]["pts"])
-        ko, _ = _signed_curvature(o[0]["pts"])
-        if not (np.isfinite(kr) and np.isfinite(ko)) or kr == 0 or ko == 0:
-            continue
-        rr, ro = 1.0 / abs(kr), 1.0 / abs(ko)            # image radii of the two rails
-        w = abs(rr - ro) / (0.5 * (rr + ro) + 1e-9)      # vote weight = radius separation (confidence)
-        wden += w
-        if rr > ro:                                      # running thread is the wider (racing) rail
-            wnum += w
-    if wden > 0 and wnum < 0.5 * wden:                   # primary is the narrower (far) rail -> flip globally
-        for v in seq.values():
-            for c in v:
-                c["running"] = not c["running"]
+# --------------------------------------------- GLOBAL identity (two world threads, named once)
+FP_N = 7                    # points sampled along each rail (orientation-free curve fingerprint)
 
 
-# --------------------------------------------- GLOBAL temporal coherence (the Phase-2 second pass)
-COUPLE_WIN = 20             # +/- frame half-window for the robust reference (wide enough that a sustained
-                            # glitch stretch stays a MINORITY of the window -> the median ref stays correct)
-COUPLE_N = 7                # points sampled along each rail (orientation-free curve fingerprint)
-COUPLE_SWAP_MARGIN = 0.012  # frac of W (~11 px): swap running<->outer iff the OTHER rail fits the reference
-                            # better by this margin (a near/far FLIP is off by ~1 rail separation)
-COUPLE_OUT_FAC = 0.05       # frac of W (~47 px): running deviates from the reference by more than this ->
-                            # a GLITCH (wrong structure / collapsed fit) -> rebuild from the reference
-
-
-def _sample_curve(curve, n: int = COUPLE_N):
+def _sample_curve(curve, n: int = FP_N):
     """Orientation-FREE fingerprint: n points evenly along the rail, ordered by (x, then y). Works for a
     near-vertical rail (steep down-track camera) as well as a horizontal one -- the y-at-fixed-x sampling
     it replaces went NaN on vertical rails and so could not see them. Returns (n, 2) or None."""
@@ -851,67 +799,264 @@ def _sample_curve(curve, n: int = COUPLE_N):
     return P[np.linspace(0, len(P) - 1, n).astype(int)]
 
 
-def couple_rails(seq, box):
-    """GLOBAL temporal-coherence second pass (Phase 2, journal 0121). The rails are STATIC; the camera
-    moves smoothly, so each rail's image curve is a SMOOTH function of frame index. Fingerprint the
-    running rail by ``COUPLE_N`` points along it, build a robust reference (per-point median over a frame
-    window), then per frame:
-      * SWAP running<->outer when the outer fits the reference better (fixes a near/far FLIP / wrong-rail
-        -- f1900-66, R08 f588; orientation-free, so it also catches the vertical-rail case f642/f668 where
-        the correct rail was the OTHER thread);
-      * REPAIR a gross outlier (wrong structure / collapsed-vertical glitch) by rebuilding the curve
-        through the reference points -- only when the reference is solid and nothing on-frame matches.
-    The global racing-rail vote (_assign_racing_by_radius) sets WHICH side is racing; this enforces only
-    PER-FRAME consistency. Image-space, field-free, non-circular. Mutates ``seq`` in place."""
+THREAD_CONF_FRAC = 0.30     # a curve is a CONFIDENT rail observation iff it spans >= this fraction of W
+                            # (same floor as FIT_MIN_EXT_FRAC). Shorter slivers are still LABELED (honest
+                            # short rails exist) but carry no identity/naming evidence -- the fit emits
+                            # hedge/margin fragments through fast turns, and one trusted fragment
+                            # poisons every frame after it.
+THREAD_OCC_MIN = 0.55       # ...and its own support pixels must occupy >= this fraction of its length
+                            # (the pixtag continuity principle at the CURVE level): a real rail's support
+                            # is near-continuous (~0.8-1.0 even dashed/occluded) while a fabricated long
+                            # arc through scattered clutter (R02A f690: a 914px sweep through the
+                            # disclaimer text) is patchy -- long EXTENT alone is not rail evidence.
+
+
+def _occ_frac(curve, pix, nb: int = 20):
+    """Fraction of ``nb`` arclength bins of ``curve`` containing at least one of its support pixels."""
+    if pix is None or len(pix) < 2 or curve is None or len(curve) < 2:
+        return 0.0
+    C, P = np.asarray(curve, float), np.asarray(pix, float)
+    idx = np.argmin(((P[:, None, :] - C[None, :, :]) ** 2).sum(-1), axis=1)
+    return len(np.unique((idx * nb) // len(C))) / float(nb)
+
+
+def _circle_center(P):
+    """LSQ circle center of a polyline; None when degenerate. (A MEASUREMENT for the naming vote --
+    no circle is ever committed to the geometry; the rails stay general smooth curves.)"""
+    P = np.asarray(P, float)
+    if len(P) < 8:
+        return None
+    x, y = P[:, 0], P[:, 1]
+    sol, *_ = np.linalg.lstsq(np.column_stack([2 * x, 2 * y, np.ones(len(P))]), x * x + y * y, rcond=None)
+    if sol[2] + sol[0] ** 2 + sol[1] ** 2 <= 0:
+        return None
+    return float(sol[0]), float(sol[1])
+
+
+def _curve_set_cost(a, b):
+    """Extent-INVARIANT curve-to-curve distance: median nearest-distance from the SHORTER polyline's
+    points to the LONGER one. A short rail segment lying ON a long reference scores ~0 even though their
+    endpoints/extents differ wildly -- identity must measure 'is this on that rail's locus', never 'do
+    these two fits have the same span' (an equal-index point-to-point cost conflates the two: a trimmed
+    short fit matches a short GARBAGE reference over its own rail's long reference)."""
+    if a is None or b is None:
+        return 1e9                                       # finite sentinel: keeps the assignment ordered
+    if len(a) > len(b):
+        a, b = b, a
+    return float(np.median(_dist_to_curve(a, b)))
+
+
+LINK_TOL_FRAC = 0.012       # per-step linking tolerance (~11px @949): kept BELOW the config-A close-pair
+                            # gap (~15px) so a chain can never silently hop between pair members; scaled by
+                            # the gap (a tracklet bridges short non-confident holes) and capped below.
+LINK_CAP_FRAC = 0.035       # linking tolerance ceiling across a gap (~33px @949)
+LINK_GAP_MAX = 10           # kept-frame steps a tracklet stays extendable with no confident sighting
+LABEL_TOL_FRAC = 0.02       # a non-confident sliver inherits the nearest tracklet's name within this (~19px)
+
+
+def thread_rails(seq):
+    """GLOBAL near/far identity -- tracklets + co-occurrence bipartition + per-component naming vote.
+
+    Two physical facts make rail identity GLOBAL, never per-frame: the rails are STATIC world curves under
+    a SMOOTHLY-moving camera (each rail's image curve is CONTINUOUS in frame index), and concentric rails
+    NEVER CROSS (two curves in one frame are two different rails; their relative order is invariant). And
+    one engineering fact (owner): NO upstream stage is trusted -- the per-frame fit emits hedge/margin
+    fragments through fast turns and the far rail fails often in config A, so identity must aggregate
+    evidence and contain failures rather than chain blindly.
+
+      1. TRACKLETS. Chain CONFIDENT (long-span) curves frame-to-frame. When BOTH rails are seen and two
+         tracklets are alive, assign RELATIVELY (the 2x2 pairing that minimises total set distance -- the
+         common camera motion cancels, so this survives fast rotation; the ordering cannot flip without a
+         crossing). A LONE curve extends a tracklet only within an absolute tolerance kept BELOW the
+         close-pair gap -- where continuity genuinely breaks (rotation, occlusion) the tracklet ENDS, so
+         a wrong link cannot poison anything beyond its own segment. Short slivers carry no identity.
+      2. BAND (config-A merge). When a lone curve matches BOTH alive tracklets, the close pair has merged
+         into one fitted band: identity is DEGENERATE there. The band frames are labeled RACING (the band
+         contains the racing rail; off by at most the pair gap) and identity RESTARTS at the next split --
+         no coin-flip carried through the merge.
+      3. NAME by the venue model (HKJC_SPECS S1, owner): fixed inner/infield rail + movable RACING rail;
+         the horses race just outside the racing rail, the WIDER-radius of the pair. Co-occurring
+         tracklets are different rails, so the co-occurrence edges 2-COLOR each connected component of the
+         tracklet graph, and ONE confidence-weighted radius vote summed over ALL of a component's
+         co-occurring frames names which color is racing. A tracklet whose own frames carry no radius
+         evidence (a rotation mini-chain) inherits its name through the graph; an isolated tracklet
+         (nothing else ever seen) defaults to racing. A sustained mid-video racing<->fixed swap inside a
+         component is impossible by construction -- naming is one bit per color, not per frame.
+
+    Replaces the per-frame-label radius vote + the windowed-median swap (couple_rails, journal 0121):
+    that pass re-decided identity per frame against a +/-20-frame reference, so a swap SUSTAINED longer
+    than the window became its own majority and survived. Field-free, non-circular, image-space.
+    Mutates ``seq`` (the 'running' flags) in place."""
     keys = sorted(seq)
-    if len(keys) < 5:
+    allpts = [np.asarray(c["pts"], float) for fi in keys for c in seq[fi] if len(c["pts"])]
+    if not allpts:
         return seq
-    W = box[1] - box[0]
-    nan = np.full((COUPLE_N, 2), np.nan)
+    W = float(max(P[:, 0].max() for P in allpts)) + 1.0   # content width from the curves themselves
+    step = float(np.median(np.diff(keys))) if len(keys) > 1 else 1.0
+    conf_ext = THREAD_CONF_FRAC * W
 
-    def _run(fi):
-        r = [c for c in seq[fi] if c["running"]]
-        return r[0] if r else None
+    def _steps(fi_a, fi_b):                               # gap in kept-frame steps (video-index based, so a
+        return (fi_b - fi_a) / step                       # live-cam interlude counts as the time it took)
 
-    def _out(fi):
-        o = [c for c in seq[fi] if not c["running"]]
-        return o[0] if o else None
+    def _tol(gap_steps):
+        return min(LINK_TOL_FRAC * max(1.0, gap_steps), LINK_CAP_FRAC) * W
 
-    S_run = [(_sample_curve(_run(fi)["pts"]) if _run(fi) is not None else None) for fi in keys]
-    S_out = [(_sample_curve(_out(fi)["pts"]) if _out(fi) is not None else None) for fi in keys]
-    arr = np.array([s if s is not None else nan for s in S_run])
+    def _ext(P):
+        return float(max(np.ptp(P[:, 0]), np.ptp(P[:, 1]))) if len(P) else 0.0
 
-    def _cost(s, r):
-        if s is None or r is None or not np.isfinite(r).all():
-            return np.inf
-        return float(np.median(np.hypot(s[:, 0] - r[:, 0], s[:, 1] - r[:, 1])))
+    tr_members: list = []                                 # per tracklet: [(fi, curve idx)]
+    tr_last: list = []                                    # per tracklet: (fi, subsampled curve)
+    tid_of: dict = {}                                     # (fi, idx) -> tracklet id
+    band: set = set()                                     # (fi, idx) in a merged close-pair band
+    alive: list = []                                      # ids of the <=2 extendable tracklets
+    in_band = False
 
-    swap_margin, out_tol = COUPLE_SWAP_MARGIN * W, COUPLE_OUT_FAC * W
+    def _new(fi, i, s):
+        tid_of[(fi, i)] = len(tr_members)
+        tr_members.append([(fi, i)])
+        tr_last.append([fi, s])
+        return len(tr_members) - 1
 
-    def _ref(i):
-        lo, hi = max(0, i - COUPLE_WIN), min(len(keys), i + COUPLE_WIN + 1)
-        block = arr[lo:hi][~np.isnan(arr[lo:hi]).any(axis=(1, 2))]
-        if len(block) < 3:
-            return None
-        med = np.median(block, axis=0)                          # pass 1: robust to a minority of glitches
-        inl = block[[_cost(b, med) <= out_tol for b in block]]  # pass 2: drop the window's own outliers
-        return np.median(inl, axis=0) if len(inl) >= 3 else med
-    for i, fi in enumerate(keys):
-        ref = _ref(i)
-        if ref is None:
+    def _extend(t, fi, i, s):
+        tid_of[(fi, i)] = t
+        tr_members[t].append((fi, i))
+        tr_last[t] = [fi, s]
+
+    for fi in keys:
+        curves = seq[fi]
+        subs = [np.asarray(c["pts"], float)[::4] for c in curves]
+        conf = [i for i in range(len(curves))
+                if len(subs[i]) >= 2 and _ext(np.asarray(curves[i]["pts"], float)) >= conf_ext
+                and _occ_frac(curves[i]["pts"], curves[i].get("pix")) >= THREAD_OCC_MIN]
+        alive = [t for t in alive if _steps(tr_last[t][0], fi) <= LINK_GAP_MAX]
+        if not conf:
             continue
-        cr, co = _cost(S_run[i], ref), _cost(S_out[i], ref)
-        if np.isfinite(co) and co + swap_margin < cr:           # near/far flip -> swap this frame
-            for c in seq[fi]:
-                c["running"] = not c["running"]
-            S_run[i], S_out[i] = S_out[i], S_run[i]
-            arr[i] = S_run[i] if S_run[i] is not None else nan
-        # NOTE: only the relabel (swap) is applied -- a low-risk, orientation-free repair of near/far
-        # FLIPS. The earlier curve-rebuild-from-reference was REMOVED: an image-space frame-window
-        # reference is not valid through fast camera ROTATION (the rail sweeps vertical at a turn while
-        # the window is mostly horizontal), so rebuilding there FABRICATED a floating curve (f642/f668).
-        # Fixing the rotating-turn frames needs an odometer-anchored / rotation-compensated reference
-        # (CV_RECON Phase 2 'smooth in s'; journal 0115 R3), out of scope for this image-space pass.
+        if len(conf) >= 2:                                # BOTH rails seen -> identity is RELATIVE
+            i0, i1 = conf[0], conf[1]
+            in_band = False
+            if len(alive) >= 2:                           # 2x2: order is rotation-proof, no threshold
+                a0, a1 = alive[0], alive[1]
+                c00 = _curve_set_cost(subs[i0], tr_last[a0][1])
+                c01 = _curve_set_cost(subs[i0], tr_last[a1][1])
+                c10 = _curve_set_cost(subs[i1], tr_last[a0][1])
+                c11 = _curve_set_cost(subs[i1], tr_last[a1][1])
+                pairs = [(a0, i0), (a1, i1)] if c00 + c11 <= c01 + c10 else [(a0, i1), (a1, i0)]
+                for t, i in pairs:
+                    _extend(t, fi, i, subs[i])
+            elif len(alive) == 1:
+                a0 = alive[0]
+                g = _steps(tr_last[a0][0], fi)
+                c0 = _curve_set_cost(subs[i0], tr_last[a0][1])
+                c1 = _curve_set_cost(subs[i1], tr_last[a0][1])
+                i_n, c_n = (i0, c0) if c0 <= c1 else (i1, c1)
+                i_f = i1 if i_n == i0 else i0
+                if c_n <= _tol(g):
+                    _extend(a0, fi, i_n, subs[i_n])
+                    alive = [a0, _new(fi, i_f, subs[i_f])]
+                else:                                     # discontinuity: restart both
+                    alive = [_new(fi, i0, subs[i0]), _new(fi, i1, subs[i1])]
+            else:
+                alive = [_new(fi, i0, subs[i0]), _new(fi, i1, subs[i1])]
+        else:                                             # LONE confident curve
+            i0 = conf[0]
+            if in_band:                                   # still merged: racing by content, no identity
+                band.add((fi, i0))
+                continue
+            hits = []
+            for t in alive:
+                g = _steps(tr_last[t][0], fi)
+                c = _curve_set_cost(subs[i0], tr_last[t][1])
+                if c <= _tol(g):
+                    hits.append((c, t))
+            if len(hits) >= 2:                            # matches BOTH rails -> the close pair MERGED
+                in_band = True                            # identity degenerates; restart at the next split
+                band.add((fi, i0))
+                alive = []
+            elif hits:
+                _extend(min(hits)[1], fi, i0, subs[i0])
+            else:                                         # continuity broken: contain, do not guess
+                alive = [_new(fi, i0, subs[i0])]
+
+    # ---- co-occurrence edges (two curves in one frame = two different rails) + radius evidence
+    edges: dict = {}                                      # (ta, tb) ta<tb -> [w_total, w_first_wider]
+    for fi in keys:
+        ts = [(i, tid_of[(fi, i)]) for i in range(len(seq[fi])) if (fi, i) in tid_of]
+        if len(ts) != 2 or ts[0][1] == ts[1][1]:
+            continue
+        (ia, ta), (ib, tb) = ts
+        if ta > tb:
+            (ia, ta), (ib, tb) = (ib, tb), (ia, ta)
+        rec = edges.setdefault((ta, tb), [0.0, 0.0])
+        # WIDER-rail evidence by SIDE OF THE COMMON CENTER: fit one circle to the longer curve, compare
+        # both curves' median distance to ITS center. Sidedness survives the oblique render projection;
+        # comparing two separately-fit radius MAGNITUDES does not (perspective can invert the apparent
+        # ordering of two concentric arcs, and a near-straight frame makes both radii pure noise).
+        Pa, Pb = np.asarray(seq[fi][ia]["pts"], float), np.asarray(seq[fi][ib]["pts"], float)
+        cen = _circle_center(Pa if len(Pa) >= len(Pb) else Pb)
+        if cen is not None:
+            ra = float(np.median(np.hypot(Pa[:, 0] - cen[0], Pa[:, 1] - cen[1])))
+            rb = float(np.median(np.hypot(Pb[:, 0] - cen[0], Pb[:, 1] - cen[1])))
+            w = abs(ra - rb) / (0.5 * (ra + rb) + 1e-9)   # vote weight = radial separation (confidence)
+            rec[0] += w
+            if ra > rb:                                   # the FIRST tracklet is farther out = wider
+                rec[1] += w
+
+    # ---- 2-color each component; ONE wider-radius naming vote per component
+    color: dict = {}
+    comp_of: dict = {}
+    adj: dict = {}
+    for (a, b) in edges:
+        adj.setdefault(a, []).append(b)
+        adj.setdefault(b, []).append(a)
+    ncomp = 0
+    for t in range(len(tr_members)):
+        if t in color:
+            continue
+        stack = [(t, 0)]
+        while stack:
+            u, c = stack.pop()
+            if u in color:
+                continue                                  # odd cycle = upstream noise; first color wins
+            color[u], comp_of[u] = c, ncomp
+            stack.extend((v, 1 - c) for v in adj.get(u, []))
+        ncomp += 1
+    racing_color = [0] * ncomp                            # no radius evidence -> primary lineage = racing
+    for cid in range(ncomp):
+        wnum = wden = 0.0
+        for (a, b), (w_tot, w_first) in edges.items():
+            if comp_of[a] != cid:
+                continue
+            wden += w_tot                                 # weight where COLOR-0 is the wider rail:
+            wnum += w_first if color[a] == 0 else w_tot - w_first
+        racing_color[cid] = 0 if (wden == 0 or wnum >= 0.5 * wden) else 1
+
+    thread_rails.last_debug = dict(tr_members=tr_members, edges=edges, color=color,
+                                   comp_of=comp_of, racing_color=racing_color)   # triage introspection
+
+    # ---- label every curve; slivers inherit the nearest tracklet's name (or stay un-named)
+    def _is_racing(t):
+        return color[t] == racing_color[comp_of[t]]
+
+    for fi in keys:
+        for i, c in enumerate(seq[fi]):
+            if (fi, i) in band:
+                c["running"] = True
+                continue
+            t = tid_of.get((fi, i))
+            if t is None and len(np.asarray(c["pts"])) >= 2:
+                s = np.asarray(c["pts"], float)[::4]
+                best = (LABEL_TOL_FRAC * W, None)
+                for u in range(len(tr_members)):
+                    mf = min(tr_members[u], key=lambda m: abs(m[0] - fi))[0]
+                    if _steps(min(mf, fi), max(mf, fi)) > LINK_GAP_MAX:
+                        continue
+                    ms = next(np.asarray(seq[m[0]][m[1]]["pts"], float)[::4]
+                              for m in tr_members[u] if m[0] == mf)
+                    cc = float(np.median(_dist_to_curve(s, ms)))   # DIRECTED: is THIS curve on that locus?
+                    if cc < best[0]:                               # (set-cost would let a sprawling garbage
+                        best = (cc, u)                             # arc 'contain' the rail and steal its name)
+                t = best[1]
+            c["running"] = bool(t is not None and _is_racing(t))
     return seq
 
 

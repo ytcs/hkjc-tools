@@ -357,6 +357,21 @@ The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled
 `exp_pixtag{,_R02A}/` (kept=green/dropped=red). Caches `data_cache/_railclean_{R08,R02A}.npz`. Studies are
 thin drivers `studies/cv_rail_exp_{pixtag,fit,global}.py`; algorithm lives in `hkjc.vision.feeds.aerial_rail`.
 
+### IDENTITY REWORK IN FLIGHT (journal 0122, branch `cv-rail-identity-threads`) — read 0122 first
+The owner found racing↔fixed swaps SURVIVING mid-video on R08 (the 0121 windowed swap re-decides per
+frame; a sustained swap becomes its own majority). Identity was rebuilt GLOBAL in `thread_rails`
+(replaces `_assign_racing_by_radius` + `couple_rails`): confident-curve TRACKLETS (relative 2x2 linking;
+lone-curve links capped below the config-A pair gap), support-OCCUPANCY confidence (kills the f690
+fabricated text-arc class — extent alone is not rail evidence), a BAND state for the config-A merged
+pair (label racing, restart identity at the split), co-occurrence BIPARTITION + one wider-radius vote
+per component (side-of-common-CENTER, projection-robust; owner rule: racing = the wider/further rail,
+HKJC_SPECS §1). `_split_pair`+`_decouple_pair` were unified into `_split_band` (midline-side, one
+mechanism). Standing principle (owner): **no downstream step may assume upstream output is correct.**
+State: R02A turn (f600-724) repaired; naming bits per component partially adjudicated (comp 8/13 correct,
+comp 14 suspect, comp 10 unresolved); **R08 not yet re-verified under this build — re-render + §0b
+red-team audit both races before promoting/merging.** Owner asked for an R08 pixel-level regression
+TRIPWIRE (freeze per-frame curves+labels npz + pytest diff) once R08 is re-confirmed.
+
 ## 9. Journal trail
 
 0073 (feed map) · 0075 (aerial render-inversion) · 0076 (patrol) · 0077 (fusion spine + shared clock)
