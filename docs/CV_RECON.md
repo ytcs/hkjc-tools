@@ -298,21 +298,29 @@ The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled
   1. ~~**Green-on-artifacts** (R02A f340, f2052–2088)~~ — **RESOLVED by the Phase-1 pixtag continuity gate
      (journal 0119).** f340/f2052/f2070 now show only the correct racing rail; the disclaimer-text / grandstand /
      minimap band is dropped. The far/blue rail stays correct.
-  2. **Rail-separation weave/crossing** (R02A f694–710): as the two close rails diverge into the bend, the two
-     threads lose association — each curve follows one rail then crosses to the other (green/blue intersect).
-     Root = per-frame association with no GLOBAL non-crossing constraint. **(→ Phase 2; unchanged by pixtag.)**
+  2. ~~**Rail-separation weave/crossing** (R02A f694–710)~~ — **was an OVERLAY ARTIFACT, not a library defect.**
+     The library returns a correct short outer SEGMENT there (fit-to-pixel med_dist ~0.6 px); the driver's
+     circle-based `backproject_fixed_r` fill EXTRAPOLATED that sliver across the box → a straight line shooting
+     off the curving rail (the "floating outer"). Removed the fill: the driver now draws the DIRECT support fit
+     (commit `4b91784`); f694/702/710 verified clean (short segments ON the pixels), R08 gold spans edge-to-edge
+     unchanged. Advances the NO-circles directive (`backproject_fixed_r`/`build_kappa`/`radius_at` now dead in
+     the active path — kept only until Phase 2 lands their non-circular replacement).
   3. R02A single-rail FILL (651 frames) + R08 f816/f956 — the far rail is faint/gappy / out-of-band but smooth
      in odometer-s and present in neighbours. **(→ Phase 2 fill; not chased with a gate bandaid — that re-admits text.)**
 
 ### NEXT WAVE
   - **Phase 1 — PIXTAG precision — DONE (journal 0119).** Continuity (occ) OR thinness (spread) keep rule;
     killed the green-on-artifacts class; R08 gold held, R02A zero-rail 22→0. See CURRENT STATE above.
-  - **Phase 2 — GLOBAL geometry + physics second pass (GENERAL SMOOTH CURVES, NO circles):** model each rail
-    as a smooth curve evolving smoothly with odometer arclength `s`; COUPLE the pair (concentric, NON-CROSSING,
-    separation a smooth positive function of `s`); robust global fit to Phase-1 per-frame curves (outliers —
-    crossings, jumps, text residue — get zero weight and are re-derived from the model). Vetoes the f694–710
-    weave (non-crossing), residual jumps (`s`-smoothness), fills overlap/single-rail. Image-space first;
-    ground-space (odometer-anchored, non-circular) is the eventual home and also yields the §7 absolute metre.
+  - **Phase 2 — GLOBAL geometry + physics second pass (GENERAL SMOOTH CURVES, NO circles).** The per-frame
+    LIBRARY output is now correct (racing rail everywhere; outer = correct where seen, short/absent in config-A
+    reality), so Phase 2 is no longer a pathology fix — it is the SPANNING + FILL + metric layer: model each
+    rail as a smooth curve evolving smoothly with odometer arclength `s`; COUPLE the pair (NON-CROSSING,
+    separation a smooth positive function of `s`); robust global fit to the Phase-1 per-frame curves (jumps /
+    text residue get zero weight, re-derived from the model). Fills the far rail on single-rail frames (it is
+    smooth in `s` + present in neighbours: R08 f816/f956, the 651 R02A singles) and provides principled
+    edge-to-edge spanning to replace the removed circle fill. Image-space first; ground-space (odometer-
+    anchored, non-circular) is the eventual home and also yields the §7 absolute lateral metre. **Owner to
+    review the global-model design before build (per the standing request).**
   - Then: wire the promoted perception into the 4-feed fusion + ablate the legacy `select_running_rail`.
 
 **Diag sets (current, regenerated from HEAD):** `data_cache/diag/exp_railfit{,_R02A}/` (rail fit) +
