@@ -613,6 +613,24 @@ def _decouple_pair(run_pix, out_pix, run_curve, out_curve, box):
     return cb, pb, ca, pa
 
 
+TRIM_FAC = 0.014            # frac of W (~13 px): a rail-curve vertex is SUPPORTED if a clean pixel lies
+                            # within this -- above a rail's own thickness/wobble (~spread <=9 px), below a
+                            # real drift (>=20 px). Used to clip over-extended/drifted curve ENDS.
+
+
+def _trim_to_support(curve, pix, band):
+    """Clip a rail curve to the span actually backed by pixels: drop the LEADING/TRAILING vertices whose
+    nearest clean pixel is farther than ``band`` (interior gaps/dashes are preserved). Kills the deg-2
+    end over-curving off the rail into turf (f720 left peel-off) and the turn-margin drift (f642), without
+    fabricating -- a shorter honest rail. Returns the trimmed polyline (or the original if too sparse)."""
+    C = np.asarray(curve, float)
+    P = np.asarray(pix, float) if pix is not None else np.zeros((0, 2))
+    if len(P) < 2 or len(C) < 3:
+        return curve
+    sup = np.where(_dist_to_curve(C, P) <= band)[0]
+    return C[sup[0]:sup[-1] + 1] if len(sup) >= 2 else curve
+
+
 def _fit_gather(pts, seed_mask, box, band=None, iters=4):
     """Fit a rail to seed pixels, then iteratively GATHER all clean pixels within ``band`` of the curve
     and refit -- bridges fragmentation so the curve covers the WHOLE rail. Returns (curve, member_mask)."""
@@ -765,6 +783,9 @@ def track_sequence(keys, clean, box=None):
         # reproduces the two separated rails, running mapped back by proximity).
         if out_curve is not None and (_support_resid(run_pix, run_curve) > WEAVE_FAC * W or gmin < CLOSE_FAC * W):
             run_curve, run_pix, out_curve, out_pix = _decouple_pair(run_pix, out_pix, run_curve, out_curve, box)
+        run_curve = _trim_to_support(run_curve, run_pix, TRIM_FAC * W)   # clip drifted/over-curved ends
+        if out_curve is not None:
+            out_curve = _trim_to_support(out_curve, out_pix, TRIM_FAC * W)
         sel = [dict(pts=run_curve, running=True, pix=run_pix)]
         if out_curve is not None:
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))
