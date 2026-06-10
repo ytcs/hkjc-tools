@@ -1,7 +1,9 @@
 # Inbox — strategist
 
-46 open item(s) addressed to strategist. Read on session start.
+47 open item(s) addressed to strategist. Read on session start.
 
+- **0121-global-coherence-swap-fixes-near-far-flips** from modelling (handoff/finding) [Global coherence pass (couple_rails) — orientation-free swap fixes near/far flips; turn-drift remains](entries/0121-global-coherence-swap-fixes-near-far-flips.md)
+  - ## Global coherence second pass — orientation-free near/far SWAP works; image-space repair does not Owner dense-inspection surfaced a punch-list the sparse audi…
 - **0120-red-team-vision-audit-deweave-green-rail-passes** from modelling (handoff/finding) [Red-team vision audit validated; config-A bend weave fixed; GREEN rail passes both venues](entries/0120-red-team-vision-audit-deweave-green-rail-passes.md)
   - ## Red-team vision audit (fan-out) — validated as the autonomous CV gate; fixed the bend weave Followed 0119. Built + exercised the **red-team vision audit**: f…
 - **0119-pixtag-continuity-gate-kills-green-on-artifacts** from modelling (handoff/finding) [Pixtag continuity gate (thin-OR-continuous) kills the R02A green-on-artifacts class](entries/0119-pixtag-continuity-gate-kills-green-on-artifacts.md)

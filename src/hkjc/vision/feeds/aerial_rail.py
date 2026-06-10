@@ -770,7 +770,8 @@ def track_sequence(keys, clean, box=None):
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))
         out[fi] = sel
         prev_run, prev_out = run_curve, out_curve
-    _assign_racing_by_radius(out)
+    _assign_racing_by_radius(out)        # GLOBAL near/far identity (which side is racing)
+    couple_rails(out, box)               # PER-FRAME temporal coherence: swap flips, repair glitches
     return out
 
 
@@ -800,6 +801,91 @@ def _assign_racing_by_radius(seq):
         for v in seq.values():
             for c in v:
                 c["running"] = not c["running"]
+
+
+# --------------------------------------------- GLOBAL temporal coherence (the Phase-2 second pass)
+COUPLE_WIN = 20             # +/- frame half-window for the robust reference (wide enough that a sustained
+                            # glitch stretch stays a MINORITY of the window -> the median ref stays correct)
+COUPLE_N = 7                # points sampled along each rail (orientation-free curve fingerprint)
+COUPLE_SWAP_MARGIN = 0.012  # frac of W (~11 px): swap running<->outer iff the OTHER rail fits the reference
+                            # better by this margin (a near/far FLIP is off by ~1 rail separation)
+COUPLE_OUT_FAC = 0.05       # frac of W (~47 px): running deviates from the reference by more than this ->
+                            # a GLITCH (wrong structure / collapsed fit) -> rebuild from the reference
+
+
+def _sample_curve(curve, n: int = COUPLE_N):
+    """Orientation-FREE fingerprint: n points evenly along the rail, ordered by (x, then y). Works for a
+    near-vertical rail (steep down-track camera) as well as a horizontal one -- the y-at-fixed-x sampling
+    it replaces went NaN on vertical rails and so could not see them. Returns (n, 2) or None."""
+    P = np.asarray(curve, float)
+    if len(P) < 2:
+        return None
+    P = P[np.lexsort((P[:, 1], P[:, 0]))]
+    return P[np.linspace(0, len(P) - 1, n).astype(int)]
+
+
+def couple_rails(seq, box):
+    """GLOBAL temporal-coherence second pass (Phase 2, journal 0121). The rails are STATIC; the camera
+    moves smoothly, so each rail's image curve is a SMOOTH function of frame index. Fingerprint the
+    running rail by ``COUPLE_N`` points along it, build a robust reference (per-point median over a frame
+    window), then per frame:
+      * SWAP running<->outer when the outer fits the reference better (fixes a near/far FLIP / wrong-rail
+        -- f1900-66, R08 f588; orientation-free, so it also catches the vertical-rail case f642/f668 where
+        the correct rail was the OTHER thread);
+      * REPAIR a gross outlier (wrong structure / collapsed-vertical glitch) by rebuilding the curve
+        through the reference points -- only when the reference is solid and nothing on-frame matches.
+    The global racing-rail vote (_assign_racing_by_radius) sets WHICH side is racing; this enforces only
+    PER-FRAME consistency. Image-space, field-free, non-circular. Mutates ``seq`` in place."""
+    keys = sorted(seq)
+    if len(keys) < 5:
+        return seq
+    W = box[1] - box[0]
+    nan = np.full((COUPLE_N, 2), np.nan)
+
+    def _run(fi):
+        r = [c for c in seq[fi] if c["running"]]
+        return r[0] if r else None
+
+    def _out(fi):
+        o = [c for c in seq[fi] if not c["running"]]
+        return o[0] if o else None
+
+    S_run = [(_sample_curve(_run(fi)["pts"]) if _run(fi) is not None else None) for fi in keys]
+    S_out = [(_sample_curve(_out(fi)["pts"]) if _out(fi) is not None else None) for fi in keys]
+    arr = np.array([s if s is not None else nan for s in S_run])
+
+    def _cost(s, r):
+        if s is None or r is None or not np.isfinite(r).all():
+            return np.inf
+        return float(np.median(np.hypot(s[:, 0] - r[:, 0], s[:, 1] - r[:, 1])))
+
+    swap_margin, out_tol = COUPLE_SWAP_MARGIN * W, COUPLE_OUT_FAC * W
+
+    def _ref(i):
+        lo, hi = max(0, i - COUPLE_WIN), min(len(keys), i + COUPLE_WIN + 1)
+        block = arr[lo:hi][~np.isnan(arr[lo:hi]).any(axis=(1, 2))]
+        if len(block) < 3:
+            return None
+        med = np.median(block, axis=0)                          # pass 1: robust to a minority of glitches
+        inl = block[[_cost(b, med) <= out_tol for b in block]]  # pass 2: drop the window's own outliers
+        return np.median(inl, axis=0) if len(inl) >= 3 else med
+    for i, fi in enumerate(keys):
+        ref = _ref(i)
+        if ref is None:
+            continue
+        cr, co = _cost(S_run[i], ref), _cost(S_out[i], ref)
+        if np.isfinite(co) and co + swap_margin < cr:           # near/far flip -> swap this frame
+            for c in seq[fi]:
+                c["running"] = not c["running"]
+            S_run[i], S_out[i] = S_out[i], S_run[i]
+            arr[i] = S_run[i] if S_run[i] is not None else nan
+        # NOTE: only the relabel (swap) is applied -- a low-risk, orientation-free repair of near/far
+        # FLIPS. The earlier curve-rebuild-from-reference was REMOVED: an image-space frame-window
+        # reference is not valid through fast camera ROTATION (the rail sweeps vertical at a turn while
+        # the window is mostly horizontal), so rebuilding there FABRICATED a floating curve (f642/f668).
+        # Fixing the rotating-turn frames needs an odometer-anchored / rotation-compensated reference
+        # (CV_RECON Phase 2 'smooth in s'; journal 0115 R3), out of scope for this image-space pass.
+    return seq
 
 
 # ------------------------------------------------------------------ top-level pipeline (one race video)
