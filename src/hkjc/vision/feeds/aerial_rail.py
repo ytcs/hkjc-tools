@@ -458,12 +458,16 @@ def _frame_axes(pts):
     return mu, vt[0], vt[1]
 
 
-def _fit_extend(pts, mu, u, v, box, deg=2):
+def _fit_extend(pts, mu, u, v, box, deg=3):
     """Orientation-free fit of one rail, evaluated across the pixel SUPPORT along the PCA major axis.
     NO extrapolation: clean rail pixels already span the frame, so the support-fit spans edge-to-edge;
-    blind extension across the box shoots tilted segments diagonally (the f600 X-crossing artifact)."""
+    blind extension across the box shoots tilted segments diagonally (the f600 X-crossing artifact).
+    deg-3 (cubic): a parabola UNDER-curves at a sharp bend END (the rail there bends faster than quadratic),
+    leaving the fitted end ~10-15 px off the rail; a cubic follows the arc end onto the rail. On a straight
+    the cubic terms vanish (stays straight), and the 2.5-sigma robust reweighting suppresses wiggle."""
     q = pts - mu
     t, w = q @ u, q @ v
+    deg = min(deg, max(1, len(pts) // 4))                     # guard: enough pts to constrain the cubic
     c = np.polyfit(t, w, deg)
     for _ in range(3):
         r = w - np.polyval(c, t)
@@ -614,8 +618,10 @@ def _decouple_pair(run_pix, out_pix, run_curve, out_curve, box):
 
 
 TRIM_FAC = 0.014            # frac of W (~13 px): a rail-curve vertex is SUPPORTED if a clean pixel lies
-                            # within this -- above a rail's own thickness/wobble (~spread <=9 px), below a
-                            # real drift (>=20 px). Used to clip over-extended/drifted curve ENDS.
+                            # within this -- above a rail's thickness/wobble + the deg-3 fit's residual,
+                            # below a gross drift/peel (>=20 px). Clips only the leading/trailing unsupported
+                            # run, so interior dash gaps are safe. (The bend-END under-curve is fixed in the
+                            # FIT -- deg-3 follows a sharp arc -- not by an aggressive trim, which over-clips.)
 
 
 def _trim_to_support(curve, pix, band):
