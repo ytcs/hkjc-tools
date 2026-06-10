@@ -170,3 +170,21 @@ def content_box(panel):
     if len(cols) == 0 or len(rows) == 0:
         return 0, panel.shape[1], 0, panel.shape[0]
     return int(cols[0]), int(cols[-1]) + 1, int(rows[0]), int(rows[-1]) + 1
+
+
+def legend_top(panel) -> int:
+    """Top panel-row of the bottom SILK-LEGEND strip (a dense row of saturated boxes low in the panel).
+    Above this there is no legend. The reconstruction no longer cuts at the legend (the outer rail
+    survives below it), so this is a DIAGNOSTIC helper for overlays; falls back to 0.80*h. cv2 lazy."""
+    import cv2
+    import numpy as np
+
+    h = panel.shape[0]
+    hsv = cv2.cvtColor(panel, cv2.COLOR_BGR2HSV)
+    vivid = ((hsv[:, :, 1] > 110) & (hsv[:, :, 2] > 110)).astype(np.uint8)
+    band = vivid.sum(1).astype(float)
+    band[:int(0.65 * h)] = 0
+    if band.max() < 0.10 * panel.shape[1]:
+        return int(0.80 * h)
+    rows = np.where(band > 0.30 * band.max())[0]
+    return int(rows.min()) if len(rows) else int(0.80 * h)

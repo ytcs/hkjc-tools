@@ -26,9 +26,9 @@ CACHE = f"data_cache/_railclean_{RACE}.npz"
 def main():
     import av
     import cv2
-    from cv_rail_prep import _legend_top
 
     from hkjc.vision.aerial_layout import content_box as _content_box
+    from hkjc.vision.aerial_layout import legend_top as _legend_top
     from hkjc.vision.aerial_layout import render_active
     from hkjc.vision.feeds.aerial_rail import clean_pixels
     os.makedirs(OUTDIR, exist_ok=True)
