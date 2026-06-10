@@ -325,6 +325,9 @@ SEED_FAC = 0.0126           # temporal seed band, ~12 px @949
 NOCROSS_FAC = 0.006        # min rail-rail gap: reject coincident/crossing (gap~0); ALLOW a close parallel pair (~6px+@949). Config-A near+far rails sit ~15px apart -> must pass.
 MAXSEP_FAC = 0.36           # max plausible rail separation, ~340 px @949
 RLINE_FAC = 8.4             # straight-vs-arc radius threshold, ~8000 px @949 (x W)
+CLOSE_FAC = 0.05            # rail-pair min image gap (frac of W, ~47 px @949) below which the two rails run
+                            # close enough to risk a weave/stray -> run the midline-side de-weave. Config-A
+                            # near+far converge to ~8 px; R08 config-C rails stay well clear -> no trigger.
 WEAVE_FAC = 0.0084          # running-support residual-about-its-fit (frac of W, ~8 px @949) above which
                             # the thread has absorbed BOTH close rails (one deg-2 can't follow the pair, so
                             # the residual blows up ~15-20 px) -> trigger the coupled de-weave. A single
@@ -573,24 +576,38 @@ def _support_resid(pix, curve):
     return float(np.median(_dist_to_curve(P, curve)))
 
 
-def _decouple_pair(run_pix, out_pix, run_curve, out_curve, box, iters=4):
-    """De-WEAVE two CLOSE rails that the running thread swallowed into one blob (its support spans both,
-    so the deg-2 fit zig-zags between them -- the config-A bend weave, journal 0120). Repartition the
-    UNION of both threads' pixels by NEAREST curve and refit each thread on its EXCLUSIVE set, iterating:
-    two curves cannot both own the same pixel, so they relax onto the two separate rails. Field-free,
-    non-circular (general deg-2 curves, no arc/centre fit). Returns (run_curve, run_pix, out_curve, out_pix)."""
+def _decouple_pair(run_pix, out_pix, run_curve, out_curve, box):
+    """Separate two CLOSE rails the threads may have WEAVED or CROSSED across (config-A bends: f826 green
+    rides the fixed rail at one end and the racing rail at the other -- a smooth CROSS). Split by SIDE of
+    the pair's joint MIDLINE: fit one deg-2 through the UNION of both threads' pixels, then assign each
+    pixel by the SIGN of its perpendicular offset from that midline. Side is consistent along the whole
+    span (unlike nearest-curve, which is a fixed point under a crossing and cannot undo it; unlike a
+    global perp 2-means, which merges as the pair diverges), so this UNCROSSES a crossing AND separates a
+    diverging pair. Running <- the side nearer the original running curve. Field-free, non-circular.
+    Returns (run_curve, run_pix, out_curve, out_pix); unchanged if the split is not cleanly two-sided."""
     mr = _mr(box)
     pool = np.vstack([np.asarray(run_pix, float), np.asarray(out_pix, float)]) if len(out_pix) else np.asarray(run_pix, float)
-    rc, oc = run_curve, out_curve
-    for _ in range(iters):
-        rmask = _dist_to_curve(pool, rc) <= _dist_to_curve(pool, oc)
-        if rmask.sum() < mr or (~rmask).sum() < mr:
-            break
-        rp, op = pool[rmask], pool[~rmask]
-        rc = _fit_extend(rp, *_frame_axes(rp), box)
-        oc = _fit_extend(op, *_frame_axes(op), box)
-    rmask = _dist_to_curve(pool, rc) <= _dist_to_curve(pool, oc)
-    return rc, pool[rmask], oc, pool[~rmask]
+    if len(pool) < 2 * mr:
+        return run_curve, run_pix, out_curve, out_pix
+    mu, u, v = _frame_axes(pool)
+    t, w = (pool - mu) @ u, (pool - mu) @ v
+    c = np.polyfit(t, w, 2)                          # midline through BOTH rails
+    for _ in range(3):                               # robustify the midline against the wider rail's pull
+        r = w - np.polyval(c, t)
+        s = np.std(r) + 1e-6
+        keep = np.abs(r) < 2.5 * s
+        if keep.sum() > 10:
+            c = np.polyfit(t[keep], w[keep], 2)
+    off = w - np.polyval(c, t)                       # signed perpendicular offset from the midline
+    side = off >= 0
+    if side.sum() < mr or (~side).sum() < mr:        # not cleanly two-sided -> leave as-is
+        return run_curve, run_pix, out_curve, out_pix
+    pa, pb = pool[side], pool[~side]
+    ca = _fit_extend(pa, *_frame_axes(pa), box)
+    cb = _fit_extend(pb, *_frame_axes(pb), box)
+    if np.median(_dist_to_curve(pa, run_curve)) <= np.median(_dist_to_curve(pb, run_curve)):
+        return ca, pa, cb, pb
+    return cb, pb, ca, pa
 
 
 def _fit_gather(pts, seed_mask, box, band=None, iters=4):
@@ -725,20 +742,25 @@ def track_sequence(keys, clean, box=None):
                 out_curve, om = _fit_gather(rest, _dist_to_curve(rest, pseed["pts"]) < gather, box)
                 if out_curve is not None:
                     out_pix = rest[om]
+        gmin = np.inf
         if out_curve is not None:                       # accept partner only if it never crosses the running rail
             g = np.hypot(run_curve[:, None, 0] - out_curve[None, :, 0],
                          run_curve[:, None, 1] - out_curve[None, :, 1]).min(1)
-            if not (g.min() > nocross and float(np.median(g)) < maxsep):
+            gmin = float(g.min())
+            if not (gmin > nocross and float(np.median(g)) < maxsep):
                 out_curve = None
         if out_curve is None:                           # only ONE band found -> maybe a close fixed+racing
             pair = _split_pair(run_pix, box)            # PAIR fit as one (config-A straight, brace-joined)
             if pair is not None:
                 (run_curve, run_pix), (out_curve, out_pix) = pair
-        # DE-WEAVE: if the running thread swallowed BOTH close rails (support spans the pair), the deg-2
-        # fit weaves between them (config-A bends, f690-840). Repartition the pair's pixels by nearest
-        # curve and refit each exclusively -> the two curves relax onto the two rails. R08's separated
-        # crisp rails keep a single-rail spread, so this never triggers there.
-        if out_curve is not None and _support_resid(run_pix, run_curve) > WEAVE_FAC * W:
+        # DE-WEAVE: the running thread can ride BOTH close rails -- either a high-residual zig-zag (it
+        # swallowed the pair) OR a low-residual smooth STRAY where it rides the fixed rail at one end and
+        # the racing rail at the other (f826). Trigger when the support residual is high OR the two rails
+        # run CLOSE somewhere (gmin small -> weave/stray risk). _decouple_pair re-splits by side of the
+        # joint midline -> consistent along the span, so it uncrosses/un-strays. R08's cleanly SEPARATED
+        # rails (gmin large, residual ~1 px) never trigger; if they do it is idempotent (midline-split
+        # reproduces the two separated rails, running mapped back by proximity).
+        if out_curve is not None and (_support_resid(run_pix, run_curve) > WEAVE_FAC * W or gmin < CLOSE_FAC * W):
             run_curve, run_pix, out_curve, out_pix = _decouple_pair(run_pix, out_pix, run_curve, out_curve, box)
         sel = [dict(pts=run_curve, running=True, pix=run_pix)]
         if out_curve is not None:
