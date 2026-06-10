@@ -30,7 +30,8 @@ def test_recon_modules_import_without_cv_deps():
     assert arail.line_candidates and arail.enumerate_lines and arail.select_running_rail
     assert arail.clean_pixels and arail.track_sequence and arail.fit_rails
     assert arail.build_kappa and arail.backproject_fixed_r and arail.radius_at
-    assert alayout.find_layout and alayout.Layout
+    assert arail.extract_rails           # top-level one-video pipeline (clean -> temporal fit)
+    assert alayout.find_layout and alayout.Layout and alayout.render_active and alayout.content_box
     assert gc.shadow_base and gc.plumb_to_hoof
     assert ocr.ocr_numbers and ocr.best_per_number
     assert ident.Identity and ident.build_rf_anchor and ident.augment_silk_lut_from_patrol

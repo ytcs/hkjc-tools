@@ -19,6 +19,9 @@ RECONSTRUCTION (the 0115/0116 redesign — the CURRENT promoted path, validated 
   ``clean_pixels``      -> LOOP 1: candidate-pixel precision by a LONG-SMOOTH-CURVE gate (turf-relative
                            colour + colour-context rejection + adaptive spread). Replaces the per-pixel
                            tagger AND the bottom-legend cut.
+  ``extract_rails``     -> TOP-LEVEL pipeline: one race video -> {keys, clean, seq}. Decode -> keep clean
+                           render frames (``aerial_layout.render_active``) -> LOOP 1 -> LOOP 2. The single
+                           reusable entry point; resolution/letterbox/config-invariant (no per-race tuning).
   ``track_sequence``    -> LOOP 2: per-frame two-rail fit by temporal fit+gather+refit (carry the prev
                            curve as the gather SEED, refit on the CURRENT frame's pixels -> bridges
                            occluded bends with no smearing). Rails fit INDEPENDENTLY; partner accepted
@@ -797,6 +800,41 @@ def _assign_racing_by_radius(seq):
         for v in seq.values():
             for c in v:
                 c["running"] = not c["running"]
+
+
+# ------------------------------------------------------------------ top-level pipeline (one race video)
+def extract_rails(video_path, stride: int = 2, y_top_frac: float = 0.15):
+    """Full aerial RAIL reconstruction for one race video -- the single library entry point (the studies
+    are thin overlay drivers over this). Decodes the replay, keeps only CLEAN render frames
+    (``aerial_layout.render_active`` rejects the live broadcast + dissolve), runs LOOP 1 (``clean_pixels``)
+    on each, then LOOP 2 (``track_sequence``) over the sequence. Resolution/letterbox-invariant (all gates
+    are fractions of the per-frame content width via ``content_box``), so it runs on any race/config/
+    distance with NO per-race tuning. Heavy CV deps (av, cv2) lazy-load.
+
+    Returns a dict: ``keys`` (kept frame indices), ``clean`` (per-frame kept rail-pixel arrays),
+    ``seq`` (``track_sequence`` output: {frame -> [rail dicts with 'pts'/'running'/'pix']})."""
+    import av
+
+    from hkjc.vision.aerial_layout import content_box, render_active
+
+    keys: list[int] = []
+    clean: list = []
+    for i, fr in enumerate(av.open(video_path).decode(video=0)):
+        if stride > 1 and (i % stride):
+            continue
+        full = fr.to_ndarray(format="bgr24")
+        panel = full[:, full.shape[1] // 2:]               # right (render) half of the split screen
+        if not render_active(panel):
+            continue
+        ph = panel.shape[0]
+        cx0, cx1, cy0, cy1 = content_box(panel)
+        y0, y1 = max(cy0, int(y_top_frac * ph)), cy1        # NO legend cut -- the outer rail survives below
+        kept, _dropped = clean_pixels(panel, y0, y1, cx1 - cx0)
+        keys.append(i)
+        clean.append(kept.astype(np.float32))
+    # track_sequence(box=None) derives the content box from the clean-pixel extent -- identical to the
+    # validated study-driver path, so extract_rails reproduces the audited R08/R02A reconstruction.
+    return {"keys": keys, "clean": clean, "seq": track_sequence(keys, clean) if keys else {}}
 
 
 # ------------------------------------------------------ GLOBAL geometry: kappa(s) + fixed-R back-proj

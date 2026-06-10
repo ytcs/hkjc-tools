@@ -17,7 +17,8 @@ import numpy as np
 sys.path.insert(0, "studies")
 
 RACE = os.environ.get("RACE", "R08")
-VID = {"R08": "aerial_20260603_08", "R03": "aerial_20260603_03", "R02A": "aerial_20260520_02"}[RACE]
+VID = {"R08": "aerial_20260603_08", "R03": "aerial_20260603_03", "R02A": "aerial_20260520_02",
+       "R01": "aerial_20260603_01", "R06": "aerial_20260603_06", "AWT": "aerial_awt_20260308_03"}[RACE]
 OUTDIR = "data_cache/diag/exp_pixtag" + ("" if RACE == "R08" else f"_{RACE}")
 CACHE = f"data_cache/_railclean_{RACE}.npz"
 
@@ -25,8 +26,9 @@ CACHE = f"data_cache/_railclean_{RACE}.npz"
 def main():
     import av
     import cv2
-    from cv_rail_prep import _content_box, _legend_top
+    from cv_rail_prep import _legend_top
 
+    from hkjc.vision.aerial_layout import content_box as _content_box
     from hkjc.vision.aerial_layout import render_active
     from hkjc.vision.feeds.aerial_rail import clean_pixels
     os.makedirs(OUTDIR, exist_ok=True)

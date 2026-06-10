@@ -20,7 +20,8 @@ import numpy as np
 sys.path.insert(0, "studies")
 
 RACE = os.environ.get("RACE", "R08")
-VID = {"R08": "aerial_20260603_08", "R03": "aerial_20260603_03", "R02A": "aerial_20260520_02"}[RACE]
+VID = {"R08": "aerial_20260603_08", "R03": "aerial_20260603_03", "R02A": "aerial_20260520_02",
+       "R01": "aerial_20260603_01", "R06": "aerial_20260603_06", "AWT": "aerial_awt_20260308_03"}[RACE]
 CLEAN = f"data_cache/_railclean_{RACE}.npz"
 OUTDIR = "data_cache/diag/exp_railfit" + ("" if RACE == "R08" else f"_{RACE}")
 

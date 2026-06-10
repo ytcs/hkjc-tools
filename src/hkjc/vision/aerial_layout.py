@@ -155,3 +155,18 @@ def render_active(panel) -> bool:
         return False
     gray = cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY)[int(0.34 * ph):int(0.70 * ph)]
     return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= TRACK_LAP_MIN
+
+
+def content_box(panel):
+    """Tight (x0, x1, y0, y1) of the non-letterbox CONTENT in a render panel — the rows/cols that are
+    not the black border. 'Spans the frame' then means spans the CONTENT, not the padded panel, so the
+    rail-span gates are resolution/letterbox-invariant. cv2/numpy lazy-imported."""
+    import cv2
+    import numpy as np
+
+    g = cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY)
+    cols = np.where(g.max(0) > 25)[0]
+    rows = np.where(g.max(1) > 25)[0]
+    if len(cols) == 0 or len(rows) == 0:
+        return 0, panel.shape[1], 0, panel.shape[0]
+    return int(cols[0]), int(cols[-1]) + 1, int(rows[0]), int(rows[-1]) + 1
