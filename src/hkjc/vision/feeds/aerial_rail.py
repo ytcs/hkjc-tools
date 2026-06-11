@@ -896,8 +896,23 @@ def track_sequence(keys, clean, box=None):
         if out_curve is not None:                       # accept partner only if it never crosses the running rail
             g = np.hypot(run_curve[:, None, 0] - out_curve[None, :, 0],
                          run_curve[:, None, 1] - out_curve[None, :, 1]).min(1)
-            gmin = float(g.min())
-            if not (gmin > nocross and float(np.median(g)) < maxsep):
+            gmin, gmed = float(g.min()), float(np.median(g))
+            if gmed < maxsep and gmin <= nocross:
+                # TOUCHING fits: EITHER a spurious coincident line OR an honest close pair whose
+                # fits converged at one end (config-A f1866/f1874: real partner recovered at
+                # median gap ~10-12 px but gmin ~1 px -> rejecting it outright FLAPS pair<->band
+                # every other frame, leaving 1-frame components named on ~zero vote evidence).
+                # Let the ONE pair mechanism adjudicate: a real pair re-splits by midline side
+                # into two separated curves; a coincident/garbage line fails the split and dies.
+                rc2, rp2, oc2, op2 = _decouple_pair(run_pix, out_pix, run_curve, out_curve, box)
+                g2 = np.hypot(rc2[:, None, 0] - oc2[None, :, 0],
+                              rc2[:, None, 1] - oc2[None, :, 1]).min(1)
+                if float(g2.min()) > nocross and float(np.median(g2)) < maxsep:
+                    run_curve, run_pix, out_curve, out_pix = rc2, rp2, oc2, op2
+                    gmin = float(g2.min())
+                else:
+                    out_curve = None
+            elif not (gmin > nocross and gmed < maxsep):
                 out_curve = None
         if out_curve is None:                           # only ONE band found -> maybe a close fixed+racing
             pair = _split_band(run_pix, box, min_sep=PAIR_SEP_FAC * W)   # PAIR fit as one (config-A straight)
