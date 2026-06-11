@@ -410,12 +410,18 @@ The `thread_rails` global identity (design in CURRENT STATE above) replaced `_as
   caught it (R08's fragmented real rails grade to 0.24 per-frame, overlapping text; only the pooled
   judgement separates). **Tripwire passes with all layers live; R02A re-audited (§0b fan-out, 48
   frames, every [hi] owner-verified) — naming polarity correct in all 48, text-arc steal class
-  gone.** Residue (0124, bounded, none naming-bearing): two single-frame text slivers
-  (f2168/f2386 — locally indistinguishable from R08 f818 by the measured numbers) + the f348
-  wall-edge arc; end-drift of real-rail fits through overlays on rotation frames (f640/f674/f646);
-  missing second curve where retention is sparse (honest misses); un-named rotation fragments
-  default to fixed (f680/f686); clean-px speckle on text (LOOP-1 occ≥OCC_HI admits continuous
-  English rows — appearance work under the full re-render + re-audit + re-freeze protocol).
+  gone.** The owner's manual review then surfaced the END-HOOK class (f640/f666/f668: a glyph
+  clump at a rail's tip "supports" a bent deg-3 end through the text rows — below the global
+  pass's resolution, which judges curves as units) → fixed by `_trim_garbage_ends`: amputate a
+  tip iff garbage-graded AND bent ≥12° off the inboard tangent (hooks 15-27°; R08's
+  shredded-but-straight gold tips ≤8° and true bend ends are healthy-graded — both spared;
+  tripwire untouched). Residue (0124, bounded, none naming-bearing): a handful of isolated
+  overlay stubs in y~310-400 (they RESHUFFLE under any change — three independent measurements
+  prove single-shot stubs are locally indistinguishable from honest fragments like R08 f818;
+  closed only by LOOP-1 appearance work under the full re-render + re-audit + re-freeze
+  protocol) + the f348 wall-edge arc; f708 pair-corridor stray (real-rail px, smooth-stray
+  family — Phase 2); missing second curve where retention is sparse (honest misses); un-named
+  rotation fragments default to fixed (f680/f686); clean-px speckle on text (same LOOP-1 leak).
 
 ## 9. Journal trail
 

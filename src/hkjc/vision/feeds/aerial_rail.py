@@ -696,6 +696,70 @@ def _rail_grade_frac(pix, curve, dilate=True):
     return -1.0 if tot == 0 else good / tot
 
 
+ENDHOOK_ANG = 12.0          # deg; a POISONED tip bends off the inboard tangent (measured hooks
+                            # 15-27 deg) while R08's shredded-but-straight noise tips stay <= 8 deg.
+
+
+def _trim_garbage_ends(curve, pix, box):
+    """Amputate a POISONED end (PHILOSOPHY 7b at the sub-curve seam): the per-frame gather can
+    absorb leaked overlay-text px near a rail's end, bending the deg-3 tip off the rail and into
+    the disclaimer rows (R02A f640/f666/f668 hooks). ``_trim_to_support`` cannot clip it -- the
+    bent tip is "supported" by the garbage px themselves, which also turns the hook's unsupported
+    bridge into a protected interior gap. A poisoned tip is the CONJUNCTION of
+      (a) garbage COMPOSITION in the tip window's own support (dilated rail-grade frac <
+          RAILGRADE_FRAC_MIN -- glyph blobs), and
+      (b) the tip BENDING away from the inboard tangent (>= ENDHOOK_ANG).
+    Either alone is honest and spared: R08's occlusion-shredded gold tips are garbage-graded but
+    STRAIGHT (f818/f820/f2196: <= 8 deg), and a true bend end is bent but HEALTHY-graded (the
+    deg-3 follows a real arc, f640 partner end: grade 1.0 at 18 deg). After the cut the orphaned
+    bridge becomes a leading unsupported run, which _trim_to_support then clips. Measured
+    R08+R02A 2026-06."""
+    C = np.asarray(curve, float)
+    P = np.asarray(pix, float) if pix is not None else np.zeros((0, 2))
+    if len(P) < 4:
+        return curve
+    band = TRIM_FAC * _cw(box)
+
+    def _chord(s, lo, hi):
+        m = (s >= lo) & (s <= hi)
+        Q = C[m]
+        if len(Q) < 2:
+            return None
+        v = Q[-1] - Q[0]
+        n = float(np.hypot(*v))
+        return v / n if n > 1e-6 else None
+
+    cos_max = np.cos(np.radians(ENDHOOK_ANG))
+    for _ in range(3):
+        if len(C) < 20:
+            break
+        s = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(C, axis=0).T))])
+        L = s[-1]
+        if L < 60:
+            break
+        d = np.sqrt(((P[:, None, 0] - C[None, :, 0]) ** 2
+                     + (P[:, None, 1] - C[None, :, 1]) ** 2))
+        spx, nd = s[d.argmin(1)], d.min(1)
+        cut = False
+        for tip_lo, tip_hi, in_lo, in_hi in ((0.0, 0.1, 0.2, 0.5), (0.9, 1.0, 0.5, 0.8)):
+            m = (spx >= L * tip_lo) & (spx < L * tip_hi) & (nd <= band)
+            if m.sum() < 4:
+                continue                                   # no evidence -> leave to _trim_to_support
+            if _rail_grade_frac(P[m], C, dilate=True) >= RAILGRADE_FRAC_MIN:
+                continue                                   # honest tip (incl. true bend ends)
+            tdir = _chord(s, L * tip_lo, L * tip_hi)
+            idir = _chord(s, L * in_lo, L * in_hi)
+            if tdir is None or idir is None or abs(float(np.dot(tdir, idir))) > cos_max:
+                continue                                   # straight -> shredded-but-honest tip
+            C = C[s >= L * tip_hi] if tip_lo == 0.0 else C[s <= L * tip_lo]
+            cut = True
+            break                                          # re-derive geometry before the other end
+        if not cut:
+            break
+        C = np.asarray(_trim_to_support(C, P, band), float)
+    return C
+
+
 def _fit_gather(pts, seed_mask, box, band=None, iters=4):
     """Fit a rail to seed pixels, then iteratively GATHER all clean pixels within ``band`` of the curve
     and refit -- bridges fragmentation so the curve covers the WHOLE rail. Returns (curve, member_mask)."""
@@ -853,8 +917,10 @@ def track_sequence(keys, clean, box=None):
         if out_curve is not None and (_support_resid(run_pix, run_curve) > WEAVE_FAC * W or gmin < CLOSE_FAC * W):
             run_curve, run_pix, out_curve, out_pix = _decouple_pair(run_pix, out_pix, run_curve, out_curve, box)
         run_curve = _trim_to_support(run_curve, run_pix, TRIM_FAC * W)   # clip drifted/over-curved ends
+        run_curve = _trim_garbage_ends(run_curve, run_pix, box)          # amputate text-poisoned hooks
         if out_curve is not None:
             out_curve = _trim_to_support(out_curve, out_pix, TRIM_FAC * W)
+            out_curve = _trim_garbage_ends(out_curve, out_pix, box)
         # EMIT gate (PHILOSOPHY 7b): judge the FINAL support too -- a temporally-SEEDED thread can
         # drift onto the disclaimer overlay even though text seeds are rejected at acquisition. A
         # dropped curve is not emitted and never seeds the next frame.

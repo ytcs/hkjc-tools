@@ -86,9 +86,34 @@ Lesson banked in-code: per-frame the classes overlap; per-tracklet they separate
   continuous English rows over the dark stands; killing it needs APPEARANCE work in LOOP 1
   (turf-adjacency / glyph texture) under the full re-render + re-audit + re-freeze protocol.
 
+## Follow-up (owner manual review, same day): the END-HOOK class -> `_trim_garbage_ends`
+
+Owner surfaced f640/f666/f668 (green's end bends off the rail through the disclaimer rows) and
+f708 (minor end cross onto the fixed rail). Anatomy (measured per 10%-arclen end window): the
+hook = a small GLYPH CLUMP at the tip (16-45 px, dilated grade 0.00) which "supports" the bent
+deg-3 end -- `_trim_to_support` cannot clip it, and the hook's unsupported bridge becomes a
+protected interior gap (f640: tip grade 0.00 + two EMPTY windows + healthy rail). The global
+pass could not prevent this because it judges curves as UNITS (existence/identity/naming) and
+never inspects intra-curve geometry; an 86%-healthy curve passes every aggregate gate.
+
+Fix: **poisoned-tip amputation** = the CONJUNCTION of garbage tip composition (dilated grade <
+RAILGRADE_FRAC_MIN) AND tip bend >= `ENDHOOK_ANG` 12 deg off the inboard tangent (hooks measure
+15-27 deg). Either alone is honest and spared: R08's occlusion-shredded gold tips are
+garbage-graded but STRAIGHT (f818/f820/f2196 <= 8 deg) and true bend ends are bent but
+healthy-graded (f640 partner end: 1.0 @ 18 deg). After the cut, _trim_to_support clips the
+orphaned bridge. **Tripwire PASSES untouched; f640/f666/f668 verified fixed on the re-render.**
+
+f708 is NOT this class: its crossed tip is supported by REAL rail px from the wrong rail
+(grade 1.0) -- the smooth-stray family (`_decouple_pair`/Phase-2 corridor geometry), documented.
+Note: each fix RESHUFFLES which isolated overlay stubs survive (the f2166/f2410-2424 slivers
+moved, n=4 tracklet became n=2 and evades the pool rule) -- third independent confirmation that
+single-shot overlay stubs are locally indistinguishable from honest fragments; stop chasing them
+with local rules.
+
 ## Next
 
 1. Re-audit scale-out (R01/R03/R06/AWT) under the gated build.
-2. LOOP-1 appearance pass for the text-px leak (above) with re-render + re-audit + re-freeze.
+2. LOOP-1 appearance pass for the text-px leak (above) with re-render + re-audit + re-freeze —
+   this is what actually closes the isolated overlay stubs AND the end-hook source.
 3. Phase 2 (odometer-anchored smooth-in-s spanning/fill): mid-gap band float, end under-coverage,
-   LOOP-1 dropouts (f564/f956).
+   LOOP-1 dropouts (f564/f956), the f708 pair-corridor stray.
