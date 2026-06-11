@@ -20,12 +20,13 @@ Two layers of CV recon exist:
 2. **Aerial-feed deep revamp (current frontier, §10).** A from-scratch rebuild of the AERIAL feed's
    perception to fix §7 at the source — make the aerial feed alone yield clean 2D paths through bends.
    The v3 rail tracker was falsified at the rotating bend (journal 0115); the redesign was built, validated
-   on R08, and **PROMOTED to `hkjc.vision.feeds.aerial_rail`** (journals 0116→0117). It is now being made
-   **FIELD-FREE and unified on the correct two-rail venue model** (fixed far + movable near/racing rail) to
-   bring **R02A (config A)** up to the R08 standard — see §10 "CURRENT STATE" for the live state, the hard
-   constraints (no field, no circle fits, visual-gate-only), the remaining pathologies, and the next-wave
-   plan (pixtag continuity gate, then a non-circular global smooth-curve second pass). Work is on branch
-   `cv-aerial-r02a-recon`; R08 (1227/1227) is the frozen gold standard. Then wire into the 4-feed fusion.
+   on R08, and **PROMOTED to `hkjc.vision.feeds.aerial_rail`** (journals 0116→0117). It is FIELD-FREE,
+   unified on the correct two-rail venue model (fixed inner + movable racing rail), and rail IDENTITY is
+   now **GLOBAL** (`thread_rails`: tracklets + co-occurrence bipartition + one naming vote per component,
+   journal 0122) — see §10 "CURRENT STATE" for the live state, the hard constraints (no field, no circle
+   fits, visual-gate-only, no-upstream-trust), and the next-wave plan (verification + the non-circular
+   global smooth-curve second pass). Work is on branch `cv-rail-identity-threads`; R08 is the gold
+   standard (pixel-level regression tripwire). Then wire into the 4-feed fusion.
 
 **Where things live now:** the aerial pipeline is `studies/cv_aerial_track_id.py` (detection → rail →
 odometer-anchored field-consensus recon); the rail tracker is `studies/cv_rail_track{3,4}.py`
@@ -34,10 +35,12 @@ odometer obs is `studies/cv_build_obs.py`. Library primitives: `hkjc.vision.{aer
 feeds/aerial_detect}`. Caches/overlays in `data_cache/` (git-ignored).
 
 **Roadmap (priority order):**
-- **Redesign the rail tracker** (§10, journal 0115): v3 collapses at the rotating bend even on R08 (the
-  K=5 image-space window assumes the rail is stationary in-panel, which breaks at 12°/frame rotation).
-  The first-principles fix is a coupled concentric two-rail world model + full-span fit + motion-
-  compensated (ideally homography) tracking + component-level pixel gating — see R1–R5 in §10.
+- **Verify + freeze the rail identity rework** (§10, journal 0122): re-render R08+R02A under the
+  tracklet build, §0b red-team audit both, resolve the remaining per-component naming bits, then freeze
+  the R08 pixel-level regression tripwire. (The 0115 rail-tracker redesign itself is DONE and promoted.)
+- **Phase 2 — global smooth-curve second pass** (non-circular, odometer-anchored "smooth in s"):
+  spanning + far-rail fill + the §7 bend metric; also the principled anchor if image-space naming
+  evidence stays thin on fragmented config-A components.
 - **Generalize detection**: promote a silk-anchored *shape* detector (kills shadow false-positives;
   recall 75–100% on R08/R03/R02A) over the current `detect_avatars` count-forcing (journals 0112/0113).
 - **Then integrate** the revamped aerial perception into the library + the 4-feed fusion, and **ablate**
@@ -57,6 +60,12 @@ pixels. So: (1) overlay every intermediate (boxes, masks, rail, candidates) on t
 (2) zoom in — thumbnails hide mis-placement; (3) sample BROADLY across the race (bends, straights,
 bunched, strung, distant) — failures hide in the un-checked phase; (4) scrutinize EACH sampled
 frame, not a spot-check. Fixes follow from looking, not from metrics.
+
+**And the seam discipline (PHILOSOPHY §7b, owner-directed): no downstream step may assume upstream
+output is correct.** The per-frame fit emits plausible garbage (hedge/margin slivers, a fabricated
+914 px arc through the disclaimer text that passed every extent gate — journal 0122); every later
+pass must gate its evidence independently, contain a wrong input to its own segment, and decide
+global quantities ONCE from pooled evidence rather than chaining per-step decisions.
 
 ### 0b. RED-TEAM VISION AUDIT — fan out parallel subagents to scrutinise the overlays
 
@@ -297,14 +306,25 @@ as ONE band) and they **diverge on bends**. The **grandstand apron/tiers below t
 The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled in). `track_sequence`:
   - **Acquisition (field-free):** primary rail = the curve of largest HORIZONTAL (track-direction) span —
     a vertical blob (bunched-start field, gate post, shadow column) is "long" only via height and is rejected.
-  - **Identity by CONTINUITY** (temporal gather-seed), not field; the running/outer LABEL is never flipped per
-    frame (the swap is gone).
+  - **Tracking by CONTINUITY** (temporal gather-seed), not field; per-frame tracking only maintains the
+    curves — identity/naming is the global second pass (`thread_rails` below).
   - **Two-rail pair handling:** no-cross gate lowered 20 px → 6 px so a legitimately CLOSE parallel pair
-    (~15 px) is accepted while coincident/crossing (gap≈0) is still rejected; `_split_pair` resolves a
-    brace-joined close band into two rails by the BIMODAL perpendicular density (braces = sparse valley).
-  - **NEAR/FAR naming (field-free, GLOBAL):** `_assign_racing_by_radius` — racing = wider-radius rail by a
-    confidence-weighted MAJORITY vote over all two-rail frames (per-frame image radius is perspective-noisy;
-    the global vote is robust: R08 72% / R02A 89%). ONE global decision, flipped once if needed.
+    (~15 px) is accepted while coincident/crossing (gap≈0) is still rejected; **`_split_band`** (ONE
+    mechanism — partition the pixel pool by SIDE of its joint robust midline, refit each side, accept iff
+    both sides have rail-grade support and genuine separation) resolves the brace-joined config-A band,
+    the weave, and the smooth cross. Its TRIGGER (`WEAVE_FAC`/`CLOSE_FAC`) is the domain-of-validity
+    condition, not a bandaid: on widely-separated rails the joint midline collapses onto the denser rail.
+  - **NEAR/FAR identity + naming (field-free, GLOBAL — `thread_rails`, journal 0122):** confident curves
+    (extent ≥ 0.30·W AND support-occupancy ≥ 0.55 — extent alone is not rail evidence) chain into
+    TRACKLETS (relative 2×2 set-distance linking when both rails are seen — rotation-proof; lone-curve
+    links capped below the config-A pair gap, so a broken continuity ENDS the tracklet instead of
+    guessing); a lone curve matching BOTH alive tracklets = the config-A pair MERGED into one band →
+    labeled racing, identity restarts at the split; co-occurrence edges 2-COLOR each component of the
+    tracklet graph and ONE wider-radius vote per component (side-of-common-CENTER — projection-robust;
+    owner rule, HKJC_SPECS §1: racing = the wider/further rail) names which color is racing. A sustained
+    mid-video racing↔fixed swap is impossible by construction. Non-confident slivers inherit a name by a
+    DIRECTED nearest-locus cost and carry no evidence. Replaces `_assign_racing_by_radius` + the
+    windowed `couple_rails` (0121, falsified: a swap sustained past the window became its own majority).
   - **Rail curve = the DIRECT support fit** (fit to the frame's own pixels); the global-κ `backproject_fixed_r`
     is invoked ONLY to fill a genuinely short sliver and only if consistent with the pixels.
   - **PIXTAG continuity gate (Phase 1, journal 0119 — DONE).** `clean_pixels` keeps a spanning line iff it is
@@ -322,7 +342,11 @@ The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled
     The current `backproject_fixed_r` (a fixed-radius CIRCLE) is therefore suspect and slated for removal.
   - **VISUAL inspection on full-res frames is the only gate**; counts/spans are for TRIAGE (selecting frames).
   - **Continuity** cleanly separates rails from HUD text: a real rail's along-length support occupancy is
-    ~0.96–1.0; disclaimer-text / text-contaminated curves are ~0.25–0.54 (word/glyph gaps).
+    ~0.96–1.0; disclaimer-text / text-contaminated curves are ~0.25–0.54 (word/glyph gaps). The same
+    principle at the CURVE level (`_occ_frac`) gates identity evidence — a long fitted arc with patchy
+    support (the R02A f690 fabricated 914 px sweep through the disclaimer text) is NOT a rail observation.
+  - **No upstream trust (PHILOSOPHY §7b)** — every downstream pass gates its own evidence, contains a
+    wrong input to its own segment, and decides global quantities once from pooled evidence.
 
 ### REMAINING PATHOLOGIES (visually identified, owner-confirmed)
   1. ~~**Green-on-artifacts** (R02A f340, f2052–2088)~~ — **RESOLVED by the Phase-1 pixtag continuity gate
@@ -357,20 +381,22 @@ The pipeline is now **FIELD-FREE end-to-end** (the field detector is not dialled
 `exp_pixtag{,_R02A}/` (kept=green/dropped=red). Caches `data_cache/_railclean_{R08,R02A}.npz`. Studies are
 thin drivers `studies/cv_rail_exp_{pixtag,fit,global}.py`; algorithm lives in `hkjc.vision.feeds.aerial_rail`.
 
-### IDENTITY REWORK IN FLIGHT (journal 0122, branch `cv-rail-identity-threads`) — read 0122 first
-The owner found racing↔fixed swaps SURVIVING mid-video on R08 (the 0121 windowed swap re-decides per
-frame; a sustained swap becomes its own majority). Identity was rebuilt GLOBAL in `thread_rails`
-(replaces `_assign_racing_by_radius` + `couple_rails`): confident-curve TRACKLETS (relative 2x2 linking;
-lone-curve links capped below the config-A pair gap), support-OCCUPANCY confidence (kills the f690
-fabricated text-arc class — extent alone is not rail evidence), a BAND state for the config-A merged
-pair (label racing, restart identity at the split), co-occurrence BIPARTITION + one wider-radius vote
-per component (side-of-common-CENTER, projection-robust; owner rule: racing = the wider/further rail,
-HKJC_SPECS §1). `_split_pair`+`_decouple_pair` were unified into `_split_band` (midline-side, one
-mechanism). Standing principle (owner): **no downstream step may assume upstream output is correct.**
-State: R02A turn (f600-724) repaired; naming bits per component partially adjudicated (comp 8/13 correct,
-comp 14 suspect, comp 10 unresolved); **R08 not yet re-verified under this build — re-render + §0b
-red-team audit both races before promoting/merging.** Owner asked for an R08 pixel-level regression
-TRIPWIRE (freeze per-frame curves+labels npz + pytest diff) once R08 is re-confirmed.
+### IDENTITY REWORK STATUS (journals 0122→0123, branch `cv-rail-identity-threads`)
+The `thread_rails` global identity (design in CURRENT STATE above) replaced `_assign_racing_by_radius`
++ `couple_rails` after the owner found racing↔fixed swaps SURVIVING mid-video on R08.
+- **R08: RE-VERIFIED under the tracklet build** (gold + ex-swap frames + 2-batch red-team fan-out;
+  identity correct everywhere) and **FROZEN as the pixel-level regression tripwire** (owner request):
+  `studies/cv_rail_freeze_r08.py` → `data_cache/rail_tripwire_R08.npz` + `tests/test_rail_tripwire.py`
+  (median ≤2 px / p95 ≤15 px / exact labels; skips without data_cache; PASSES). Re-freeze only after
+  a re-verified visual audit. Residual R08 defects frozen as-is (upstream classes, not identity):
+  LOOP 1 dropouts (f564 far rail, f956 near rail) + ~50-250 px end under-coverage on rotation frames.
+- **R02A: 6-batch §0b fan-out (36 frames) found ONE root cause for every naming failure (0123):
+  fabricated disclaimer-text arcs** (occ 0.50-0.85 — the 0.55 occupancy gate cannot separate them
+  from R08's gappy bend rails) **become confident tracklets, and the side-of-center vote then
+  CORRECTLY ranks them wider → the text steals the racing name** (comps 6/7/10; comp 7 additionally
+  stitched a real rail onto a text tracklet via the thresholdless 2×2). Comp 8/13/14 + start/tail
+  are correct. **Next: reject the fabricated-arc class UPSTREAM in the fit (support COMPOSITION —
+  few-long-components vs dozens-of-glyph-blobs), then re-audit; the tripwire is the safety net.**
 
 ## 9. Journal trail
 

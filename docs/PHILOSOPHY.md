@@ -169,6 +169,27 @@ inherited by every causal latent.
 - Enforce it mechanically: build through `AsOfView` and run `assert_no_lookahead` (drift = 0) before
   trusting any number. Never weaken a leak-free path.
 
+### 7b. No stage trusts its upstream — robustness at every seam
+
+In any multi-stage pipeline (the model's infer→couple→price chain, the CV perception stack, the
+backtest assembly), **no downstream step may assume its upstream input is fully correct**. Upstream
+stages fail — partially, plausibly, and silently — so a downstream pass that chains blindly converts
+a local defect into a global one. The discipline at every seam:
+
+- **Gate the evidence**: admit an upstream output as *evidence* only when it passes the stage's own
+  independent check (e.g. a long fitted curve is not a rail until its own support backs it — a
+  fabricated arc through screen text passed every extent gate until an occupancy gate asked the
+  pixels, journal `0122`).
+- **Contain failures**: design links/joins so one wrong input corrupts only its own segment, never
+  the chain after it (tracklets that END at a discontinuity instead of guessing across it).
+- **Aggregate, don't chain**: where a decision is global (an identity, a constant, a label), decide
+  it ONCE from pooled evidence rather than propagating a per-step decision that can lock in an early
+  error.
+
+This is the same epistemic stance as §4 (over-determine, cross-check) applied to *engineering seams*
+instead of physical constants. *(Owner-directed, banked 2026-06; evidence: the R02A far-rail failure
+modes and the f690 fabricated text-arc, journal `0122`.)*
+
 ### 8. The market is the ultimate yardstick — and the edge/trading call is the user's
 
 Preserved from the old philosophy, with the timing inverted (§6): the market remains the **final**
