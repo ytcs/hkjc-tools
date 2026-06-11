@@ -435,6 +435,13 @@ def clean_pixels(panel, y0, y1, content_w, deg=2):
                     # fit->gather with a spread-scaled band so the parabola WALKS along the arc and recovers
                     # the ends. R08 never enters this branch (its rails are below s_base), so it is unchanged.
                     gx, gy = _gather_curve(cands, ln["frame"], band=max(25.0, 8.0 * ln["spread"]))
+                # NOTE on the occ >= OCC_HI admit: a fully-rendered DISCLAIMER ROW over the dark stands
+                # is one CONTINUOUS strip of glyphs (occ ~1.0 -- the "text scatters to occ<=0.7" belief
+                # is false there), so its px DO leak into clean on some R02A frames. A line-level
+                # composition veto here was tried and REVERTED (2026-06): R08's fragmented real bend
+                # rails grade down to 0.24 undilated, fully overlapping text rows (<=0.55) -- the R08
+                # tripwire caught it (570 violated frames, f818 lost a rail). Containment lives
+                # downstream where evidence can be POOLED: thread_rails' tracklet-grade filter.
                 if len(gx):
                     kept_xy.append(np.column_stack([gx, gy]))
     kept = np.unique(np.vstack(kept_xy), axis=0) if kept_xy else np.zeros((0, 2))
@@ -529,7 +536,10 @@ def _enumerate_curves(pts, box, deg=2):
             continue
         raw = np.column_stack([gx, gy])
         mu, u, v = _frame_axes(raw)
-        out.append(dict(pts=_fit_extend(raw, mu, u, v, box), raw=raw, ext=ln["ext"], mid=ln["mid"]))
+        curve = _fit_extend(raw, mu, u, v, box)
+        if not _rail_grade(raw, curve):     # composition gate: never SEED from an overlay-text arc
+            continue
+        out.append(dict(pts=curve, raw=raw, ext=ln["ext"], mid=ln["mid"]))
     return out
 
 
@@ -614,6 +624,76 @@ def _trim_to_support(curve, pix, band):
         return curve
     sup = np.where(_dist_to_curve(C, P) <= band)[0]
     return C[sup[0]:sup[-1] + 1] if len(sup) >= 2 else curve
+
+
+RAILGRADE_EL_MIN = 4.0      # a support component is RAIL-GRADE iff its extent >= this multiple of its
+                            # perp THICKNESS about the curve (p90-p10 of dist-to-curve, on the 3x3-dilated
+                            # mask): rail dashes are thin and curve-aligned (el ~5-300, even a config-A
+                            # pair member offset +-5 px from the band's single fit), text glyphs are
+                            # compact blobs ~as tall as long (el ~1-4). Measured R08+R02A 2026-06:
+                            # scattered-glyph arc comps max 4.0; real dashed-rail comps from 4.4.
+RAILGRADE_FRAC_MIN = 0.40   # ...and a CURVE is rail-grade iff >= this fraction of its support px lies in
+                            # rail-grade components: text arcs (glyph-majority) 0.00-0.15, real rails
+                            # >= 0.6 even occlusion-fragmented (R08 f818) -- margin on both sides.
+
+
+RAILGRADE_TRACKLET_MIN = 0.75   # TRACKLET-level floor on the MEDIAN undilated support grade of the
+                            # members. Per-FRAME the undilated grade cannot separate (R08's fragmented
+                            # bend-rail frames dip to 0.24-0.47, below text rows' 0.55), but a real
+                            # rail's bad frames sit inside a LONG tracklet whose median stays >= ~0.96,
+                            # while a text tracklet is low THROUGHOUT (R02A T05 disclaimer row med
+                            # ~0.40). Pooling the judgement over the tracklet is PHILOSOPHY 7b
+                            # aggregate-don't-chain. Measured R08+R02A 2026-06.
+RAILGRADE_POOL_N = 4        # ...applied only with >= this many members: with fewer there is not
+                            # enough to pool and real fragmented-rail minis (R08 f818: 0.59) overlap
+                            # fence/text-fragment minis (0.57-0.71). At >= 4 members the gap is wide
+                            # open (every real pooled tracklet, both venues: median >= 0.96; the
+                            # text/fence hybrid T33: 0.68). A shorter tracklet is convicted only by
+                            # an EXTREME composition:
+RAILGRADE_EXTREME_MIN = 0.45    # short-tracklet floor: scattered-glyph minis grade <= 0.12; the worst
+                            # known real mini (R08 f818, occlusion-shredded bend rail) grades 0.59.
+
+
+def _rail_grade(pix, curve, dilate=True, frac_min=None):
+    """Support-COMPOSITION gate (PHILOSOPHY 7b): is this curve's support composed like a RAIL (few THIN
+    components hugging the curve -- dashes) rather than like overlay TEXT (dozens of compact glyph
+    blobs) or the horse FIELD row (a continuous line of fat blobs)? Occupancy cannot separate these
+    (a text ROW is along-length continuous, occ up to 1.0; R08's gappy bend rails sit at ~0.6); the
+    perp thickness of each component can. This is what kills the fabricated disclaimer-text arcs
+    (R02A f690/f1650/f2160) that stole the racing name via the naming vote (journal 0123).
+    ``dilate=True`` (the per-frame seed/emit gates) bridges dash fragmentation before grading;
+    ``dilate=False`` (the pooled tracklet judgement) keeps glyphs unmerged, where the text/rail
+    gap is widest."""
+    f = _rail_grade_frac(pix, curve, dilate)
+    return f < 0.0 or f >= (RAILGRADE_FRAC_MIN if frac_min is None else frac_min)
+
+
+def _rail_grade_frac(pix, curve, dilate=True):
+    """Px-weighted fraction of the support lying in rail-grade (thin, curve-aligned) components.
+    Returns -1.0 when there is too little evidence to judge either way."""
+    import cv2
+    P = np.asarray(pix, float) if pix is not None else np.zeros((0, 2))
+    C = np.asarray(curve, float)
+    if len(P) < 4 or len(C) < 2:
+        return -1.0             # too little evidence to judge -> leave to the support-count gates
+    Hm, Wm = int(P[:, 1].max()) + 2, int(P[:, 0].max()) + 2
+    mask = np.zeros((Hm, Wm), np.uint8)
+    mask[np.clip(P[:, 1].astype(int), 0, Hm - 1), np.clip(P[:, 0].astype(int), 0, Wm - 1)] = 1
+    if dilate:
+        mask = cv2.dilate(mask, np.ones((3, 3), np.uint8))
+    n, lbl, st, _c = cv2.connectedComponentsWithStats(mask, 8)
+    good = tot = 0
+    for k in range(1, n):
+        cy, cx = np.where(lbl == k)
+        if len(cx) < 3:
+            continue
+        d = _dist_to_curve(np.column_stack([cx, cy]).astype(float), C)
+        ext = float(max(st[k, cv2.CC_STAT_WIDTH], st[k, cv2.CC_STAT_HEIGHT]))
+        thick = float(np.percentile(d, 90) - np.percentile(d, 10)) + 1.0
+        tot += len(cx)
+        if ext / thick >= RAILGRADE_EL_MIN:
+            good += len(cx)
+    return -1.0 if tot == 0 else good / tot
 
 
 def _fit_gather(pts, seed_mask, box, band=None, iters=4):
@@ -775,6 +855,20 @@ def track_sequence(keys, clean, box=None):
         run_curve = _trim_to_support(run_curve, run_pix, TRIM_FAC * W)   # clip drifted/over-curved ends
         if out_curve is not None:
             out_curve = _trim_to_support(out_curve, out_pix, TRIM_FAC * W)
+        # EMIT gate (PHILOSOPHY 7b): judge the FINAL support too -- a temporally-SEEDED thread can
+        # drift onto the disclaimer overlay even though text seeds are rejected at acquisition. A
+        # dropped curve is not emitted and never seeds the next frame.
+        if out_curve is not None and not _rail_grade(out_pix, out_curve):
+            out_curve, out_pix = None, None
+        if not _rail_grade(run_pix, run_curve):
+            run_curve, run_pix = out_curve, out_pix
+            out_curve, out_pix = None, None
+        if run_curve is None:
+            out[fi] = []
+            miss += 1
+            if miss > 4:
+                prev_run = prev_out = None
+            continue
         sel = [dict(pts=run_curve, running=True, pix=run_pix)]
         if out_curve is not None:
             sel.append(dict(pts=out_curve, running=False, pix=out_pix))
@@ -977,10 +1071,27 @@ def thread_rails(seq):
             else:                                         # continuity broken: contain, do not guess
                 alive = [_new(fi, i0, subs[i0])]
 
+    # ---- tracklet-grade filter (PHILOSOPHY 7b, aggregate-don't-chain): judge each tracklet on the
+    # MEDIAN undilated support composition of its members. A real rail's occlusion-fragmented frames
+    # (R08 f820: 0.47) sit inside a long tracklet whose median stays high; a disclaimer-row or
+    # fence-fragment tracklet is glyph/blob-majority THROUGHOUT (R02A T05 med ~0.40). A dead tracklet
+    # is wholly contained: no votes, no label inheritance, its curves leave the output.
+    dead: set = set()
+    for t, mem in enumerate(tr_members):
+        g = [_rail_grade_frac(seq[fi][i].get("pix"), seq[fi][i]["pts"], dilate=False)
+             for fi, i in mem]
+        g = [x for x in g if x >= 0.0]
+        if not g:
+            continue
+        floor = RAILGRADE_TRACKLET_MIN if len(g) >= RAILGRADE_POOL_N else RAILGRADE_EXTREME_MIN
+        if float(np.median(g)) < floor:
+            dead.add(t)
+
     # ---- co-occurrence edges (two curves in one frame = two different rails) + radius evidence
     edges: dict = {}                                      # (ta, tb) ta<tb -> [w_total, w_first_wider]
     for fi in keys:
-        ts = [(i, tid_of[(fi, i)]) for i in range(len(seq[fi])) if (fi, i) in tid_of]
+        ts = [(i, tid_of[(fi, i)]) for i in range(len(seq[fi])) if (fi, i) in tid_of
+              and tid_of[(fi, i)] not in dead]
         if len(ts) != 2 or ts[0][1] == ts[1][1]:
             continue
         (ia, ta), (ib, tb) = ts
@@ -1031,22 +1142,29 @@ def thread_rails(seq):
         racing_color[cid] = 0 if (wden == 0 or wnum >= 0.5 * wden) else 1
 
     thread_rails.last_debug = dict(tr_members=tr_members, edges=edges, color=color,
-                                   comp_of=comp_of, racing_color=racing_color)   # triage introspection
+                                   comp_of=comp_of, racing_color=racing_color,
+                                   dead=dead)             # triage introspection
 
     # ---- label every curve; slivers inherit the nearest tracklet's name (or stay un-named)
     def _is_racing(t):
         return color[t] == racing_color[comp_of[t]]
 
+    drops: set = set()
     for fi in keys:
         for i, c in enumerate(seq[fi]):
             if (fi, i) in band:
                 c["running"] = True
                 continue
             t = tid_of.get((fi, i))
+            if t in dead:                                  # member of a non-rail tracklet -> contained
+                drops.add((fi, i))
+                continue
             if t is None and len(np.asarray(c["pts"])) >= 2:
                 s = np.asarray(c["pts"], float)[::4]
                 best = (LABEL_TOL_FRAC * W, None)
                 for u in range(len(tr_members)):
+                    if u in dead:
+                        continue
                     mf = min(tr_members[u], key=lambda m: abs(m[0] - fi))[0]
                     if _steps(min(mf, fi), max(mf, fi)) > LINK_GAP_MAX:
                         continue
@@ -1056,7 +1174,19 @@ def thread_rails(seq):
                     if cc < best[0]:                               # (set-cost would let a sprawling garbage
                         best = (cc, u)                             # arc 'contain' the rail and steal its name)
                 t = best[1]
+                # CONTAINMENT (PHILOSOPHY 7b): a curve with NO tracklet anchor, NO label match AND
+                # patchy support is uncorroborated on every axis -- presenting it as a rail is a
+                # fabrication risk (the sparse fence/text-fragment arcs), so it is dropped. A real
+                # rail seen through a fast ROTATION also goes unmatched (the camera moves the rail
+                # past LABEL_TOL per step: R08 f2188-2244) but its support is CONTINUOUS (occ
+                # 0.75-1.0 vs the phantoms' 0.10-0.35) -- self-evidence keeps it, name defaults fixed.
+                if t is None and _occ_frac(c["pts"], c.get("pix")) < THREAD_OCC_MIN:
+                    drops.add((fi, i))
+                    continue
             c["running"] = bool(t is not None and _is_racing(t))
+    if drops:
+        for fi in keys:
+            seq[fi] = [c for i, c in enumerate(seq[fi]) if (fi, i) not in drops]
     return seq
 
 

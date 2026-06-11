@@ -395,8 +395,27 @@ The `thread_rails` global identity (design in CURRENT STATE above) replaced `_as
   from R08's gappy bend rails) **become confident tracklets, and the side-of-center vote then
   CORRECTLY ranks them wider → the text steals the racing name** (comps 6/7/10; comp 7 additionally
   stitched a real rail onto a text tracklet via the thresholdless 2×2). Comp 8/13/14 + start/tail
-  are correct. **Next: reject the fabricated-arc class UPSTREAM in the fit (support COMPOSITION —
-  few-long-components vs dozens-of-glyph-blobs), then re-audit; the tripwire is the safety net.**
+  are correct.
+- **FIXED (0124): support-COMPOSITION gates, layered per PHILOSOPHY §7b.** A support component is
+  rail-grade iff extent ≥ 4.0× its perp thickness about the curve (p90−p10 of dist-to-curve): rail
+  dashes are thin and curve-aligned (el 5-300, a config-A pair member offset ±5 px still passes),
+  text glyphs are compact blobs (el 1-4). Judged independently at THREE seams (`aerial_rail.py`):
+  acquisition (`_enumerate_curves` seeds, dilated, px-frac ≥ 0.40), emit (`track_sequence` final
+  support — a temporally-seeded thread can drift onto the overlay), and the tracklet pool
+  (`thread_rails`: MEDIAN undilated member grade, evidence-scaled — pooled conviction < 0.75 needs
+  ≥ 4 members since real pooled tracklets measure ≥ 0.96; shorter tracklets only by extreme < 0.45,
+  sparing the worst real fragmented mini R08 f818 at 0.59). Plus label containment: an unmatched
+  non-tracklet curve with occ < 0.55 is uncorroborated on every axis → dropped (real rotation
+  fragments keep occ 0.75-1.0). A LOOP-1 line-level veto was tried and REVERTED — the R08 tripwire
+  caught it (R08's fragmented real rails grade to 0.24 per-frame, overlapping text; only the pooled
+  judgement separates). **Tripwire passes with all layers live; R02A re-audited (§0b fan-out, 48
+  frames, every [hi] owner-verified) — naming polarity correct in all 48, text-arc steal class
+  gone.** Residue (0124, bounded, none naming-bearing): two single-frame text slivers
+  (f2168/f2386 — locally indistinguishable from R08 f818 by the measured numbers) + the f348
+  wall-edge arc; end-drift of real-rail fits through overlays on rotation frames (f640/f674/f646);
+  missing second curve where retention is sparse (honest misses); un-named rotation fragments
+  default to fixed (f680/f686); clean-px speckle on text (LOOP-1 occ≥OCC_HI admits continuous
+  English rows — appearance work under the full re-render + re-audit + re-freeze protocol).
 
 ## 9. Journal trail
 
