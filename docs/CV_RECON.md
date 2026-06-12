@@ -410,7 +410,21 @@ The `thread_rails` global identity (design in CURRENT STATE above) replaced `_as
   caught it (R08's fragmented real rails grade to 0.24 per-frame, overlapping text; only the pooled
   judgement separates). **Tripwire passes with all layers live; R02A re-audited (§0b fan-out, 48
   frames, every [hi] owner-verified) — naming polarity correct in all 48, text-arc steal class
-  gone.** The owner's manual review then surfaced the END-HOOK class (f640/f666/f668: a glyph
+  gone.**
+- **CLOSED AT THE SOURCE (0126): video-pooled OVERLAY BANDS.** Per-frame glyph rows (squarish
+  filled comps) pooled over the whole video → static furniture bands (share ≥ 0.20: disclaimer
+  0.39-0.84, legend digits 0.91; brace/dash false rows ≤ 0.04); inside a band, a glyph comp's
+  screen-static px (white in ≥ 0.15 of frames) are erased before candidate extraction
+  (`glyph_rows`/`overlay_bands`/`clean_pixels(overlay=)`; `extract_rails` runs two passes). The
+  meta-law (measured 5×): LOCAL statistics never separate furniture from honest track structure —
+  only pooling does (per-frame variants were each vetoed by R08 collateral). Weak-vote components
+  (wden < 0.05) now IGNORE their noise vote (lineage default; naming-by-continuity was vetoed by
+  the tripwire — don't chain names across breaks the threading refused to link). **R08 gold
+  RE-FROZEN 2026-06-11** after a 7-frame eye audit (all equal-or-better: digit-clutter removal
+  HEALED the f930/f1374 end under-coverage). R02A tracklets consolidated 35→19 (single pair
+  components spanning whole race phases); owner-reported f630/f642/f660/f666/f1268-74 all
+  verified fixed; the LOOP-2 composition gates are now defense-in-depth, simplification
+  candidates after scale-out. The owner's manual review then surfaced the END-HOOK class (f640/f666/f668: a glyph
   clump at a rail's tip "supports" a bent deg-3 end through the text rows — below the global
   pass's resolution, which judges curves as units) → fixed by `_trim_garbage_ends`: amputate a
   tip iff garbage-graded AND bent ≥12° off the inboard tangent (hooks 15-27°; R08's
