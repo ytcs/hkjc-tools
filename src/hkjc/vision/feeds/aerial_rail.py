@@ -678,7 +678,11 @@ def _split_band(pool, box, min_sep):
     ca = _fit_extend(pa, *_frame_axes(pa), box)
     cb = _fit_extend(pb, *_frame_axes(pb), box)
     g = np.hypot(ca[:, None, 0] - cb[None, :, 0], ca[:, None, 1] - cb[None, :, 1]).min(1)
-    if not (min_sep <= float(np.median(g)) <= MAXSEP_FAC * _cw(box)):
+    # Separation judged at p75, not the median: a REAL pair honestly CONVERGES toward the camera's
+    # far end (f1866: median 9.8 px yet p75 14.2 -- genuinely two rails), while a sub-resolution
+    # pseudo-pair is tight EVERYWHERE (f630: median 9.4, p75 9.5). The median knife-edged the two
+    # at 0.36 px apart and the zone flapped band<->pair frame to frame ("rail bouncing").
+    if not (min_sep <= float(np.percentile(g, 75)) <= MAXSEP_FAC * _cw(box)):
         return None
     return ca, pa, cb, pb
 
@@ -1019,7 +1023,11 @@ def track_sequence(keys, clean, box=None):
                 # 4-5 px "pair" is ONE observable rail by policy, and emitting it as two curves
                 # puts the 2x2 below its assignment margin (f628/f630 crossed internally ->
                 # un-nameable 2-frame components). Below the floor it stays a band single.
-                if oc2 is not out_curve and PAIR_SEP_FAC * W <= float(np.median(g2)) < maxsep:
+                # Resolvability judged at p75 of the gap profile (see _split_band): a real pair
+                # converging at one end stays resolved (f1866: med 9.8 / p75 14.2), a uniformly
+                # sub-floor pseudo-pair collapses (f630: p75 9.5) -- the median knife-edged them.
+                if oc2 is not out_curve \
+                        and PAIR_SEP_FAC * W <= float(np.percentile(g2, 75)) < maxsep:
                     run_curve, run_pix, out_curve, out_pix = rc2, rp2, oc2, op2
                     gmin = float(g2.min())
                 else:
@@ -1027,7 +1035,16 @@ def track_sequence(keys, clean, box=None):
             elif not (gmin > nocross and gmed < maxsep):
                 out_curve = None
         if out_curve is None:                           # only ONE band found -> maybe a close fixed+racing
-            pair = _split_band(run_pix, box, min_sep=PAIR_SEP_FAC * W)   # PAIR fit as one (config-A straight)
+            # The split pool is the CORRIDOR, not the gather band: the single fit's 8 px gather
+            # cannot contain a partner ~16 px away (f1854-1862: the upper member's px sat in
+            # `rest`, per-frame enumerate could not span them, and the splittable pair went
+            # unresolved for 5 frames). Pool rest px within 2*PAIR_SEP of the fit before splitting.
+            pool = run_pix
+            if len(rest):
+                near = _dist_to_curve(rest, run_curve) < 2.0 * PAIR_SEP_FAC * W
+                if near.any():
+                    pool = np.vstack([np.asarray(run_pix, float), rest[near]])
+            pair = _split_band(pool, box, min_sep=PAIR_SEP_FAC * W)   # PAIR fit as one (config-A straight)
             if pair is not None:
                 ca, pa, cb, pb = pair                   # run <- side nearer the prior fit (temporal-seed continuity)
                 if np.median(_dist_to_curve(pa, run_curve)) <= np.median(_dist_to_curve(pb, run_curve)):
@@ -1162,13 +1179,14 @@ def thread_rails(seq):
          a wrong link cannot poison anything beyond its own segment. Short slivers carry no identity.
       2. BAND (config-A merge). When a lone curve matches BOTH alive tracklets, the close pair has merged
          into one fitted band: identity is DEGENERATE there. The band frames are labeled RACING (the band
-         contains the racing rail; off by at most the pair gap) and identity RESTARTS at the next split.
-         But the pair's SIDE ORDER is crossing-invariant and the band keeps 1-step in-tolerance
-         continuity throughout, so identity is TRANSPORTED through the merge: the member on side s of
-         the (orientation-chained) band curve at entry is the same physical rail as the member on side
-         s at exit. These BRIDGES let a vote-weak component inherit its naming from a vote-strong
-         neighbor THROUGH the band -- every hop is a link the threading itself trusts (unlike
-         inheritance across refused links, which the tripwire vetoed).
+         contains the racing rail; off by at most the pair gap) and identity RESTARTS at the next split --
+         no coin-flip carried through the merge. Transporting identity THROUGH the band by side-order
+         (member on side s of the band curve at entry = member on side s at exit) was tried and REVERTED:
+         the side reference is the MERGED FIT, which can migrate across the corridor (measured at the
+         f630-664 bend band: racing side +3.7 at entry, -5.8 at exit, zero order flips -- the fit slid
+         past a member), and migration is indistinguishable from camera pan without seeing the members.
+         A vote-weak restarted component therefore keeps the lineage default; the residual cost is that
+         an ISOLATED 1-frame pair between bands may name its sub-PAIR_SEP-scale members by coin flip.
       3. NAME by the venue model (HKJC_SPECS S1, owner): fixed inner/infield rail + movable RACING rail;
          the horses race just outside the racing rail, the WIDER-radius of the pair. Co-occurring
          tracklets are different rails, so the co-occurrence edges 2-COLOR each connected component of the
@@ -1205,8 +1223,6 @@ def thread_rails(seq):
     band: set = set()                                     # (fi, idx) in a merged close-pair band
     alive: list = []                                      # ids of the <=2 extendable tracklets
     in_band = False
-    bandctx = None                                        # orientation-chained side context of the live band
-    bridges: list = []                                    # (t_entry, t_exit) same-physical-rail pairs
 
     def _new(fi, i, s):
         tid_of[(fi, i)] = len(tr_members)
@@ -1219,27 +1235,6 @@ def thread_rails(seq):
         tr_members[t].append((fi, i))
         tr_last[t] = [fi, s]
 
-    def _chord(P):
-        v = P[-1] - P[0]
-        n = float(np.hypot(*v))
-        return v / n if n > 1e-6 else None
-
-    def _side(member, bnd, tang):                         # signed side of a curve vs the band curve
-        nrm = np.array([-tang[1], tang[0]])
-        d = ((member[:, None, 0] - bnd[None, :, 0]) ** 2
-             + (member[:, None, 1] - bnd[None, :, 1]) ** 2)
-        disp = member - bnd[d.argmin(1)]
-        return float(np.median(disp @ nrm))
-
-    def _pair_sides(sa, sb):                              # resolve the hugged member's near-zero side
-        if max(abs(sa), abs(sb)) < 3.0 or (abs(sa) >= 3.0 and abs(sb) >= 3.0 and sa * sb > 0):
-            return None                                   # degenerate / same-side -> no transport
-        if abs(sa) < 3.0:
-            sa = -sb
-        elif abs(sb) < 3.0:
-            sb = -sa
-        return sa, sb
-
     for fi in keys:
         curves = seq[fi]
         subs = [np.asarray(c["pts"], float)[::4] for c in curves]
@@ -1251,7 +1246,6 @@ def thread_rails(seq):
             continue
         if len(conf) >= 2:                                # BOTH rails seen -> identity is RELATIVE
             i0, i1 = conf[0], conf[1]
-            was_band = in_band
             in_band = False
             if len(alive) >= 2:                           # 2x2: order is rotation-proof, no threshold
                 a0, a1 = alive[0], alive[1]
@@ -1275,33 +1269,11 @@ def thread_rails(seq):
                 else:                                     # discontinuity: restart both
                     alive = [_new(fi, i0, subs[i0]), _new(fi, i1, subs[i1])]
             else:
-                t0, t1 = _new(fi, i0, subs[i0]), _new(fi, i1, subs[i1])
-                alive = [t0, t1]
-                # BAND EXIT bridge: sides of the two new members vs the orientation-chained band
-                # curve map them to the entry members (side order cannot flip without a crossing).
-                if was_band and bandctx is not None \
-                        and _steps(bandctx["fi"], fi) <= LINK_GAP_MAX:
-                    ps = _pair_sides(_side(subs[i0], bandctx["cur"], bandctx["tang"]),
-                                     _side(subs[i1], bandctx["cur"], bandctx["tang"]))
-                    if ps is not None:
-                        s0, _s1 = ps
-                        e_pos, e_neg = bandctx["pos"], bandctx["neg"]
-                        bridges.append((e_pos, t0) if s0 > 0 else (e_neg, t0))
-                        bridges.append((e_neg, t1) if s0 > 0 else (e_pos, t1))
-            if not in_band:
-                bandctx = None
+                alive = [_new(fi, i0, subs[i0]), _new(fi, i1, subs[i1])]
         else:                                             # LONE confident curve
             i0 = conf[0]
             if in_band:                                   # still merged: racing by content, no identity
                 band.add((fi, i0))
-                if bandctx is not None:                   # carry the side orientation through the band
-                    t2 = _chord(subs[i0])
-                    if t2 is None or _steps(bandctx["fi"], fi) > LINK_GAP_MAX:
-                        bandctx = None
-                    else:
-                        if float(np.dot(t2, bandctx["tang"])) < 0:
-                            t2 = -t2
-                        bandctx.update(tang=t2, fi=fi, cur=subs[i0])
                 continue
             hits = []
             for t in alive:
@@ -1312,16 +1284,6 @@ def thread_rails(seq):
             if len(hits) >= 2:                            # matches BOTH rails -> the close pair MERGED
                 in_band = True                            # identity degenerates; restart at the next split
                 band.add((fi, i0))
-                tang = _chord(subs[i0])
-                bandctx = None
-                if tang is not None:                      # BAND ENTRY: record which member is on which side
-                    ta, tb = hits[0][1], hits[1][1]
-                    ps = _pair_sides(_side(tr_last[ta][1], subs[i0], tang),
-                                     _side(tr_last[tb][1], subs[i0], tang))
-                    if ps is not None:
-                        sa, _sb = ps
-                        bandctx = dict(tang=tang, fi=fi, cur=subs[i0],
-                                       pos=ta if sa > 0 else tb, neg=tb if sa > 0 else ta)
                 alive = []
             elif hits:
                 _extend(min(hits)[1], fi, i0, subs[i0])
@@ -1412,50 +1374,9 @@ def thread_rails(seq):
         if comp_w[cid] < W_VOTE_MIN:
             racing_color[cid] = 0
 
-    # ---- BAND-BRIDGE naming transport: a vote-weak PAIR component (its tracklets genuinely
-    # co-occur, unlike a long band-content thread) inherits its naming from a vote-strong component
-    # through the band's side-order invariance (see point 2 of the docstring). BFS from strong
-    # components so multi-band chains resolve (turn entry: comp4 -> comp3 -> comp2 -> comp1);
-    # strong components are never overridden; band-content threads (pair-like ratio < 0.5) keep
-    # the racing-by-content default (transporting a MERGED thread's side is ill-defined).
-    cooc = [0] * ncomp
-    memn = [0] * ncomp
-    for t, mem in enumerate(tr_members):
-        memn[comp_of[t]] += len(mem)
-    for fi in keys:
-        ts = [tid_of[(fi, i)] for i in range(len(seq[fi])) if (fi, i) in tid_of]
-        if len(ts) == 2 and ts[0] != ts[1] and comp_of[ts[0]] == comp_of[ts[1]]:
-            cooc[comp_of[ts[0]]] += 2
-    pair_like = [memn[c] > 0 and cooc[c] / memn[c] >= 0.5 for c in range(ncomp)]
-    adj_b: dict = {}
-    for ta, tb in bridges:
-        if ta in dead or tb in dead:
-            continue
-        adj_b.setdefault(ta, []).append(tb)
-        adj_b.setdefault(tb, []).append(ta)
-    fixed_named = {c for c in range(ncomp) if comp_w[c] >= W_VOTE_MIN}
-    frontier = list(fixed_named)
-    seen_c = set(fixed_named)
-    while frontier:
-        nxt = []
-        for cid in frontier:
-            for t in range(len(tr_members)):
-                if comp_of[t] != cid:
-                    continue
-                for u in adj_b.get(t, []):
-                    cu = comp_of[u]
-                    if cu in seen_c or not pair_like[cu]:
-                        continue
-                    src_racing = color[t] == racing_color[cid]
-                    racing_color[cu] = color[u] if src_racing else 1 - color[u]
-                    seen_c.add(cu)
-                    nxt.append(cu)
-        frontier = nxt
-
     thread_rails.last_debug = dict(tr_members=tr_members, edges=edges, color=color,
                                    comp_of=comp_of, racing_color=racing_color,
-                                   comp_w=comp_w, dead=dead, bridges=bridges,
-                                   pair_like=pair_like)   # triage introspection
+                                   comp_w=comp_w, dead=dead)   # triage introspection
 
     # ---- label every curve; slivers inherit the nearest tracklet's name (or stay un-named)
     def _is_racing(t):
