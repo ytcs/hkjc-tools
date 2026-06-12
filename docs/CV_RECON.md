@@ -34,6 +34,18 @@ odometer-anchored field-consensus recon); the rail tracker is `studies/cv_rail_t
 odometer obs is `studies/cv_build_obs.py`. Library primitives: `hkjc.vision.{aerial_layout,feeds/aerial_rail,
 feeds/aerial_detect}`. Caches/overlays in `data_cache/` (git-ignored).
 
+**Current frontier (2026-06-12): HORSE TAGGING (§10b).** Stable per-horse tags on every render
+frame. The detection primitive is settled (journal 0130: class-SEGMENTATION beats the blob/shape
+routes — the avatar core body+vivid+small-white is unique to horses, shadows carry zero core
+classes; white furniture excluded by geometry incl. the venue-model in-track side test); the
+tracking layers run in the FIELD frame (journal 0131: the phase-correlation "ground reference"
+was falsified by member accounting — it locks onto the field itself; field shift is now the
+median matched-det displacement) with furniture separated by pooled motion/structure, and
+chains linked under the co-occurrence exclusion. R08 visually gated: 11 chains ≈ full-race,
+f1600/f2000 exactly one tag per horse. Open: rotated-bend small-avatar recall; FINISH-zone tag
+handoffs; saddlecloth-number binding (legend swatches + draw). Studies:
+`cv_htag_detect.py` / `cv_htag_track.py` / `cv_htag_rails_cache.py`.
+
 **Roadmap (priority order):**
 - **Verify + freeze the rail identity rework** (§10, journal 0122): re-render R08+R02A under the
   tracklet build, §0b red-team audit both, resolve the remaining per-component naming bits, then freeze
