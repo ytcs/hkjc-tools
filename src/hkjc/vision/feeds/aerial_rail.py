@@ -1007,11 +1007,15 @@ def track_sequence(keys, clean, box=None):
                 # median gap ~10-12 px but gmin ~1 px -> rejecting it outright FLAPS pair<->band
                 # every other frame, leaving 1-frame components named on ~zero vote evidence).
                 # Let the ONE pair mechanism adjudicate: a real pair re-splits by midline side
-                # into two separated curves; a coincident/garbage line fails the split and dies.
+                # into two separated curves; a coincident/garbage line fails the split (returned
+                # unchanged) and dies. The split's outputs are side-consistent -- they CANNOT
+                # cross by construction -- so a small end-convergence of the refitted deg-3s is
+                # wobble, not a crossing: re-imposing gmin > nocross here rejected the honest
+                # f1912 pair (median gap 23 px, end wobble 2.5 px) for a 1-frame dropout.
                 rc2, rp2, oc2, op2 = _decouple_pair(run_pix, out_pix, run_curve, out_curve, box)
                 g2 = np.hypot(rc2[:, None, 0] - oc2[None, :, 0],
                               rc2[:, None, 1] - oc2[None, :, 1]).min(1)
-                if float(g2.min()) > nocross and float(np.median(g2)) < maxsep:
+                if oc2 is not out_curve and float(np.median(g2)) < maxsep:
                     run_curve, run_pix, out_curve, out_pix = rc2, rp2, oc2, op2
                     gmin = float(g2.min())
                 else:
