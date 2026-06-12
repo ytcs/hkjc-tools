@@ -60,6 +60,23 @@ dropouts split some horses into big-chain + mid-chain pairs that the overlap exc
 correctly refuses to merge); (c) anonymous tags — the saddlecloth-number binding (legend
 swatches + draw order) is the next layer. R02A (crowd stress) + R03 runs pending.
 
+## Cross-race (R03 + R02A)
+
+- **R03** (757 frames, field 12): 12 substantial chains (333-734 members) + fragments;
+  f700/f1700 verified by eye — every visible horse tagged once. Generalizes.
+- **R02A** (1,126 frames, field 12, the crowd/shadow stress): non-crowd zones CLEAN by eye
+  (f900 shadows, f1600, f2400 — one tag per visible horse; top chains 1,073/1,068/1,037
+  ≈ full race). **Open class: the early-straight CROWD zone (f340-630)** — ~7 crowd dets/
+  frame survive (at f400 both rail sides are turf so the side test is honestly ambiguous,
+  0130), and in DENSE clutter the residual filter is defeated by aliasing: a crowd track
+  can hop dot-to-dot within the gate, riding the field reference (residual ≈ 0 without
+  being one object). 195 crowd tracklets ARE caught by the residual filter; the leak is
+  the hop-aliased remainder. The honest closure is POOLED GROUND-FRAME geometry: the
+  stands are a fixed band along the track, and sidedness pooled from the frames where the
+  fixed rail IS seen (f700+) transports along the rail — Phase-2 (same family as the
+  smooth-in-s rail model), not a per-frame bandaid. Also minor: two legend-edge tags
+  (f1600 tags 47/65) — legend_top cut misses swatch tops by a few px on some frames.
+
 Artifacts: `studies/cv_htag_track.py` (+detector in 0130's `cv_htag_detect.py`); renders
 `data_cache/diag/htag_track_{race}/`; tracks `data_cache/_htag_tracks_{race}.npz`; dets
 cache `data_cache/_htag_dets_{race}.npz` (delete after detector changes).
