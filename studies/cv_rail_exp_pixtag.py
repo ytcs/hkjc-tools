@@ -30,10 +30,29 @@ def main():
     from hkjc.vision.aerial_layout import content_box as _content_box
     from hkjc.vision.aerial_layout import legend_top as _legend_top
     from hkjc.vision.aerial_layout import render_active
-    from hkjc.vision.feeds.aerial_rail import clean_pixels
+    from hkjc.vision.feeds.aerial_rail import clean_pixels, glyph_rows, overlay_bands
     os.makedirs(OUTDIR, exist_ok=True)
     for p in os.listdir(OUTDIR):
         os.remove(os.path.join(OUTDIR, p))
+
+    rows_per_frame = []                            # pass 1: pool glyph rows -> static overlay bands
+    nfr = 0
+    cnt = None
+    for i, fr in enumerate(av.open(f"data_cache/video/{VID}.mp4").decode(video=0)):
+        if i % 2:
+            continue
+        panel = fr.to_ndarray(format="bgr24")[:, fr.width // 2:]
+        if not render_active(panel):
+            continue
+        nfr += 1
+        if cnt is None:
+            cnt = np.zeros(panel.shape[:2], np.uint16)
+        ph = panel.shape[0]
+        cx0, cx1, cy0, cy1 = _content_box(panel)
+        rows_per_frame.append(glyph_rows(panel, max(cy0, int(0.15 * ph)), cy1, cx1 - cx0, cnt=cnt))
+    overlay = dict(bands=overlay_bands(rows_per_frame, nfr), cnt=cnt, n=nfr)
+    print(f"overlay bands: {[(round(a), round(b)) for a, b in overlay['bands']]} "
+          f"shares={[round(s, 2) for s in overlay_bands.last_shares]}")
 
     keys, clean_list = [], []
     n = 0
@@ -47,7 +66,7 @@ def main():
         ph = panel.shape[0]
         cx0, cx1, cy0, cy1 = _content_box(panel)
         y0, y1 = max(cy0, int(0.15 * ph)), cy1                 # NO legend cut (full content band)
-        kept, dropped = clean_pixels(panel, y0, y1, cx1 - cx0)
+        kept, dropped = clean_pixels(panel, y0, y1, cx1 - cx0, overlay=overlay)
         keys.append(i)
         clean_list.append(kept.astype(np.float32))
         vis = panel.copy()

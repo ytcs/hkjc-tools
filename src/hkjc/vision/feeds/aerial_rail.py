@@ -346,16 +346,36 @@ PAIR_SEP_FAC = 0.011        # min near<->far rail separation to RESOLVE a close 
 
 
 # --------------------------------------------------------------------------- LOOP 1: pixel cleaning
-def _thin_components(panel, y0, y1, content_w):
-    """Bright THIN connected components, with pixels + shape stats. NO legend cut. All thresholds are
-    DATA-RELATIVE (no absolute px/colour magic numbers) so the algo survives render drift:
+GLYPH_H_MIN, GLYPH_H_MAX = 6, 20    # glyph stroke/char height range (px at the render's fixed UI scale)
+GLYPH_WH_MAX = 2.5          # glyphs are SQUARISH (w/h <= this); rail dashes are wide-thin (w/h >= ~3 --
+                            # the per-frame trial that omitted this confirmed R08's dash rows as "text")
+GLYPH_FILL_MIN = 0.30       # glyph bbox fill; a thin diagonal dash fills ~0.15-0.25 of its bbox
+ROW_N_MIN = 5               # a per-frame glyph ROW needs >= this many glyph comps...
+ROW_SPAN_FRAC = 0.21        # ...spanning >= this fraction of W (~200 px @949)
+ROW_GAP = 8                 # y-clustering gap for comps into rows / rows into bands (glyph-scale, px)
+OVERLAY_SHARE_MIN = 0.20    # a row BAND is overlay furniture iff confirmed in >= this fraction of the
+                            # video's frames: screen furniture is STATIC so its rows recur all video
+                            # (R02A disclaimer 0.39-0.84, R08 legend digits 0.91), while world structure
+                            # rides the camera (brace/dash false rows: share <= 0.04). The per-frame
+                            # detector CANNOT make this call -- pooling over the video can (the same
+                            # lesson as the tracklet-grade filter, at the px seam).
+OVERLAY_REC_MIN = 0.15      # ...and within a qualifying comp only PX that were white in >= this
+                            # fraction of frames are erased: furniture px are screen-static (digits
+                            # ~0.9, text glyphs >= ~0.3) while a rail CROSSING the band occupies any
+                            # given px only while the camera passes (~0.02) -- so even a rail fragment
+                            # that 8-connects with a static digit comp keeps its own px.
+
+
+def _rail_white_mask(panel, y0, y1, content_w):
+    """The shared LOOP-1 white mask (turf-relative brightness/whiteness + vivid-adjacency reject).
+    All thresholds DATA-RELATIVE (no absolute px/colour magic numbers) so the algo survives render
+    drift:
       * brightness  = turf_median * (1 + BRIGHT_FAC)       (turf-relative; robust to bend shadows)
       * whiteness   = s < WHITE_S_FAC * turf_sat_median    (rail is far less saturated than turf)
       * vivid colour= s > VIVID_S_FAC * turf_sat_median AND v > VIVID_V_FAC * turf_val_median AND
                       hue far (>20 deg) from turf -> silks / legend swatches
     COLOUR-CONTEXT rejection: drop white within ADJ_FAC*W px of a vivid non-turf blob (legend sleeve /
-    jockey silk sits beside vivid colour; a real rail sits on turf). ADJ and the min-component length
-    are fractions of the content width W -> resolution-invariant."""
+    jockey silk sits beside vivid colour; a real rail sits on turf)."""
     import cv2
     band = panel[y0:y1]
     gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
@@ -365,14 +385,96 @@ def _thin_components(panel, y0, y1, content_w):
     turf_g = float(np.median(gray[turf])) if turf.any() else 120.0
     turf_s = float(np.median(s[turf])) if turf.any() else 130.0
     turf_v = float(np.median(v[turf])) if turf.any() else 150.0
-    thr = turf_g * (1.0 + BRIGHT_FAC)                     # rail brighter than turf by a turf-relative margin
     turf_h = float(np.median(h[turf & (s < 120)])) if (turf & (s < 120)).any() else 60.0
     dh = np.minimum(np.abs(h.astype(int) - turf_h), 180 - np.abs(h.astype(int) - turf_h))
     vivid = ((s > VIVID_S_FAC * turf_s) & (v > VIVID_V_FAC * turf_v) & (dh > 20)).astype(np.uint8)
     adj = max(3, int(round(ADJ_FAC * content_w)))
     vivid_near = cv2.dilate(vivid, np.ones((2 * adj + 1, 2 * adj + 1), np.uint8))
-    white = ((gray > thr) & (s < WHITE_S_FAC * turf_s) & (vivid_near == 0)).astype(np.uint8)
-    white = cv2.morphologyEx(white, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+    white = ((gray > turf_g * (1.0 + BRIGHT_FAC)) & (s < WHITE_S_FAC * turf_s)
+             & (vivid_near == 0)).astype(np.uint8)
+    return cv2.morphologyEx(white, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+
+
+def glyph_rows(panel, y0, y1, content_w, cnt=None):
+    """Per-frame GLYPH-ROW detection (pass 1 of the overlay-band rejection): squarish filled comps
+    (text strokes/characters) clustered into y-rows; a row is confirmed iff it has >= ROW_N_MIN
+    glyphs spanning >= ROW_SPAN_FRAC*W. Per-frame this also fires on shredded rails / brace rows --
+    that is EXPECTED and harmless: only bands recurring in >= OVERLAY_SHARE_MIN of the video
+    (``overlay_bands``) are acted on. ``cnt`` (full-panel uint accumulator) gathers the white-mask
+    recurrence map used by the px-level erase. Returns [(y_med, y_min, y_max)]."""
+    import cv2
+    white = _rail_white_mask(panel, y0, y1, content_w)
+    if cnt is not None:
+        cnt[y0:y0 + white.shape[0], :white.shape[1]] += white
+    n, _lbl, st, cen = cv2.connectedComponentsWithStats(white, 8)
+    gly = []
+    for k in range(1, n):
+        w_, h_ = int(st[k, cv2.CC_STAT_WIDTH]), int(st[k, cv2.CC_STAT_HEIGHT])
+        if (GLYPH_H_MIN <= h_ <= GLYPH_H_MAX and w_ >= 3 and w_ / h_ <= GLYPH_WH_MAX
+                and st[k, cv2.CC_STAT_AREA] / float(w_ * h_) >= GLYPH_FILL_MIN):
+            gly.append((float(cen[k][1]) + y0, float(cen[k][0])))
+    gly.sort()
+    rows, cur = [], []
+    for gy, gx in gly + [(1e18, 0.0)]:
+        if cur and gy - cur[-1][0] > ROW_GAP:
+            if (len(cur) >= ROW_N_MIN
+                    and max(x for _, x in cur) - min(x for _, x in cur) >= ROW_SPAN_FRAC * content_w):
+                rows.append((float(np.median([yy for yy, _ in cur])),
+                             min(yy for yy, _ in cur), max(yy for yy, _ in cur)))
+            cur = []
+        cur.append((gy, gx))
+    return rows
+
+
+def overlay_bands(rows_per_frame, nframes):
+    """Pool per-frame glyph rows over the WHOLE video -> static overlay bands (PHILOSOPHY 7b
+    aggregate-don't-chain at the pixel seam). Screen furniture (disclaimer text, legend digit row)
+    sits at the SAME y for the entire video; honest false rows (rail dashes, config-A cross-braces)
+    ride the camera and never accumulate share. ``rows_per_frame`` = iterable of per-frame
+    ``glyph_rows`` results. Returns [(y_lo, y_hi)] confirmed bands."""
+    obs = []
+    for rows in rows_per_frame:
+        for ym, ylo, yhi in rows:
+            obs.append((ym, ylo, yhi))
+    obs.sort()
+    bands, cur, shares = [], [], []
+    for o in obs + [(1e18, 0.0, 0.0)]:
+        if cur and o[0] - cur[-1][0] > ROW_GAP - 2:
+            if len(cur) / max(1, nframes) >= OVERLAY_SHARE_MIN:
+                bands.append((float(np.percentile([c[1] for c in cur], 5)) - 3,
+                              float(np.percentile([c[2] for c in cur], 95)) + 3))
+                shares.append(len(cur) / max(1, nframes))
+            cur = []
+        cur.append(o)
+    overlay_bands.last_shares = shares
+    return bands
+
+
+def _thin_components(panel, y0, y1, content_w, overlay=None):
+    """Bright THIN connected components, with pixels + shape stats. NO legend cut. ``overlay`` =
+    dict(bands=[(y_lo, y_hi)], cnt=recurrence map, n=frames) from the video-level pass: inside a
+    confirmed static band, a GLYPH-shaped comp (squarish h>=6, filled) has its SCREEN-STATIC px
+    (white in >= OVERLAY_REC_MIN of frames) erased before candidate extraction. A rail crossing a
+    band extends beyond it (not contained), a rail dash inside one is wide-thin, and a transient
+    rail fragment 8-connected to a static digit keeps its own low-recurrence px -- all survive by
+    construction (measured: shape-only, containment-only and comp-median variants were each vetoed
+    by the R08 collateral they caused)."""
+    import cv2
+    white = _rail_white_mask(panel, y0, y1, content_w)
+    if overlay is not None and overlay["bands"]:
+        n, lbl, st, _c = cv2.connectedComponentsWithStats(white, 8)
+        cnt, rec_min = overlay["cnt"], OVERLAY_REC_MIN * max(1, overlay["n"])
+        for i in range(1, n):
+            w_, h_ = int(st[i, cv2.CC_STAT_WIDTH]), int(st[i, cv2.CC_STAT_HEIGHT])
+            if not (GLYPH_H_MIN <= h_ and w_ / h_ <= GLYPH_WH_MAX
+                    and st[i, cv2.CC_STAT_AREA] / float(w_ * h_) >= GLYPH_FILL_MIN):
+                continue
+            top = st[i, cv2.CC_STAT_TOP] + y0
+            if not any(top >= lo and top + h_ <= hi for lo, hi in overlay["bands"]):
+                continue
+            ys, xs = np.where(lbl == i)
+            m = cnt[ys + y0, xs] >= rec_min
+            white[ys[m], xs[m]] = 0                       # erase only the screen-static px
     n, lbl, st, _c = cv2.connectedComponentsWithStats(white, 8)
     min_ext = max(5, int(round(PIX_MINCOMP_FAC * content_w)))
     cands = []
@@ -403,9 +505,11 @@ def _gather_curve(cands, frame, band, iters=4):
     return gx, gy
 
 
-def clean_pixels(panel, y0, y1, content_w, deg=2):
-    """Keep only pixels lying on a LONG, LOW-SPREAD smooth curve (a rail). Returns (kept_xy, dropped_xy)."""
-    cands = _thin_components(panel, y0, y1, content_w)
+def clean_pixels(panel, y0, y1, content_w, deg=2, overlay=None):
+    """Keep only pixels lying on a LONG, LOW-SPREAD smooth curve (a rail). ``overlay`` = video-level
+    static furniture bands (see ``overlay_bands``); their glyph comps are rejected at the source.
+    Returns (kept_xy, dropped_xy)."""
+    cands = _thin_components(panel, y0, y1, content_w, overlay=overlay)
     allpts = np.column_stack([np.concatenate([c["xs"] for c in cands]),
                               np.concatenate([c["ys"] for c in cands])]) if cands else np.zeros((0, 2))
     if not cands:
@@ -1027,6 +1131,9 @@ LINK_TOL_FRAC = 0.012       # per-step linking tolerance (~11px @949): kept BELO
 LINK_CAP_FRAC = 0.035       # linking tolerance ceiling across a gap (~33px @949)
 LINK_GAP_MAX = 10           # kept-frame steps a tracklet stays extendable with no confident sighting
 LABEL_TOL_FRAC = 0.02       # a non-confident sliver inherits the nearest tracklet's name within this (~19px)
+W_VOTE_MIN = 0.05           # a component whose TOTAL wider-radius vote weight is below this has no
+                            # usable naming evidence (observed noise floor ~0.006 on 1-frame pairs;
+                            # real evidence 0.28-2.6) -> it inherits by continuity instead.
 
 
 def thread_rails(seq):
@@ -1213,6 +1320,7 @@ def thread_rails(seq):
             stack.extend((v, 1 - c) for v in adj.get(u, []))
         ncomp += 1
     racing_color = [0] * ncomp                            # no radius evidence -> primary lineage = racing
+    comp_w = [0.0] * ncomp
     for cid in range(ncomp):
         wnum = wden = 0.0
         for (a, b), (w_tot, w_first) in edges.items():
@@ -1220,11 +1328,24 @@ def thread_rails(seq):
                 continue
             wden += w_tot                                 # weight where COLOR-0 is the wider rail:
             wnum += w_first if color[a] == 0 else w_tot - w_first
+        comp_w[cid] = wden
         racing_color[cid] = 0 if (wden == 0 or wnum >= 0.5 * wden) else 1
+
+    # WEAK components: a 1-2-frame pair seen through a continuity break carries ~zero radius
+    # evidence (wden ~0.006 vs real evidence 0.28-2.6) -- letting that noise OVERRIDE the lineage
+    # prior is a coin flip (owner-reported f630 lone-blue / f666 swap). Below the floor the vote
+    # is IGNORED and the primary-lineage default stands (col0 = the thread descending from the
+    # running slot). Naming-by-continuity-to-a-neighbor was tried and REVERTED: weak components
+    # are BORN at continuity breaks, exactly where the threading itself refused to link
+    # ("contain, do not guess") -- chaining the name through re-introduces the guess, and the R08
+    # tripwire caught it flipping the f810-816 rotation labels.
+    for cid in range(ncomp):
+        if comp_w[cid] < W_VOTE_MIN:
+            racing_color[cid] = 0
 
     thread_rails.last_debug = dict(tr_members=tr_members, edges=edges, color=color,
                                    comp_of=comp_of, racing_color=racing_color,
-                                   dead=dead)             # triage introspection
+                                   comp_w=comp_w, dead=dead)   # triage introspection
 
     # ---- label every curve; slivers inherit the nearest tracklet's name (or stay un-named)
     def _is_racing(t):
@@ -1280,11 +1401,33 @@ def extract_rails(video_path, stride: int = 2, y_top_frac: float = 0.15):
     are fractions of the per-frame content width via ``content_box``), so it runs on any race/config/
     distance with NO per-race tuning. Heavy CV deps (av, cv2) lazy-load.
 
-    Returns a dict: ``keys`` (kept frame indices), ``clean`` (per-frame kept rail-pixel arrays),
-    ``seq`` (``track_sequence`` output: {frame -> [rail dicts with 'pts'/'running'/'pix']})."""
+    Two passes over the video: pass 1 pools per-frame glyph rows into the video's static OVERLAY
+    bands (``overlay_bands`` -- disclaimer text / legend digit rows), pass 2 cleans with those
+    bands rejected at the source. Returns a dict: ``keys`` (kept frame indices), ``clean``
+    (per-frame kept rail-pixel arrays), ``seq`` (``track_sequence`` output:
+    {frame -> [rail dicts with 'pts'/'running'/'pix']})."""
     import av
 
     from hkjc.vision.aerial_layout import content_box, render_active
+
+    rows_per_frame: list = []                              # pass 1: overlay-band detection
+    nframes = 0
+    cnt = None
+    for i, fr in enumerate(av.open(video_path).decode(video=0)):
+        if stride > 1 and (i % stride):
+            continue
+        full = fr.to_ndarray(format="bgr24")
+        panel = full[:, full.shape[1] // 2:]
+        if not render_active(panel):
+            continue
+        nframes += 1
+        if cnt is None:
+            cnt = np.zeros(panel.shape[:2], np.uint16)
+        ph = panel.shape[0]
+        cx0, cx1, cy0, cy1 = content_box(panel)
+        y0, y1 = max(cy0, int(y_top_frac * ph)), cy1
+        rows_per_frame.append(glyph_rows(panel, y0, y1, cx1 - cx0, cnt=cnt))
+    overlay = dict(bands=overlay_bands(rows_per_frame, nframes), cnt=cnt, n=nframes)
 
     keys: list[int] = []
     clean: list = []
@@ -1298,7 +1441,7 @@ def extract_rails(video_path, stride: int = 2, y_top_frac: float = 0.15):
         ph = panel.shape[0]
         cx0, cx1, cy0, cy1 = content_box(panel)
         y0, y1 = max(cy0, int(y_top_frac * ph)), cy1        # NO legend cut -- the outer rail survives below
-        kept, _dropped = clean_pixels(panel, y0, y1, cx1 - cx0)
+        kept, _dropped = clean_pixels(panel, y0, y1, cx1 - cx0, overlay=overlay)
         keys.append(i)
         clean.append(kept.astype(np.float32))
     # track_sequence(box=None) derives the content box from the clean-pixel extent -- identical to the
