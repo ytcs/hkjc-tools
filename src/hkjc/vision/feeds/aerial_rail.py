@@ -1463,16 +1463,20 @@ def thread_rails(seq):
 
     drops: set = set()
     for fi in keys:
+        info = []                                          # (i, kind, cost_by_name) for reconciliation
         for i, c in enumerate(seq[fi]):
             if (fi, i) in band:
                 c["running"] = True
+                info.append((i, "band", None))
                 continue
             t = tid_of.get((fi, i))
             if t in dead:                                  # member of a non-rail tracklet -> contained
                 drops.add((fi, i))
                 continue
+            kind, byname = "member", None
             if t is None and len(np.asarray(c["pts"])) >= 2:
                 s = np.asarray(c["pts"], float)[::4]
+                byname = {True: np.inf, False: np.inf}     # best locus cost per NAME class
                 best = (LABEL_TOL_FRAC * W, None)
                 for u in range(len(tr_members)):
                     if u in dead:
@@ -1483,9 +1487,11 @@ def thread_rails(seq):
                     ms = next(np.asarray(seq[m[0]][m[1]]["pts"], float)[::4]
                               for m in tr_members[u] if m[0] == mf)
                     cc = float(np.median(_dist_to_curve(s, ms)))   # DIRECTED: is THIS curve on that locus?
+                    byname[_is_racing(u)] = min(byname[_is_racing(u)], cc)
                     if cc < best[0]:                               # (set-cost would let a sprawling garbage
                         best = (cc, u)                             # arc 'contain' the rail and steal its name)
                 t = best[1]
+                kind = "sliver"
                 # CONTAINMENT (PHILOSOPHY 7b): a curve with NO tracklet anchor, NO label match AND
                 # patchy support is uncorroborated on every axis -- presenting it as a rail is a
                 # fabrication risk (the sparse fence/text-fragment arcs), so it is dropped. A real
@@ -1496,6 +1502,25 @@ def thread_rails(seq):
                     drops.add((fi, i))
                     continue
             c["running"] = bool(t is not None and _is_racing(t))
+            info.append((i, kind, byname))
+        # TWO CURVES IN ONE FRAME ARE TWO DIFFERENT RAILS (the co-occurrence axiom): independent
+        # sliver labeling can hand BOTH the same name when their tracklets died in a rotation
+        # (R02A f1988-1994 double-green/double-blue; R08 f810-814 froze the same bug). Reconcile:
+        # a band curve or tracklet member keeps its name; two same-named SLIVERS are assigned by
+        # the 2x2 against the nearest RACING and FIXED loci (the loci are stable across frames, so
+        # the assignment cannot flicker the way "flip the higher-cost one" does on near-duplicate
+        # rotation fragments -- R08 f810/f812 alternated under that rule).
+        if len(info) == 2 and seq[fi][info[0][0]]["running"] == seq[fi][info[1][0]]["running"]:
+            (ia, ka, ba), (ib, kb, bb) = info
+            name = seq[fi][ia]["running"]
+            if ka == "sliver" and kb == "sliver" \
+                    and min(ba[not name], bb[not name]) < np.inf:
+                keep_a = ba[name] + bb[not name] <= ba[not name] + bb[name]
+                seq[fi][ib if keep_a else ia]["running"] = not name
+            else:                                          # band/member outranks a sliver
+                rank = {"band": 0, "member": 1, "sliver": 2}
+                flip = ib if rank[kb] >= rank[ka] else ia
+                seq[fi][flip]["running"] = not name
     if drops:
         for fi in keys:
             seq[fi] = [c for i, c in enumerate(seq[fi]) if (fi, i) not in drops]
