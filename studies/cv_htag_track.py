@@ -303,6 +303,7 @@ def _anchor_frame(frames_dets, N):
 
 GP_M_MIN = 6          # min matched pairs to TRUST a fresh camera-transform estimate
 GP_COLLAPSE = 0.5     # matched < this*N = a detection COLLAPSE: ride the carried transform
+GP_APP = 0.45         # px per LAB-ΔE: appearance weight in the match cost (re-acquire own silk)
 
 
 def _similarity(src, dst):
@@ -328,25 +329,39 @@ def _propagate(tracks, seq):
     n = len(tracks)
     prev_f = seq[0][0]
     M = np.array([[1.0, 0, 0], [0, 1.0, 0]])    # last GOOD camera transform, prev->cur
-    for frame, dets in seq[1:]:
-        step = max(1, abs(frame - prev_f) // 2)
-        prev_f = frame
+
+    def assign(Mtry, step):
         cost = np.full((len(tracks), len(dets)), np.inf)
         for i, t in enumerate(tracks):
-            px, py = t.predict(M, step)
+            px, py = t.predict(Mtry, step)
             gate = GP_GATE * step * (1 + 0.5 * min(t.coast, 12))
             for j, d in enumerate(dets):
                 dist = float(np.hypot(d["cx"] - px, d["cy"] - py))
-                if dist > gate or sig_dist(t.sig, d["sig"]) > GP_SIG:
+                sd = sig_dist(t.sig, d["sig"])    # last-frame silk: temporally coherent,
+                if dist > gate or sd > GP_SIG:    # so a two-tone silk's off-tone isn't vetoed
                     continue
-                cost[i, j] = dist
+                cost[i, j] = dist + GP_APP * min(sd, GP_SIG)   # appearance breaks ties
         ri, ci = _hungarian(cost)
-        pairs = [(i, j) for i, j in zip(ri, ci) if np.isfinite(cost[i, j])]
-        if len(pairs) >= GP_M_MIN:              # trust + carry only a well-supported estimate
+        return [(i, j) for i, j in zip(ri, ci) if np.isfinite(cost[i, j])]
+
+    for frame, dets in seq[1:]:
+        step = max(1, abs(frame - prev_f) // 2)
+        prev_f = frame
+        pairs = assign(M, step)
+        # iterate: a fresh M from this step's matches re-gates the fast-camera-motion frames
+        # (run-in pan/zoom) where the carried-M prediction had gated out the right detection
+        for _ in range(2):
+            if len(pairs) < GP_M_MIN:
+                break
             est = _similarity([(tracks[i].x, tracks[i].y) for i, _j in pairs],
                               [(dets[j]["cx"], dets[j]["cy"]) for _i, j in pairs])
-            if est is not None:
+            if est is None:
+                break
+            new_pairs = assign(est, step)
+            if len(new_pairs) <= len(pairs):
                 M = est
+                break
+            M, pairs = est, new_pairs
         collapse = len(pairs) < GP_COLLAPSE * n
         matched_t = {i for i, _j in pairs}
         for i, j in pairs:
@@ -510,24 +525,24 @@ def main():
 
     # ---- GLOBAL SECOND PASS: exactly N tracks, no teleport, seeded at the cleanest frame
     tracks = propagate_ntracks(clean_fd, FIELD)
+    pos_by_tag = {t.tag: dict(t.pos) for t in tracks}
     # reliability filter: where per-frame detection is far from N the matches are unreliable
     # (the zoomed-out bend, finish paint) — drop those positions rather than emit a wrong grab.
-    # Identity is still carried THROUGH them (no-teleport state), only the OUTPUT is suppressed.
     reliable = {f for f, d in clean_fd if FIELD - 2 <= len(d) <= FIELD + 2}
-    for t in tracks:
-        t.pos = {f: p for f, p in t.pos.items() if f in reliable}
-    cover = [len(t.pos) for t in tracks]
-    print(f"global tracks={len(tracks)} field={FIELD} "
+    pos_by_tag = {tg: {f: p for f, p in fp.items() if f in reliable}
+                  for tg, fp in pos_by_tag.items()}
+    cover = [len(fp) for fp in pos_by_tag.values()]
+    print(f"global tracks={len(pos_by_tag)} field={FIELD} "
           f"coverage(min/med/max)={min(cover)}/{int(np.median(cover))}/{max(cover)} "
           f"of {len(clean_fd)} frames")
 
     # ---- emit per-frame tags + overlay render
     bytag: dict[int, list] = {}
-    for t in tracks:
-        for f, (x, y, area) in t.pos.items():
-            bytag.setdefault(f, []).append((t.tag, x, y, area))
+    for tg, fp in pos_by_tag.items():
+        for f, (x, y, area) in fp.items():
+            bytag.setdefault(f, []).append((tg, x, y, area))
     rng = np.random.RandomState(7)
-    colors = {t.tag: tuple(int(c) for c in rng.randint(60, 255, 3)) for t in tracks}
+    colors = {tg: tuple(int(c) for c in rng.randint(60, 255, 3)) for tg in pos_by_tag}
     rows = []
     for i, fr in enumerate(av.open(f"data_cache/video/{VID}.mp4").decode(video=0)):
         if i % 2 or i not in ty0_by_frame:

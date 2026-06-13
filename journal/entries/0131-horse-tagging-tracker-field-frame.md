@@ -86,13 +86,30 @@ downstream patches." Three layers, in that spirit:
    finish paint) the per-frame matches are unreliable — identity is carried THROUGH (no-teleport
    state) but those positions are not EMITTED (a wrong grab is worse than an honest gap).
 
-Result (R08, by eye on the full render): **11 tags spanning the race, one per horse; the start
-is fixed and stable** (f400↔f440 identity persists per silk; zero >11-tag frames, was 13-24).
-Coverage 902/955/962 of 1227 frames after the reliability filter. The tag-trajectory jump audit
-(field-relative >25 px) is clean through the start + mid; the residual sits in the FINISH
-convergence (f2070-2750, horses bunch+occlude+cross the paint — the start's old difficulty, not
-yet stitched as cleanly) and the single near-total-detection-failure frame f816. Next: the
-finish convergence, then bind saddlecloth numbers (legend swatches + draw). Studies: detector
+Plus two propagation refinements: appearance (last-frame silk ΔE) as a tie-break in the match
+cost, and an in-step ASSIGNMENT ITERATION (predict with the carried camera M, re-estimate M from
+the matches, re-assign) to recover the fast-camera-motion frames (run-in tilt) where the carried
+prediction had gated out the right detection.
+
+**Validation — the right quality metric is silk-signature CONSISTENCY, not a position-jump
+count.** A field-relative position-jump audit OVER-COUNTS in zoom zones (it doesn't normalise for
+the zoom changing all relative distances) and reads real run-in surges as "jumps". The clean test:
+a tag that swaps horses changes its SILK; map each emitted (frame,tag) back to its detection's
+silk signature and measure each tag's dispersion across the race. Result (R08): **9 of 11 tags
+spread < 6 LAB (one horse, held the whole race); the 2 "high-spread" tags (0, 2) are
+MULTI-TONE silks** (magenta+white; yellow+red+white) whose dominant-colour cluster flips
+frame-to-frame — confirmed by cropping their horse at f600/f1500/f2068/f2200 (same silk
+throughout), NOT swaps. (This is why the veto uses the LAST-frame silk, temporally coherent,
+not the pooled median, which would veto a two-tone silk's off-tone frames.) An EM field-stabilized
+re-association was built and REVERTED: it cannot undo a sustained swap (both sides of a path
+crossing are locally smooth, so it stays put) and there were almost no real swaps to fix.
+
+Result (R08, full render + silk audit): **11 tags spanning the race, one per horse; the start is
+fixed and stable** (f400↔f440 identity persists per silk; zero >11-tag frames, was 13-24); the
+mid + finish-line convergence (f2620/f2680 across the 100/50 m paint) hold one tag per horse by
+eye. Coverage 915/953/963 of 1227 after the reliability filter (the ~270 dropped frames are
+honest gaps in the zoomed-out bend + finish paint where detection is unreliable). Residual: the
+single near-total-detection-failure frame f816 (bridged, not emitted). Studies: detector
 `cv_htag_detect.py`, scale-smoothed cache `cv_htag_dets_cache.py`, global pass `cv_htag_track.py`.
 
 ## Cross-race (R03 + R02A)
