@@ -492,8 +492,8 @@ def main():
         rails.setdefault(int(f), {})[name] = z[k]
 
     # ---- pass 1: detect per frame; the cache is built by cv_htag_dets_cache.py (with the
-    # temporally-smoothed avatar scale). The inline fallback below is unsmoothed (dev only).
-    dcache = f"data_cache/_htag_dets_{RACE}.npz"
+    # track-width-anchored scale), or the YOLO detector cv_htag_nn_detect.py. HTAG_DETS picks.
+    dcache = os.environ.get("HTAG_DETS", f"data_cache/_htag_dets_{RACE}.npz")
     if os.path.exists(dcache):
         z2 = np.load(dcache, allow_pickle=True)
         frames_dets = list(z2["frames_dets"])
