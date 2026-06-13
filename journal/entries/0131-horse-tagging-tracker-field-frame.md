@@ -112,6 +112,40 @@ honest gaps in the zoomed-out bend + finish paint where detection is unreliable)
 single near-total-detection-failure frame f816 (bridged, not emitted). Studies: detector
 `cv_htag_detect.py`, scale-smoothed cache `cv_htag_dets_cache.py`, global pass `cv_htag_track.py`.
 
+## UPDATE 2 (R08): camera model corrected; track-width-anchored scale fixes run-in swaps
+
+Pushing further surfaced two corrections and a real fix.
+
+**The camera FOLLOWS THE FIELD (corrected model).** ORB on the masked background turf gives the
+true ground motion: scale 1.0000 everywhere, translation ~31 px/step median (the turf sweeps; the
+camera tracks the field, so horses are ~static on screen). A turf-flow camera transform was built
+(`cv_htag_camera.py`) and wired in — and REVERTED: applying the GROUND transform to a horse
+predicts it moves WITH the turf, exactly backwards (coverage 915->897). The track-matched estimate
+(the FIELD bulk motion — the right reference for horse prediction) is what the tracker uses.
+
+**Real run-in swaps traced to a SCALE-ESTIMATION FEEDBACK FAILURE.** A silk-spread audit (a swap
+changes the silk) found genuine swaps at f2144-2212: tag 9 was a cyan silk at f2144, a different
+silk after the run-in. Cause: the run-in over-detects (15-20 blobs / 11 horses) because the
+avatar SCALE collapses there (14.6 vs the true ~30) — and it's a FEEDBACK loop (small scale ->
+over-segment -> small marker-bearing blobs -> small scale estimate), self-reinforcing across a
+whole zone so the temporal median can't recover it. Over-detection -> the reliability filter drops
+those frames -> a gap the tracks swap across.
+
+**Fix: anchor the avatar scale to the rail TRACK-WIDTH** (`cv_htag_dets_cache.py::_tw_anchored_scale`).
+The racing<->fixed rail perpendicular distance is a DETECTION-INDEPENDENT zoom proxy; avatar scale
+~ K / track_width (avatars shrink as the oblique bend view spreads the rails), K calibrated by the
+robust median of raw_scale*track_width. This breaks the feedback loop — scale ~28-30 at the run-in
+instead of 14.6. **Result: coverage 903->940/984/989; the run-in swap cluster resolved** (silk
+jump tag 3 100->6, tag 4 131->34, tag 9's run-in jump gone); 8 tags silk-spread < 5, the 2
+"high-spread" tags remain visually-confirmed multi-tone silks (0 magenta+white, 2 yellow+red+white).
+
+**Remaining residual (classical ceiling):** the DISCLAIMER-TEXT-OCCLUDED run-in (f2176-2240) — the
+semi-transparent overlay text sits OVER the pack, firing false detections on partially-visible
+horses; scale cannot merge these and masking the text would erase the horses under it. This is the
+honest case for a learned detector (torch 2.12 + CUDA available) trained on the pipeline's own
+clean-zone pseudo-labels (avatars are consistent synthetic sprites; ~900 reliable frames of
+labels). Detection — not identity — is the ceiling.
+
 ## Cross-race (R03 + R02A)
 
 - **R03** (757 frames, field 12): 12 substantial chains (333-734 members) + fragments;

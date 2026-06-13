@@ -318,14 +318,28 @@ def _similarity(src, dst):
     return M
 
 
-def _propagate(tracks, seq):
+def _cam_step(cam, frame, prev_f, dirn):
+    """Per-step camera similarity (prev->cur) from the turf-flow cache. cam[f] maps f-2 -> f
+    (forward time); a backward propagation step needs the inverse."""
+    import cv2
+
+    ident = np.array([[1.0, 0, 0], [0, 1.0, 0]])
+    if cam is None:
+        return None
+    if dirn > 0:
+        return cam.get(frame)
+    M = cam.get(prev_f)                          # prev_f -> frame is f0 -> f0-2 = inverse
+    return cv2.invertAffineTransform(M) if M is not None else ident
+
+
+def _propagate(tracks, seq, cam=None, dirn=1):
     """March the N tracks through ``seq`` (ordered frame,dets) in propagation order.
 
-    The camera common mode is a per-step SIMILARITY transform M (pan+zoom+rotation). It is
-    only UPDATED when >= GP_M_MIN tracks match (a sparse estimate is noise); otherwise the
-    last good M is carried. Through a detection COLLAPSE (the zoomed-out bend) tracks ride the
-    carried M without corrupting their residual velocity, so they re-acquire on the far side
-    instead of drifting out — the no-teleport prior crossing a bad-pixels gap."""
+    The camera common mode is a per-step SIMILARITY transform M (pan+zoom+rotation) taken from
+    the TURF-FLOW cache (``cam``, ~200 RANSAC inliers — reliable INDEPENDENT of detection); it
+    falls back to a track-matched estimate only where the turf flow is missing. Riding the turf
+    camera lets tracks coast accurately through a detection COLLAPSE (the zoomed-out bend) and
+    never lose lock to the run-in pan — the rail principle (stabilise the rigid world) here."""
     n = len(tracks)
     prev_f = seq[0][0]
     M = np.array([[1.0, 0, 0], [0, 1.0, 0]])    # last GOOD camera transform, prev->cur
@@ -346,22 +360,25 @@ def _propagate(tracks, seq):
 
     for frame, dets in seq[1:]:
         step = max(1, abs(frame - prev_f) // 2)
+        cstep = _cam_step(cam, frame, prev_f, dirn)
         prev_f = frame
-        pairs = assign(M, step)
-        # iterate: a fresh M from this step's matches re-gates the fast-camera-motion frames
-        # (run-in pan/zoom) where the carried-M prediction had gated out the right detection
-        for _ in range(2):
-            if len(pairs) < GP_M_MIN:
-                break
-            est = _similarity([(tracks[i].x, tracks[i].y) for i, _j in pairs],
-                              [(dets[j]["cx"], dets[j]["cy"]) for _i, j in pairs])
-            if est is None:
-                break
-            new_pairs = assign(est, step)
-            if len(new_pairs) <= len(pairs):
-                M = est
-                break
-            M, pairs = est, new_pairs
+        if cstep is not None:                    # turf-flow camera: trust it directly
+            M = cstep
+            pairs = assign(M, step)
+        else:                                    # fallback: estimate M from this step's matches
+            pairs = assign(M, step)
+            for _ in range(2):
+                if len(pairs) < GP_M_MIN:
+                    break
+                est = _similarity([(tracks[i].x, tracks[i].y) for i, _j in pairs],
+                                  [(dets[j]["cx"], dets[j]["cy"]) for _i, j in pairs])
+                if est is None:
+                    break
+                new_pairs = assign(est, step)
+                if len(new_pairs) <= len(pairs):
+                    M = est
+                    break
+                M, pairs = est, new_pairs
         collapse = len(pairs) < GP_COLLAPSE * n
         matched_t = {i for i, _j in pairs}
         for i, j in pairs:
@@ -397,7 +414,7 @@ def _stable_segments(frames_dets, N, tol=1, min_run=15):
     return segs
 
 
-def _seg_tracks(frames_dets, seg, N):
+def _seg_tracks(frames_dets, seg, N, cam=None):
     """N tracks for one stable segment: seed at its cleanest frame, propagate to both seg
     ends plus a margin into the adjacent bad zone (so the stitch has overlap to match on)."""
     lo, hi = seg
@@ -409,10 +426,10 @@ def _seg_tracks(frames_dets, seg, N):
     margin = 60                                # frames of overhang into the gap for stitching
     fwd_hi = min(len(frames_dets), hi + margin)
     bwd_lo = max(0, lo - margin)
-    _propagate(tracks, frames_dets[lo + a_local:fwd_hi])
+    _propagate(tracks, frames_dets[lo + a_local:fwd_hi], cam, dirn=1)
     for t in tracks:
         t.reset(frame0)
-    _propagate(tracks, list(reversed(frames_dets[bwd_lo:lo + a_local + 1])))
+    _propagate(tracks, list(reversed(frames_dets[bwd_lo:lo + a_local + 1])), cam, dirn=-1)
     return tracks
 
 
@@ -435,14 +452,14 @@ def _stitch(left, right):
     return {right[j].tag: left[i].tag for i, j in zip(ri, ci)}
 
 
-def propagate_ntracks(frames_dets, N):
+def propagate_ntracks(frames_dets, N, cam=None):
     """Global second pass: per stable segment, exactly N no-teleport tracks; segments STITCHED
     left-to-right by pooled appearance (+ position overlap) so identity survives the unreliable
     bend/finish zones WITHOUT coasting across them. Returns N merged GTracks."""
     segs = _stable_segments(frames_dets, N)
     if not segs:
         segs = [(0, len(frames_dets))]
-    seg_tracks = [_seg_tracks(frames_dets, s, N) for s in segs]
+    seg_tracks = [_seg_tracks(frames_dets, s, N, cam) for s in segs]
     base = seg_tracks[0]                        # tags 0..N-1 anchor on the first segment
     by_tag = {t.tag: t for t in base}
     for nxt in seg_tracks[1:]:
@@ -523,8 +540,15 @@ def main():
         clean_fd.append((f, [d for d in dets
                              if (f, round(d["cx"]), round(d["cy"])) not in furn_pos]))
 
+    # ---- NOTE: a turf-flow camera (cv_htag_camera.py) was tried and is NOT used. It measures
+    # the GROUND/turf motion (~31 px/step), but the camera FOLLOWS THE FIELD, so horses are
+    # ~static on screen while the turf sweeps under them — applying the turf transform to a
+    # horse predicts it moves WITH the turf, exactly backwards (coverage 915->897). The track-
+    # matched estimate (the FIELD bulk motion, the right reference) is used instead (cam=None).
+    cam = None
+
     # ---- GLOBAL SECOND PASS: exactly N tracks, no teleport, seeded at the cleanest frame
-    tracks = propagate_ntracks(clean_fd, FIELD)
+    tracks = propagate_ntracks(clean_fd, FIELD, cam)
     pos_by_tag = {t.tag: dict(t.pos) for t in tracks}
     # reliability filter: where per-frame detection is far from N the matches are unreliable
     # (the zoomed-out bend, finish paint) — drop those positions rather than emit a wrong grab.
