@@ -388,12 +388,14 @@ def _propagate(tracks, seq, cam=None, dirn=1):
                 t.coast_step(M, step, freeze=collapse)
 
 
-def _stable_segments(frames_dets, N, tol=1, min_run=15):
-    """Maximal index runs where detection count is within ``tol`` of N for >= min_run frames.
-    These are the trustworthy zones; the gaps between them (e.g. the zoomed-out bend, the
-    finish-line paint) are where per-frame detection is unreliable and must be BRIDGED, not
-    coasted across. Returns list of (lo, hi) index ranges."""
-    ok = [abs(len(d) - N) <= tol for _f, d in frames_dets]
+def _stable_segments(frames_dets, target, min_run=15):
+    """Maximal index runs where detection count is >= ``target`` for >= min_run frames. The
+    trustworthy zones; the gaps (zoomed-out bend, finish paint) are detection-unreliable and
+    must be BRIDGED, not coasted across. ``target`` is the per-race TYPICAL visible count (not
+    the field size) — races vary in how much of the field is simultaneously visible (R02A shows
+    ~10-11 of 12; the odometer box / shadows / frame edge occlude the rest). Lower-bound (not
+    |count-N|): the NN detector does not over-detect, so only the LOW side marks a bad zone."""
+    ok = [len(d) >= target for _f, d in frames_dets]
     segs, i, n = [], 0, len(ok)
     while i < n:
         if not ok[i]:
@@ -452,11 +454,12 @@ def _stitch(left, right):
     return {right[j].tag: left[i].tag for i, j in zip(ri, ci)}
 
 
-def propagate_ntracks(frames_dets, N, cam=None):
-    """Global second pass: per stable segment, exactly N no-teleport tracks; segments STITCHED
+def propagate_ntracks(frames_dets, N, cam=None, target=None):
+    """Global second pass: per stable segment, up to N no-teleport tracks; segments STITCHED
     left-to-right by pooled appearance (+ position overlap) so identity survives the unreliable
-    bend/finish zones WITHOUT coasting across them. Returns N merged GTracks."""
-    segs = _stable_segments(frames_dets, N)
+    bend/finish zones WITHOUT coasting across them. ``target`` = the typical visible count that
+    marks a stable zone (defaults to N). Returns up to N merged GTracks."""
+    segs = _stable_segments(frames_dets, target if target is not None else N)
     if not segs:
         segs = [(0, len(frames_dets))]
     seg_tracks = [_seg_tracks(frames_dets, s, N, cam) for s in segs]
@@ -550,12 +553,20 @@ def main():
     # matched estimate (the FIELD bulk motion, the right reference) is used instead (cam=None).
     cam = None
 
-    # ---- GLOBAL SECOND PASS: exactly N tracks, no teleport, seeded at the cleanest frame
-    tracks = propagate_ntracks(clean_fd, FIELD, cam)
+    # per-race TYPICAL visible count (median over render-active frames) — the field is not
+    # always fully visible (R02A ~10-11 of 12; the odometer box / shadows / frame edge occlude
+    # the rest). Thresholds anchor on this, not the field size, so the tracker generalizes across
+    # races without per-race tuning (no-op on R08 where median == field).
+    counts = sorted(len(d) for _f, d in clean_fd)
+    vis = int(np.median(counts)) if counts else FIELD
+    print(f"typical visible count (median) = {vis} of field {FIELD}")
+
+    # ---- GLOBAL SECOND PASS: up to N tracks, no teleport, seeded at the fullest frame
+    tracks = propagate_ntracks(clean_fd, FIELD, cam, target=max(vis - 1, 4))
     pos_by_tag = {t.tag: dict(t.pos) for t in tracks}
-    # reliability filter: where per-frame detection is far from N the matches are unreliable
-    # (the zoomed-out bend, finish paint) — drop those positions rather than emit a wrong grab.
-    reliable = {f for f, d in clean_fd if FIELD - 2 <= len(d) <= FIELD + 2}
+    # reliability filter: drop frames whose detection falls well below the typical visible count
+    # (a genuine collapse — the zoomed-out bend) rather than emit a wrong grab.
+    reliable = {f for f, d in clean_fd if len(d) >= vis - 2}
     pos_by_tag = {tg: {f: p for f, p in fp.items() if f in reliable}
                   for tg, fp in pos_by_tag.items()}
     cover = [len(fp) for fp in pos_by_tag.values()]
