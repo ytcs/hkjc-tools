@@ -491,9 +491,12 @@ def main():
         f, name = k.rsplit("_", 1)
         rails.setdefault(int(f), {})[name] = z[k]
 
-    # ---- pass 1: detect per frame; the cache is built by cv_htag_dets_cache.py (with the
-    # track-width-anchored scale), or the YOLO detector cv_htag_nn_detect.py. HTAG_DETS picks.
-    dcache = os.environ.get("HTAG_DETS", f"data_cache/_htag_dets_{RACE}.npz")
+    # ---- pass 1: detect per frame. The YOLO detector (cv_htag_nn_detect.py) is the default
+    # when present — it cleanly beats the classical cache (cv_htag_dets_cache.py): mean 11.0
+    # vs 12.2 dets, ZERO over-detection (was 217 frames), bend f816 1->9. HTAG_DETS overrides.
+    nn_cache = f"data_cache/_htag_dets_nn_{RACE}.npz"
+    dcache = os.environ.get("HTAG_DETS") or (
+        nn_cache if os.path.exists(nn_cache) else f"data_cache/_htag_dets_{RACE}.npz")
     if os.path.exists(dcache):
         z2 = np.load(dcache, allow_pickle=True)
         frames_dets = list(z2["frames_dets"])
