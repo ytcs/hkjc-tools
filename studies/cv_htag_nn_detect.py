@@ -17,12 +17,24 @@ import numpy as np
 sys.path.insert(0, "src")
 sys.path.insert(0, "studies")
 
+import glob
+
 RACE = os.environ.get("RACE", "R08")
 VID = {"R08": "aerial_20260603_08", "R03": "aerial_20260603_03",
        "R02A": "aerial_20260520_02"}[RACE]
-WEIGHTS = f"data_cache/htag_yolo_{RACE}/runs/avatar/weights/best.pt"
 CONF = 0.25
 IOU = 0.5
+
+
+def _weights():
+    """Locate the trained best.pt (Ultralytics nests it under runs/detect/...)."""
+    env = os.environ.get("HTAG_WEIGHTS")
+    if env:
+        return env
+    cands = glob.glob(f"**/htag_yolo_{RACE}/**/avatar*/weights/best.pt", recursive=True)
+    if not cands:
+        raise FileNotFoundError(f"no trained weights for {RACE}; run cv_htag_nn_train.py")
+    return max(cands, key=os.path.getmtime)
 
 
 def main():
@@ -33,7 +45,9 @@ def main():
     from cv_htag_detect import _silk_sig, class_maps
     from hkjc.vision.aerial_layout import legend_top, render_active
 
-    model = YOLO(WEIGHTS)
+    w = _weights()
+    print(f"loading {w}")
+    model = YOLO(w)
     frames_dets, ty0s = [], {}
     n = 0
     for i, fr in enumerate(av.open(f"data_cache/video/{VID}.mp4").decode(video=0)):

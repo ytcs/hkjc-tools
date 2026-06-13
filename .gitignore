@@ -16,3 +16,6 @@ studies/cv/out/
 
 # regenerable model-figure outputs (code is tracked; figures are not)
 studies/out/
+
+# Ultralytics YOLO training runs (weights/plots/configs; regenerable)
+runs/
