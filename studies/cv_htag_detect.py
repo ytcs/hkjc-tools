@@ -161,14 +161,16 @@ def turf_roi(green: np.ndarray):
 
 
 def _avatar_scale(footprint: np.ndarray, in_track=None) -> float:
-    """Avatar length (px) from the footprint-blob size distribution (median PCA extent)."""
+    """Provisional avatar length (px): low-percentile of footprint-blob extents. A LOW
+    percentile (not median) resists furniture/merge blobs dominating when avatars are tiny
+    in a zoomed-out bend (the median there reads the rail/text furniture, not the horses)."""
     import cv2
 
     n, lbl, stats, cent = cv2.connectedComponentsWithStats(footprint.astype(np.uint8), 8)
     lens = []
     for i in range(1, n):
         area = int(stats[i, cv2.CC_STAT_AREA])
-        if area < 30 or area > 4000:
+        if area < 12 or area > 4000:
             continue
         if in_track is not None and not in_track(float(cent[i, 0]), float(cent[i, 1])):
             continue
@@ -181,7 +183,34 @@ def _avatar_scale(footprint: np.ndarray, in_track=None) -> float:
         lens.append(length)
     if len(lens) < 3:
         return SCALE_DEFAULT
-    return float(np.clip(np.median(lens), 26.0, 60.0))
+    return float(np.clip(np.percentile(lens, 35), 12.0, 60.0))
+
+
+def _scale_from_markers(closed: np.ndarray, marks) -> float | None:
+    """Refined avatar length: median PCA-extent of the core components that CONTAIN a marker
+    (those are real avatars — furniture has no jockey marker, so it cannot inflate the scale
+    even when the camera pulls back and the avatars shrink to a few px)."""
+    import cv2
+
+    if len(marks) < 3:
+        return None
+    n, lbl, _stats, _c = cv2.connectedComponentsWithStats(closed.astype(np.uint8), 8)
+    seen, lens = set(), []
+    for mx, my, _a in marks:
+        ix, iy = int(mx), int(my)
+        if not (0 <= iy < lbl.shape[0] and 0 <= ix < lbl.shape[1]):
+            continue
+        lid = int(lbl[iy, ix])
+        if lid == 0 or lid in seen:
+            continue
+        seen.add(lid)
+        ys, xs = np.where(lbl == lid)
+        p = np.column_stack([xs, ys]).astype(float)
+        ev = np.linalg.eigvalsh(np.cov((p - p.mean(0)).T))
+        lens.append(4.0 * float(np.sqrt(max(ev[1], 1e-6))))
+    if len(lens) < 3:
+        return None
+    return float(np.clip(np.median(lens), 12.0, 60.0))
 
 
 def _angle_at(rail_pts: np.ndarray | None, x: float, y: float, k: int = 15) -> float:
@@ -299,6 +328,43 @@ def _ell_d2(dx: float, dy: float, ang: float, a: float, b: float) -> float:
     return (u / a) ** 2 + (w / b) ** 2
 
 
+def _line_kernel(length: int, angle: float):
+    """Binary line structuring element of ``length`` px oriented at ``angle`` (rad)."""
+    import cv2
+
+    nn = max(3, int(length) | 1)
+    k = np.zeros((nn, nn), np.uint8)
+    c = nn // 2
+    dx, dy = np.cos(angle), np.sin(angle)
+    cv2.line(k, (int(round(c - dx * c)), int(round(c - dy * c))),
+             (int(round(c + dx * c)), int(round(c + dy * c))), 1, 1)
+    return k
+
+
+def _dominant_tangent(rail_pts: np.ndarray | None) -> float:
+    """Travel-direction angle (rad) = PCA major axis of the rail points (0.0 without rails)."""
+    if rail_pts is None or len(rail_pts) < 15:
+        return 0.0
+    c = rail_pts.astype(float) - rail_pts.mean(0)
+    _u, _s, vt = np.linalg.svd(c, full_matrices=False)
+    return float(np.arctan2(vt[0, 1], vt[0, 0]))
+
+
+def _farthest_k(pts, k: int) -> list[int]:
+    """Indices of k mutually-farthest points (greedy farthest-point seeding), starting
+    from the largest. Used to pick which markers anchor a genuine multi-horse merge."""
+    if k >= len(pts):
+        return list(range(len(pts)))
+    xy = np.asarray([(p[0], p[1]) for p in pts], float)
+    chosen = [int(np.argmax([p[2] for p in pts]))]   # largest marker first
+    while len(chosen) < k:
+        d = np.min([((xy[:, 0] - xy[c, 0]) ** 2 + (xy[:, 1] - xy[c, 1]) ** 2)
+                    for c in chosen], axis=0)
+        d[chosen] = -1.0
+        chosen.append(int(np.argmax(d)))
+    return chosen
+
+
 def _markers(vivid: np.ndarray, wk: np.ndarray, scale: float,
              rail_pts: np.ndarray | None, in_track=None):
     """Per-jockey silk markers: vivid/white blobs merged ELLIPTICALLY (along-axis generous:
@@ -329,7 +395,7 @@ def _markers(vivid: np.ndarray, wk: np.ndarray, scale: float,
     return [(g[0] / g[2], g[1] / g[2], g[2]) for g in merged]
 
 
-def detect_core(band: np.ndarray, rails: dict | None = None):
+def detect_core(band: np.ndarray, rails: dict | None = None, scale_override: float | None = None):
     """Segment avatar-core detections in a track band. Returns (dets, debug).
 
     Markers (jockeys) are the instance authority; core clusters are evidence pools:
@@ -354,35 +420,75 @@ def detect_core(band: np.ndarray, rails: dict | None = None):
     wk = white_kept(m["white"], rail_pts)
     vivid_r, body_r, wk_r = m["vivid"] & roi, m["body"] & roi, wk & roi
     core = (vivid_r | body_r | wk_r).astype(np.uint8)
-    closed = cv2.morphologyEx(core, cv2.MORPH_CLOSE,
+    # connect ONE avatar's fragments (silk + blaze + tail, split by the dark saddle) along
+    # the TRAVEL axis before clustering — within-horse fragments align along travel; adjacent
+    # horses are offset ACROSS-track, so an oriented close does not bridge lanes. A small
+    # isotropic close then fills. (Replaces the isotropic close that left split-silk doubles.)
+    scale0 = _avatar_scale(cv2.morphologyEx(
+        core, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                                         (CORE_CLOSE, CORE_CLOSE))), in_track)
+    ang0 = _dominant_tangent(rail_pts)
+    closed = cv2.morphologyEx(core, cv2.MORPH_CLOSE, _line_kernel(int(0.55 * scale0), ang0))
+    closed = cv2.morphologyEx(closed, cv2.MORPH_CLOSE,
                               cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
                                                         (CORE_CLOSE, CORE_CLOSE)))
-    scale = _avatar_scale(closed, in_track)   # the closed core IS the avatar footprint
-    marks = _markers(vivid_r, wk_r, scale, rail_pts, in_track)
+    # provisional scale (low-percentile, furniture-resistant) locates markers; then refine
+    # from marker-bearing blobs (the real avatars) — robust to the zoomed-out bend collapse.
+    # A temporally-smoothed scale_override (the global, the zoom is smooth) overrides both.
+    marks = _markers(vivid_r, wk_r, scale0, rail_pts, in_track)
+    raw_scale = _scale_from_markers(closed, marks) or scale0
+    scale = scale_override if scale_override is not None else raw_scale
+    if abs(scale - scale0) > 0.25 * scale0:    # scale moved -> re-merge markers + close at it
+        ang0 = _dominant_tangent(rail_pts)
+        closed = cv2.morphologyEx(core, cv2.MORPH_CLOSE, _line_kernel(int(0.55 * scale), ang0))
+        closed = cv2.morphologyEx(closed, cv2.MORPH_CLOSE,
+                                  cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                                            (CORE_CLOSE, CORE_CLOSE)))
+        marks = _markers(vivid_r, wk_r, scale, rail_pts, in_track)
     n, lbl, _stats, _cent = cv2.connectedComponentsWithStats(closed, 8)
 
-    # one detection slot per marker; orphan clusters attach or stand alone
-    slots = [dict(mx=mx, my=my, px=[], split=False) for mx, my, _a in marks]
+    # AREA is the count authority, markers only LOCATE (a single white horse fragments into
+    # 2-3 vivid/white blobs — marker count over-segments at the bunched start). Per cluster:
+    # k = round(area / single_horse_area), clamped to [1, #inside markers].
+    clusters = []                              # (pts, inside-marker indices, area)
     orphans = []
     for i in range(1, n):
         sel = lbl == i
         ys, xs = np.where(sel & (core > 0))
         if len(xs) < 6:
             continue
+        pts = np.column_stack([xs, ys]).astype(float)
         inside = [j for j, (mx, my, _a) in enumerate(marks)
                   if 0 <= int(my) < sel.shape[0] and 0 <= int(mx) < sel.shape[1]
                   and sel[int(my), int(mx)]]
-        pts = np.column_stack([xs, ys]).astype(float)
-        if len(inside) >= 2:
-            mk = np.asarray([[marks[j][0], marks[j][1]] for j in inside], float)
-            owner = np.argmin(((pts[:, None, :] - mk[None, :, :]) ** 2).sum(-1), axis=1)
-            for jj, j in enumerate(inside):
-                slots[j]["px"].append(pts[owner == jj])
-                slots[j]["split"] = True
-        elif len(inside) == 1:
-            slots[inside[0]]["px"].append(pts)
+        if inside:
+            clusters.append((pts, inside, len(xs)))
         else:
             orphans.append(pts)
+    singles = [a for _p, ins, a in clusters if len(ins) == 1]
+    single_area = (float(np.median(singles)) if len(singles) >= 3
+                   else max(float(CORE_MIN_PX), 0.22 * scale * scale))
+
+    slots = [dict(mx=mx, my=my, px=[], split=False) for mx, my, _a in marks]
+    used = set()
+    for pts, inside, area in clusters:
+        k = int(round(area / single_area))
+        k = max(1, min(k, len(inside)))
+        if k < len(inside):                    # area authorizes fewer horses than markers
+            chosen = _farthest_k([(marks[j][0], marks[j][1], marks[j][2]) for j in inside], k)
+            chosen = [inside[c] for c in chosen]
+        else:
+            chosen = inside
+        used.update(inside)                    # every inside marker is consumed
+        if len(chosen) == 1:
+            slots[chosen[0]]["px"].append(pts)
+        else:
+            mk = np.asarray([[marks[j][0], marks[j][1]] for j in chosen], float)
+            owner = np.argmin(((pts[:, None, :] - mk[None, :, :]) ** 2).sum(-1), axis=1)
+            for jj, j in enumerate(chosen):
+                slots[j]["px"].append(pts[owner == jj])
+                slots[j]["split"] = True
+    n_marker_slots = len(marks)
     aa, bb = AS_ALONG * scale, AS_ACROSS * scale
     for pts in orphans:
         cx, cy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
@@ -403,9 +509,11 @@ def detect_core(band: np.ndarray, rails: dict | None = None):
 
     dets = []
     core_b = core.astype(bool)
-    for s in slots:
+    for si, s in enumerate(slots):
         if "mx" in s:
             if not s["px"]:
+                if si < n_marker_slots and si in used:
+                    continue                   # absorbed into an over-segmented cluster
                 # small/far avatar: its cluster fell under the comp floor, but the jockey
                 # marker is real evidence — gather core px in a disc around it
                 r = max(8, int(0.6 * scale))
@@ -480,7 +588,8 @@ def detect_core(band: np.ndarray, rails: dict | None = None):
         dets = [d for d in dets
                 if not (d["n_vivid"] == 0 and d["n_body"] == 0
                         and any(abs(d["cy"] - ry) <= 28.0 for ry in row_ys))]
-    return dets, dict(core=core, closed=closed, roi=roi, marks=marks, scale=scale, **m)
+    return dets, dict(core=core, closed=closed, roi=roi, marks=marks, scale=scale,
+                      raw_scale=raw_scale, **m)
 
 
 def _overlay(panel, ty0, ty1, dets, av_dets, sh_dets, tag, field):

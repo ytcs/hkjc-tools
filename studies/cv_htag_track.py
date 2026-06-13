@@ -40,16 +40,7 @@ GATE_PX = 30.0        # max screen motion between sampled frames (camera pans wi
 #                       so on-screen per-step motion is small; zoom jumps stay under this)
 SIG_VETO = 60.0       # LAB ΔE above this = definitely a different silk (veto only — silk
 #                       families overlap, so appearance never CONFIRMS a match by itself)
-COAST_MAX = 4         # steps a track may coast (predict, no emit) before it ENDS
-LINK_GAP_SHORT = 40   # frames: short-gap links are POSITION-gated (camera barely moved)
-LINK_GAP_MAX = 400    # frames: long-gap links are SIGNATURE-only (re-entry after exit;
-#                       camera moved too far for any position extrapolation to mean much)
-LINK_SIG_SHORT = 45.0  # pooled ΔE cap for a position-confirmed short link
-LINK_SIG_LONG = 18.0   # pooled ΔE cap for a signature-only long link
-LINK_DIST_FAC = 14.0  # px/step: how far the field can drift per step across a short gap
-DUP_OVERLAP = 0.8     # tracklets co-temporal >=this (of the shorter) and near = SAME horse
-DUP_DIST = 16.0       # px: mean distance for the duplicate-track merge
-MERGE_SIG = 30.0      # pooled ΔE for the count-aware final chain merge
+COAST_MAX = 4         # steps a tracklet may coast (predict, no emit) before it ENDS
 STATIC_SPREAD = 14.0  # px: position spread below this over STATIC_SPAN+ frames = HUD
 STATIC_SPAN = 300     # frames: no horse holds a 14 px screen box for 12 s (formation,
 #                       zoom and reframing drift); the disclaimer text / odometer box does
@@ -223,98 +214,234 @@ def _is_static(frames, xs, ys):
     return float(np.hypot(sx, sy)) < STATIC_SPREAD
 
 
-def merge_duplicates(tracklets):
-    """Two tracklets co-temporal and co-located are the SAME horse seen as split dets
-    (helmet/torso fragments threading in parallel) — fold the shorter into the longer."""
-    tracklets = sorted(tracklets, key=lambda t: -len(t.frames))
-    kept: list[Track] = []
-    for t in tracklets:
-        tset = dict(zip(t.frames, t.dets))
-        dup = None
-        for k in kept:
-            common = [f for f in k.frames if f in tset]
-            if len(common) < DUP_OVERLAP * min(len(k.frames), len(t.frames)):
-                continue
-            kk = dict(zip(k.frames, k.dets))
-            d = float(np.mean([np.hypot(kk[f]["cx"] - tset[f]["cx"],
-                                        kk[f]["cy"] - tset[f]["cy"]) for f in common]))
-            if d < DUP_DIST:
-                dup = k
-                break
-        if dup is None:
-            kept.append(t)
-        # else: drop t — its dets are dup's split fragments
-    return kept
+# ---- global second pass: N-target propagation (no-teleport, known field count) -------------
+GP_GATE = 34.0        # px: max screen jump a horse can make between sampled frames (no teleport)
+GP_SIG = 55.0         # LAB ΔE appearance veto inside the gate
+GP_COAST = 40         # steps a track may dead-reckon through occlusion before it stops claiming
+GP_VEL_DECAY = 0.7    # coasting velocity relaxes toward the field shift
 
 
-def _chain_span(ch):
-    return ch[0].frames[0], ch[-1].frames[-1]
+def _apply(M, x, y):
+    return (M[0, 0] * x + M[0, 1] * y + M[0, 2],
+            M[1, 0] * x + M[1, 1] * y + M[1, 2])
 
 
-def _chain_sig(ch, sigs):
-    ws = [(len(t.frames), sigs[t.id]) for t in ch if len(sigs[t.id])]
-    if not ws:
-        return np.zeros((0, 3), np.float32)
-    return max(ws, key=lambda w: w[0])[1]      # the longest member's pooled sig
+class GTrack:
+    """One of the N persistent horse tracks in the global pass. The camera common mode
+    (pan + ZOOM + rotation) is a per-step SIMILARITY transform M applied to every track's
+    position; each horse carries a small field-relative RESIDUAL velocity on top. A pure
+    translation cannot model the start/finish zoom (horses move radially), which is why a
+    translation-only field shift lost the bunched start."""
+
+    def __init__(self, tag, frame, det):
+        self.tag = tag
+        self.x, self.y = det["cx"], det["cy"]
+        self.rx = self.ry = 0.0            # own residual displacement / step (propagation order)
+        self.sig = det["sig"]
+        self.sigs = [det["sig"]] if det["sig"] is not None and len(det["sig"]) else []
+        self.coast = 0
+        self.pos = {frame: (det["cx"], det["cy"], det["area"])}
+
+    def pooled_sig(self):
+        if not self.sigs:
+            return np.zeros((0, 3), np.float32)
+        k = max(len(s) for s in self.sigs)
+        prim = np.median([s[0] for s in self.sigs], axis=0)
+        if k == 1:
+            return np.asarray([prim], np.float32)
+        sec = np.median([s[1] for s in self.sigs if len(s) > 1], axis=0)
+        return np.asarray([prim, sec], np.float32)
+
+    def reset(self, frame):
+        self.x, self.y, _a = self.pos[frame]
+        self.rx = self.ry = 0.0
+        self.coast = 0
+
+    def predict(self, M, step):
+        bx, by = _apply(M, self.x, self.y)
+        return bx + step * self.rx, by + step * self.ry
+
+    def update(self, frame, det, M, step):
+        bx, by = _apply(M, self.x, self.y)
+        self.rx = 0.5 * self.rx + 0.5 * (det["cx"] - bx) / step
+        self.ry = 0.5 * self.ry + 0.5 * (det["cy"] - by) / step
+        self.x, self.y = det["cx"], det["cy"]
+        if det["sig"] is not None and len(det["sig"]):
+            self.sig = det["sig"]
+            self.sigs.append(det["sig"])
+        self.coast = 0
+        self.pos[frame] = (det["cx"], det["cy"], det["area"])
+
+    def coast_step(self, M, step, freeze=False):
+        self.coast += 1
+        self.x, self.y = _apply(M, self.x, self.y)
+        self.x += step * self.rx
+        self.y += step * self.ry
+        if not freeze:                          # a detection collapse must not decay the
+            self.rx *= GP_VEL_DECAY             # residual to zero — keep the last good
+            self.ry *= GP_VEL_DECAY             # velocity so the horse is re-found on exit
 
 
-def link_global(tracklets, cum_cam):
-    """LOOP 3: link tracklets into per-horse identities. Two-tier links under the
-    co-occurrence exclusion: short gaps are POSITION-gated in the ground frame
-    (``cum_cam`` = cumulative camera shift); long gaps (out-of-frame re-entry, FINISH-paint
-    dropouts) are SIGNATURE-only — pooled silk evidence, the tracklet-median axis."""
-    tracklets = sorted(tracklets, key=lambda t: t.frames[0])
-    sigs = {t.id: t.pooled_sig() for t in tracklets}
-    chains: list[list] = []        # each chain = one horse (list of tracklets, time-ordered)
-    for t in tracklets:
-        best, bcost = None, np.inf
-        for ch in chains:
-            last = ch[-1]
-            gap = t.frames[0] - last.frames[-1]
-            if gap <= 0 or gap > LINK_GAP_MAX:
-                continue                       # co-occurrence exclusion / too far apart
-            ds = sig_dist(sigs[t.id], sigs[last.id])
-            if gap <= LINK_GAP_SHORT:
-                steps = gap / 2.0
-                c0 = cum_cam.get(last.frames[-1], (0.0, 0.0))
-                c1 = cum_cam.get(t.frames[0], (0.0, 0.0))
-                px = last.x + last.gx * steps + (c1[0] - c0[0])
-                py = last.y + last.gy * steps + (c1[1] - c0[1])
-                dist = float(np.hypot(t.dets[0]["cx"] - px, t.dets[0]["cy"] - py))
-                if dist > LINK_DIST_FAC * steps + 40.0 or ds > LINK_SIG_SHORT:
+def _anchor_frame(frames_dets, N):
+    """Pick a seed frame in the stable middle: exactly N dets, maximally separated."""
+    lo, hi = int(0.30 * len(frames_dets)), int(0.70 * len(frames_dets))
+    best, bscore = None, -1.0
+    for k in range(lo, hi):
+        frame, dets = frames_dets[k]
+        if len(dets) != N:
+            continue
+        p = np.array([[d["cx"], d["cy"]] for d in dets])
+        dm = np.sqrt(((p[:, None] - p[None]) ** 2).sum(-1))
+        np.fill_diagonal(dm, 1e9)
+        score = float(dm.min())                # widest-separated config = least ambiguous
+        if score > bscore:
+            best, bscore = k, score
+    if best is None:                           # no exact-N frame: take closest-to-N
+        best = min(range(lo, hi), key=lambda k: abs(len(frames_dets[k][1]) - N))
+    return best
+
+
+GP_M_MIN = 6          # min matched pairs to TRUST a fresh camera-transform estimate
+GP_COLLAPSE = 0.5     # matched < this*N = a detection COLLAPSE: ride the carried transform
+
+
+def _similarity(src, dst):
+    """Per-step camera transform (pan+zoom+rotation) from matched old->new positions."""
+    import cv2
+
+    if len(src) < 3:
+        return None
+    M, _inl = cv2.estimateAffinePartial2D(np.asarray(src, np.float32),
+                                          np.asarray(dst, np.float32),
+                                          method=cv2.RANSAC, ransacReprojThreshold=6.0)
+    return M
+
+
+def _propagate(tracks, seq):
+    """March the N tracks through ``seq`` (ordered frame,dets) in propagation order.
+
+    The camera common mode is a per-step SIMILARITY transform M (pan+zoom+rotation). It is
+    only UPDATED when >= GP_M_MIN tracks match (a sparse estimate is noise); otherwise the
+    last good M is carried. Through a detection COLLAPSE (the zoomed-out bend) tracks ride the
+    carried M without corrupting their residual velocity, so they re-acquire on the far side
+    instead of drifting out — the no-teleport prior crossing a bad-pixels gap."""
+    n = len(tracks)
+    prev_f = seq[0][0]
+    M = np.array([[1.0, 0, 0], [0, 1.0, 0]])    # last GOOD camera transform, prev->cur
+    for frame, dets in seq[1:]:
+        step = max(1, abs(frame - prev_f) // 2)
+        prev_f = frame
+        cost = np.full((len(tracks), len(dets)), np.inf)
+        for i, t in enumerate(tracks):
+            px, py = t.predict(M, step)
+            gate = GP_GATE * step * (1 + 0.5 * min(t.coast, 12))
+            for j, d in enumerate(dets):
+                dist = float(np.hypot(d["cx"] - px, d["cy"] - py))
+                if dist > gate or sig_dist(t.sig, d["sig"]) > GP_SIG:
                     continue
-                c = ds + 0.3 * dist / max(1.0, steps)
+                cost[i, j] = dist
+        ri, ci = _hungarian(cost)
+        pairs = [(i, j) for i, j in zip(ri, ci) if np.isfinite(cost[i, j])]
+        if len(pairs) >= GP_M_MIN:              # trust + carry only a well-supported estimate
+            est = _similarity([(tracks[i].x, tracks[i].y) for i, _j in pairs],
+                              [(dets[j]["cx"], dets[j]["cy"]) for _i, j in pairs])
+            if est is not None:
+                M = est
+        collapse = len(pairs) < GP_COLLAPSE * n
+        matched_t = {i for i, _j in pairs}
+        for i, j in pairs:
+            tracks[i].update(frame, dets[j], M, step)
+        for i, t in enumerate(tracks):
+            if i not in matched_t:
+                t.coast_step(M, step, freeze=collapse)
+
+
+def _stable_segments(frames_dets, N, tol=1, min_run=15):
+    """Maximal index runs where detection count is within ``tol`` of N for >= min_run frames.
+    These are the trustworthy zones; the gaps between them (e.g. the zoomed-out bend, the
+    finish-line paint) are where per-frame detection is unreliable and must be BRIDGED, not
+    coasted across. Returns list of (lo, hi) index ranges."""
+    ok = [abs(len(d) - N) <= tol for _f, d in frames_dets]
+    segs, i, n = [], 0, len(ok)
+    while i < n:
+        if not ok[i]:
+            i += 1
+            continue
+        j = i
+        gap = 0
+        while j < n and gap <= 4:              # tolerate <=4 bad frames inside a segment
+            if ok[j]:
+                gap = 0
             else:
-                if ds > LINK_SIG_LONG:
-                    continue                   # long gap: silk evidence only, strict
-                c = 100.0 + ds                 # short links always preferred
-            if c < bcost:
-                best, bcost = ch, c
-        if best is None:
-            chains.append([t])
-        else:
-            best.append(t)
-    # count-aware final merge: while over the field size, fold the best non-overlapping
-    # silk-compatible pair (count CAP, never count-forcing — incompatible chains survive)
-    field = FIELD
-    while len(chains) > field:
-        best, bcost = None, MERGE_SIG
-        for a in range(len(chains)):
-            for b in range(a + 1, len(chains)):
-                s0, e0 = _chain_span(chains[a])
-                s1, e1 = _chain_span(chains[b])
-                if min(e0, e1) - max(s0, s1) > 4:
-                    continue                   # co-temporal: two different horses
-                ds = sig_dist(_chain_sig(chains[a], sigs), _chain_sig(chains[b], sigs))
-                if ds < bcost:
-                    best, bcost = (a, b), ds
-        if best is None:
-            break
-        a, b = best
-        chains[a] = sorted(chains[a] + chains[b], key=lambda t: t.frames[0])
-        del chains[b]
-    chains.sort(key=lambda ch: -sum(len(t.frames) for t in ch))
-    return {t.id: tag for tag, ch in enumerate(chains) for t in ch}, chains
+                gap += 1
+            j += 1
+        hi = j - gap
+        if hi - i >= min_run:
+            segs.append((i, hi))
+        i = j
+    return segs
+
+
+def _seg_tracks(frames_dets, seg, N):
+    """N tracks for one stable segment: seed at its cleanest frame, propagate to both seg
+    ends plus a margin into the adjacent bad zone (so the stitch has overlap to match on)."""
+    lo, hi = seg
+    sub = frames_dets[lo:hi]
+    a_local = _anchor_frame(sub, N)
+    frame0, dets0 = sub[a_local]
+    seed = sorted(dets0, key=lambda d: -d["area"])[:N]
+    tracks = [GTrack(tag, frame0, d) for tag, d in enumerate(seed)]
+    margin = 60                                # frames of overhang into the gap for stitching
+    fwd_hi = min(len(frames_dets), hi + margin)
+    bwd_lo = max(0, lo - margin)
+    _propagate(tracks, frames_dets[lo + a_local:fwd_hi])
+    for t in tracks:
+        t.reset(frame0)
+    _propagate(tracks, list(reversed(frames_dets[bwd_lo:lo + a_local + 1])))
+    return tracks
+
+
+def _stitch(left, right):
+    """Match right-segment tracks onto left-segment tracks (N<->N) by pooled silk signature,
+    refined by position where their coverage overlaps. Returns {right_track: left_track}."""
+    cost = np.zeros((len(left), len(right)))
+    for i, lt in enumerate(left):
+        ls = lt.pooled_sig()
+        for j, rt in enumerate(right):
+            ds = sig_dist(ls, rt.pooled_sig())
+            common = set(lt.pos) & set(rt.pos)
+            if common:                         # overlap: position agreement is decisive
+                pd = float(np.median([np.hypot(lt.pos[f][0] - rt.pos[f][0],
+                                               lt.pos[f][1] - rt.pos[f][1]) for f in common]))
+                cost[i, j] = pd + 0.2 * ds
+            else:
+                cost[i, j] = ds + 200.0        # appearance-only (across a gap): weaker
+    ri, ci = _hungarian(cost)
+    return {right[j].tag: left[i].tag for i, j in zip(ri, ci)}
+
+
+def propagate_ntracks(frames_dets, N):
+    """Global second pass: per stable segment, exactly N no-teleport tracks; segments STITCHED
+    left-to-right by pooled appearance (+ position overlap) so identity survives the unreliable
+    bend/finish zones WITHOUT coasting across them. Returns N merged GTracks."""
+    segs = _stable_segments(frames_dets, N)
+    if not segs:
+        segs = [(0, len(frames_dets))]
+    seg_tracks = [_seg_tracks(frames_dets, s, N) for s in segs]
+    base = seg_tracks[0]                        # tags 0..N-1 anchor on the first segment
+    by_tag = {t.tag: t for t in base}
+    for nxt in seg_tracks[1:]:
+        mp = _stitch(list(by_tag.values()), nxt)
+        for rt in nxt:
+            gtag = mp.get(rt.tag)
+            if gtag is None:
+                continue
+            gt = by_tag[gtag]
+            for f, p in rt.pos.items():         # later segment wins on overlap (fresher local fit)
+                gt.pos[f] = p
+            gt.sigs.extend(rt.sigs)
+    return list(by_tag.values())
+
 
 
 def main():
@@ -332,8 +459,8 @@ def main():
         f, name = k.rsplit("_", 1)
         rails.setdefault(int(f), {})[name] = z[k]
 
-    # ---- pass 1: detect per frame; cached so threading experiments iterate without
-    # the decode+detect cost
+    # ---- pass 1: detect per frame; the cache is built by cv_htag_dets_cache.py (with the
+    # temporally-smoothed avatar scale). The inline fallback below is unsmoothed (dev only).
     dcache = f"data_cache/_htag_dets_{RACE}.npz"
     if os.path.exists(dcache):
         z2 = np.load(dcache, allow_pickle=True)
@@ -363,76 +490,55 @@ def main():
     print(f"detected on {len(frames_dets)} frames; "
           f"mean dets/frame={np.mean([len(d) for _f, d in frames_dets]):.1f} field={FIELD}")
 
-    # ---- LOOP 2 + 3
-    tracklets, field_shift = build_tracklets(frames_dets)
-    # cumulative field shift per sampled frame (field-frame extrapolation in LOOP 3)
-    cum_cam = {}
-    cx = cy = 0.0
-    for f, _d in frames_dets:
-        s = field_shift.get(f, (0.0, 0.0))
-        cx += s[0]
-        cy += s[1]
-        cum_cam[f] = (cx, cy)
+    # ---- FIRST PASS: forward tracklets, used ONLY to identify furniture (a moving-vs-field
+    # residual + a screen-static test); the per-horse tags come from the global second pass.
+    tracklets, _field_shift = build_tracklets(frames_dets)
     furn = [t for t in tracklets
             if (len(t.frames) >= 5 and t.ground_speed() > FURN_RESID_MIN)
             or _is_static(t.frames, [d["cx"] for d in t.dets], [d["cy"] for d in t.dets])]
     print(f"furniture tracklets dropped: {len(furn)} "
           f"(resid {[round(t.ground_speed(), 1) for t in furn[:12]]}...)")
-    tracklets = [t for t in tracklets if t not in furn]
-    ndup = len(tracklets)
-    tracklets = merge_duplicates(tracklets)
-    print(f"duplicate tracklets folded: {ndup - len(tracklets)}")
-    # ---- death diagnostics: why did horse tracklets end?
-    deaths = {"no_candidate": 0, "sig_veto": 0, "competition": 0}
-    for t in tracklets:
-        if not t.misses:
-            continue
-        _f, n_in, n_veto = t.misses[-1]
-        if n_in == 0:
-            deaths["no_candidate"] += 1
-        elif n_veto == n_in:
-            deaths["sig_veto"] += 1
-        else:
-            deaths["competition"] += 1
-    print("tracklet-death causes (last miss):", deaths)
-    tag_of, chains = link_global(tracklets, cum_cam)
-    # chain-level HUD test: intermittent screen-static fragments only pool to "static"
-    # once LINKED (each fragment alone is too short to fail the tracklet test)
-    static_chains = []
-    for ch in chains:
-        fs = [f for t in ch for f in t.frames]
-        xs = [d["cx"] for t in ch for d in t.dets]
-        ys = [d["cy"] for t in ch for d in t.dets]
-        if _is_static(sorted(fs), xs, ys):
-            static_chains.append(ch)
-    if static_chains:
-        print(f"static (HUD) chains dropped: {len(static_chains)}")
-        drop = {t.id for ch in static_chains for t in ch}
-        tracklets = [t for t in tracklets if t.id not in drop]
-        tag_of, chains = link_global(tracklets, cum_cam)
-    print(f"tracklets={len(tracklets)} horses(chains)={len(chains)}")
-    lens = sorted((sum(len(t.frames) for t in ch) for ch in chains), reverse=True)
-    print("chain lengths:", lens[:20], "..." if len(lens) > 20 else "")
+    # ---- furniture removal from the DETECTION set (the tracklets are only used to find it)
+    furn_pos = set()
+    for t in furn:
+        for f, d in zip(t.frames, t.dets):
+            furn_pos.add((f, round(d["cx"]), round(d["cy"])))
+    clean_fd = []
+    for f, dets in frames_dets:
+        clean_fd.append((f, [d for d in dets
+                             if (f, round(d["cx"]), round(d["cy"])) not in furn_pos]))
+
+    # ---- GLOBAL SECOND PASS: exactly N tracks, no teleport, seeded at the cleanest frame
+    tracks = propagate_ntracks(clean_fd, FIELD)
+    # reliability filter: where per-frame detection is far from N the matches are unreliable
+    # (the zoomed-out bend, finish paint) — drop those positions rather than emit a wrong grab.
+    # Identity is still carried THROUGH them (no-teleport state), only the OUTPUT is suppressed.
+    reliable = {f for f, d in clean_fd if FIELD - 2 <= len(d) <= FIELD + 2}
+    for t in tracks:
+        t.pos = {f: p for f, p in t.pos.items() if f in reliable}
+    cover = [len(t.pos) for t in tracks]
+    print(f"global tracks={len(tracks)} field={FIELD} "
+          f"coverage(min/med/max)={min(cover)}/{int(np.median(cover))}/{max(cover)} "
+          f"of {len(clean_fd)} frames")
 
     # ---- emit per-frame tags + overlay render
     bytag: dict[int, list] = {}
-    for t in tracklets:
-        for f, d in zip(t.frames, t.dets):
-            bytag.setdefault(f, []).append((tag_of[t.id], d))
+    for t in tracks:
+        for f, (x, y, area) in t.pos.items():
+            bytag.setdefault(f, []).append((t.tag, x, y, area))
     rng = np.random.RandomState(7)
-    colors = {tag: tuple(int(c) for c in rng.randint(60, 255, 3)) for tag in set(tag_of.values())}
+    colors = {t.tag: tuple(int(c) for c in rng.randint(60, 255, 3)) for t in tracks}
     rows = []
     for i, fr in enumerate(av.open(f"data_cache/video/{VID}.mp4").decode(video=0)):
         if i % 2 or i not in ty0_by_frame:
             continue
         panel = fr.to_ndarray(format="bgr24")[:, fr.width // 2:]
         vis = panel.copy()
-        for tag, d in bytag.get(i, []):
-            x, y = int(d["cx"]), int(d["cy"])
-            cv2.circle(vis, (x, y), 12, colors[tag], 2)
-            cv2.putText(vis, str(tag), (x + 10, y - 10),
+        for tag, x, y, area in bytag.get(i, []):
+            cv2.circle(vis, (int(x), int(y)), 12, colors[tag], 2)
+            cv2.putText(vis, str(tag), (int(x) + 10, int(y) - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, colors[tag], 2)
-            rows.append((i, tag, d["cx"], d["cy"], d["area"]))
+            rows.append((i, tag, x, y, area))
         cv2.putText(vis, f"f{i:05d} tags={len(bytag.get(i, []))} field={FIELD}",
                     (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
         cv2.imwrite(f"{OUTDIR}/f{i:05d}.png", vis)

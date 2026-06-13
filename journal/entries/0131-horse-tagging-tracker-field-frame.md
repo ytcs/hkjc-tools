@@ -60,6 +60,41 @@ dropouts split some horses into big-chain + mid-chain pairs that the overlap exc
 correctly refuses to merge); (c) anonymous tags — the saddlecloth-number binding (legend
 swatches + draw order) is the next layer. R02A (crowd stress) + R03 runs pending.
 
+## UPDATE (0132 work, R08): start pathology fixed — global second pass + upstream pixels
+
+Owner flagged the early frames as pathological (over-tagging: 13-24 tags for an 11-field) and
+directed: no-teleport + a global second pass from global info, and "better upstream pixels beat
+downstream patches." Three layers, in that spirit:
+
+1. **Upstream pixels.** (a) AREA is the count authority, markers only LOCATE — a cluster splits
+   into k horses only when its area supports k (a single white horse fragments into 2-3
+   vivid/white blobs; marker count alone over-segmented the bunched start). (b) Connect ONE
+   avatar's fragments (silk+blaze+tail, split by the dark saddle) with an ORIENTED close along
+   the travel axis before clustering — within-horse fragments align along travel, adjacent horses
+   are offset across-track, so it doesn't bridge lanes. (c) Avatar SCALE refined from
+   marker-bearing blobs (real avatars), then TEMPORALLY SMOOTHED across frames (the zoom is
+   smooth) — the zoomed-out bend was reading rail/text furniture as scale 38 when avatars were
+   ~13 px, collapsing the whole tiny pack into 1 detection. (`cv_htag_dets_cache.py` two-pass.)
+2. **Global second pass = exactly N=11 no-teleport tracks** (`propagate_ntracks`). The camera
+   common mode is a per-step SIMILARITY transform (pan+ZOOM+rotation) — a translation-only field
+   shift could not model the start/finish zoom (horses move radially) and lost the bunched start.
+   The KEY architectural lesson: a single anchor must COAST across the unreliable bend, which is
+   fragile; instead seed N tracks per STABLE SEGMENT (runs where det count ≈ N) and STITCH
+   segments left-to-right by pooled silk signature (+ position where they overlap). Identity then
+   survives the bend/finish WITHOUT crossing them per-frame.
+3. **Reliability filter on output**: where det count is far from N (the zoomed-out bend, the
+   finish paint) the per-frame matches are unreliable — identity is carried THROUGH (no-teleport
+   state) but those positions are not EMITTED (a wrong grab is worse than an honest gap).
+
+Result (R08, by eye on the full render): **11 tags spanning the race, one per horse; the start
+is fixed and stable** (f400↔f440 identity persists per silk; zero >11-tag frames, was 13-24).
+Coverage 902/955/962 of 1227 frames after the reliability filter. The tag-trajectory jump audit
+(field-relative >25 px) is clean through the start + mid; the residual sits in the FINISH
+convergence (f2070-2750, horses bunch+occlude+cross the paint — the start's old difficulty, not
+yet stitched as cleanly) and the single near-total-detection-failure frame f816. Next: the
+finish convergence, then bind saddlecloth numbers (legend swatches + draw). Studies: detector
+`cv_htag_detect.py`, scale-smoothed cache `cv_htag_dets_cache.py`, global pass `cv_htag_track.py`.
+
 ## Cross-race (R03 + R02A)
 
 - **R03** (757 frames, field 12): 12 substantial chains (333-734 members) + fragments;
