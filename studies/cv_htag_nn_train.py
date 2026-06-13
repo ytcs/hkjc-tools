@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 
-RACE = os.environ.get("RACE", "R08")
+RACE = os.environ.get("RACE", "R08")          # a race, or "joint" for the multi-race detector
 DATA = f"data_cache/htag_yolo_{RACE}/data.yaml"
 
 

@@ -42,8 +42,16 @@ def main():
     byframe = defaultdict(list)
     for f, tg, x, y, a in tr:
         byframe[int(f)].append((int(tg), float(x), float(y), float(a)))
-    full = {f: v for f, v in byframe.items() if len(v) == FIELD}   # fully-labelled only
-    print(f"{len(byframe)} emitted frames; {len(full)} fully-labelled ({FIELD} tags)")
+    # COMPLETE-per-frame criterion: keep a frame iff every DETECTION got a tag (no unlabelled
+    # avatar -> YOLO never learns a real avatar as background), even when the full field is not
+    # visible (R02A shows ~10-11 of 12). Generalises to partial-visibility races; requiring the
+    # full field would keep only the rare all-visible frames (biased to spread-out moments).
+    zd = np.load(f"data_cache/_htag_dets_nn_{RACE}.npz", allow_pickle=True)
+    ndet = {int(f): len(d) for f, d in zd["frames_dets"]}
+    full = {f: v for f, v in byframe.items()
+            if len(v) == ndet.get(f, -1) and len(v) >= FIELD - 3}
+    print(f"{len(byframe)} emitted frames; {len(full)} complete-labelled "
+          f"(all dets tagged, >= {FIELD - 3})")
 
     for sub in ("images/train", "images/val", "labels/train", "labels/val"):
         d = os.path.join(OUT, sub)
