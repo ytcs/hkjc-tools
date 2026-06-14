@@ -47,6 +47,31 @@ phase mean ~11.0.** Identity (silk-consistency audit): **9 of 11 tags spread < 5
 all race), the 2 high-spread are the known multi-tone silks (magenta+white, yellow+red+white),
 visually confirmed correct. The previously-broken bend / run-in / finish all resolve.
 
+## Generalization — this is NOT a per-race-finetune approach (owner's scale-out concern)
+
+Three findings, escalating:
+1. **Zero-shot PRECISION transfers.** The R08-only detector on R02A (different race/config/silks,
+   no retraining) puts every box on a horse and ZERO on the grandstand CROWD or the disclaimer
+   text — the exact furniture that defeated the classical pipeline. It learned "avatar" (a bounded
+   synthetic sprite), not "salient blob", so unseen furniture is rejected. Recall was the only gap
+   (~10/12, partly real occlusion — the classical detector misses the same horses).
+2. **The tracker generalized (not the detector).** Most of R02A's apparent coverage gap was a
+   tracker bug: it assumed the full field is always visible, but R02A shows ~10-11 of 12 (odometer
+   box / shadows / frame edge). Thresholds now anchor on the per-race MEDIAN visible count -> R02A
+   median coverage 603->883, R08 unchanged (no-op where median=field). No per-race tuning.
+3. **One JOINT detector for all races.** Pool labels from a few races spanning the bounded AVV
+   variation (lighting/shadow/silk/zoom), train ONE model (`RACE=joint`, R08+R02A, 1036 imgs,
+   yolo11n CPU ~6 epochs, val mAP50 0.994 / mAP50-95 0.77 — ABOVE the R08-only 0.65). Labels are
+   SELF-BOOTSTRAPPING (the detector+tracker auto-label a new race; the "every detection tagged"
+   criterion handles partial visibility — R02A 518 frames, zero manual annotation).
+
+**Held-out test (the proof): R03 was NOT in training.** The joint detector zero-shot on R03 ->
+tracker: **coverage 696/757 (~92%), 10 of 12 tags silk-consistent** — BETTER than R02A (R03 has
+less occlusion). R08 (trained): 1151/1165/1168, no regression. R02A (trained): median 777, 8/12.
+So a detector trained on 2 races tags an unseen 3rd at 92% / 10-of-12 — the pool-and-generalize
+scale-out works; new races need no manual labels and (once the pool spans the variation) no
+training.
+
 ## Pipeline + state
 
 `cv_htag_nn_labels.py` -> `cv_htag_nn_train.py` (weights under `runs/`, gitignored) ->
