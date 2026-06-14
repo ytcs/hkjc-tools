@@ -27,14 +27,18 @@ IOU = 0.5
 
 
 def _weights():
-    """Locate the trained best.pt (Ultralytics nests it under runs/detect/...)."""
+    """Locate the avatar detector. Preference: explicit HTAG_WEIGHTS -> the JOINT multi-race
+    model (the generalizable detector, used for any race incl. unseen ones) -> a race-specific
+    model. Ultralytics nests best.pt under runs/detect/..."""
     env = os.environ.get("HTAG_WEIGHTS")
     if env:
         return env
-    cands = glob.glob(f"**/htag_yolo_{RACE}/**/avatar*/weights/best.pt", recursive=True)
-    if not cands:
-        raise FileNotFoundError(f"no trained weights for {RACE}; run cv_htag_nn_train.py")
-    return max(cands, key=os.path.getmtime)
+    for pat in ("**/htag_yolo_joint/**/avatar*/weights/best.pt",
+                f"**/htag_yolo_{RACE}/**/avatar*/weights/best.pt"):
+        cands = glob.glob(pat, recursive=True)
+        if cands:
+            return max(cands, key=os.path.getmtime)
+    raise FileNotFoundError("no avatar detector found; run cv_htag_nn_train.py (RACE=joint)")
 
 
 def main():
