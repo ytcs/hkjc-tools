@@ -2,17 +2,40 @@
 
 Trained on the pipeline's own clean-zone pseudo-labels (cv_htag_nn_labels.py). The avatars are
 consistent synthetic sprites, so a nano model converges fast; high imgsz keeps the small (15-40 px)
-avatars resolvable. CPU only here (no CUDA at runtime) — runs in the background.
+avatars resolvable. Auto-uses CUDA when present (a few min/epoch on GPU vs ~16 on CPU).
 
-Run:  RACE=R08 PYTHONHASHSEED=0 uv run --group bayes python studies/cv_htag_nn_train.py
-Out:  data_cache/htag_yolo_{RACE}/runs/.../weights/best.pt
+Run:  RACE=joint PYTHONHASHSEED=0 uv run --group bayes python studies/cv_htag_nn_train.py
+Out:  runs/detect/data_cache/htag_yolo_{RACE}/runs/avatar/weights/best.pt
 """
 from __future__ import annotations
 
+import glob
 import os
 
 RACE = os.environ.get("RACE", "R08")          # a race, or "joint" for the multi-race detector
-DATA = f"data_cache/htag_yolo_{RACE}/data.yaml"
+
+
+def _joint_data_yaml():
+    """Build (and return) a data.yaml pooling every per-race htag_yolo_* dataset on disk — the
+    generalizable multi-race detector. Self-contained so RACE=joint reproduces on a fresh box."""
+    base = os.path.abspath("data_cache")
+    races = sorted(os.path.basename(d).split("htag_yolo_")[1]
+                   for d in glob.glob(f"{base}/htag_yolo_*")
+                   if os.path.isdir(d) and "joint" not in d
+                   and os.path.exists(f"{d}/images/train"))
+    if not races:
+        raise FileNotFoundError("no per-race htag_yolo_* datasets; run cv_htag_nn_labels.py first")
+    out = f"{base}/htag_yolo_joint"
+    os.makedirs(out, exist_ok=True)
+    with open(f"{out}/data.yaml", "w") as f:
+        f.write("train:\n" + "".join(f"  - {base}/htag_yolo_{r}/images/train\n" for r in races))
+        f.write("val:\n" + "".join(f"  - {base}/htag_yolo_{r}/images/val\n" for r in races))
+        f.write("names:\n  0: avatar\n")
+    print(f"joint dataset pools races: {races}")
+    return f"{out}/data.yaml"
+
+
+DATA = _joint_data_yaml() if RACE == "joint" else f"data_cache/htag_yolo_{RACE}/data.yaml"
 
 
 def main():

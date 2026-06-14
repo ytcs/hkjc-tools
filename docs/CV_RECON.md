@@ -34,17 +34,19 @@ odometer-anchored field-consensus recon); the rail tracker is `studies/cv_rail_t
 odometer obs is `studies/cv_build_obs.py`. Library primitives: `hkjc.vision.{aerial_layout,feeds/aerial_rail,
 feeds/aerial_detect}`. Caches/overlays in `data_cache/` (git-ignored).
 
-**Current frontier (2026-06-12): HORSE TAGGING (§10b).** Stable per-horse tags on every render
-frame. The detection primitive is settled (journal 0130: class-SEGMENTATION beats the blob/shape
-routes — the avatar core body+vivid+small-white is unique to horses, shadows carry zero core
-classes; white furniture excluded by geometry incl. the venue-model in-track side test); the
-tracking layers run in the FIELD frame (journal 0131: the phase-correlation "ground reference"
-was falsified by member accounting — it locks onto the field itself; field shift is now the
-median matched-det displacement) with furniture separated by pooled motion/structure, and
-chains linked under the co-occurrence exclusion. R08 visually gated: 11 chains ≈ full-race,
-f1600/f2000 exactly one tag per horse. Open: rotated-bend small-avatar recall; FINISH-zone tag
-handoffs; saddlecloth-number binding (legend swatches + draw). Studies:
-`cv_htag_detect.py` / `cv_htag_track.py` / `cv_htag_rails_cache.py`.
+**HORSE TAGGING (journals 0130–0132; pipeline doc `studies/cv_htag_README.md`).** Stable
+per-horse tags on every render frame. A classical class-segmentation detector (0130) bootstraps
+the labels; the durable detector is a **self-supervised YOLO** (`yolo11n`, trained on the
+pipeline's own complete-per-frame tags) that broke the classical ceiling — R08 coverage 77→95%,
+zero over-detection, the disclaimer-text-occluded run-in and tiny zoomed-out bend both solved
+(0132). A **global no-teleport tracker** (`propagate_ntracks`: N tracks per stable segment,
+stitched by pooled silk, FIELD-frame camera) assigns identities; its thresholds adapt to the
+per-race median visible count, so it travels across races. **Generalization (the scale-out
+result):** a JOINT R08+R02A detector tags held-out **R03 zero-shot at ~92% / 10-of-12** — pool a
+few diverse races, train once, new races self-label; no per-race fine-tuning. Open: genuine
+occlusion (the real ceiling — both detectors miss hidden horses); saddlecloth-number binding
+(legend swatches + draw). Studies `studies/cv_htag_*.py` (8 scripts; see the README for the
+bootstrap→train→steady-state order + GPU notes).
 
 **Roadmap (priority order):**
 - **Verify + freeze the rail identity rework** (§10, journal 0122): re-render R08+R02A under the

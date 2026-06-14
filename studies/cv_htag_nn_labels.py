@@ -46,7 +46,15 @@ def main():
     # avatar -> YOLO never learns a real avatar as background), even when the full field is not
     # visible (R02A shows ~10-11 of 12). Generalises to partial-visibility races; requiring the
     # full field would keep only the rare all-visible frames (biased to spread-out moments).
-    zd = np.load(f"data_cache/_htag_dets_nn_{RACE}.npz", allow_pickle=True)
+    # The detection count comes from whatever cache produced these tags: the NN cache if a model
+    # exists, else the CLASSICAL cache (the from-scratch BOOTSTRAP — no trained detector yet).
+    for dc in (f"data_cache/_htag_dets_nn_{RACE}.npz", f"data_cache/_htag_dets_{RACE}.npz"):
+        if os.path.exists(dc):
+            zd = np.load(dc, allow_pickle=True)
+            print(f"detection counts from {dc}")
+            break
+    else:
+        raise FileNotFoundError(f"no detection cache for {RACE} (run the classical or NN detector)")
     ndet = {int(f): len(d) for f, d in zd["frames_dets"]}
     full = {f: v for f, v in byframe.items()
             if len(v) == ndet.get(f, -1) and len(v) >= FIELD - 3}
