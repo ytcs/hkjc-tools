@@ -26,8 +26,9 @@ def main():
     except Exception as exc:                   # offline -> from scratch
         print(f"pretrained unavailable ({exc}); training from scratch")
         model = YOLO("yolo11n.yaml")
+    epochs = int(os.environ.get("HTAG_EPOCHS", 40))
     model.train(
-        data=DATA, epochs=40, imgsz=960, batch=16, device=dev, patience=10,
+        data=DATA, epochs=epochs, imgsz=960, batch=16, device=dev, patience=10,
         cache=True, workers=4, project=f"data_cache/htag_yolo_{RACE}/runs", name="avatar",
         exist_ok=True, verbose=True,
         # small, high-contrast synthetic sprites: mild aug, no mosaic distortion late
