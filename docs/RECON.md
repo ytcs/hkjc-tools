@@ -425,6 +425,21 @@ Declared losses:
 - Film data for the dev races here comes from filtered cached scans; for HV0422-1 and HV0513-1 the
   `film` stage ran locally.
 
+**Local map distortion on the 1000 m straights (`rails.LOCAL_RES_M`; tag `recon-baseline-R`).** The
+smoothed residual of the calibrated leader at the odometer ticks is ≤ 6.9 m on 24 races. On both
+failing straights it is 14 m (ST 05-09 R1) and 28 m (ST3) at ~410 m to go. There the leader
+"stalls" 40 m in 4 s and then jumps: the render camera on the straight defeats the similarity pose
+graph, and the 150 m spline under a huber loss treated it as outliers.
+
+Fix: where ≥ 4 consecutive ticks keep a smoothed residual > 10 m, refit with 25 m knots over that run
+± 50 m, inside the tick-covered range. REJECTED: dense knots wherever any tick is flagged; one
+isolated tick at the race start sent knots into the sparse start (170 m residual).
+
+Only the two straights change. Both now pass all five timing gates on every seed of a 6-seed
+ensemble: ST3 leader 0.527 → 0.214 s and sectional 0.593 → 0.200; ST 05-09 R1 leader 0.249 → 0.130
+and sectional 0.280 → 0.212. Totals: all five timing gates 19 → 21/26, timing gates 120 → 123,
+all gates 198 → 202.
+
 **Lateral-scale gate failures (6/26), not fixed; the gate is unchanged.** The rails-stage ppm equals
 the tick-seeded ppm within 1 %, so lateral and along-track share one scale. On ST7 (pixels) the
 map ends 4.0–4.4 m inside the racing rail for the whole trip: the fixed rail at 4.5 m is never

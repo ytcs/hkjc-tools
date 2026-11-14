@@ -302,6 +302,11 @@ def clean_odometer(odo, win=15, tol=15.0):
     return o
 
 
+LOCAL_RES_M = 10.0  # m: smoothed tick residual that triggers a local dense-knot refit
+LOCAL_KNOT_M = 25.0  # m: knot spacing of that local refit
+LOCAL_MIN_TICKS = 4  # consecutive flagged ticks (~40 m) needed
+
+
 def calibrate_distance_ticks(
     fu,
     s_lead,
@@ -387,6 +392,34 @@ def calibrate_distance_ticks(
         return np.r_[(sF1 - ev_s) / ppm1 + Bv(ev_s) - target, pin, smooth * np.diff(coef, 2)]
 
     r = least_squares(res, np.zeros(nb), loss="huber", f_scale=huber)
+    # LOCAL map distortion: where the smoothed tick residual stays > LOCAL_RES_M, refit with dense
+    # knots (LOCAL_KNOT_M) around it. MEASURED (26 turf races, in-sample): both 1000 m straights
+    # (ST 0419 R3, 0509 R1) show a 14-28 m distortion at ~410 m to go -- the render camera there
+    # defeats the similarity pose graph (leader "stalls" 40 m in 4 s, then jumps); the 150 m spline
+    # (huber: outliers) ignored it -> leader 1.66 s late at 400 m. Every other race: smoothed
+    # residual <= 6.9 m, so the refit never triggers there.
+    from scipy.ndimage import median_filter
+
+    order = np.argsort(ev_s)
+    rt = res(r.x)[: len(ev_s)][order]
+    bad = np.abs(median_filter(rt, 5, mode="nearest")) > LOCAL_RES_M
+    # contiguous runs of >= LOCAL_MIN_TICKS flagged ticks only (an isolated edge tick -- the race
+    # start, where the pose is weak -- sent dense knots into the sparse start: 170 m residuals),
+    # dense knots over each run +- 50 m, kept inside the tick-covered range
+    es = ev_s[order]
+    extra = []
+    edges = np.flatnonzero(np.diff(np.r_[0, bad.astype(int), 0]))
+    for a0, a1 in zip(edges[::2], edges[1::2]):
+        if a1 - a0 >= LOCAL_MIN_TICKS:
+            x0 = max(es[a0] - 50 * ppm1, es[0] + 25 * ppm1)
+            x1 = min(es[a1 - 1] + 50 * ppm1, es[-1] - 25 * ppm1)
+            extra += list(np.arange(x0, x1, LOCAL_KNOT_M * ppm1))
+    if extra:
+        extra = np.array(extra)
+        inner_k = np.unique(np.r_[np.linspace(lo, hi, nk + 1), extra[(extra > lo) & (extra < hi)]])
+        t = np.r_[[lo] * k, inner_k, [hi] * k]
+        nb = len(t) - k - 1
+        r = least_squares(res, np.zeros(nb), loss="huber", f_scale=huber)
     Bsp = BSpline(t, r.x, k, extrapolate=True)
     dB = Bsp.derivative()
 
