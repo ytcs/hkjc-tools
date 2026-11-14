@@ -723,6 +723,10 @@ class RaceRun:
             return float(np.sqrt(gaps[h] ** 2 * var_inv_c + (gsd.get(h, 15.0) / C) ** 2))
 
         sds = {h: sd_t(h) for h in order if np.isfinite(gaps.get(h, np.nan))}
+        # DISABLED by default (2026-11-14): the clean frozen run showed it inflating the WINNER of HV
+        # 0429 (9 reads, crossed before the replay segment starts; its render path was the wrong one)
+        # -> no valid crossing -> wrong winner, while the misread it was built for (ST6 "#14") now has
+        # 22 reads after the white-cloth recall fix and is no longer affected.
         # cross-feed robustness for WEAK camera tracks: a number read on < 10 frames that also
         # disagrees with the render-fused crossing by > 0.3 s is likely a digit misread (ST6 "#14":
         # 6 reads, 1.4 s early); inflate its sd to the disagreement. Blanket inflation (any
@@ -734,7 +738,12 @@ class RaceRun:
         n_infl = 0
         for h in sds:
             tc = t_cross.get(h, np.nan)
-            if np.isfinite(tc) and n_reads.get(h, 0) < 10 and n_used >= 5:  # ST8: 3-horse anchor
+            if (
+                os.environ.get("HKJC_WEAK_INFLATE", "0") == "1"  # opt-in: see the note above
+                and np.isfinite(tc)
+                and n_reads.get(h, 0) < 10
+                and n_used >= 5  # ST8: 3-horse anchor
+            ):
                 dis = abs(t_w + gaps[h] / C - tc)
                 if dis > 0.3:
                     sds[h] = max(sds[h], dis)
