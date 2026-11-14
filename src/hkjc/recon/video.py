@@ -108,12 +108,12 @@ def render_active(panel) -> bool:
     import numpy as np
 
     ph = panel.shape[0]
-    hsv = cv2.cvtColor(panel, cv2.COLOR_BGR2HSV)
-    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    # colour conversions are per-pixel: convert ONLY the strips the gates read (identical result,
+    # ~2x less work on the ~2800 decoded frames per race)
     strip = slice(int(0.70 * ph), int(0.86 * ph))
-    nongreen = ((s[strip] > 110) & (v[strip] > 110) & ((h[strip] < 35) | (h[strip] > 90))).astype(
-        "uint8"
-    )
+    hs = cv2.cvtColor(panel[strip], cv2.COLOR_BGR2HSV)
+    h, s, v = hs[:, :, 0], hs[:, :, 1], hs[:, :, 2]
+    nongreen = ((s > 110) & (v > 110) & ((h < 35) | (h > 90))).astype("uint8")
     nongreen = cv2.morphologyEx(nongreen, cv2.MORPH_CLOSE, np.ones((3, 7), np.uint8))
     n, _lbl, st, _c = cv2.connectedComponentsWithStats(nongreen, 8)
     boxes = sum(
@@ -121,11 +121,10 @@ def render_active(panel) -> bool:
     )
     if boxes < 1:
         return False
-    if (
-        _green_frac(hsv[: int(0.30 * ph)]) > TOP_GREEN_MAX
-    ):  # live turf/horses leak into the top strip
+    top = cv2.cvtColor(panel[: int(0.30 * ph)], cv2.COLOR_BGR2HSV)
+    if _green_frac(top) > TOP_GREEN_MAX:  # live turf/horses leak into the top strip
         return False
-    gray = cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY)[int(0.34 * ph) : int(0.70 * ph)]
+    gray = cv2.cvtColor(panel[int(0.34 * ph) : int(0.70 * ph)], cv2.COLOR_BGR2GRAY)
     return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= TRACK_LAP_MIN
 
 
