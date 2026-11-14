@@ -13,15 +13,17 @@ near-horizontal Hough segments; horses from the COCO detector; the leader = the 
 image (closest to the front-on camera). Lines are TRACKED across frames and a track counts as a
 marker only if it sweeps up the image (>= SWEEP_PX): REJECTED single-frame "longest line" — a STATIC
 paint/edge stripe at the bottom of the film (ST4: 104 of 351 frames) and the running rail of the
-side-on camera after the cut both won it. A camera CUT (thumbnail difference) ends every track; the
-film switches to side-on / finish-post cameras for the last ~50-100 m, where "lowest box" is not the
-leader, so crossings come only from sweeping tracks. Crossing = the leader's hooves passing the
-line. Which marker: the render HUD odometer at that frame, at the marker or up to 40 m behind it
-(the render lags reality); then speed consistency between successive markers.
+side-on camera after the camera change both won it. A camera CUT (thumbnail difference > CUT_DIFF)
+ends every track — but on ST4 the change to the side-on camera is a pan/dissolve (max diff 15) and it
+never fires; the sweep test is what rejects the side-on views, where "lowest box" is not the leader.
+Crossing = the leader's hooves passing the line. Which marker: the render HUD odometer at that
+frame, at the marker or up to 40 m behind it (the render lags reality); then speed consistency
+between successive markers.
 
-MEASURED: 400 m crossings vs official -0.13 / +0.14 s (2 races); intermediate markers vs the
-official-anchored final product within +-0.24 s (R08, ST6); ST4 300/200/150/100 m at 63.1/68.9/
-72.0/75.0 s, whose 150->100 m speed extrapolates the leader to the line at 81.0 s (official 81.04).
+MEASURED (this detector, pixels checked on ST4): 400 m crossings vs official -0.12 (ST4), -0.08
+(ST9), -0.05 s (ST1 0426); ST4 300/200/150/100 m at 63.06/68.89/71.79/74.67 s. Constant-speed
+extrapolation from the last two markers to the line is BIASED EARLY (ST4 80.43 vs official 81.04,
+-0.61 s: the clear leader eased; ST9 -0.46, ST3 -0.49, ST1 -0.28) — a bound, not an observation.
 These are REAL-VIDEO observations (no official data)."""
 
 from __future__ import annotations
@@ -191,7 +193,8 @@ def _speed_consistent(got, vmin=12.0, vmax=22.0):
 
 def leader_finish(film_t, *, vmin=12.0, vmax=22.0):
     """Extrapolate the film leader to the line from the last two markers (constant speed) ->
-    (t_line, speed) or None. MEASURED ST4: 81.0 s vs official 81.04."""
+    (t_line, speed) or None. BIASED EARLY (leaders slow in the last 100 m): MEASURED -0.28..-0.61 s
+    on 4 Sha Tin races, so use it only as a physical bound."""
     mk = sorted(film_t)
     if len(mk) < 2:
         return None

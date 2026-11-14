@@ -90,7 +90,7 @@ def _green_frac(hsv_band) -> float:
     return float(((h > 35) & (h < 90) & (s > 60)).mean())
 
 
-def render_active(panel) -> bool:
+def render_active(panel, *, relaxed: bool = False) -> bool:
     """Is a CLEAN AVV 3D render present in this RIGHT panel (vs the live broadcast / a dissolve frame)?
 
     The replay opens with the live broadcast before switching to the split-screen render, with a short
@@ -108,18 +108,28 @@ def render_active(panel) -> bool:
     import numpy as np
 
     ph = panel.shape[0]
-    # colour conversions are per-pixel: convert ONLY the strips the gates read (identical result,
-    # ~2x less work on the ~2800 decoded frames per race)
-    strip = slice(int(0.70 * ph), int(0.86 * ph))
-    hs = cv2.cvtColor(panel[strip], cv2.COLOR_BGR2HSV)
-    h, s, v = hs[:, :, 0], hs[:, :, 1], hs[:, :, 2]
-    nongreen = ((s > 110) & (v > 110) & ((h < 35) | (h > 90))).astype("uint8")
-    nongreen = cv2.morphologyEx(nongreen, cv2.MORPH_CLOSE, np.ones((3, 7), np.uint8))
-    n, _lbl, st, _c = cv2.connectedComponentsWithStats(nongreen, 8)
-    boxes = sum(
-        1 for k in range(1, n) if st[k, cv2.CC_STAT_AREA] > 120 and st[k, cv2.CC_STAT_WIDTH] > 8
-    )
-    if boxes < 1:
+
+    def legend_boxes(lo, hi):
+        # colour conversions are per-pixel: convert ONLY the strips the gates read
+        hs = cv2.cvtColor(panel[int(lo * ph) : int(hi * ph)], cv2.COLOR_BGR2HSV)
+        h, s, v = hs[:, :, 0], hs[:, :, 1], hs[:, :, 2]
+        nongreen = ((s > 110) & (v > 110) & ((h < 35) | (h > 90))).astype("uint8")
+        nongreen = cv2.morphologyEx(nongreen, cv2.MORPH_CLOSE, np.ones((3, 7), np.uint8))
+        n, _lbl, st, _c = cv2.connectedComponentsWithStats(nongreen, 8)
+        return sum(
+            1 for k in range(1, n) if st[k, cv2.CC_STAT_AREA] > 120 and st[k, cv2.CC_STAT_WIDTH] > 8
+        )
+
+    # The legend's height varies by race layout: on ST 0419 R4 / 0426 R9 it sits at ~0.67 of the
+    # frame, so only the bottom 4-8 px of its boxes entered the 0.70-0.86 strip and the gate
+    # flickered OFF for whole stretches (ST9: 336 race frames, ~13 s; ST4: 84 -> every tracklet broke
+    # at 432 m out). Fallback (``relaxed``, only once the strict test has passed in this replay, so it
+    # fills holes INSIDE the render segment): >= 5 boxes in a strip widened to 0.60 (MEASURED: legend
+    # frames show 6-12 there, pre-race live frames <= 3). REJECTED: the widened strip with >= 1 box
+    # (admitted 11-65 pre-race live frames per race); the fallback before the first strict frame
+    # (admitted the dissolve-tail frame of HV 0527 R3 -> pose gauge moved, map scale +1.1 %).
+    strict = legend_boxes(0.70, 0.86) >= 1
+    if not strict and not (relaxed and legend_boxes(0.60, 0.86) >= 5):
         return False
     top = cv2.cvtColor(panel[: int(0.30 * ph)], cv2.COLOR_BGR2HSV)
     if _green_frac(top) > TOP_GREEN_MAX:  # live turf/horses leak into the top strip
@@ -146,6 +156,7 @@ def iter_unique_render(
     import av
 
     prev = None
+    seen = False  # the strict render test has passed: the legend-strip fallback may fill holes
     with av.open(str(path)) as c:
         c.streams.video[0].thread_type = "AUTO"  # frame-threaded decode: same pixels, ~3x faster
         for i, fr in enumerate(c.decode(video=0)):
@@ -154,7 +165,9 @@ def iter_unique_render(
             if stop is not None and i >= stop:
                 break
             img = fr.to_ndarray(format="bgr24")
-            if not render_active(img[:, img.shape[1] // 2 :]):
+            active = render_active(img[:, img.shape[1] // 2 :], relaxed=seen)  # relaxed >= strict
+            seen = seen or active
+            if not active:
                 prev = None
                 continue
             if box is None:

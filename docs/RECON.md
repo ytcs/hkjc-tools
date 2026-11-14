@@ -164,8 +164,38 @@ passed on the development caches; the path-count gate fails on 5 races (tailed-o
 view). Lateral sanity (innermost horses 1.6-2.8 m off the rail) holds on every oval race; both
 straight-course races are wrong (0.2-0.6 m). The sealed held-out batches stay sealed.
 
+## 3d. Render-gate and finish-anchor fixes (tag `recon-baseline-O`, 2026-11-14) — turf scope
+
+Two bugs found by checking the race film (left half of the aerial replay) against our paths:
+- **Render-active legend gate.** The legend sits higher on some layouts (~0.67 of the frame on ST
+  0419 R4, 0426 R9); only its boxes' bottom pixels entered the 0.70-0.86 test strip, so whole
+  stretches of render were rejected: ST9 lost ~13 s of race, ST4 2 s at 432 m out (every tracklet
+  broke; fusion extrapolated them). Fallback: >= 5 legend boxes in a strip widened to 0.60, allowed
+  only after the strict test has passed once in the replay (pre-span frames are dissolve tails).
+- **Finish anchor fitted to extrapolated paths.** Only crossings where the fused path is tight
+  (sd <= 3 m) now fit the finish clock and C; the line speed for the C prior likewise.
+
+15 turf races, full pipeline on a pod (RTX 4090, 760 s): all five timing gates on **10/15** (before:
+10/15 on the freeze-1 caches with the anchor fix, 9/15 at freeze-1); timing gates passed **65/75**
+(61); winner correct **15/15** (13). ST4 0 -> 3/5 and ST9 1 -> 2/5 (both winners now right; ST4's
+identity-free leader gate passes). **Regression: HV 0520 5 -> 4/5** (sectional 0.205 -> 0.264 s): its
+19 recovered frames move the pose GAUGE (the fixed frame is index K//2), and the map scale shifts
+2.6 %. Confirmed separately: on the OLD frames, moving only the fixed frame by 9 gives sectional 0.283 s.
+The pipeline is fragile to the choice of gauge; that is open (below). HV 0527 is bit-identical to a
+control run without the gate change.
+
+Race film: in the straight it is a front-on camera that sees the painted 400m..50m stripes. Leader
+crossings (`recon/film.py`, line tracks that sweep up the image) match official 400 m times within
+-0.12..+0.09 s on 6 races; the render HUD lags them 0.4-0.9 s at Sha Tin. Not wired into fusion: it
+covers only the last 400 m, and replacing that boundary's error with the film's ~0.1 s would flip at
+most one race's leader gate. The early-race render lag dominates.
+
 ## 4. Open / next
 
+- **Pose gauge sensitivity** — results move with the choice of fixed frame (HV 0520: shifting it
+  9 frames turns sectional 0.205 -> 0.283 s). The gauge should be independent of the frame count and
+  chain origin (e.g. fix the map scale from a content-defined frame set, or fix the metric after the
+  solve), validated by a 15-race pass.
 - **Drone** — resolve along-track (seed on bend frames, track forward from the previous camera; or a
   two-scalar field centroid/length fit), then use it for the start segment, draw-seeded identity
   and the independent lateral check.
