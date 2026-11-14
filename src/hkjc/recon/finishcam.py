@@ -308,7 +308,11 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
                     dx = x - xr[k[0]]
                     if abs(dx) < max_dx:
                         est[h].append(gr + dx)
-    gaps = {n: float(np.median(v)) for n, v in est.items() if len(v) >= 2}
+    # horses seen CROSSING the line (chain members) are direct measurements: keep them with a single
+    # estimate. Requiring >= 2 dropped the first crosser (its own gap is defined, not estimated) and
+    # re-zeroed every other gap on the next horse (ST8: winner #12 seen crossing, order came out
+    # [2, 7, 1]). Non-crossers still need >= 2 shared-frame estimates.
+    gaps = {n: float(np.median(v)) for n, v in est.items() if len(v) >= 2 or (n in chain and v)}
     if not gaps:
         return ([], {}, ustar, {}) if with_sd else ([], {}, ustar)
     g0 = min(gaps.values())
