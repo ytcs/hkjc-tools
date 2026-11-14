@@ -609,6 +609,30 @@ Remaining failures (declared; ST4 #10 and ST 05-24's finish-n are real and open)
     and the render runs 0.6–0.7 s past #4 and #12.
 - Path count: ST4 (#3 render-ended, #10 as above).
 
+**ST4 finish-camera ceiling (diagnostic, scratch copies only; linker PARKED).** The question was
+whether reading #10 (and the winner #11) at the line could pay. Their crossings were hand-placed
+from the frames as synthetic reads, then identify → fuse → validate re-ran. An untouched control copy
+reproduces U exactly.
+- With #10 placed: its own boundary errors are −0.13/−0.19/−0.04/+0.10 s, path count and finish-n
+  pass (paths short 2 → 0, finish short 3 → 2), but ST4 drops to 4/5 timing gates. Sectional is
+  0.173 → 0.302 s.
+- The loss is all #3, the tailed-off horse. It was path-less and now gets a path 0.9–4.6 s early.
+  Adding one seed relabels 2863 of 8665 detections back to 1240 m to go, because the seeded second EM
+  pass re-associates the whole race. #3 takes 330 detections (143 from #6, 127 previously
+  unassigned). No tracklet label involves #3.
+- Adding #11 too gives no gap for #11. It wins by a wide margin in the slow-motion post camera, so
+  its cloth shares too few frames with the field. That exposed a latent bug: a first crosser that
+  links nobody wiped every other gap. Fixed: the chain now starts at the crosser that links the
+  most (no-op on all 26 races, verified bit-identical).
+- A reader fix that trades a timing gate for two count gates is not adoptable, the standard that
+  rejected the robust-line variant.
+
+Linker prototype (identity carried from confident read runs onto unread cloth boxes, ST4 only):
+the self-test was confounded. It hid reads by u rather than px and gated on a constant-velocity
+prediction while x per u is bimodal, so "boxes too sparse" is NOT established. It is parked,
+because the ceiling above says even a perfect read costs ST4 a timing gate until the EM's #3
+assignment is robust.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
