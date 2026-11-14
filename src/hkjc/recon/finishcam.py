@@ -347,15 +347,25 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
     crossers = sorted([n for n in ustar if np.isfinite(ustar[n])], key=lambda n: ustar[n])
     if not crossers:
         return ([], {}, ustar, {}) if with_sd else ([], {}, ustar)
-    chain = {crossers[0]: 0.0}
-    for i, b in enumerate(crossers[1:], start=1):
-        for a in reversed(crossers[:i]):
-            if a not in chain:
-                continue
-            xa = _x_at(T[a], ustar[b])
-            if np.isfinite(xa) and 0 <= lx - xa < max_dx:
-                chain[b] = chain[a] + (lx - xa)
-                break
+    def _chain(cr):
+        ch = {cr[0]: 0.0}
+        for i, b in enumerate(cr[1:], start=1):
+            for a in reversed(cr[:i]):
+                if a not in ch:
+                    continue
+                xa = _x_at(T[a], ustar[b])
+                if np.isfinite(xa) and 0 <= lx - xa < max_dx:
+                    ch[b] = ch[a] + (lx - xa)
+                    break
+        return ch
+
+    # Start the chain at the crosser that links the MOST crossers (ties: the earliest). A first
+    # crosser whose cloth has left the frame before the next horse crosses (a wide winning margin
+    # in the slow-motion post camera) links nobody, and starting there wiped every other gap.
+    # MEASURED (ST 0419 R4 with the winner #11's crossing injected): 1 gap instead of 8. On all 26
+    # turf races the first crosser already links the most, so this is a no-op there.
+    chains = [_chain(crossers[s:]) for s in range(len(crossers))]
+    chain = max(chains, key=len)
     est = {n: ([chain[n]] if n in chain else []) for n in T}
     for h, (uh, xh, _yh) in T.items():
         for r, gr in chain.items():

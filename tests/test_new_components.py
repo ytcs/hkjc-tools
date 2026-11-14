@@ -244,6 +244,21 @@ def test_finishcam_digit_drop_prefers_longer_number():
     assert 1 in T and np.median(T[1][2]) > 500  # #1's track is the real #1, not the "11" cloth
 
 
+def test_finishcam_isolated_first_crosser_keeps_the_field():
+    """A winner far ahead (its cloth gone before the next horse crosses) must not wipe the gaps of
+    the field, which chain among themselves."""
+    rows = []
+    for u in range(10, 40):  # winner #5 crosses at u ~ 22 and leaves the read window by u 40
+        rows.append([u, u, 1400 - 20.0 * u, 300.0, 5, 0.9])
+    for h, x0, y in [(2, 3600.0, 420.0), (7, 3750.0, 520.0), (9, 3900.0, 620.0)]:
+        for u in range(120, 180):  # the field, 150 px apart, in view together, crossing u ~ 132-147
+            # (the winner's extrapolated cloth is then > max_dx past the line: it links nobody)
+            rows.append([u, u, x0 - 20.0 * u, y, h, 0.9])
+    order, gaps, _u = finishcam.finish_gaps(dict(line_x=960.0, reads=np.array(rows, float)))
+    assert order[:3] == [2, 7, 9]
+    assert abs(gaps[7] - gaps[2] - 150.0) < 1 and abs(gaps[9] - gaps[2] - 300.0) < 1
+
+
 def test_fusion_anonymous_association_respects_forbid():
     """An anonymous tracklet that the E-step's legend evidence excluded for a horse must not be
     handed to that horse by fusion's chi^2 association."""
