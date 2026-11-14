@@ -664,6 +664,23 @@ vs cap 30, 36 runs each) give identical timing gates on every run. Median sectio
 the seed spread (ST3 0.181 → 0.170, ST 05-24 0.154 → 0.149, the others ±0.003), and the spreads do not
 narrow (ST4 ρ range 0.95–0.99 → 0.90–0.99). Convergence buys no robustness at 2–3× the EM time.
 
+**The ST4 ceiling's #3 mechanism: orphan ELIMINATION in fusion (traced; parked).** With #10
+placed, four horses lack a path when fusion runs its orphan step (#3, #6, #12, #14). #6, #12 and #14
+each take one anonymous chain through their finish-camera anchors. The rule "give a chain to the
+last missing horse when it has no anchor score" then hands #3 a mid-field chain crossing at 82.4 s
+(#3 finished at 88.54 s). The chain fits none of the other horses' anchors (χ² 7400–10400 against
+9). In the control, two horses stay missing, so elimination never fires.
+- Elimination OFF fixes the ceiling: ST4 stays 5/5 timing, path count and finish-n pass, gates
+  7 → 9. On the 26 races at V it is gate-neutral (207), but 9 races each lose a path (paths short
+  0 → 1) and sectionals move both ways (HV 05-20 R2 0.161 → 0.203, ST3 0.188 → 0.165). The 8 paths
+  that elimination creates at V are mostly accurate (boundary errors within ±0.2–0.65 s; horses
+  placed 5th–12th). So the rule is kept.
+- REJECTED: forbidding elimination of a final-stretch chain onto a BLIND horse (the E-step's rule
+  applied in fusion). It blocked the first chain, then elimination handed #3 the next one (ending at
+  s 1327). Matched horses keep extra fragments, so "every leftover chain is the last horse's" is
+  false.
+- Parked: it pays only together with a finish-camera reader for ST4 #10, also parked.
+
 **Baseline V (`recon-baseline-V` = e4ee137): U plus the chain-start guard and the digit-drop
 fix.** Nothing upstream of `finish_gaps` changed, and `finish_gaps` output is bit-identical to U on
 23 races (verified with final src; exactly 3 races differ). So the 26-race root
