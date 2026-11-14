@@ -131,12 +131,13 @@ def solve(
 def solve_linear(
     pg: PoseGraph, *, fix: int = 0, iters: int = 20, huber: float = 3.0, tol: float = 1e-4
 ) -> PoseGraph:
-    """The SAME robust objective as ``solve`` (Huber on world-px probe residuals
-    G_i(x) - G_j(S x), edge weights w), solved EXACTLY by IRLS on a LINEAR system: a 2D similarity is
+    """Robust pose-graph solve as IRLS on a LINEAR system (Huber on probe residuals measured in
+    FRAME-j pixels, G_j^-1(G_i x) - S x, edge weights w — scale-invariant; NOT the world-px objective of
+    ``solve``, which a global solver satisfies by collapsing frame scales). A 2D similarity is
     z -> A z + B with complex A, B, so every residual A_i x + B_i - A_j (S x) - B_j is linear in the
     unknowns (cf. complex-number planar pose-graph / similarity-synchronization formulations). One
     sparse solve per IRLS round (~ms) instead of a capped nonlinear trf (27 s on R08)."""
-    from scipy.sparse import bmat, coo_matrix
+    from scipy.sparse import bmat, coo_matrix, diags
     from scipy.sparse.linalg import spsolve
 
     K = len(pg.G)
@@ -167,18 +168,40 @@ def solve_linear(
         (vals.ravel(), (np.repeat(rows, 4), cols.ravel())), shape=(nE * nP, 2 * K)
     ).tocsc()
     M, rhs0 = Mfull[:, free], -(Mfull[:, ~free] @ known[~free])
+    u0 = np.r_[pg.G[:, 0, 0] + 1j * pg.G[:, 1, 0], pg.G[:, 0, 2] + 1j * pg.G[:, 1, 2]]
+    lam = 1e-4
     w_rob = np.ones(nE * nP)
     u = None
+    # residual / A_j = G_j^-1(G_i x) - S x: the residual in FRAME-j pixels, SCALE-INVARIANT. In world
+    # px the objective rewards shrinking every frame toward zero scale (a global solver found that
+    # collapse: R03/R02A frames at scale 0); A_j is taken from the previous round (fixed point).
+    Aj_prev = np.abs(pg.G[Jn, 0, 0] + 1j * pg.G[Jn, 1, 0])
     for _ in range(iters):
-        wr = np.repeat(W, nP) * np.sqrt(w_rob)
+        wr = np.repeat(W / np.maximum(Aj_prev, 1e-6), nP) * np.sqrt(w_rob)
         Mw = M.multiply(wr[:, None]).tocsc()
         # complex normal equations -> real 2x system
         N = (Mw.conj().T @ Mw).tocsc()
         b = Mw.conj().T @ (rhs0 * wr)
+        # weak prior to the initial (chained) poses: frames with no surviving edge to the fixed
+        # frame's component keep their chain value (as the nonlinear solver leaves them) instead of
+        # collapsing to zero; negligible wherever there is data (lam^2 vs ~probe count x weight^2)
+        # prior strength RELATIVE to each variable kind's data strength (A rows carry probe coords
+        # ~500 px -> diag ~1e6; B rows ~1e1): an absolute lam was negligible and weakly connected
+        # blocks (R02A's 280 dissolve-region frames, joined only by w=0.05 interp edges) collapsed
+        dg = N.diagonal().real
+        isA = np.r_[np.arange(2 * K)[free] < K]
+        pri = np.where(
+            isA, lam * np.median(dg[isA]) if isA.any() else 0.0, lam * np.median(dg[~isA])
+        )
+        N = N + diags(pri)
+        b = b + pri * u0[free]
         Nr = bmat([[N.real, -N.imag], [N.imag, N.real]]).tocsc()
         x = spsolve(Nr, np.r_[b.real, b.imag])
         un = x[: N.shape[0]] + 1j * x[N.shape[0] :]
-        r = np.abs(M @ un - rhs0) * np.repeat(W, nP)  # weighted world-px residual
+        full_u = known.copy()
+        full_u[free] = un
+        Aj_prev = np.abs(full_u[Jn])
+        r = np.abs(M @ un - rhs0) * np.repeat(W / np.maximum(Aj_prev, 1e-6), nP)  # frame-j px
         w_rob = np.where(r <= huber, 1.0, huber / np.maximum(r, 1e-12))
         if u is not None and np.max(np.abs(un - u)) < tol:
             u = un
