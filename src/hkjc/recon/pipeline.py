@@ -254,6 +254,8 @@ class RaceRun:
         global _CACHE
         _CACHE = cache
         nw = min(_nproc(), 4)  # ONNX Runtime threads inside each worker too
+        if os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda")):
+            nw = 1  # one accelerator context; the device serialises work anyway
         with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
             for i, rs, hs in pool.imap(_det_job, range(len(cache)), chunksize=8):
                 for r, h in zip(rs, hs):

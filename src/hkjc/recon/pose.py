@@ -128,6 +128,72 @@ def solve(
     return PoseGraph(pg.shape, np.stack([_p2m(p) for p in P]), pg.edges)
 
 
+def solve_linear(
+    pg: PoseGraph, *, fix: int = 0, iters: int = 20, huber: float = 3.0, tol: float = 1e-4
+) -> PoseGraph:
+    """The SAME robust objective as ``solve`` (Huber on world-px probe residuals
+    G_i(x) - G_j(S x), edge weights w), solved EXACTLY by IRLS on a LINEAR system: a 2D similarity is
+    z -> A z + B with complex A, B, so every residual A_i x + B_i - A_j (S x) - B_j is linear in the
+    unknowns (cf. complex-number planar pose-graph / similarity-synchronization formulations). One
+    sparse solve per IRLS round (~ms) instead of a capped nonlinear trf (27 s on R08)."""
+    from scipy.sparse import bmat, coo_matrix
+    from scipy.sparse.linalg import spsolve
+
+    K = len(pg.G)
+    X = pg.probes()
+    zx = X[:, 0] + 1j * X[:, 1]
+    E = pg.edges
+    nE, nP = len(E), len(zx)
+    Ii = np.array([e.i for e in E])
+    Jn = np.array([e.j for e in E])
+    W = np.array([e.w for e in E], float)
+    s = np.array([e.S[0, 0] + 1j * e.S[1, 0] for e in E])
+    t = np.array([e.S[0, 2] + 1j * e.S[1, 2] for e in E])
+    zw = s[:, None] * zx[None, :] + t[:, None]  # (nE, nP) probe images in frame j
+    # unknown vector u (complex, length 2K): [A_0..A_{K-1}, B_0..B_{K-1}]
+    rows = np.arange(nE * nP)
+    ei = np.repeat(np.arange(nE), nP)
+    cols = np.c_[Ii[ei], K + Ii[ei], Jn[ei], K + Jn[ei]]
+    vals = np.c_[np.tile(zx, nE), np.ones(nE * nP), -zw.ravel(), -np.ones(nE * nP)]
+    A_fix = pg.G[fix][0, 0] + 1j * pg.G[fix][1, 0]
+    B_fix = pg.G[fix][0, 2] + 1j * pg.G[fix][1, 2]
+    free = np.ones(2 * K, bool)
+    free[[fix, K + fix]] = False
+    fidx = -np.ones(2 * K, int)
+    fidx[free] = np.arange(free.sum())
+    known = np.zeros(2 * K, complex)
+    known[fix], known[K + fix] = A_fix, B_fix
+    Mfull = coo_matrix(
+        (vals.ravel(), (np.repeat(rows, 4), cols.ravel())), shape=(nE * nP, 2 * K)
+    ).tocsc()
+    M, rhs0 = Mfull[:, free], -(Mfull[:, ~free] @ known[~free])
+    w_rob = np.ones(nE * nP)
+    u = None
+    for _ in range(iters):
+        wr = np.repeat(W, nP) * np.sqrt(w_rob)
+        Mw = M.multiply(wr[:, None]).tocsc()
+        # complex normal equations -> real 2x system
+        N = (Mw.conj().T @ Mw).tocsc()
+        b = Mw.conj().T @ (rhs0 * wr)
+        Nr = bmat([[N.real, -N.imag], [N.imag, N.real]]).tocsc()
+        x = spsolve(Nr, np.r_[b.real, b.imag])
+        un = x[: N.shape[0]] + 1j * x[N.shape[0] :]
+        r = np.abs(M @ un - rhs0) * np.repeat(W, nP)  # weighted world-px residual
+        w_rob = np.where(r <= huber, 1.0, huber / np.maximum(r, 1e-12))
+        if u is not None and np.max(np.abs(un - u)) < tol:
+            u = un
+            break
+        u = un
+    full = known.copy()
+    full[free] = u
+    G = np.zeros((K, 3, 3))
+    G[:, 0, 0], G[:, 1, 0] = full[:K].real, full[:K].imag
+    G[:, 0, 1], G[:, 1, 1] = -full[:K].imag, full[:K].real
+    G[:, 0, 2], G[:, 1, 2] = full[K:].real, full[K:].imag
+    G[:, 2, 2] = 1.0
+    return PoseGraph(pg.shape, G, pg.edges)
+
+
 def edge_residuals(pg: PoseGraph) -> np.ndarray:
     """Per-edge RMS probe disagreement (world px) under the current poses."""
     X = np.c_[pg.probes(), np.ones(6)]
@@ -231,14 +297,19 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
             edges.append(Edge(i, j, Sm, loop_weight if kind == "loop" else 1.0, kind))
     pg = PoseGraph(shape, G0, edges)
     fix = K // 2
-    pg1 = solve(pg, iters=100, rigid=False, fix=fix)
+    lin = os.environ.get("HKJC_POSE_SOLVER") == "linear"  # opt-in until validated
+
+    def solve_(g):
+        return solve_linear(g, fix=fix) if lin else solve(g, iters=100, rigid=False, fix=fix)
+
+    pg1 = solve_(pg)
     for _ in range(2):
         r = edge_residuals(pg1)
         keep = r < 10.0
         if keep.all():
             break
         pg = PoseGraph(shape, pg1.G, [e for e, k in zip(pg1.edges, keep) if k])
-        pg1 = solve(pg, iters=100, rigid=False, fix=fix)
+        pg1 = solve_(pg)
     r = edge_residuals(pg1)
     kinds = np.array([e.kind for e in pg1.edges])
     summ = " ".join(

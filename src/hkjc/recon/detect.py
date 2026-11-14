@@ -21,6 +21,8 @@ def default_weights() -> str:
     env = os.environ.get("HKJC_AVATAR_WEIGHTS")
     if env:
         return env
+    if os.environ.get("HKJC_DEVICE", "cpu").startswith("intel:"):
+        return _openvino_model()  # Intel iGPU/NPU via OpenVINO (opt-in; centres within 0.5 px)
     if os.environ.get("HKJC_DEVICE", "cpu").startswith("cuda") and os.path.exists(
         "models/avv_avatar_yolo11n.pt"
     ):  # GPU path (opt-in; numerics differ slightly from the CPU ONNX path)
@@ -41,6 +43,23 @@ def default_weights() -> str:
     raise FileNotFoundError("avatar detector weights not found (models/avv_avatar_yolo11n.pt)")
 
 
+OV_IMGSZ = (544, 960)  # the render panel (945x535) letterboxed: a FIXED input for OpenVINO
+
+
+def _openvino_model() -> str:
+    """OpenVINO export of the avatar detector (created once from the .pt weights). MEASURED on R08
+    (100 frames, Arc iGPU of a Core Ultra 5 225U): 23 ms/frame vs 134 ms CPU ONNX; 2449 vs 2451
+    detections, box centres within 0.11 px median / 0.48 px p99."""
+    out = "models/avv_avatar_yolo11n_openvino_model"
+    if not os.path.exists(out):
+        from ultralytics import YOLO
+
+        YOLO("models/avv_avatar_yolo11n.pt").export(
+            format="openvino", imgsz=list(OV_IMGSZ), half=False, verbose=False
+        )
+    return out
+
+
 class AvatarDetector:
     def __init__(self, weights: str | None = None, imgsz: int = 960):
         from ultralytics import YOLO
@@ -51,14 +70,16 @@ class AvatarDetector:
     def panel(self, panel, legend_row: int) -> np.ndarray:
         """Detect on the render PANEL (945x535; ~2x fewer pixels than the letterboxed half frame).
         -> (N, 6) [cx, cy, w, h, conf, 0] in panel px; legend icon band rejected."""
+        dev = os.environ.get("HKJC_DEVICE", "cpu")
+        ov = dev.startswith("intel:")
         r = self.model.predict(
             panel,
             conf=CONF,
             iou=IOU,
-            imgsz=self.imgsz,
+            imgsz=OV_IMGSZ if ov else self.imgsz,
             verbose=False,
-            rect=True,
-            device=os.environ.get("HKJC_DEVICE", "cpu"),
+            rect=not ov,
+            device=dev,
         )[0]
         if len(r.boxes) == 0:
             return np.zeros((0, 6))
