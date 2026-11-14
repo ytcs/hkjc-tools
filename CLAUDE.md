@@ -20,6 +20,12 @@ The library is deliberately lean — two packages:
   hide failures. Fixed acceptance gates in `recon/validate.py` — never loosen after seeing numbers;
   report failures as failures.
 - **Record rejected approaches** (and why) in docstrings/docs so they are not re-tried.
+- **Everything is tracked, committed and pushed.** Commit + push every verified change (code, tests,
+  scripts, docs, journal); tag the exact code behind any reported baseline (`recon-baseline-*`).
+  Model weights (`models/`) and `data_cache/` stay ignored. (The recon package was once untracked:
+  a pose-code regression became impossible to diff against the version that produced the caches.)
+- **Speed work must be exact unless declared otherwise**: verify with `scripts/compare_artifacts.py`
+  (stage artifacts bit-identical; the pipeline is deterministic, noise floor 0).
 
 ## Running
 
