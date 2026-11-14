@@ -184,6 +184,34 @@ def test_em_assign_rank_attraction_final_stretch():
     assert lab[1] == 0  # 575 m out: no attraction, chi^2 too large -> clutter
 
 
+def test_em_assign_silk_arbitrates_between_close_candidates(monkeypatch):
+    """Two horses side by side, positionally interchangeable: the official-silk signature decides
+    (bounded), and an empty detection signature is no evidence. (The term is off by default.)"""
+    from hkjc.recon import assoc
+
+    monkeypatch.setenv("HKJC_SILK_W", "20")
+
+    tg = np.arange(0, 10.01, 0.1)
+
+    def path(h, lat):
+        return fusion.Path(h, tg, 15.0 * tg, np.full_like(tg, lat), np.full_like(tg, 0.3),
+                           np.full_like(tg, 0.3), np.ones_like(tg))
+
+    paths = {1: path(1, 2.0), 2: path(2, 2.2)}
+    t = np.full(2, 5.0)
+    s = np.full(2, 75.0)
+    lat = np.array([2.2, 2.0])  # positions slightly favour the SWAPPED assignment
+    red, blue = np.zeros(26), np.zeros(26)
+    red[12], blue[12 + 8] = 1.0, 1.0  # vivid hue bins
+    F = np.array([red, blue])  # detection 0 wears red, detection 1 blue
+    proto = {1: red, 2: blue}
+    leg = np.zeros((0, 9), int)
+    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, silk=(F, proto))
+    assert list(lab) == [1, 2]
+    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, silk=(np.zeros((2, 26)), proto))
+    assert list(lab) == [2, 1]  # no silk evidence: position decides
+
+
 def test_fusion_anonymous_association_respects_forbid():
     """An anonymous tracklet that the E-step's legend evidence excluded for a horse must not be
     handed to that horse by fusion's chi^2 association."""

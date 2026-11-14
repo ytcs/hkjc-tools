@@ -25,6 +25,27 @@ CLUTTER = 16.0  # chi^2 cost of leaving a detection unassigned (4 sigma)
 RANK_EPS = 0.6  # m: a detection is "clearly ahead" if > RANK_EPS m closer to the finish
 RANK_COST = 50.0
 RANK_SOFT = 9.0  # 3 sigma: confident-rank mismatch with the legend
+# OFF by default (HKJC_SILK_W > 0 enables): per-detection silk in the E-step is CHAOTIC. Hand-set
+# (79 crops, 4 races) label accuracy: none 53/79; w=20 split bins 58; w=10 51; w=40 55; collapsed
+# w=20 56, w=40 57; feasible-relative 50. Gates unchanged on 26 races (205 -> 205). ST4 9 -> 15/16 and
+# ST 0524 13 -> 18/19 improve, ST 0531 12 -> 7-9 and HV 0527 R9 19 -> 16-18 get worse. Next: silk at
+# the TRACKLET level (aggregated, official prototypes) in identify.
+SILK_W = 0.0  # cost per unit of total-variation distance (relative to the frame's best candidate)
+SILK_CAP = 6.0  # bounded: arbitrates between positional candidates, never overrides a tight path
+
+
+def SILK_W_ENV() -> float:  # noqa: N802
+    """SILK_W, or the diagnostic override HKJC_SILK_W (<= 0 disables the appearance term: NaN)."""
+    v = float(os.environ.get("HKJC_SILK_W", SILK_W))
+    return v if v > 0 else float("nan")
+
+
+def _collapse(a):
+    """v2 silk signature -> hue (pastel + vivid) + white + dark."""
+    nh = (a.shape[-1] - 2) // 2
+    return np.concatenate([a[..., :nh] + a[..., nh : 2 * nh], a[..., 2 * nh :]], -1)
+
+
 RANK_ATTR = 10.0  # cost cap: final-stretch detection at a listed horse's legend rank
 RANK_ATTR_M = 100.0  # m before the line where the rank attraction applies
 FLOOR_EPS = 8.0  # m: 'ahead of every listed horse' margin (4/8/16 m equivalent; 0.6 m failed)
@@ -58,12 +79,15 @@ def assign_frames(
     n_field=None,
     forbid_out=None,
     s_line=None,
+    silk=None,
 ):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
     ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
     before the line) pay the extra cost for those horses — the finish camera's NEGATIVE evidence: a
     horse it never read (while reading most of the field) is unlikely to be crossing with the field.
     ``n_field`` = runners in the race (for the negative legend evidence; default: horses with paths).
+    ``silk`` = (F, proto): per-detection v2 silk signatures (rows aligned with ``t``) and {horse:
+    official-silk signature}: a bounded APPEARANCE cost, relative to the best candidate in the frame.
     ``s_line`` = race distance (metres run at the line): enables the final-stretch rank attraction.
     ``forbid_out`` (dict, optional) receives {detection index: set of horses} excluded by the HARD
     legend costs, so later stages (fusion's anonymous association) cannot hand them back.
@@ -92,6 +116,23 @@ def assign_frames(
         # nearby detection (HV 0527 #9, tailed off 3.4 s behind: path ended 2.8 s early).
         C = (s[js][:, None] - ps) ** 2 / vs + (lat[js][:, None] - pl) ** 2 / vl
         C = C + np.log(vs * vl / (sd_s**2 * sd_l**2))[None, :]
+        if silk is not None and np.isfinite(SILK_W_ENV()):
+            F, proto = silk
+            Fj = F[js]
+            have = [c for c, h in enumerate(ok) if h in proto]
+            valid = Fj.sum(1) > 0  # an empty signature (all pixels excluded) is no evidence
+            if have and valid.any():
+                P = np.array([proto[ok[c]] for c in have])
+                # match on hue + white + dark with pastel/vivid COLLAPSED: the render desaturates and
+                # lights silks (a yellow-green silk lands in the pastel bins, the official GIF in the
+                # vivid ones). MEASURED (79 hand-labelled crops): correct group in the official-silk
+                # top 3: 63/79 split -> 73/79 collapsed; the split broke ST 0531 in the pipeline.
+                tvd = 0.5 * np.abs(_collapse(Fj)[:, None, :] - _collapse(P)[None, :, :]).sum(-1)
+                rel = tvd - tvd.min(axis=1, keepdims=True)
+                # REJECTED: relative to the best POSITIONALLY PLAUSIBLE candidate (hand set 50/79)
+                add = np.minimum(SILK_W_ENV() * rel, SILK_CAP)
+                add[~valid] = 0.0
+                C[:, have] += add
         if near_line is not None:
             for s_from, pen in near_line if isinstance(near_line, list) else [near_line]:
                 nl = s[js] >= s_from

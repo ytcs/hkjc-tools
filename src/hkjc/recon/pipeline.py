@@ -58,6 +58,7 @@ STAGES = (
     "pose",
     "worldmap",
     "detect",
+    "silk",  # v2 silk signatures + official prototypes (E-step appearance term; HKJC_SILK_W > 0 only)
     "hud",
     "rails",
     "film",  # race-film marker crossings -> the metric's constant offset (HKJC_FILM=0: skipped)
@@ -72,6 +73,7 @@ OUTPUTS = {
     "features": ["feats.npz"],
     "pose": ["pose.npz"],
     "detect": ["dets.npz"],
+    "silk": ["silk.npz"],
     "hud": ["hud.npz", "legend.npz"],
     "film": ["film.npz"],
     "worldmap": ["map.png", "map_cnt.npy", "map_meta.npz"],
@@ -150,6 +152,8 @@ class RaceRun:
         todo = [st for st in stages if st not in self.done_set() or st in force]
         if not film_enabled():  # HKJC_FILM=0 (see observe)
             todo = [st for st in todo if st != "film"]
+        if not float(os.environ.get("HKJC_SILK_W", 0)) > 0:  # silk E-step term off by default
+            todo = [st for st in todo if st != "silk"]
         bg = {}
 
         launched = set()
@@ -338,6 +342,41 @@ class RaceRun:
             source=src,
         )
 
+    def silk(self):
+        """v2 silk signature of every detection (``detect.silk_feature``, from the aerial video's render
+        panel) + the OFFICIAL silk prototype of every runner (``detect.silk_prototype``; pre-race
+        input). Used only by the detection-level E-step (``assoc.assign_frames``)."""
+        import av
+
+        from ..data.silks import silk_path
+
+        rows = np.load(self.p("dets.npz"))["rows"]
+        x0, x1, y0, y1 = [int(b) for b in np.load(self.p("frames_idx.npz"))["box"]]
+        feat = np.zeros((len(rows), 2 * _detect.SILK_NH + 2), np.float32)
+        order = np.argsort(rows[:, 0], kind="stable")
+        fr_sorted = rows[order, 0].astype(int)
+        want = set(fr_sorted.tolist())
+        last = max(want) if want else -1
+        with av.open(str(self.video())) as c:
+            c.streams.video[0].thread_type = "AUTO"
+            for i, fr in enumerate(c.decode(video=0)):
+                if i > last:
+                    break
+                if i not in want:
+                    continue
+                panel = fr.to_ndarray(format="bgr24")[y0:y1, x0:x1]
+                a, b = np.searchsorted(fr_sorted, [i, i + 1])
+                for j in order[a:b]:
+                    feat[j] = _detect.silk_feature(panel, rows[j, 1:5])
+        nos, proto = [], []
+        for r in self.info.runners:
+            pth = silk_path(r.horse_id)
+            if pth is not None:
+                nos.append(r.no)
+                proto.append(_detect.silk_prototype(pth))
+        np.savez(self.p("silk.npz"), feat=feat, proto_no=np.array(nos), proto=np.array(proto))
+        self.log(f"   silk: {len(rows)} detections, {len(nos)}/{len(self.info.runners)} official silks")
+
     def hud(self):
         rows, leg = ocr.read_render_hud_cached(self.cache(), n_field=max(14, self.info.n))
         np.savez(self.p("hud.npz"), rows=rows)
@@ -410,6 +449,7 @@ class RaceRun:
         #  near-static in the panel for long stretches)
         keep &= ~((cnt[inv] >= 0.04 * nfr) & (rows[:, 2] < video.DISCLAIMER_ROWS + 20))
         rows, hist = rows[keep], D["hist"][keep]
+        self._wd_idx = np.where(keep)[0]  # dets.npz row index of each kept detection (silk lookup)
         G = P["G"][[k_of[int(f)] for f in rows[:, 0]]]
         X = np.einsum("nij,nj->ni", G, np.c_[rows[:, 1:3], np.ones(len(rows))])[:, :2]
         return rows, X, hist, P
@@ -499,6 +539,7 @@ class RaceRun:
         if seed:  # drop 1 % of detections (seeded) -> spread of the downstream gate metrics
             keep = np.random.default_rng(int(seed)).random(len(rows)) >= 0.01
             rows, X, hist = rows[keep], X[keep], hist[keep]
+            self._wd_idx = self._wd_idx[keep]
         z = np.load(self.p("rail.npz"))
         m = np.load(self.p("metric.npz"))
         rf = rails.RailFrame.from_points(z["rail"], int(z["inner"]))
@@ -585,6 +626,7 @@ class RaceRun:
         lat = lat_px / ppm_loc(s_px)
         g = lat > -1.0  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]
+        det_idx = self._wd_idx[g]
         t = (rows[:, 0] - self.clock_f0()) / FPS
         frames = np.unique(rows[:, 0])
         fi = np.searchsorted(frames, rows[:, 0])
@@ -601,6 +643,7 @@ class RaceRun:
             members=np.array([np.array(tk.det) for tk in trs], dtype=object),
             odo_c=c,
             film_delta=delta,
+            det_idx=det_idx,
         )
         self.log(
             f"   observe: {len(resid)} odometer ticks, ppm odo/marker {ppm_odo:.3f}/{ppm:.3f}, "
@@ -1119,6 +1162,13 @@ class RaceRun:
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
         leg = np.load(self.p("legend.npz"))["rows"]
         fr, t, lat = T["rows"][:, 0], T["t"], T["lat"]
+        silk = None  # appearance term: per-detection v2 silk signature vs official silk prototypes
+        if self.p("silk.npz").exists() and "det_idx" in T.files:
+            zs = np.load(self.p("silk.npz"))
+            silk = (
+                zs["feat"][T["det_idx"]],
+                {int(h): p for h, p in zip(zs["proto_no"], zs["proto"])},
+            )
         s_run = self.info.distance - T["d"]
         frag = np.full(len(t), -1)
         for k, m in enumerate(T["members"]):
@@ -1174,6 +1224,7 @@ class RaceRun:
                     n_field=len(horses),
                     forbid_out=forbid,
                     s_line=self.info.distance,
+                    silk=silk,
                 )
                 obs = assoc.runs_to_obs(lab, t, s_run, lat)
                 for k in np.unique(frag[(lab == 0) & (frag >= 0)]):

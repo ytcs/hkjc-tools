@@ -138,6 +138,59 @@ def silk_hist(panel, det, bins: int = 12) -> np.ndarray:
     return hist / t if t > 0 else hist
 
 
+SILK_NH = 12  # hue bins (x2: pastel / vivid) of the v2 silk feature
+
+
+def _silk_bins(hsv, dark_w):
+    hh, s, v = hsv[:, 0].astype(int), hsv[:, 1].astype(int), hsv[:, 2].astype(int)
+    white = (s < 40) & (v > 170)
+    dark = v < 60
+    past = (s >= 40) & (s < 110) & (v > 120) & ~dark
+    viv = (s >= 110) & (v > 80)
+    hb = (hh * SILK_NH // 180).clip(0, SILK_NH - 1)
+    h = np.r_[
+        np.bincount(hb[past], minlength=SILK_NH),
+        np.bincount(hb[viv], minlength=SILK_NH),
+        white.sum(),
+        dark_w * dark.sum(),
+    ].astype(float)
+    t = h.sum()
+    return h / t if t > 0 else h
+
+
+def silk_feature(panel, det) -> np.ndarray:
+    """v2 silk signature of a render avatar (for the E-step appearance term): pastel/vivid hue bins +
+    white + (down-weighted) dark, EXCLUDING turf and horse-brown pixels. MEASURED (hand-labelled crops,
+    pixels): the v1 ``silk_hist`` was dominated by the brown horse body (hue bin 1 held 13-39 % of every
+    histogram) and counted pastel silks (light blue) as white -> self-vs-nearest-other 53 % (26 races,
+    ~chance); v2: 0.48 -> 0.67 (HV0527-9), 0.46 -> 0.73 (HV0603-3), 0.50 -> 0.61 (ST4) on EM labels."""
+    import cv2
+
+    cx, cy, w, h = det[:4]
+    x0, x1 = int(max(0, cx - w / 2)), int(min(panel.shape[1], cx + w / 2 + 1))
+    y0, y1 = int(max(0, cy - h / 2)), int(min(panel.shape[0], cy + h / 2 + 1))
+    if x1 <= x0 or y1 <= y0:
+        return np.zeros(2 * SILK_NH + 2)
+    hsv = cv2.cvtColor(panel[y0:y1, x0:x1], cv2.COLOR_BGR2HSV).reshape(-1, 3).astype(int)
+    hh, s, v = hsv[:, 0], hsv[:, 1], hsv[:, 2]
+    turf = (hh > 28) & (hh < 60) & (s > 50) & (v > 50) & (v < 210)
+    brown = (hh <= 25) & (s > 60) & (s < 200) & (v > 40) & (v < 160)  # horse body / mane
+    return _silk_bins(hsv[~turf & ~brown], dark_w=0.3)
+
+
+def silk_prototype(gif_path) -> np.ndarray:
+    """The same signature from the OFFICIAL silk image (pre-race input; alpha-masked GIF). MEASURED
+    (79 hand-labelled near-line crops, 4 races): the correct colour group is in its top 3 for 63/79;
+    where the EM label was wrong (19 cases) the official silk preferred the right group 19/19."""
+    import cv2
+    from PIL import Image
+
+    a = np.array(Image.open(gif_path).convert("RGBA"))
+    m = a[..., 3] > 0
+    hsv = cv2.cvtColor(np.ascontiguousarray(a[..., :3][:, :, ::-1]), cv2.COLOR_BGR2HSV)[m]
+    return _silk_bins(hsv, dark_w=0.3)
+
+
 def bgsub_blobs(panel, back, valid, *, thr=60, min_a=40, max_a=1500, merge_px=16.0):
     """Surface-agnostic horse detection from the STATIC WORLD MAP: the map warped into the frame
     (``back``, horses averaged out) is differenced with the frame; blobs = horses (+ shadows).

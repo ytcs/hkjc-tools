@@ -446,7 +446,9 @@ ensemble:
 - ST3: leader 0.527 → 0.214 s (boundaries +0.03/+0.53/−0.08, none unscored), sectional 0.593 →
   0.174.
 - ST 05-09 R1: leader 0.249 → 0.130 s, sectional 0.280 → 0.171. Totals: all five timing gates 19 → 21/26, timing gates 120 → 123,
-all gates 198 → 202.
+all gates 198 → 202. A from-scratch 26-race pod run of the default pipeline at `recon-baseline-R`
+reproduces these exactly (the `film` stage ran end to end). Canonical baseline-S, built from those
+artifacts: 22/26, timing 124/130, gates 204.
 
 **Final-stretch rank attraction (`assoc.RANK_ATTR`; tag `recon-baseline-S`).** Census of the 15
 unread horses that are in view but vague at the line: most have zero own detections in the last
@@ -466,6 +468,32 @@ that horse at most 10.
   behind-winner 0.072 → 0.138 s.
 - REJECTED: over the whole race (ST3 sectional 0.174 → 0.266, a failure); only for non-tight horses,
   sd ≥ 2 m (never fired for ST9 #5).
+
+**Silk appearance (pixels → official silks; machinery committed, E-step term OFF by default).**
+
+The pixels showed that the E-step uses position and legend rank only, while the render avatars'
+silks are distinct. I hand-labelled 79 near-line crops on 4 races at the colour-GROUP level, against
+the official silk GIFs, a pre-race input. That exposed:
+- a "3" label on a white silk (HV 05-27 R9);
+- heavily scrambled labels on ST4;
+- #1 and #14 swapped near the line on ST 05-24. That race's crossings are still within 0.05 s of
+  official, a genuine near dead heat.
+
+Feature: the v1 `silk_hist` is dominated by the brown horse body and counts pastel silks as white.
+v2 `detect.silk_feature` drops turf and brown pixels and keeps white and dark bins, matching on hue
+with pastel and vivid collapsed, because the render desaturates. Against prototypes from the official
+GIFs (`detect.silk_prototype`):
+- the correct group is in the top 3 for 73/79 crops;
+- where the EM label is wrong (19 cases), the silk prefers the right group 19/19.
+
+As a bounded per-detection E-step cost (`assoc.SILK_W`, a `silk` stage, `det_idx` in tracks.npz),
+the result is chaotic:
+- hand-set label accuracy ranges from 49 to 58/79 across weights and normalisations (53 without);
+- ST4 goes 9 → 15/16 and ST 05-24 13 → 18/19, while ST 05-31 goes 12 → 7–9 and HV 05-27 R9 19 → 16;
+- gates on 26 races are unchanged (205 → 205).
+
+It is off by default, and the stage is skipped unless `HKJC_SILK_W > 0`. Next: silk aggregated over
+whole tracklets, with official prototypes, in identify.
 
 **The film reference's own bias (recorded, NOT corrected).** The film now sets every race's distance
 constant. Film − official at Sha Tin's 400 m marker is early on 9 of 10 races, mean −0.11 s:
