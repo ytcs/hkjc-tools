@@ -229,8 +229,12 @@ def tracks(sc, *, min_reads=4, y_tol=40.0):
         # drop isolated misreads (e.g. a half-occluded "11" read as "1"): far from a running median.
         # Known cost: SPARSE reads of a moving cloth look isolated (ST 0419 R4's winner #11, read at u
         # 25/27/56 then 69-86 in the slow-motion post camera, loses the reads near the line -> no gap).
-        # REJECTED: a robust line x(u) instead -- restores #11 as winner but adds wrong placements
-        # elsewhere (26 races: timing gates 126 -> 123: ST1 wrong winner, ST 0509 R1 rho 0.87).
+        # NOT ADOPTED (flips untraced): a robust line x(u) instead (+ a motion-rate test for short
+        # slow-motion tracks, which admits ST4's runner-up #10): restores #11 and #10 (ST4 rho 1.00,
+        # paths complete) but 26 races: timing gates 126 -> 123 -- ST4 sectional 0.173 -> 0.288 (untraced),
+        # ST 0509 R1 rho 0.87 (its #8/#9 reads are GENUINE, pixels; their gaps place them wrongly), ST1's
+        # winner flip is a near dead heat (#13 / unread #9 official 0.05 s apart; noise). Motion-rate
+        # alone: 126 -> 124.
         med = np.array([np.median(xx[max(0, i - 3) : i + 4]) for i in range(len(xx))])
         k = np.abs(xx - med) < 80
         return (uu[k], xx[k], yy[k]) if k.sum() >= min_reads else None
