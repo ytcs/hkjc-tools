@@ -617,9 +617,15 @@ reproduces U exactly.
   pass (paths short 2 → 0, finish short 3 → 2), but ST4 drops to 4/5 timing gates. Sectional is
   0.173 → 0.302 s.
 - The loss is all #3, the tailed-off horse. It was path-less and now gets a path 0.9–4.6 s early.
-  Adding one seed relabels 2863 of 8665 detections back to 1240 m to go, because the seeded second EM
-  pass re-associates the whole race. #3 takes 330 detections (143 from #6, 127 previously
-  unassigned). No tracklet label involves #3.
+  The injection relabels 2863 of 8665 detections back to 1240 m to go. #3 takes 330 detections
+  (143 from #6, 127 previously unassigned); no tracklet label involves #3.
+- The seed pass is NOT the cause: with `HKJC_SEED=0` the result is identical, because #10 gets its
+  path in the first pass. What the injection changes is the first EM pass's finish-camera inputs:
+  the read fraction behind the near-line cost (2.06 → 2.51), the blind set, and the finish
+  observations in fusion.
+- That pass has NOT CONVERGED when it stops. 1.2 % of labels still change at the 8th (last)
+  iteration. Across the 26 races at U, only 2 converge (< 0.2 %) before the cap; the other 24 end
+  with 0.2–3.7 % still changing.
 - Adding #11 too gives no gap for #11. It wins by a wide margin in the slow-motion post camera, so
   its cloth shares too few frames with the field. That exposed a latent bug: a first crosser that
   links nobody wiped every other gap. Fixed: the chain now starts at the crosser that links the
