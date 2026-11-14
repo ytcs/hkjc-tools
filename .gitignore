@@ -19,3 +19,6 @@ studies/out/
 
 # Ultralytics YOLO training runs (weights/plots/configs; regenerable)
 runs/
+
+# model weights (trained/downloaded; not versioned)
+models/

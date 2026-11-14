@@ -1,118 +1,56 @@
 # hkjc-tools
 
-A physics-grounded modelling stack for Hong Kong Jockey Club (HKJC) horse racing, and the
-data + agent scaffolding around it. The production model is the **`wald` first-passage
-diffusion law** (finishing time = first passage of a drift-diffusion → Inverse-Gaussian,
-winner = argmin) with leak-free empirical-Bayes ability and physically-derived per-venue
-couplings. The modelling philosophy is **first-principle regularization**: every factor must
-couple as a real mechanism, never an arbitrary regressor, and the goal is to *fit the market*
-— % of market is a goodness-of-fit metric, not an edge hunt. Full principles + method:
-**`docs/PHILOSOPHY.md`**; mechanism/theory: `docs/THEORY.md`.
+Reconstructs every horse's 2D path in a Hong Kong Jockey Club race from public data: the race
+facts (`hkjc.data`) plus the four replay videos HKJC publishes per race (aerial virtual view,
+drone, side-on race film, patrol). Output: per horse, metres-to-finish along the racing rail and
+metres off the racing rail, on the race clock, with posterior uncertainty.
 
 ## Install
 
 ```bash
-uv sync                  # core
-uv sync --group bayes    # + JAX (the EOM / fitting; required to run the model)
-uv sync --group vision   # + the heavy CV stack (opt-in; the trajectory pipeline)
+uv sync                    # data interfaces
+uv sync --group vision     # + OpenCV / YOLO / video decode / OCR for the reconstruction
 ```
 
-Requires Python >= 3.11.
-
-## Architecture
-
-Seven packages, one-way dependency graph (each imports only from those below it;
-`backtesting` and `agents` sit on top and nothing imports them):
-
-```
-   core  ◄──  data  ◄──  model  ◄──  betting
-     ▲                      ▲            ▲
-     └────────  backtesting ────────────┘
-   vision ──► core          agents ──► everything (orchestration)
-```
-
-| Package | Purpose |
-| --- | --- |
-| `hkjc.core` | Shared contracts (`RaceModel`, `DataSource`), the canonical `Race` / `TrackGeometry`, the Monte-Carlo `RaceSimulator`, and `hkjc_facts` — the single source for HKJC site quirks + betting rules. |
-| `hkjc.data` | Connectors/scrapers (live + historical), the racecard/sectional parsers, and the tick stores (`OddsTickStore`, `JackpotCaptureStore`) + carryover ledger. Acquires and persists only — computes no edge. |
-| `hkjc.model` | The production win model: the leak-free fit→predict pipeline (`fit`, the `wald` first-passage law + per-venue mean-field couplings), the ability features (`features`), calibration, and the baked constants. (The interacting ABM sims were deprecated 2026-06; physics preserved in `docs/THEORY.md` Appendix.) |
-| `hkjc.betting` | Price pools (`pools`), the carryover structural-edge tools, closing-line value (`clv`), and the `Strategy` seam (model probs → stakes). |
-| `hkjc.backtesting` | Replay history, **enforce no-lookahead** (`AsOfView` + `assert_no_lookahead`), and score models/strategies (% of market, ECE, walk-forward, selection control). |
-| `hkjc.vision` | The opt-in, heavy CV trajectory pipeline (lazy deps). |
-| `hkjc.agents` | Orchestration: the three agent prompts (modelling / strategist / trading) and the cross-session `Journal` they communicate through, plus the paper-trade `OpsLog`. |
-
-Docs (three authoritative field guides):
-- [`docs/THEORY.md`](docs/THEORY.md) — the theory of horse racing: the problem's dimensions (physics, physiology, strategy, interaction, environment, competition, market, stochasticity), how they couple, and where the model sits. The seed of the eventual thesis.
-- [`docs/HKJC_SPECS.md`](docs/HKJC_SPECS.md) — tracks & geometry, going scales, the handicap/competition system, and every betting pool with its takeout, dividend & jackpot/carryover mechanics.
-- [`docs/HKJC_DATA.md`](docs/HKJC_DATA.md) — the complete data surface: GraphQL + server-rendered HTML, every page/feed, the deeply-buried data we don't yet mine, the trajectory verdict, and scraping discipline.
-
-The machine-readable model state (calibration constants + the open residual queue) lives in
-`journal/state/MODEL_STATE.md`.
-
-## Quick start — simulate a race
+## Use
 
 ```python
-from hkjc.data.live import live_odds, _fetch_live_races
-from hkjc.model import PlackettLuceModel
-from hkjc.core import RaceSimulator
+from hkjc.data import race_info
+from hkjc.recon import RaceRun
 
-card = _fetch_live_races('', '')                   # '' = let the server pick today's card
-odds = live_odds(card['Date'], card['Venue'], 1)   # {'WIN','PLA','QIN','QPL'}
-
-model = PlackettLuceModel.from_odds(odds)          # any RaceModel plugs in
-sim = RaceSimulator(model, n_samples=200_000)
-sim.prob(sim.wins(2))                              # P(runner 3 wins); indices 0-based
-sim.expected_profit(sim.wins(2), odds['WIN'][2])   # EV of a $1 win bet
+run = RaceRun(race_info("20260603", "HV", 8))   # downloads the replays on first use
+run.run()                                       # cached stages -> data_cache/recon/20260603_HV_8/
+paths = run.paths()                             # horse_no, t, s, d, lat, sd_s, sd_lat, n_obs
 ```
-
-## The model — fit ability, predict, score vs the market
-
-```python
-from hkjc.model.fit import fit_predict_traffic     # leak-free EB ability → win probs (JAX sim)
-from hkjc.backtesting import walk_forward_folds, harness, assert_no_lookahead
-```
-
-A full walk-forward backtest (% of market) is in `studies/backtest_st.py`:
 
 ```bash
-uv run --group bayes python studies/backtest_st.py            # Sha Tin
-VENUE=HV uv run --group bayes python studies/backtest_st.py   # Happy Valley
+scripts/capped.sh uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse,validate]
+scripts/run_validation_set.sh                   # the 10-race validation set
 ```
 
-## Capture odds, then measure closing-line value
+## Layout
 
-```python
-from hkjc.data.ticks import OddsTickStore
-from hkjc.betting import clv
-
-store = OddsTickStore('ticks')
-store.capture_meeting('', '')           # poll every race once (run on a schedule)
-ticks = store.read(pool='WIN')
-clv.odds_drift(ticks)                   # open→close drift (negative = steam)
+```
+src/hkjc/data/    HKJC interfaces: race_info (results+sectionals), replay videos, silks, track
+                  geometry, racecard, live odds/pools, form, trackwork, barrier trials, ...
+src/hkjc/recon/   race info + videos -> paths
+    pipeline.py   RaceRun: cached stages features -> pose -> detect -> hud -> worldmap -> rails
+                  -> observe -> identify -> fuse -> validate
+    video.py      frame access, AVV render gating / 10 Hz de-dup / HUD masks
+    register.py   turf ORB features, RANSAC similarity + least-squares refit
+    pose.py       camera pose graph (sequential, long-baseline, loop closures)
+    worldmap.py   mosaic of registered frames (the static world map)
+    rails.py      racing rail on the map, track frame (s, lat), marker grid, odometer calibration
+    detect.py     self-supervised YOLO avatar detector + silk histograms
+    ocr.py        recognition-only OCR of the burnt-in clock / odometer / legend
+    tracking.py   world-frame multi-horse tracking + stitching
+    identity.py   tracklet -> saddlecloth number (legend order, elimination, silk)
+    fusion.py     Bayesian path reconstruction from all feeds' proposals (physics + geometry priors)
+    validate.py   official comparison against fixed gates (validation only)
+    drone.py      drone feed (experimental: registration open)
+docs/RECON.md     method, hard-won facts, gates, open items
+journal/          research trail
+models/           detector weights (git-ignored)
 ```
 
-## Agents remember across sessions
-
-```python
-from hkjc.agents import Journal, prompts
-
-j = Journal()                                       # journal/ (or $HKJC_JOURNAL)
-j.record("draw still over-weighted", "t=-17.4 at FG=4",
-         author="modelling", channel="research", tags=["residual", "draw"])
-j.inbox("strategist")                               # what the strategist should read now
-prompts.load("modelling")                           # the modelling agent's system prompt
-```
-
-## Live-data caveats (the hard-won ones; full guide in `docs/HKJC_DATA.md`)
-
-The machine-readable mirror of these is `hkjc.core.hkjc_facts`:
-
-- **Venue codes** are `ST` / `HV`; empty strings make the live endpoint return the current meeting.
-- **Sectional pages only render with a `DD/MM/YYYY` date** — any other format returns an empty
-  "released shortly" page (`hkjc_facts.SECTIONAL_DATE_FORMAT`).
-- **Surface detection**: the "ALL WEATHER TRACK"/"AWT" label is authoritative; going codes are a
-  weak fallback (GOOD/GD appear in both scales — must not trigger AWT).
-- **Live-odds dedup** on the server's `lastUpdateTime`, not wall-clock.
-- **Takeout is not uniform**: Win/Place/QIN/QPL ≈ 17.5%; exotics ≈ 19.5–25% (`hkjc_facts.takeout_for`).
-- Historical results pages are server-rendered HTML; a non-race date returns an error page.
-```
+Official outcomes (placings, times, sectionals) are used for validation only, never as inputs.

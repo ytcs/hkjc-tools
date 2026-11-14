@@ -1,39 +1,19 @@
-"""Data-access layer: acquisition and persistence only.
+"""HKJC data interfaces — everything we read or download from HKJC.
 
-Modules here fetch and parse data from HKJC (and persist time series); they do
-**not** compute edge, fit models, or evaluate bets. One direction of dependency:
-everything else depends on ``data``; ``data`` depends on nothing in the package
-except shared parsing helpers in :mod:`hkjc.utils`.
-
-- :mod:`~hkjc.data.live` — live race cards and live odds via the GraphQL endpoint.
-- :mod:`~hkjc.data.historical` — past results and per-horse form (HTML scrape).
-- :mod:`~hkjc.data.racecard` — pre-race racecard (ratings, gear, weights, …).
-- :mod:`~hkjc.data.sectional` — per-horse sectional split times.
-- :mod:`~hkjc.data.barrier_trials` — barrier-trial results (debut/return form prior).
-- :mod:`~hkjc.data.trackwork` — daily timed training gallops (the Banister fitness prior).
-- :mod:`~hkjc.data.processing` — build historical datasets across a date range.
-- :mod:`~hkjc.data.ticks` — capture/persist the live-odds and jackpot-pool time series.
-- :mod:`~hkjc.data.carryover_ledger` — the carryover event ledger (flywheel).
-- :mod:`~hkjc.data.feature_store` — assemble sources into a modelling frame.
-
-The ``DataSource`` protocol (uniform input seam) lives in :mod:`hkjc.core.contracts`.
+- :mod:`~hkjc.data.race`        one race's facts bundled (`race_info`) — the reconstruction input
+- :mod:`~hkjc.data.video`       the four replay MP4 feeds (URLs + cached download)
+- :mod:`~hkjc.data.silks`       official racing-silk images
+- :mod:`~hkjc.data.tracks`      track geometry (venue x surface x course widths, bends)
+- :mod:`~hkjc.data.historical`  results pages, dividends, horse form
+- :mod:`~hkjc.data.sectional`   per-horse sectional times + positions
+- :mod:`~hkjc.data.racecard`    pre-race racecard
+- :mod:`~hkjc.data.live`        live cards / odds / pools (GraphQL)
+- :mod:`~hkjc.data.corunning`, :mod:`~hkjc.data.trackwork`, :mod:`~hkjc.data.barrier_trials`,
+  :mod:`~hkjc.data.jackpot_history`
 """
-from . import (live, historical, processing, ticks,
-               feature_store, carryover_ledger, capture,
-               jackpot_history, sectional, racecard, corunning,
-               barrier_trials, trackwork)
-from .ticks import OddsTickStore, JackpotCaptureStore
-from .carryover_ledger import CarryoverLedger
-from .capture import capture_once, settle_meeting, settle_recent
-from ..core.contracts import DataSource, CallableSource, KEY_COLUMNS
-from .feature_store import FeatureStore
+from .race import RaceInfo, Runner, race_info
+from .tracks import TrackGeometry, track_for
+from .video import FEEDS, download_race, download_replay, replay_path, replay_url
 
-__all__ = [
-    "live", "historical", "racecard", "sectional", "corunning", "processing",
-    "barrier_trials", "trackwork",
-    "ticks", "feature_store", "carryover_ledger",
-    "capture", "jackpot_history",
-    "OddsTickStore", "JackpotCaptureStore", "CarryoverLedger",
-    "capture_once", "settle_meeting", "settle_recent",
-    "DataSource", "CallableSource", "FeatureStore", "KEY_COLUMNS",
-]
+__all__ = ["RaceInfo", "Runner", "race_info", "TrackGeometry", "track_for", "FEEDS",
+           "download_race", "download_replay", "replay_path", "replay_url"]

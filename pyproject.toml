@@ -1,19 +1,17 @@
 [project]
 name = "hkjc"
-version = "1.11.0"
-description = "Data, modelling and simulation bedrock for an automated HKJC betting research agent"
+version = "2.0.0"
+description = "HKJC race reconstruction: race data + the four replay videos -> per-horse 2D paths"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "beautifulsoup4>=4.14.2",
     "cachetools>=6.2.0",
-    "numba>=0.62.1",
     "numpy>=2.3.3",
     "polars>=1.33.1",
     "pyarrow>=21.0.0",
     "requests>=2.32.5",
     "scipy>=1.16.2",
-    "tqdm>=4.67.1",
 ]
 
 [build-system]
@@ -21,32 +19,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-deploy = [
-    "modal>=1.4.3",
-]
 dev = [
     "pytest>=8",
     "ruff>=0.15.15",
     "matplotlib>=3.9",
 ]
-# Probabilistic-programming / JAX stack for the Bayesian calibration (heavy; opt-in).
-bayes = [
-    "numpyro>=0.15",
-    "jax>=0.4.34",
-]
-# Computer-vision stack for the video trajectory pipeline (very heavy; opt-in). The
-# hkjc.vision package imports cleanly without these — they are lazy-loaded inside the
-# detect/track/homography stages only when you actually run the pipeline.
+# Computer vision for the reconstruction (heavy; opt-in): video decode, OpenCV, the YOLO avatar
+# detector, recognition-only OCR for the burnt-in clock / odometer / legend.
 vision = [
     "opencv-python>=4.10",
     "ultralytics>=8.3",
     "av>=12",
-    # OCR for the Aerial-Virtual-View saddlecloth-legend re-id (S0b). WINNER of the bake-off on
-    # OUR rendered legend (studies/cv_ocr_benchmark.py): RapidOCR (PP-OCRv5 det+rec
-    # on onnxruntime, no paddlepaddle, no torch; journal 0058). It read f85 100% incl. two-digit "10",
-    # 98% cross-frame validity, lowest CPU latency. easyocr (torch-heavy, dropped dark/thin glyphs:
-    # 50% on f85) and pytesseract (fails on the multi-colour render: 62% best-case, and the system
-    # tesseract ships no eng.traineddata here) were PRUNED to keep the group lean.
     "rapidocr-onnxruntime>=1.3",
 ]
 
@@ -61,10 +44,5 @@ select = ["E", "F", "W", "N"]
 ignore = ["E501"]   # long lines (mostly docstrings / GraphQL payloads) aren't worth churning
 
 [tool.ruff.lint.per-file-ignores]
-# Numerical / ML kernels use mathematical notation (X, N, P, W_obs, G, ...).
-"src/hkjc/model/harville_model.py" = ["N803", "N806"]
-"src/hkjc/model/conditional_logit.py" = ["N803", "N806"]
-"src/hkjc/model/generative.py" = ["N806"]   # L = first-passage barrier length (race trip)
-"src/hkjc/vision/feeds/aerial_rail.py" = ["N803", "N806"]   # CV kernel math notation (W=width, P/Q=point arrays, R=radius, J=Jacobian)
-"tests/test_conditional_logit.py" = ["N806"]   # X = design matrix, mirrors the kernel
-"studies/*.py" = ["N803", "N806"]   # disposable scratch; physics notation (L = race length, ...)
+"src/hkjc/recon/*.py" = ["N803", "N806"]   # CV/estimation math notation (G=pose, H=homography, W=world pts, D2=difference op)
+"tests/*.py" = ["N803", "N806", "N812"]     # tests mirror the kernels' notation
