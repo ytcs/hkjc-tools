@@ -1001,7 +1001,7 @@ class RaceRun:
             _o, g0, _u = finishcam.finish_gaps(dict(line_x=float(zf["line_x"]), reads=zf["reads"]))
             read = {int(k) for k in g0}
             r = min(len(read) / max(self.info.n, 1), 0.95)
-            if read and r >= 0.5:
+            if read and r >= 0.5 and os.environ.get("HKJC_NEGEV", "1") != "0":
                 cost = float(-2.0 * np.log(1.0 - r))
                 near = (self.info.distance - 15.0, {h: cost for h in horses if h not in read})
         for it in range(self.EM_ITERS):
