@@ -601,8 +601,10 @@ Remaining failures (declared; ST4 #10 and ST 05-24's finish-n are real and open)
   - **ST4 (3 short) is partly real.** #3 (tailed off, −5.7 s) and #9 (−0.4 s) are render-ended. But
     #10, the runner-up, has no path while the render runs 1.3 s past it. Its 6 raw camera reads
     (u 86–92) lie at x 1185–1244, right of the line (x 960), and move only 59 px, so the
-    ≥ 100 px movement rule drops the track. It is never read at the line. Why the camera loses it
-    there is not established.
+    ≥ 100 px movement rule drops the track. Pixels: the finish segment is a slow-motion post
+    camera, and through the crossing (frames 2835–2875) the jockey's boot hides the "1" of the cloth.
+    The OCR reads the visible "0" as "U" (conf 0.5–0.94) and returns "0" once.
+    REJECTED: a digits-only CTC decode, because P("0") ≈ 0.01 where the OCR says "U".
   - **ST 05-24 (3 short) is real.** #4, #8 and #12 (places 12–14) are vague at the line (sd 3–6.5 m),
     and the render runs 0.6–0.7 s past #4 and #12.
 - Path count: ST4 (#3 render-ended, #10 as above).
@@ -633,10 +635,11 @@ Remaining failures (declared; ST4 #10 and ST 05-24's finish-n are real and open)
   the straight (unpinned recon − film is flat; 3f).
 - **Film-anchored metric**: DEFAULT since baseline Q (3i), after finish seeds stopped it costing
   paths. Open: the film's own −0.11 s bias at Sha Tin's 400 m marker (recorded, not corrected).
-- **ST4 finish camera**: #11 (the winner) is read only in an earlier pass (u 25–86), so the
-  running-median filter drops its sparse reads and it gets no gap. #10 (2nd) is read only at
-  u 86–92, right of the line, moving 59 px, under the 100 px rule. Cause not established; do not
-  loosen the filters blindly (the robust-line and motion-rate variants cost 2–3 timing gates).
+- **ST4 finish camera** (slow-motion post camera): #11, the winner, is read sparsely (u 25, 27, 56,
+  then 69–86), so the running-median filter drops the reads near the line and it gets no gap. #10,
+  2nd, has its "1" hidden by the boot at the line (3i). Candidate: carry identity from confident
+  reads onto unread cloth boxes that are adjacent in space and time. Do not loosen the filters
+  blindly (the robust-line and motion-rate variants cost 2–3 timing gates).
 - **AWT** — OUT OF SCOPE for now (turf only). Known: head/shadow duplicates fixed by an anisotropic
   merge; far-side avatars on bends missed; the back-straight rail is framed under the legend band.
 - **Real-camera feeds (drone, patrol) + SAM 2** — the only independent source of positions: needed for
