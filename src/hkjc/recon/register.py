@@ -100,14 +100,20 @@ def match(
     else:
         pa = a.pts @ prior[:2, :2].T + prior[:2, 2]
         knn = bf.knnMatch(a.des, b.des, k=4)
-        ia, ib = [], []
-        for q in knn:
-            for m in q:
-                if np.hypot(*(pa[m.queryIdx] - b.pts[m.trainIdx])) < gate:
-                    ia.append(m.queryIdx)
-                    ib.append(m.trainIdx)
-                    break
-        ia, ib = np.array(ia), np.array(ib)
+        # vectorised (identical result): per query, the FIRST of its k candidates within the gate
+        L = max((len(q) for q in knn), default=0)
+        qi = np.full((len(knn), L), -1)
+        ti = np.full((len(knn), L), -1)
+        for r, q in enumerate(knn):
+            for c, m in enumerate(q):
+                qi[r, c], ti[r, c] = m.queryIdx, m.trainIdx
+        ok = ti >= 0
+        dist = np.full(qi.shape, np.inf)
+        dist[ok] = np.hypot(*(pa[qi[ok]] - b.pts[ti[ok]]).T)
+        hit = dist < gate
+        rows = np.where(hit.any(1))[0]
+        first = hit[rows].argmax(1)
+        ia, ib = qi[rows, first], ti[rows, first]
     if len(ia) < min_inl:
         return None
     A, B = a.pts[ia], b.pts[ib]

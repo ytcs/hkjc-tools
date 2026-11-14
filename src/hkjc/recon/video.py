@@ -148,6 +148,7 @@ def iter_unique_render(
 
     prev = None
     with av.open(str(path)) as c:
+        c.streams.video[0].thread_type = "AUTO"  # frame-threaded decode: same pixels, ~3x faster
         for i, fr in enumerate(c.decode(video=0)):
             if i < start:
                 continue

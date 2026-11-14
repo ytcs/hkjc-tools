@@ -164,7 +164,12 @@ def _measure(args):
     return (i, j, kind, m.S)
 
 
-def solve_race(z: dict, *, nproc: int = 6, loop_weight: float = 3.0):
+def _seq_job(args):
+    k, prior = args
+    return register.match(_FEATS[k - 1], _FEATS[k], prior=prior, gate=40)
+
+
+def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
     """Feature cache (``features`` stage) -> world poses G (K,3,3) of every unique render frame.
 
     Edges: sequential (+ re-matched failures), long-baseline d in {2,5,12,24} (bound drift on trips
@@ -181,12 +186,25 @@ def solve_race(z: dict, *, nproc: int = 6, loop_weight: float = 3.0):
     ]
     idx, steps, shape = z["idx"], z["steps"], tuple(int(x) for x in z["shape"][:2])
     K = len(idx)
+    import os
+
+    nproc = nproc or max(1, int(os.environ.get("HKJC_NPROC", "0")) or (os.cpu_count() or 4))
+    # sequential edges whose guide comes from the stored step match are independent: match them in
+    # the pool (identical results: OpenCV RANSAC seeds per call); only steps that need the running
+    # chain as their guide stay sequential
+    _FEATS = F
+    pre_k = [k for k in range(1, K) if not np.isnan(steps[k][0])]
+    with mp.get_context("fork").Pool(nproc) as pool:
+        pre = dict(
+            zip(pre_k, pool.map(_seq_job, [(k, steps[k][:9].reshape(3, 3)) for k in pre_k], 16))
+        )
     S = [np.eye(3)]
     edges = []
     for k in range(1, K):
-        st = steps[k]
-        prior = st[:9].reshape(3, 3) if not np.isnan(st[0]) else S[-1]
-        m = register.match(F[k - 1], F[k], prior=prior, gate=40)
+        if k in pre:
+            m = pre[k]
+        else:
+            m = register.match(F[k - 1], F[k], prior=S[-1], gate=40)
         if m is None or m.n_inl < 60 or m.resid > 1.3:
             S.append(S[-1])
             edges.append(Edge(k - 1, k, S[-1], 0.05, "interp"))

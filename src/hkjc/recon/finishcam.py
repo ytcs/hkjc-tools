@@ -153,6 +153,7 @@ def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40)
     runs, cur = [], None
     prev = None
     with av.open(str(path)) as c:
+        c.streams.video[0].thread_type = "AUTO"  # frame-threaded decode: same pixels, ~3x faster
         for i, fr in enumerate(c.decode(video=0)):
             if i < start_s * fps:
                 continue

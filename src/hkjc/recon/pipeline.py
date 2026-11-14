@@ -74,6 +74,42 @@ OUTPUTS = {
 }
 
 
+def _nproc() -> int:
+    """Worker processes per race (env HKJC_NPROC; default: all cores / parallel races)."""
+    return max(1, int(os.environ.get("HKJC_NPROC", "0")) or (os.cpu_count() or 4))
+
+
+_CACHE = None
+_FEATS_PAR = None
+
+
+def _feat_job(args):
+    k, nfeat = args
+    i, p = _CACHE.idx[k], _CACHE.panel(k)
+    lt = video.legend_top(p)
+    f = register.extract(p, register.world_mask(p, video.hud_mask(p, lt)), nfeat)
+    return int(i), lt, f, p.shape[:2]
+
+
+_DET = None
+
+
+def _det_init():
+    global _DET
+    _DET = _detect.AvatarDetector()
+
+
+def _det_job(k):
+    i, p = int(_CACHE.idx[k]), _CACHE.panel(k)
+    rs = _DET.panel(p, video.legend_top(p))
+    return i, rs, [_detect.silk_hist(p, r) for r in rs]
+
+
+def _step_job(k):
+    m = register.match(_FEATS_PAR[k - 1], _FEATS_PAR[k])
+    return np.r_[m.S.ravel(), m.n_inl, m.resid] if m else None
+
+
 class RaceRun:
     def __init__(self, info: RaceInfo, root: str | Path = "data_cache/recon", log=print):
         self.info = info
@@ -94,13 +130,62 @@ class RaceRun:
     def done(self, stage: str) -> bool:
         return all(self.p(o).exists() for o in OUTPUTS[stage])
 
+    # stages that read only the videos/frame cache run CONCURRENTLY with the render chain; the
+    # chain waits for them right before their first consumer (results identical, wall time shorter)
+    BACKGROUND = {"hud": ("frames", "observe"), "finish": (None, "identify")}
+
     def run(self, stages=STAGES, force=()):
-        for st in stages:
-            if self.done(st) and st not in force:
-                continue
+        import multiprocessing as mp
+
+        todo = [st for st in stages if st not in self.done_set() or st in force]
+        bg = {}
+
+        launched = set()
+
+        def launch(st):
+            launched.add(st)
+
+            def work():
+                t0 = time.time()
+                getattr(self, st)()
+                self.log(f"{self.info.key} {st}: {time.time() - t0:.0f}s (background)")
+
+            pr = mp.get_context("fork").Process(target=work)
+            pr.start()
+            bg[st] = pr
+
+        def wait(st):
+            pr = bg.pop(st)
+            pr.join()
+            if pr.exitcode != 0:
+                raise RuntimeError(f"{self.info.key}: background stage {st} failed")
+
+        def ready(b):  # prerequisite done (or never in this run's todo list)
+            after = self.BACKGROUND[b][0]
+            return after is None or after not in todo or after in finished
+
+        finished = set()
+        for b in self.BACKGROUND:
+            if b in todo and ready(b):
+                launch(b)
+        for st in todo:
+            for b in list(bg):
+                if self.BACKGROUND[b][1] == st:
+                    wait(b)
+            if st in self.BACKGROUND:
+                continue  # runs (or ran) in the background
             t0 = time.time()
             getattr(self, st)()
             self.log(f"{self.info.key} {st}: {time.time() - t0:.0f}s")
+            finished.add(st)
+            for b in self.BACKGROUND:
+                if b in todo and b not in launched and ready(b):
+                    launch(b)
+        for b in list(bg):
+            wait(b)
+
+    def done_set(self):
+        return {st for st in STAGES if self.done(st)}
 
     # ------------------------------------------------------------------ stages
     def frames(self):
@@ -111,29 +196,32 @@ class RaceRun:
         return video.FrameCache(self.dir)
 
     def features(self, nfeat: int = 3000):
-        idx, lrow, P, D, off, steps, shape = [], [], [], [], [0], [], None
-        prev = None
-        for i, p in self.cache():
-            lt = video.legend_top(p)
-            f = register.extract(p, register.world_mask(p, video.hud_mask(p, lt)), nfeat)
-            m = register.match(prev[1], f) if prev is not None and i - prev[0] <= 6 else None
-            steps.append(np.r_[m.S.ravel(), m.n_inl, m.resid] if m else np.full(11, np.nan))
-            idx.append(i)
-            lrow.append(lt)
-            P.append(f.pts)
-            D.append(f.des)
-            off.append(off[-1] + len(f.pts))
-            prev = (i, f)
-            shape = shape or p.shape[:2]
+        """ORB features of every unique render frame + the sequential step matches. Per-frame work
+        is independent and OpenCV's RANSAC seeds its RNG per call, so a process pool gives results
+        IDENTICAL to the sequential loop (86 s -> a few s on 14 cores)."""
+        import multiprocessing as mp
+
+        cache = self.cache()
+        global _CACHE, _FEATS_PAR
+        _CACHE = cache
+        with mp.get_context("fork").Pool(_nproc()) as pool:
+            res = pool.map(_feat_job, [(k, nfeat) for k in range(len(cache))], chunksize=8)
+            _FEATS_PAR = [r[2] for r in res]
+            pairs = [k for k in range(1, len(res)) if res[k][0] - res[k - 1][0] <= 6]
+            ms = dict(zip(pairs, pool.map(_step_job, pairs, chunksize=8)))
+        _CACHE = _FEATS_PAR = None
+        steps = [
+            ms.get(k) if ms.get(k) is not None else np.full(11, np.nan) for k in range(len(res))
+        ]
         np.savez_compressed(
             self.p("feats.npz"),
-            idx=np.array(idx),
-            lrow=np.array(lrow),
-            pts=np.concatenate(P),
-            des=np.concatenate(D),
-            off=np.array(off),
+            idx=np.array([r[0] for r in res]),
+            lrow=np.array([r[1] for r in res]),
+            pts=np.concatenate([r[2].pts for r in res]),
+            des=np.concatenate([r[2].des for r in res]),
+            off=np.cumsum([0] + [len(r[2].pts) for r in res]),
             steps=np.array(steps),
-            shape=np.array(shape),
+            shape=np.array(res[0][3]),
         )
 
     def pose(self):
@@ -143,8 +231,9 @@ class RaceRun:
         self.log(f"   pose: {info['summary']}")
 
     def detect(self):
-        det = _detect.AvatarDetector()
         rows, hists, box = [], [], None
+        import multiprocessing as mp
+
         import cv2
 
         cache = self.cache()
@@ -158,10 +247,17 @@ class RaceRun:
         sc = float(meta["sc"])
         A = np.array([[sc, 0, -mx0 * sc], [0, sc, -my0 * sc], [0, 0, 1]])
         ry, rb, hy, hb = [], [], [], []
-        for i, p in cache:
-            for r in det.panel(p, video.legend_top(p)):
-                ry.append([i, *r[:5]])
-                hy.append(_detect.silk_hist(p, r))
+        # frames are independent: detect in a process pool (one ONNX session per worker); each
+        # frame's detections are computed exactly as in the sequential loop
+        global _CACHE
+        _CACHE = cache
+        nw = min(_nproc(), 4)  # ONNX Runtime threads inside each worker too
+        with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
+            for i, rs, hs in pool.imap(_det_job, range(len(cache)), chunksize=8):
+                for r, h in zip(rs, hs):
+                    ry.append([i, *r[:5]])
+                    hy.append(h)
+        _CACHE = None
         nfr = len(cache)
         yolo_med = (
             float(

@@ -49,18 +49,18 @@ def rec_batch(crops, scale: int = 3) -> list[tuple[str, float]]:
     if not crops:
         return []
     ups = [cv2.resize(c, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC) for c in crops]
-    res, _ = _engine().text_rec(ups)
+    rec = _engine().text_rec
+    rec.rec_batch_num = 32
+    res, _ = rec(ups)
     return [(str(t), float(c)) for t, c in res]
 
 
-def read_clock(crop) -> float | None:
-    txt, _c = rec_only(crop)
+def _parse_clock(txt, _conf=1.0) -> float | None:
     m = _CLOCK.search(txt.replace(" ", ""))
     return int(m.group(1)) * 60 + int(m.group(2)) + int(m.group(3)) / 100 if m else None
 
 
-def read_odometer(crop, max_m: int = 4000) -> float | None:
-    txt, conf = rec_only(crop)
+def _parse_odometer(txt, conf, max_m: int = 4000) -> float | None:
     m = _ODO.search(txt.replace(" ", ""))
     if not m or conf < 0.6:
         return None
@@ -68,19 +68,37 @@ def read_odometer(crop, max_m: int = 4000) -> float | None:
     return v if v <= max_m else None
 
 
-def read_legend(panel, n_field: int = 14) -> np.ndarray:
-    """The 8 legend slots (left->right = running positions 1..8); 0 = unread."""
+def read_clock(crop) -> float | None:
+    return _parse_clock(*rec_only(crop))
+
+
+def read_odometer(crop, max_m: int = 4000) -> float | None:
+    return _parse_odometer(*rec_only(crop), max_m=max_m)
+
+
+def _legend_slot_crops(panel) -> list:
     lt = video.legend_top(panel)
     W = panel.shape[1]
     pitch = W / 8.8
-    row = np.zeros(8, int)
+    out = []
     for k in range(8):
         cx = int(0.064 * W + k * pitch)
-        txt, conf = rec_only(panel[max(0, lt - 4) : lt + 34, max(0, cx - 22) : cx + 16])
+        out.append(panel[max(0, lt - 4) : lt + 34, max(0, cx - 22) : cx + 16].copy())
+    return out
+
+
+def _parse_legend(res, n_field: int = 14) -> np.ndarray:
+    row = np.zeros(8, int)
+    for k, (txt, conf) in enumerate(res):
         dg = "".join(ch for ch in txt if ch.isdigit())
         if dg and conf > 0.6 and 1 <= int(dg) <= n_field:
             row[k] = int(dg)
     return row
+
+
+def read_legend(panel, n_field: int = 14) -> np.ndarray:
+    """The 8 legend slots (left->right = running positions 1..8); 0 = unread."""
+    return _parse_legend([rec_only(c) for c in _legend_slot_crops(panel)], n_field)
 
 
 def _crop(img, box):
@@ -129,22 +147,25 @@ def read_render_hud_cached(
     cache, *, n_field: int = 14, clock_every: int = 10, legend_every: int = 3
 ):
     """Same as ``read_render_hud`` from a ``video.FrameCache`` (no re-decode): the clock from the
-    cached left-panel crops, the odometer + legend from the panel."""
+    cached left-panel crops, the odometer + legend from the panel.
+    Two passes (speed, results identical): the re-read rules depend on PIXELS only, so pass 1 picks
+    the crops to read, pass 2 OCRs them in large batches (all crops of one kind share one size, so
+    batch padding is identical) — 2557 single calls took ~90 s on R08."""
     x0, _x1, y0, _y1 = cache.box
     oy0, oy1, ox0, ox1 = AVV_ODO
-    rows, leg = [], []
-    prev_o, last_o, last_l, prev_l = None, np.nan, np.zeros(8, int), None
+    clock_crops, odo_crops, leg_crops = [], [], []
+    plan = []  # per frame: (i, clock idx or -1, odo idx (latest), legend idx (latest))
+    prev_o, prev_l, io, il = None, None, -1, -1
     for n, (i, p) in enumerate(cache):
-        c = np.nan
+        ic = -1
         if n % clock_every == 0:
-            v = read_clock(np.asarray(cache.clock[n]))
-            c = np.nan if v is None else v
+            clock_crops.append(np.asarray(cache.clock[n]))
+            ic = len(clock_crops) - 1
         oc = p[oy0 - y0 : oy1 - y0, ox0 - x0 : ox1 - x0]
         if prev_o is None or float(np.abs(oc.astype(np.int16) - prev_o).mean()) > 2.0:
-            v = read_odometer(oc)
-            last_o = np.nan if v is None else v
+            odo_crops.append(oc.copy())
+            io = len(odo_crops) - 1
             prev_o = oc
-        rows.append([i, c, last_o])
         if n % legend_every == 0:
             # the number boxes are opaque: re-OCR only when they change (overtakes), ~10x fewer calls
             lb = _legend_boxes(p)
@@ -153,9 +174,20 @@ def read_render_hud_cached(
                 or lb.shape != prev_l.shape
                 or float(np.abs(lb.astype(np.int16) - prev_l).mean()) > 8.0
             ):
-                last_l = read_legend(p, n_field)
+                leg_crops.append(_legend_slot_crops(p))
+                il = len(leg_crops) - 1
                 prev_l = lb
-        leg.append([i, *last_l])
+        plan.append((i, ic, io, il))
+    clocks = [_parse_clock(t, c) for t, c in rec_batch(clock_crops)]
+    odos = [_parse_odometer(t, c) for t, c in rec_batch(odo_crops)]
+    flat = rec_batch([c for slots in leg_crops for c in slots])
+    legs = [_parse_legend(flat[8 * k : 8 * k + 8], n_field) for k in range(len(leg_crops))]
+    rows, leg = [], []
+    for i, ic, io, il in plan:
+        c = clocks[ic] if ic >= 0 else np.nan
+        o = odos[io] if io >= 0 else np.nan
+        rows.append([i, np.nan if c is None else c, np.nan if o is None else o])
+        leg.append([i, *(legs[il] if il >= 0 else np.zeros(8, int))])
     return np.array(rows), np.array(leg)
 
 
