@@ -639,8 +639,8 @@ reproduces U exactly.
 Linker prototype (identity carried from confident read runs onto unread cloth boxes, ST4 only):
 the self-test was confounded. It hid reads by u rather than px and gated on a constant-velocity
 prediction while x per u is bimodal, so "boxes too sparse" is NOT established. It is parked,
-because the ceiling above says even a perfect read costs ST4 a timing gate until the EM's #3
-assignment is robust.
+because the ceiling above says even a perfect read costs ST4 a timing gate until fusion's orphan
+elimination stops handing #3 a mid-field chain (traced below).
 
 **Finish-camera digit drops must not delete a real short number (`finish_gaps`).** Both
 coincidence tests counted only frames shared with the longer number. On HV 06-03 R3, 3 dropped-digit
@@ -671,15 +671,24 @@ last missing horse when it has no anchor score" then hands #3 a mid-field chain 
 (#3 finished at 88.54 s). The chain fits none of the other horses' anchors (χ² 7400–10400 against
 9). In the control, two horses stay missing, so elimination never fires.
 - Elimination OFF fixes the ceiling: ST4 stays 5/5 timing, path count and finish-n pass, gates
-  7 → 9. On the 26 races at V it is gate-neutral (207), but 9 races each lose a path (paths short
-  0 → 1) and sectionals move both ways (HV 05-20 R2 0.161 → 0.203, ST3 0.188 → 0.165). The 8 paths
-  that elimination creates at V are mostly accurate (boundary errors within ±0.2–0.65 s; horses
-  placed 5th–12th). So the rule is kept.
+  7 → 9. On the 26 races at V (single runs) it is gate-neutral (207), but 8 races each lose a path
+  (paths short 0 → 1) and sectionals move both ways (HV 05-20 R2 0.161 → 0.203, ST3 0.188 → 0.165).
+- The 8 horses with a path at V and none with elimination off (a diff, not a trace of who was
+  eliminated; HV 04-15 R1 #11 is camera-read and may not be an elimination case). Worst boundary
+  error per horse:
+  - small: HV 04-15 R9 #8 +0.19, HV 04-22 R1 #6 −0.20, ST7 #10 −0.29, ST 05-09 R2 #9 −0.06 s;
+  - 0.4–0.65 s: HV 04-15 R1 #11 −0.56, HV 05-27 R9 #10 −0.65, ST 05-31 #3 +0.62, ST3 #14 +0.42 s.
+    These four are the path-losing races whose sectional IMPROVED with elimination off.
+  - HV 04-15 R1 #11 (−0.15/−0.24/−0.56) and HV 05-27 R9 #10 (−0.05/−0.65) drift early toward the
+    line, the same shape as ST4 #3.
+  The rule is kept for now because removing it is gate-neutral but costs 8 paths, and it has not
+  been ensemble-tested. It is not shown to be accurate.
 - REJECTED: forbidding elimination of a final-stretch chain onto a BLIND horse (the E-step's rule
   applied in fusion). It blocked the first chain, then elimination handed #3 the next one (ending at
   s 1327). Matched horses keep extra fragments, so "every leftover chain is the last horse's" is
   false.
-- Parked: it pays only together with a finish-camera reader for ST4 #10, also parked.
+- Parked: no production gate depends on it. ST4's two count gates need a #10 reader AND an
+  elimination fix together.
 
 **Baseline V (`recon-baseline-V` = e4ee137): U plus the chain-start guard and the digit-drop
 fix.** Nothing upstream of `finish_gaps` changed, and `finish_gaps` output is bit-identical to U on
@@ -718,8 +727,10 @@ vs V code): timing 5/5 on every seed in both arms. HV 04-15 R1 ρ 0.94 [0.94, 0.
   paths. Open: the film's own −0.11 s bias at Sha Tin's 400 m marker (recorded, not corrected).
 - **ST4 finish camera** (slow-motion post camera): #11, the winner, is read sparsely (u 25, 27, 56,
   then 69–86), so the running-median filter drops the reads near the line and it gets no gap. #10,
-  2nd, has its "1" hidden by the boot at the line (3i). Candidate: carry identity from confident
-  reads onto unread cloth boxes that are adjacent in space and time. Do not loosen the filters
+  2nd, has its "1" hidden by the boot at the line (3i). The count gates need BOTH a reader (e.g.
+  identity carried from confident reads onto unread cloth boxes) AND a fix for fusion's orphan
+  elimination (3i ceiling). Elimination test to try: count the leftover orphan chains when it fires
+  (≥ 2 for one horse in the ST4 ceiling). Do not loosen the filters
   blindly (the robust-line and motion-rate variants cost 2–3 timing gates).
 - **AWT** — OUT OF SCOPE for now (turf only). Known: head/shadow duplicates fixed by an anisotropic
   merge; far-side avatars on bends missed; the back-straight rail is framed under the legend band.
