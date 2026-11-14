@@ -159,6 +159,31 @@ def test_em_assign_negative_legend_evidence():
     assert lab[0] != 9  # the front detection is not the unlisted horse
 
 
+def test_em_assign_rank_attraction_final_stretch():
+    """Near the line, a listed horse whose (overconfident, extrapolated) path sits 7 m ahead of its
+    real detection takes the detection at its legend rank; away from the line it does not."""
+    from hkjc.recon import assoc
+
+    tg = np.arange(0, 10.01, 0.1)
+
+    def path(h, s0, sd):
+        return fusion.Path(h, tg, 15.0 * tg + s0, np.full_like(tg, 2.0), np.full_like(tg, sd),
+                           np.full_like(tg, 0.3), np.ones_like(tg))
+
+    D = 1000.0
+    # at t = 5 s (15 m/s): #1's path at D - 70 (on its detection), #2's at D - 68: 7 m AHEAD of
+    # #2's real detection at D - 75 (and 2 m ahead of #1: overconfident constant-speed extrapolation)
+    paths = {1: path(1, D - 70.0 - 75.0, 0.3), 2: path(2, D - 68.0 - 75.0, 1.3)}
+    t = np.full(2, 5.0)
+    s = np.array([D - 70.0, D - 75.0])  # #1's detection leads; #2's real detection 7 m behind its path
+    lat = np.full(2, 2.0)
+    leg = np.array([[7, 1, 2, 0, 0, 0, 0, 0, 0]])
+    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, n_field=2, s_line=D)
+    assert lab[1] == 2  # rank-2 detection goes to the rank-2 horse
+    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, n_field=2, s_line=D + 500)
+    assert lab[1] == 0  # 575 m out: no attraction, chi^2 too large -> clutter
+
+
 def test_fusion_anonymous_association_respects_forbid():
     """An anonymous tracklet that the E-step's legend evidence excluded for a horse must not be
     handed to that horse by fusion's chi^2 association."""

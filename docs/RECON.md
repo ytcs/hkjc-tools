@@ -448,6 +448,25 @@ ensemble:
 - ST 05-09 R1: leader 0.249 → 0.130 s, sectional 0.280 → 0.171. Totals: all five timing gates 19 → 21/26, timing gates 120 → 123,
 all gates 198 → 202.
 
+**Final-stretch rank attraction (`assoc.RANK_ATTR`; tag `recon-baseline-S`).** Census of the 15
+unread horses that are in view but vague at the line: most have zero own detections in the last
+3 s, while 1–2.8 unassigned detections sit in nearly every near-line frame. These are not
+duplicates (3.5–10 m from any assigned detection); they lie 7–13 m BEHIND the horse's path. The path
+is extrapolated at constant speed from its last own detection while the horse slows, and it is
+overconfident (sd ~1.3 m), so its real detections cost χ² ~22, above the clutter cost of 16.
+
+Rule: in the last 100 m, a detection whose ahead-count equals a listed horse's legend rank costs
+that horse at most 10.
+- 26 races: all five timing gates 21 → 22/26, timing gates 123 → 124, all gates 202 → 205; no gate
+  regresses.
+- 6-seed ensembles: ST9 8/8 gates on every seed, ρ 0.89 [0.69, 0.95] → 1.00 [0.98, 1.00]. ST4
+  sectional 0.476 → 0.441, more gates on most seeds. ST3 and ST7 (controls) unchanged in gates.
+- Common-pair sectionals unchanged; changes come from newly scored horses.
+- Known bad: HV 05-27 R9 #7 is newly scored 0.88 s early at the line. Its race still passes, with
+  behind-winner 0.072 → 0.138 s.
+- REJECTED: over the whole race (ST3 sectional 0.174 → 0.266, a failure); only for non-tight horses,
+  sd ≥ 2 m (never fired for ST9 #5).
+
 **The film reference's own bias (recorded, NOT corrected).** The film now sets every race's distance
 constant. Film − official at Sha Tin's 400 m marker is early on 9 of 10 races, mean −0.11 s:
 - dev: −0.12, −0.05, −0.08, −0.10, −0.12, +0.09;

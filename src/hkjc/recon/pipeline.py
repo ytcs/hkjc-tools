@@ -1173,6 +1173,7 @@ class RaceRun:
                     near_line=near,
                     n_field=len(horses),
                     forbid_out=forbid,
+                    s_line=self.info.distance,
                 )
                 obs = assoc.runs_to_obs(lab, t, s_run, lat)
                 for k in np.unique(frag[(lab == 0) & (frag >= 0)]):

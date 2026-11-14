@@ -25,6 +25,8 @@ CLUTTER = 16.0  # chi^2 cost of leaving a detection unassigned (4 sigma)
 RANK_EPS = 0.6  # m: a detection is "clearly ahead" if > RANK_EPS m closer to the finish
 RANK_COST = 50.0
 RANK_SOFT = 9.0  # 3 sigma: confident-rank mismatch with the legend
+RANK_ATTR = 10.0  # cost cap: final-stretch detection at a listed horse's legend rank
+RANK_ATTR_M = 100.0  # m before the line where the rank attraction applies
 FLOOR_EPS = 8.0  # m: 'ahead of every listed horse' margin (4/8/16 m equivalent; 0.6 m failed)
 
 
@@ -55,12 +57,14 @@ def assign_frames(
     near_line=None,
     n_field=None,
     forbid_out=None,
+    s_line=None,
 ):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
     ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
     before the line) pay the extra cost for those horses — the finish camera's NEGATIVE evidence: a
     horse it never read (while reading most of the field) is unlikely to be crossing with the field.
     ``n_field`` = runners in the race (for the negative legend evidence; default: horses with paths).
+    ``s_line`` = race distance (metres run at the line): enables the final-stretch rank attraction.
     ``forbid_out`` (dict, optional) receives {detection index: set of horses} excluded by the HARD
     legend costs, so later stages (fusion's anonymous association) cannot hand them back.
     Returns per-detection horse number (0 = clutter/unassigned) and per-detection chi^2."""
@@ -148,6 +152,23 @@ def assign_frames(
                         out = {int(h) for h in ok if h not in listed}
                         for i in np.where(inside)[0]:
                             forbid_out.setdefault(int(js[i]), set()).update(out)
+            # RANK ATTRACTION in the final stretch: a detection whose ahead-count equals a listed
+            # horse's legend rank costs that horse at most RANK_ATTR. MEASURED (26 turf races,
+            # in-sample): unread horses lose their detections near the line because their path is
+            # extrapolated at constant speed from the last own detection while the horse slows --
+            # their real detections sit 7-13 m BEHIND (not duplicates; 3.5-10 m from any assigned
+            # one) at chi^2 ~22 > CLUTTER, with sd ~1.3 m (overconfident). Final 100 m only: ST9
+            # rho 0.89 -> 1.00 on 6/6 seeds, ST4 sectional 0.476 -> 0.441, gates 202 -> 205.
+            # REJECTED: whole race (ST3 straight sectional 0.174 -> 0.266); only non-tight horses
+            # (sd >= 2: never fired for ST9 #5). Known bad: HV 0527 R9 #7 placed 0.88 s early.
+            attr = float(os.environ.get("HKJC_RANK_ATTR", RANK_ATTR))  # diagnostic ("inf": off)
+            if np.isfinite(attr) and s_line is not None:
+                near = s[js] >= s_line - float(os.environ.get("HKJC_RANK_ATTR_M", RANK_ATTR_M))
+                for r, num in enumerate(leg[:max_rank]):
+                    if num in ok:
+                        col = ok.index(num)
+                        cells = (ahead == r) & near
+                        C[cells, col] = np.minimum(C[cells, col], attr)
         n, m = C.shape
         M = np.full((n, m + n), 1e6)
         M[:, :m] = C
