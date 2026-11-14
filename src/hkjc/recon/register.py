@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import os
+
 import numpy as np
 
 
@@ -41,13 +43,11 @@ def orb_scale() -> float:
     pose 88 -> 18 s) but only 2 races pass every timing gate vs 5 at full res — the long-baseline and
     loop-closure graph thins out (R08 d24 edges 212 -> 31, loops 171 -> 0; R02A sectional 0.18 ->
     0.42 s). Scale 0.5 with 3000 features keeps R08 but saves only ~35 %."""
-    import os
 
     return float(os.environ.get("HKJC_ORB_SCALE", "1.0"))
 
 
 def extract(panel, mask, n: int = 3000) -> Feats:
-    import os
 
     import cv2
 
@@ -106,7 +106,13 @@ def match(
     min_inl: int = 30,
 ) -> Match | None:
     """Similarity a->b. With ``prior`` (3x3 a->b guess) candidate matches are restricted to those
-    whose prior-predicted position is within ``gate`` px — kills aliasing on repetitive turf."""
+    whose prior-predicted position is within ``gate`` px — kills aliasing on repetitive turf.
+    Speed alternatives tried and REJECTED (R08, 2026-11-13): (1) projection-guided search (KD-tree
+    candidates within the gate, Hamming only for those): no gain — ~30 keypoints per 40 px gate at this
+    density, so ~47k candidate pairs cost as much as the brute-force kNN (~25 ms/pair); (2) XFeat
+    (2404.19174) learned features: CPU extraction 137 vs 34 ms/frame, matching not faster (16 ms), and
+    long-baseline (d=24) pairs fail on the repetitive mowing stripes (24 vs 90 inliers, transforms
+    ~680 px off). ORB + brute-force Hamming stays; a CUDA GPU (cv2.cuda / torch Hamming) is the lever."""
     import cv2
 
     if len(a.pts) < 10 or len(b.pts) < 10:
