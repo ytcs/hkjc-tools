@@ -632,7 +632,13 @@ class RaceRun:
         # the finish replay follows the race: start scanning a little after the winner could finish
         t_fin = self.info.distance / 18.0
         sc = finishcam.scan(
-            self.video("full"), start_s=t_fin, stop_s=t_fin + 70.0, n_field=max(14, self.info.n)
+            self.video("full"),
+            start_s=t_fin,
+            stop_s=t_fin + 70.0,
+            n_field=max(14, self.info.n),
+            # white-cloth reader only at Sha Tin (side-on camera, white cloths); on HV's overhead
+            # camera it only added false reads (HV0527: a "#7" at 0.5 s, real #7 2.36 s behind)
+            white=self.info.venue != "HV",
         )
         order, gaps, ustar = finishcam.finish_gaps(sc)
         np.savez(

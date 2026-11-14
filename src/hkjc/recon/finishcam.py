@@ -34,6 +34,10 @@ def line_x(img):
     return x if white[x] > 0.6 else None
 
 
+RING_MIN = 0.40  # white fraction of the ring around a digit (0.55 lost small far-side cloths: ST7's
+#                  winner #8 read on 2 frames only; the OCR confidence filters the extra candidates)
+
+
 def _white_cloths(img, y_min):
     """Candidate boxes of DARK DIGITS ON WHITE saddlecloths (Sha Tin side-on finish camera; HV's
     overhead camera shows yellow digits on dark cloth): dark components of digit size whose
@@ -62,7 +66,7 @@ def _white_cloths(img, y_min):
         ring = white[y0:y1, x0:x1].copy()
         ring[m : m + hh, m : m + w] = False
         nring = (y1 - y0) * (x1 - x0) - w * hh
-        if nring > 0 and ring.sum() / nring > 0.55:
+        if nring > 0 and ring.sum() / nring > RING_MIN:
             digs.append((x, y, w, hh))
     digs.sort()
     out, used = [], set()
@@ -80,7 +84,7 @@ def _white_cloths(img, y_min):
     return out
 
 
-def cloth_reads(img, *, y_min=150, n_field=14, x_center=None, x_half=700):
+def cloth_reads(img, *, y_min=150, n_field=14, x_center=None, x_half=700, white=True):
     """Saddlecloth number reads: [(x, y, number, conf)] — yellow digit clusters on dark cloth (HV
     overhead finish camera) and dark digits on white cloth (Sha Tin side-on finish camera)."""
     import cv2
@@ -95,7 +99,8 @@ def cloth_reads(img, *, y_min=150, n_field=14, x_center=None, x_half=700):
     boxes = [
         (x, y, w, hh) for x, y, w, hh, a in st[1:] if 12 <= hh <= 70 and 8 <= w <= 90 and a > 60
     ]
-    boxes += _white_cloths(img, y_min)
+    if white:  # Sha Tin side-on camera; HV's overhead camera has yellow-on-dark cloths only
+        boxes += _white_cloths(img, y_min)
     if (
         x_center is not None
     ):  # only cloths near the line matter for crossings/gaps (OCR is the cost)
@@ -154,7 +159,7 @@ def horse_scale(frames_imgs, line_x):
     return (float(np.median(w)) / HORSE_LEN_M, len(w)) if len(w) >= 5 else None
 
 
-def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40):
+def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40, white=True):
     """Find the finish-camera segment (finish line present at a stable x over many unique frames;
     of several candidate runs keep the one with the most cloth reads) and read the cloths on its
     unique frames. Returns dict(line_x, frames, reads=[(u, frame, x, y, num, conf)])."""
@@ -188,7 +193,7 @@ def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40)
             cur["xs"].append(lx)
             if u % 6 == 0:  # a few half-res frames for the horse-length ruler (horse_scale)
                 cur.setdefault("imgs", []).append(img[::2, ::2].copy())
-            for x, y, num, conf in cloth_reads(img, n_field=n_field, x_center=lx):
+            for x, y, num, conf in cloth_reads(img, n_field=n_field, x_center=lx, white=white):
                 cur["reads"].append((u, i, x, y, num, conf))
     if cur is not None and len(cur["frames"]) >= min_run:
         runs.append(cur)
