@@ -39,7 +39,10 @@ is recovered from the turf texture alone and the race is mapped once:
 1. **features/pose** — unique frames (the render updates at **10 Hz** inside a 25 fps MP4); ORB on
    HUD/horse-masked turf; RANSAC similarity + **least-squares (Umeyama) refit**; pose graph of
    sequential, long-baseline (d=2/5/12/24) and loop-closure edges, robust similarity solve, mid-race
-   gauge, outlier pruning.
+   gauge, outlier pruning. The solve is LINEAR: a 2D similarity is z -> A z + B (complex A, B), so the
+   probe residual in frame-j pixels, (A_i x + B_i - A_j S x - B_j)/A_j, is linear given A_j (fixed
+   point) — IRLS with Huber weights and a weak chain prior (weakly connected blocks otherwise collapse
+   to zero scale). 0.7 s vs 23 s for the capped nonlinear solve, and better gates on the dev set.
 2. **worldmap** — mosaic of all frames: horses average out; rails and painted markers are crisp.
 3. **rails** — racing rail extracted once: stations along the field's inner edge, thin-ridge
    profiles (median-filtered along s against painted markers), stiff Viterbi DP, sub-px refine;

@@ -320,7 +320,9 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
             edges.append(Edge(i, j, Sm, loop_weight if kind == "loop" else 1.0, kind))
     pg = PoseGraph(shape, G0, edges)
     fix = K // 2
-    lin = os.environ.get("HKJC_POSE_SOLVER") == "linear"  # opt-in until validated
+    # default: linear IRLS (10 dev races: 5 pass every timing gate vs 3 with the capped trf solve, 33x
+    # faster); HKJC_POSE_SOLVER=trf restores the nonlinear solver
+    lin = os.environ.get("HKJC_POSE_SOLVER", "linear") != "trf"
 
     def solve_(g):
         return solve_linear(g, fix=fix) if lin else solve(g, iters=100, rigid=False, fix=fix)
