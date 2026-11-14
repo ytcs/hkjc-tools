@@ -36,7 +36,11 @@ _ORB = {}
 
 def orb_scale() -> float:
     """Feature-extraction scale (env HKJC_ORB_SCALE; 1.0 = full-res panel). Keypoints are always
-    returned in FULL-RES panel pixels; the RANSAC threshold scales with 1/scale."""
+    returned in FULL-RES panel pixels; the RANSAC threshold scales with 1/scale.
+    REJECTED as default (10 dev races): scale 0.5 / 1500 features is 5x faster (features 72 -> 15 s,
+    pose 88 -> 18 s) but only 2 races pass every timing gate vs 5 at full res — the long-baseline and
+    loop-closure graph thins out (R08 d24 edges 212 -> 31, loops 171 -> 0; R02A sectional 0.18 ->
+    0.42 s). Scale 0.5 with 3000 features keeps R08 but saves only ~35 %."""
     import os
 
     return float(os.environ.get("HKJC_ORB_SCALE", "1.0"))
