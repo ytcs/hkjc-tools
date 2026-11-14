@@ -671,12 +671,21 @@ class RaceRun:
             return []
         from .validate import crossing
 
+        # Only OBSERVED crossings anchor the clock: a path whose labelled tracklets ended early is
+        # extrapolated by fusion at its last speed with a growing sd (ST4 0419: 8 horses' tracklets
+        # ended at 432 m to go; their paths "crossed" 4.5-5.3 s early at sd ~24 m and dragged the
+        # anchor to C = 800 px/s and the clock 2.2 s early; their 20 m/s extrapolated speeds also
+        # inflated the C prior 47 %). REJECTED: crossing() without the sd check.
+        sd_ok = self.ANCHOR_SD
+
         def cross_or_extrap(p):
             d = self.info.distance - p.s
             t = crossing(p.t, d, None, 0.0)
-            if np.isfinite(t) or d[-1] > 40.0:
-                return t
-            v = (p.s[-1] - p.s[-11]) / (p.t[-1] - p.t[-11]) if len(p.t) > 11 else np.nan
+            if np.isfinite(t):
+                return t if np.interp(t, p.t, p.sd_s) <= sd_ok else np.nan
+            if not (0.0 < d[-1] <= 40.0) or p.sd_s[-1] > sd_ok or len(p.t) <= 11:
+                return np.nan
+            v = (p.s[-1] - p.s[-11]) / (p.t[-1] - p.t[-11])
             return p.t[-1] + d[-1] / v if np.isfinite(v) and v > 5 else np.nan  # render ended short
 
         t_cross = {h: cross_or_extrap(p) for h, p in paths.items()}
@@ -686,7 +695,7 @@ class RaceRun:
         v = []
         for p in paths.values():
             d = self.info.distance - p.s
-            k = np.where((d > -10) & (d < 30))[0]
+            k = np.where((d > -10) & (d < 30) & (p.sd_s <= sd_ok))[0]
             if len(k) > 5:
                 v.append(np.median(np.gradient(p.s[k], p.t[k])))
         v_line = float(np.median(v)) if v else 16.5  # m/s at the line (time sd -> metres)
@@ -983,6 +992,7 @@ class RaceRun:
         return out
 
     EM_ITERS = 8
+    ANCHOR_SD = 3.0  # m: a fused crossing anchors the finish clock only where the path is tight
 
     def _em_associate(self, paths, horses, prior):
         """Detection-level EM (``assoc``): every detection re-assigned per frame against the

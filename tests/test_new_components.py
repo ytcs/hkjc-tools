@@ -99,3 +99,26 @@ def test_tick_seeded_marker_grid_ignores_edge_artefact():
     ev_s = finish - ev_v * ppm * 1.035  # HUD counts ~3.5 % more metres than the paint
     fit = rails.fit_marker_grid_seeded(ss, resp, ev_s, ev_v)
     assert fit is not None and abs(fit[1] - finish) < 20 and abs(fit[0] - ppm) < 0.5
+
+
+def test_film_marker_crossings_need_a_sweeping_line():
+    """A painted marker sweeps UP the front-on film; a static stripe at the bottom never counts.
+    The leader's hooves (y=380) pass a line moving up 10 px per sample -> one crossing, labelled by
+    the render odometer (lagging 10 m) as the 300 m marker; t = race clock."""
+    from hkjc.recon import film
+
+    rows = []
+    for k in range(40):
+        yc = 520.0 - 10.0 * k  # marker line: 520 -> 130
+        lines = [(yc, 0, yc, 900, yc)] if yc > 210 else []
+        lines.append((528.0, 0, 528.0, 900, 528.0))  # static bottom stripe (always present)
+        rows.append(dict(f=1000 + 2 * k, diff=5.0, lines=lines, lead=(380.0, 400.0)))
+    # hoof - line changes sign between k=14 (yc 380) ... crossing at frame 1028
+    got = film.crossings_from_rows(rows, lambda f: 310.0, f0=0.0)
+    assert list(got) == [300]
+    assert abs(got[300] - 1028 / 25.0) < 0.05
+    # only the static stripe: nothing
+    static = [dict(r, lines=[(528.0, 0, 528.0, 900, 528.0)]) for r in rows]
+    assert film.crossings_from_rows(static, lambda f: 310.0, f0=0.0) == {}
+    t, v = film.leader_finish({200: 60.0, 100: 66.0})
+    assert abs(v - 100 / 6.0) < 1e-9 and abs(t - 72.0) < 1e-9
