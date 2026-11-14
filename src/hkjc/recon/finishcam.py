@@ -318,6 +318,30 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
     # re-zeroed every other gap on the next horse (ST8: winner #12 seen crossing, order came out
     # [2, 7, 1]). Non-crossers still need >= 2 shared-frame estimates.
     gaps = {n: float(np.median(v)) for n, v in est.items() if len(v) >= 2 or (n in chain and v)}
+    # DIGIT-DROP misreads: "14" read as "4" when the "1" is missed (ST7: "#4" at 0.17 s next to #14 at
+    # 0.19 s; real #4 finished 2.12 s back). Drop a number whose digits are contained in another read
+    # number when its reads COINCIDE physically with that number's (same cloth: within 45/30 px on
+    # >= 2 shared frames, and >= half of the shared frames) and it has fewer reads. Gap proximity alone
+    # REJECTED: it dropped ST8's real winner #2 next to #12 (a close finish; their reads ~240 px apart).
+    R = np.asarray(sc["reads"])
+    nreads = {n: len(T[n][0]) for n in T}
+    for n in list(gaps):
+        rn = R[R[:, 4] == n]
+        for m in list(gaps):
+            if m == n or str(n) not in str(m) or nreads.get(n, 0) >= nreads.get(m, 0):
+                continue
+            rm = R[R[:, 4] == m]
+            shared = same = 0
+            for r in rn:
+                k = np.where(np.abs(rm[:, 0] - r[0]) <= 1)[0]
+                if len(k):
+                    shared += 1
+                    same += bool(
+                        (np.abs(rm[k, 2] - r[2]).min() < 45) and (np.abs(rm[k, 3] - r[3]).min() < 30)
+                    )
+            if same >= 2 and same >= 0.5 * shared:
+                gaps.pop(n)
+                break
     if not gaps:
         return ([], {}, ustar, {}) if with_sd else ([], {}, ustar)
     g0 = min(gaps.values())
