@@ -623,6 +623,15 @@ class RaceRun:
                     f"(spread {np.ptp(per):.1f} m)"
                 )
         d = d_of_s(s_px) - delta
+        # time-local pose slips (render camera swing on the straights): per-frame along-track shift
+        if os.environ.get("HKJC_TIME_SHIFT", "1") != "0":
+            tf_u = (fu - self.clock_f0()) / FPS
+            shift_u, n_win = rails.time_local_shift(tf_u, d_of_s(s_lead) - delta, odo)
+            if n_win:
+                d = d - shift_u[np.searchsorted(fu, rows[:, 0])]
+                self.log(
+                    f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m"
+                )
         lat = lat_px / ppm_loc(s_px)
         g = lat > -1.0  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]

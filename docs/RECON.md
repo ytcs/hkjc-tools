@@ -450,6 +450,22 @@ all gates 198 → 202. A from-scratch 26-race pod run of the default pipeline at
 reproduces these exactly (the `film` stage ran end to end). Canonical baseline-S, built from those
 artifacts: 22/26, timing 124/130, gates 204.
 
+**Time-local pose-slip shift (`rails.time_local_shift`; tag `recon-baseline-T`).** The pixels show
+the cause on the straights: the render camera reverses (180°) at t ≈ 28–32 s. After the d(s)
+refit, the calibrated leader still departs from the odometer per FRAME: on ST3, −29 m at 30.2 s →
++26 m at 33.4 s. Labelled detections fall to 0–6 % in that window. No position-indexed mapping can
+absorb an error indexed by time.
+
+Rule: where ≥ 3 consecutive ticks keep |residual| > 10 m (relative to the median), every
+detection in those frames is shifted by the time-interpolated tick residual, tapered over one tick.
+- It triggers only on ST3. ST 05-09 R1's runs are 2 ticks long, and its d(s) refit stays necessary:
+  the time shift alone loses its sectional gate.
+- ST3 leader 0.214 → 0.072 s on 6/6 seeds (0.072–0.079); in the window the per-frame residual is
+  flat and labelled detections are 44–64 %.
+- Pixels: some labels in the window are still wrong (the green/white leader is "#3" at 31 s, "#11"
+  at 33 s).
+- Gates on 26 races unchanged (205); no other race changes.
+
 **Final-stretch rank attraction (`assoc.RANK_ATTR`; tag `recon-baseline-S`).** Census of the 15
 unread horses that are in view but vague at the line: most have zero own detections in the last
 3 s, while 1–2.8 unassigned detections sit in nearly every near-line frame. These are not

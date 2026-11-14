@@ -289,6 +289,54 @@ def fit_marker_grid_seeded(ss, resp, ev_s, ev_v, *, spacing_m=50.0, kmax=8, rel=
     return float(ppm), float(sF), ks, ps
 
 
+TIME_RES_M = 10.0  # m: tick residual (vs its median) that flags a time-local pose slip
+TIME_MIN_TICKS = 3  # consecutive flagged ticks
+
+
+def time_local_shift(tf, d_lead, odo, *, res_m=None, min_ticks=None):
+    """Per-frame ALONG-TRACK shift (m, subtract from d) where the calibrated leader departs from the
+    odometer ticks for a few seconds: a per-FRAME pose slip that no d(s) mapping can absorb.
+
+    ``tf``: frame times (s), ``d_lead``: calibrated leader distance-to-go per frame, ``odo``: HUD
+    odometer per frame. At each tick event (V+10 -> V) the residual r = d_lead - V (minus its median,
+    i.e. the convention/lag offset); runs of >= ``min_ticks`` consecutive ticks with |r| > ``res_m``
+    (+- one tick) get shift(t) = r interpolated in time, tapered to 0 over one tick at both ends.
+    MEASURED (pixels + ticks): on two of the three 1000 m straights the render camera swings 180 deg at
+    t ~ 28-32 s and the pose solve slips per frame: ST 0419 R3 r = -29 m at 30.2 s -> +26 m at 33.4 s
+    (after the d(s) refit), ST 0509 R1 -14 -> +16; ST 0607 R8 one tick at -10. Labelled detections fall to
+    0-6 % in that window. Every other race: no run of 3 ticks > 10 m. -> (shift per frame, n_windows)"""
+    res_m = TIME_RES_M if res_m is None else res_m
+    min_ticks = TIME_MIN_TICKS if min_ticks is None else min_ticks
+    o = clean_odometer(odo)
+    et, er = [], []
+    last = None
+    for k in range(len(o)):
+        if np.isnan(o[k]):
+            continue
+        if last is not None and o[last] - o[k] == 10 and k - last <= 3:
+            et.append(0.5 * (tf[last] + tf[k]))
+            er.append(0.5 * (d_lead[last] + d_lead[k]) - o[k])
+        last = k
+    shift = np.zeros(len(tf))
+    if len(er) < 2 * min_ticks:
+        return shift, 0
+    et, er = np.array(et), np.array(er)
+    er = er - np.median(er)
+    bad = np.abs(er) > res_m
+    edges = np.flatnonzero(np.diff(np.r_[0, bad.astype(int), 0]))
+    n = 0
+    for a0, a1 in zip(edges[::2], edges[1::2]):
+        if a1 - a0 < min_ticks:
+            continue
+        i0, i1 = max(0, a0 - 1), min(len(et) - 1, a1)  # one tick either side: the taper
+        kt = np.r_[et[i0], et[a0:a1], et[i1]]
+        kr = np.r_[0.0, er[a0:a1], 0.0]
+        m = (tf >= kt[0]) & (tf <= kt[-1])
+        shift[m] = np.interp(tf[m], kt, kr)
+        n += 1
+    return shift, n
+
+
 def clean_odometer(odo, win=15, tol=15.0):
     """Drop OCR misreads: readings > ``tol`` m from a running median of the interpolated sequence."""
     from scipy.ndimage import median_filter
@@ -414,6 +462,10 @@ def calibrate_distance_ticks(
     # dense knots over each run +- 50 m, kept inside the tick-covered range
     es = ev_s[order]
     extra = []
+    import os
+
+    if os.environ.get("HKJC_LOCAL_REFIT", "1") == "0":  # diagnostic
+        bad[:] = False
     edges = np.flatnonzero(np.diff(np.r_[0, bad.astype(int), 0]))
     for a0, a1 in zip(edges[::2], edges[1::2]):
         if a1 - a0 >= LOCAL_MIN_TICKS:

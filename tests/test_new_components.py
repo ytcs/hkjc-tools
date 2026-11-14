@@ -212,6 +212,23 @@ def test_em_assign_silk_arbitrates_between_close_candidates(monkeypatch):
     assert list(lab) == [2, 1]  # no silk evidence: position decides
 
 
+def test_time_local_shift_recovers_per_frame_slip():
+    """A 4-s per-frame pose slip (leader 25 m 'behind' the odometer) is returned as a shift inside the
+    window and zero elsewhere; small tick noise alone triggers nothing."""
+    from hkjc.recon import rails
+
+    tf = np.arange(0.0, 60.0, 0.1)
+    d_true = 1000.0 - 16.0 * tf
+    odo = np.ceil(d_true / 10.0) * 10.0  # round-up display: ticks V+10 -> V as the leader reaches V
+    slip = np.where((tf > 30) & (tf < 34), 25.0, 0.0)
+    shift, n = rails.time_local_shift(tf, d_true + slip, odo)
+    assert n == 1
+    assert np.all(np.abs(shift[(tf > 31) & (tf < 33)] - 25.0) < 3.0)
+    assert np.all(shift[(tf < 28) | (tf > 36)] == 0.0)
+    shift0, n0 = rails.time_local_shift(tf, d_true + np.sin(tf) * 2.0, odo)
+    assert n0 == 0 and not shift0.any()
+
+
 def test_fusion_anonymous_association_respects_forbid():
     """An anonymous tracklet that the E-step's legend evidence excluded for a horse must not be
     handed to that horse by fusion's chi^2 association."""
