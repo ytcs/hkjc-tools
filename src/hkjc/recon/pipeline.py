@@ -206,8 +206,10 @@ class RaceRun:
         _CACHE = cache
         with mp.get_context("fork").Pool(_nproc()) as pool:
             res = pool.map(_feat_job, [(k, nfeat) for k in range(len(cache))], chunksize=8)
-            _FEATS_PAR = [r[2] for r in res]
-            pairs = [k for k in range(1, len(res)) if res[k][0] - res[k - 1][0] <= 6]
+        # a NEW pool: workers fork the parent's state, so the features must exist before forking
+        _FEATS_PAR = [r[2] for r in res]
+        pairs = [k for k in range(1, len(res)) if res[k][0] - res[k - 1][0] <= 6]
+        with mp.get_context("fork").Pool(_nproc()) as pool:
             ms = dict(zip(pairs, pool.map(_step_job, pairs, chunksize=8)))
         _CACHE = _FEATS_PAR = None
         steps = [
