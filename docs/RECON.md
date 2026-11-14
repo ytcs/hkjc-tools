@@ -573,6 +573,35 @@ without it agrees within a few % on all 26. On 5 races (HV0415-1, HV0422-1, HV05
 leave-one-out C is stable, yet official finish gaps are 20–30 % larger. Render and camera agree with
 each other against official there; within 4 % on 7 other races. Cause not established.
 
+**Canonical in-sample baseline (`recon-baseline-U`, commit d3be006).** A from-scratch 26-race pod
+run of the default pipeline at d3be006 (every stage, including `film`, run end to end) reproduces the
+local observe → validate run exactly: every metric is identical on all 26 races.
+- All five timing gates 23/26; timing gates 126/130; all gates 207/234.
+- Yardstick: local observe → validate, the same as the from-scratch run at U. This settles the
+  earlier 204/205 split at baseline S. The 204 came from fusing pod-R artifacts; 205 came from
+  re-running observe locally. They differed by one fragile horse, HV 05-27 R9 #7: rank attraction
+  did not fire on the pod artifacts, so that race failed finish-n there instead of placing #7
+  0.88 s early.
+- Of the 27 gate failures, 18 are lateral: 12 races where the fixed-rail gap is unmeasurable (the
+  gate records these as failures) and 6 measured failures (see above).
+
+Remaining failures, all declared:
+- Timing:
+  - HV 04-22 R9, leader and sectional: early-boundary lateness (3f).
+  - ST1, leader 0.253 s: 0.003 s over the gate.
+  - ST 05-24, winner: a 0.01 s short head, inside both paths' sd at the line.
+- Finish-n: the census on this run gives, for each short horse, the last render frame minus its
+  official finish time.
+  - **ST7 (4 short) and ST 05-09 R2 (3 short) are structural.** Every short horse finishes 0.2–3.6 s
+    after the render ends (ST7 #3, #4, #10, #11; ST 05-09 R2 #9, #10, #11), so no render evidence
+    exists at their line crossings.
+  - **ST4 (3 short) is partly real.** #3 (tailed off, −5.7 s) and #9 (−0.4 s) are render-ended, but
+    #10, the runner-up, has no path while the render runs 1.3 s past it. Its finish-camera reads
+    come from the slow-motion post camera, are sparse in u, and are removed by the motion filter.
+  - **ST 05-24 (3 short) is real.** #4, #8 and #12 (places 12–14) are vague at the line (sd 3–6.5 m),
+    and the render runs 0.6–0.7 s past #4 and #12.
+- Path count: ST4 (#3 render-ended, #10 as above).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
@@ -597,9 +626,10 @@ each other against official there; within 4 % on 7 other races. Cause not establ
   over the same span (earlier wording "more metres" was inverted); cause unknown. Recon d sits between
   the two (1-2.4 % short of the paint at the 400 m marker). The race film supports the TICK scale in
   the straight (unpinned recon − film is flat; 3f).
-- **Film-anchored metric** (3f): turn it on once finish-camera identity no longer hinges on marginal
-  orphan-chain/registration matches. Candidates: give finish-read horses with no tracklets a path
-  seed so the EM association can place them, or make registration robust to tailed-off misreads.
+- **Film-anchored metric**: DEFAULT since baseline Q (3i), after finish seeds stopped it costing
+  paths. Open: the film's own −0.11 s bias at Sha Tin's 400 m marker (recorded, not corrected).
+- **ST4 runner-up #10 / #11 gap**: the slow-motion post camera's reads are sparse in u and get
+  median- or motion-filtered. This needs a camera-segment-aware rate, not a looser filter.
 - **AWT** — OUT OF SCOPE for now (turf only). Known: head/shadow duplicates fixed by an anisotropic
   merge; far-side avatars on bends missed; the back-straight rail is framed under the legend band.
 - **Real-camera feeds (drone, patrol) + SAM 2** — the only independent source of positions: needed for
