@@ -448,6 +448,14 @@ ensemble:
 - ST 05-09 R1: leader 0.249 → 0.130 s, sectional 0.280 → 0.171. Totals: all five timing gates 19 → 21/26, timing gates 120 → 123,
 all gates 198 → 202.
 
+**The film reference's own bias (recorded, NOT corrected).** The film now sets every race's distance
+constant. Film − official at Sha Tin's 400 m marker is early on 9 of 10 races, mean −0.11 s:
+- dev: −0.12, −0.05, −0.08, −0.10, −0.12, +0.09;
+- H: −0.14, −0.24, −0.25, −0.12.
+
+Happy Valley's 400 m marker is on the bend, so it is excluded. Using official times to correct
+this would make the outcome data an input, so it stays a recorded property of the reference.
+
 **Lateral-scale gate failures (6/26), not fixed; the gate is unchanged.** The rails-stage ppm equals
 the tick-seeded ppm within 1 %, so lateral and along-track share one scale. On ST7 (pixels) the
 map ends 4.0–4.4 m inside the racing rail for the whole trip: the fixed rail at 4.5 m is never
