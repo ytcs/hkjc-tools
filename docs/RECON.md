@@ -137,10 +137,12 @@ code. **Happy Valley: 2 of 3 fresh races pass every timing gate** (HV B 1200, HV
 1000 passes the identity-free leader gate but not sectional/order — a small sample. **Sha Tin: 0 of
 5** (A 1200, A 2000, C+3 1400, AWT 1800, 1000 m straight) pass the identity-free leader gate. A
 HUD-only check (odometer tick frame on the render clock vs the official leader time) shows two
-causes: (a) on some races the render ITSELF disagrees with the official record by 0.3-1.1 s (e.g.
-the 2026-04-26 meeting, roughly constant — a render clock/latency offset that no render-side CV can
-remove; needs an independent timing reference from the real-camera feeds), and (b) our own errors on
-top (AWT detection/rails, the straight chute's weak rail). Lateral position has no working gate yet
+causes: (a) on some races the render ITSELF disagrees with the official record by 0.3-1.1 s,
+DECLINING along the race (e.g. 2026-04-26 R9: 0.86 -> 1.11 -> 0.82 -> 0.50 s) — not a constant clock
+offset; a geometry-only metric (marker scale, no ticks) is far worse on every race (the map scale
+drifts along the trip), so the ticks stay the metric and no render-side CV can remove this; it needs an
+independent reference from the real-camera feeds; and (b) our own errors on top (AWT
+detection/rails, the straight chute's weak rail). Lateral position has no working gate yet
 and is unvalidated.
 
 ## 4. Open / next
