@@ -655,7 +655,11 @@ Now a number is dropped only if most of ALL its reads sit on the longer number's
 Sectional improves on ST 05-24 0.162 → 0.138, ST3 0.188 → 0.176, ST4 0.173 → 0.162 and
 ST9 0.221 → 0.215, and worsens on ST8 0.096 → 0.106. Convergence does NOT remove the ST4 ceiling
 sensitivity: with #10 injected at a cap of 30, 2912 detections are still relabelled and #3 takes
-385, so the two inputs reach different fixed points. Adoption is pending perturbation ensembles.
+385, so the two inputs reach different fixed points.
+NOT ADOPTED. 6-seed perturbation ensembles on ST 05-24, ST4, ST8, HV 06-03 R3, ST3 and ST9 (cap 8
+vs cap 30, 36 runs each) give identical timing gates on every run. Median sectionals move within
+the seed spread (ST3 0.181 → 0.170, ST 05-24 0.154 → 0.149, the others ±0.003), and the spreads do not
+narrow (ST4 ρ range 0.95–0.99 → 0.90–0.99). Convergence buys no robustness at 2–3× the EM time.
 
 ## 4. Open / next
 
