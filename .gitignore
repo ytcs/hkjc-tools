@@ -22,3 +22,17 @@ runs/
 
 # model weights (trained/downloaded; not versioned)
 models/
+
+# internal dev workflow / scaffolding (kept locally, not end-user facing)
+CLAUDE.md
+journal/
+scripts/
+primer/
+cloud/
+.tessdata/
+docs/CAUSAL_MODEL.md
+docs/CV_RECON.md
+docs/MODEL_DESIGN.md
+docs/PHILOSOPHY.md
+docs/RESEARCH_PROGRAM.md
+docs/THEORY.md

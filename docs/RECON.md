@@ -9,7 +9,7 @@ from hkjc.data import race_info
 from hkjc.recon import RaceRun
 run = RaceRun(race_info("20260603", "HV", 8)); run.run(); run.paths()
 ```
-CLI: `scripts/capped.sh uv run --group vision python -m hkjc.recon 20260603 HV 8`
+CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8`
 (stages cached under `data_cache/recon/<date>_<venue>_<no>/`; `--force stage,...` to re-run).
 
 ## 1. The feeds are proposals, the path is a posterior
@@ -122,9 +122,9 @@ lateral scale (racing→fixed rail gap on the map vs the course table, where vis
 Development races (tuned on): R08, R03, R02A, HVB. Held-out: HV 2200 + the five Sha Tin races.
 `recon/validate.py`; results per race in `data_cache/recon/<key>/validation.json`.
 
-Validation set (`scripts/run_validation_set.sh`): HV C 1800/1200 night, HV A 1650, HV B 1650,
+Validation set: HV C 1800/1200 night, HV A 1650, HV B 1650,
 HV C 2200 good-to-yielding, ST C 1600 day, ST AWT 1800 wet-slow, ST 1000 straight, ST B 1800 soft,
-ST AWT 1200 night. Current numbers: see the latest journal entry.
+ST AWT 1200 night.
 
 ## 4. Open / next
 
@@ -138,8 +138,6 @@ ST AWT 1200 night. Current numbers: see the latest journal entry.
 - **Non-overlap** between horses in fusion (sparse QP, e.g. OSQP + sequential convex programming).
 - **Detection under overlays** (disclaimer text, legend band) — retrain the avatar YOLO on
   track-interpolated pseudo-labels (GPU via RunPod if needed); SAHI-style slicing for the drone.
-- **Fast loop**: `scripts/dev_loop.sh` re-runs only the changed stages on a subset, races in
-  parallel (10 races rails→validate in ~2–3 min).
 - **ST 1000 m straight**: no turning → the inner side must come from the course, not the path.
 - **Legend identity** is the dominant remaining error (long tracklets carry one wrong label for a
   whole race: HV 0527 k3 "#8" is #12). Fusion's anchor-conflict demotion helps order but must stay

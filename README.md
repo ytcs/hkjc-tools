@@ -24,9 +24,13 @@ paths = run.paths()                             # horse_no, t, s, d, lat, sd_s, 
 ```
 
 ```bash
-scripts/capped.sh uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse,validate]
-scripts/run_validation_set.sh                   # the 10-race validation set
+uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse,validate] [--stages ...]
 ```
+
+Detector weights are expected in `models/` (`avv_avatar_yolo11n.onnx`/`.pt`, the self-trained
+render-avatar detector; `coco_yolov8x.pt` from Ultralytics). They are not distributed in git.
+Environment knobs: `HKJC_DEVICE=cuda` (GPU detection), `HKJC_NPROC` (worker processes),
+`HKJC_OCR_THREADS` (OCR threads per process).
 
 ## Layout
 
@@ -34,8 +38,8 @@ scripts/run_validation_set.sh                   # the 10-race validation set
 src/hkjc/data/    HKJC interfaces: race_info (results+sectionals), replay videos, silks, track
                   geometry, racecard, live odds/pools, form, trackwork, barrier trials, ...
 src/hkjc/recon/   race info + videos -> paths
-    pipeline.py   RaceRun: cached stages features -> pose -> detect -> hud -> worldmap -> rails
-                  -> observe -> identify -> fuse -> validate
+    pipeline.py   RaceRun: cached stages frames -> features -> pose -> worldmap -> detect -> hud
+                  -> rails -> observe -> finish -> identify -> fuse -> validate
     video.py      frame access, AVV render gating / 10 Hz de-dup / HUD masks
     register.py   turf ORB features, RANSAC similarity + least-squares refit
     pose.py       camera pose graph (sequential, long-baseline, loop closures)
@@ -43,13 +47,15 @@ src/hkjc/recon/   race info + videos -> paths
     rails.py      racing rail on the map, track frame (s, lat), marker grid, odometer calibration
     detect.py     self-supervised YOLO avatar detector + silk histograms
     ocr.py        recognition-only OCR of the burnt-in clock / odometer / legend
-    tracking.py   world-frame multi-horse tracking + stitching
+    tracking.py   world-frame multi-horse tracking + stitching (initialisation only)
     identity.py   tracklet -> saddlecloth number (legend order, elimination, silk)
+    assoc.py      detection-level EM association against the fused continuous paths
+    finishcam.py  finish-line camera: cloth OCR, order + spatial gaps, finish identity
     fusion.py     Bayesian path reconstruction from all feeds' proposals (physics + geometry priors)
     validate.py   official comparison against fixed gates (validation only)
     drone.py      drone feed (experimental: registration open)
 docs/RECON.md     method, hard-won facts, gates, open items
-journal/          research trail
+docs/HKJC_*.md    HKJC data sources and track specifications
 models/           detector weights (git-ignored)
 ```
 
