@@ -1008,6 +1008,60 @@ class RaceRun:
             if prev is not None and changed < 0.002:
                 break
             prev = lab
+        # SHADOW paths: two horses cannot occupy one position. A horse whose own detections are
+        # missing can lock onto a neighbour's (R03: unread #9 rode #7's detections through the line,
+        # 0.8 s early -> wrong winner). Pairs within 0.8 m along / 0.5 m laterally for >= 0.5 s (both
+        # tight): the render obs of the weaker-evidence horse (no finish-camera reading, else fewer
+        # obs) in that window are dropped and the paths re-fused.
+        cam = set()
+        if self.p("finish.npz").exists():
+            zf = np.load(self.p("finish.npz"))
+            _o, g, _u = finishcam.finish_gaps(dict(line_x=float(zf["line_x"]), reads=zf["reads"]))
+            cam = {int(k) for k in g}
+        drop = np.zeros(len(t), bool)
+        hs = sorted(paths)
+        # only the finish-critical window (last 3 s before the first horse reaches the line): a
+        # mid-race rule released 1323 detections of a real horse on HV0429 (coverage 94 -> 90 %)
+        t_fin = min(
+            (
+                p.t[np.argmax(self.info.distance - p.s <= 0)]
+                for p in paths.values()
+                if (self.info.distance - p.s <= 0).any()
+            ),
+            default=np.inf,
+        )
+        for a_i, ha in enumerate(hs):
+            for hb in hs[a_i + 1 :]:
+                pa, pb = paths[ha], paths[hb]
+                if len(pa.t) != len(pb.t) or pa.t[0] != pb.t[0]:
+                    continue
+                close = (  # physically impossible overlap (side-by-side horses are ~1 m apart)
+                    (np.abs(pa.s - pb.s) < 0.8)
+                    & (np.abs(pa.lat - pb.lat) < 0.5)
+                    & (pa.sd_s < 1.5)
+                    & (pb.sd_s < 1.5)
+                    & (pa.t > t_fin - 3.0)
+                )
+                if close.sum() * fusion.DT < 0.5:
+                    continue
+                tw = pa.t[close]
+                win = (t >= tw.min() - 0.2) & (t <= tw.max() + 0.2)
+                na, nb = int(((lab == ha) & win).sum()), int(((lab == hb) & win).sum())
+                if (ha in cam) != (hb in cam):
+                    loser = hb if ha in cam else ha
+                else:
+                    loser = ha if na < nb else hb
+                drop |= (lab == loser) & win
+        if drop.any() and os.environ.get("HKJC_SHADOW", "1") != "0":
+            lab = np.where(drop, 0, lab)
+            obs = assoc.runs_to_obs(lab, t, s_run, lat)
+            for k in np.unique(frag[(lab == 0) & (frag >= 0) & ~drop]):
+                j = np.where((frag == k) & (lab == 0) & ~drop)[0]
+                if len(j) >= 3:
+                    j = j[np.argsort(t[j])]
+                    obs.append(fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k)))
+            paths, _a = self._fuse(obs, horses, prior)
+            self.log(f"   em-assoc: shadow paths -> {int(drop.sum())} detections released")
         np.savez(self.p("det_labels.npz"), labels=lab)  # per-detection EM identity (viz, audit)
         return obs, paths
 
