@@ -30,6 +30,7 @@ from dataclasses import replace
 
 from . import (
     detect as _detect,
+    film,
     finishcam,
     fusion,
     identity,
@@ -44,6 +45,13 @@ from . import (
 from ..data import RaceInfo, download_replay, replay_path
 
 FPS = 25.0
+
+
+def film_enabled() -> bool:
+    """The race-film metric anchor is OPT-IN (HKJC_FILM=1): see ``RaceRun.observe``."""
+    return os.environ.get("HKJC_FILM", "0") == "1"
+
+
 STAGES = (
     "frames",
     "features",
@@ -52,6 +60,7 @@ STAGES = (
     "detect",
     "hud",
     "rails",
+    "film",  # OPT-IN (HKJC_FILM=1): race-film marker crossings -> the metric's constant offset
     "observe",
     "finish",  # independent of the render; before identify (finish-camera identity votes)
     "identify",
@@ -64,6 +73,7 @@ OUTPUTS = {
     "pose": ["pose.npz"],
     "detect": ["dets.npz"],
     "hud": ["hud.npz", "legend.npz"],
+    "film": ["film.npz"],
     "worldmap": ["map.png", "map_cnt.npy", "map_meta.npz"],
     "rails": ["rail.npz", "metric.npz"],
     "observe": ["tracks.npz"],
@@ -132,12 +142,14 @@ class RaceRun:
 
     # stages that read only the videos/frame cache run CONCURRENTLY with the render chain; the
     # chain waits for them right before their first consumer (results identical, wall time shorter)
-    BACKGROUND = {"hud": ("frames", "observe"), "finish": (None, "identify")}
+    BACKGROUND = {"hud": ("frames", ("film", "observe")), "finish": (None, ("identify",))}
 
     def run(self, stages=STAGES, force=()):
         import multiprocessing as mp
 
         todo = [st for st in stages if st not in self.done_set() or st in force]
+        if not film_enabled():  # opt-in stage (see observe)
+            todo = [st for st in todo if st != "film"]
         bg = {}
 
         launched = set()
@@ -170,7 +182,7 @@ class RaceRun:
                 launch(b)
         for st in todo:
             for b in list(bg):
-                if self.BACKGROUND[b][1] == st:
+                if st in self.BACKGROUND[b][1]:
                     wait(b)
             if st in self.BACKGROUND:
                 continue  # runs (or ran) in the background
@@ -465,6 +477,20 @@ class RaceRun:
         ok = ~np.isnan(r[:, 1])
         return float(np.median(r[ok, 0] - FPS * r[ok, 1]))
 
+    def film(self):
+        """Leader crossings of the REAL painted markers in the race film (``recon.film``); the
+        finish time is located from the HUD odometer reaching its minimum (no official data)."""
+        hud = np.load(self.p("hud.npz"))["rows"]
+        g = np.isfinite(hud[:, 2])
+        mk, tt = np.zeros(0, int), np.zeros(0)
+        if g.sum() >= 10:
+            t_last = (hud[g, 0][np.argmin(hud[g, 2])] - self.clock_f0()) / FPS
+            got = film.crossings(self.video(), hud, t_last)
+            mk = np.array(sorted(got, reverse=True), int)
+            tt = np.array([got[m] for m in mk], float)
+        np.savez(self.p("film.npz"), markers=mk, t=tt)
+        self.log(f"   film: {len(mk)} marker crossings {dict(zip(mk.tolist(), tt.round(2)))}")
+
     def observe(self):
         rows, X, hist, _P = self.world_dets()
         seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness ensembles
@@ -508,6 +534,23 @@ class RaceRun:
                 have_markers = True
                 self.log(f"   observe: tick-seeded marker grid k={ks_seed.tolist()} ppm {ppm:.3f}")
         pin_env = os.environ.get("HKJC_PIN")  # diagnostic override: "1" force pin, "0" never
+        # OPT-IN (HKJC_FILM=1; journal 0137): the race film's REAL painted markers fix the metric's
+        # constant -- odometer ticks as the metric to the line (unpinned, no convention offset),
+        # shifted so the render leader meets the film's marker crossings. MEASURED: the render-paint
+        # pin + paint-derived convention put the leader +0.2 s late over 400-100 m and -0.16 s early
+        # at the line (a step in the last 50 m); on the ticks the film shows one flat offset per
+        # race. Leader/sectional gains are robust (6-seed ensembles: ST9 timing 2 -> 4/5, sectional
+        # 0.455 -> 0.232 s; ST1 sectional 0.36 -> 0.25 s), BUT it consistently loses 2-5 horses'
+        # paths on ST4/ST1 (declared path-count gate): those horses hinge on finish-camera
+        # registration and orphan-chain matching, which flip with the changed line speed (the pin
+        # stretched the last 50 m: 17.0 vs 15.2 m/s). Not fixed, so it stays OFF by default.
+        # Fallback inside the opt-in (< FILM_MIN crossings): the render-paint pin.
+        fz = self.p("film.npz")
+        film_t = {}
+        if fz.exists() and film_enabled():
+            zf = np.load(fz)
+            film_t = dict(zip(zf["markers"].tolist(), zf["t"].tolist()))
+        use_film = len(film_t) >= film.FILM_MIN and pin_env is None
         d_of_s, c, ppm_loc, resid, (ppm_odo, sF_odo, pinned, c_m, nsh) = (
             rails.calibrate_distance_ticks(
                 fu,
@@ -515,11 +558,26 @@ class RaceRun:
                 odo,
                 ppm,
                 sF,
-                pin_finish=None if pin_env is None else pin_env == "1",
+                pin_finish=False if use_film else (None if pin_env is None else pin_env == "1"),
                 have_markers=have_markers,
             )
         )
-        d = d_of_s(s_px)
+        delta = 0.0
+        if use_film:
+            dlt, per = film.anchor_offset((fu - self.clock_f0()) / FPS, d_of_s(s_lead), film_t)
+            if dlt is None:  # crossings not matched by the render leader: back to the paint pin
+                d_of_s, c, ppm_loc, resid, (ppm_odo, sF_odo, pinned, c_m, nsh) = (
+                    rails.calibrate_distance_ticks(
+                        fu, s_lead, odo, ppm, sF, have_markers=have_markers
+                    )
+                )
+            else:
+                delta = dlt
+                self.log(
+                    f"   observe: film anchor delta {delta:+.2f} m from {len(per)} markers "
+                    f"(spread {np.ptp(per):.1f} m)"
+                )
+        d = d_of_s(s_px) - delta
         lat = lat_px / ppm_loc(s_px)
         g = lat > -1.0  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]
@@ -538,6 +596,7 @@ class RaceRun:
             hist=hist,
             members=np.array([np.array(tk.det) for tk in trs], dtype=object),
             odo_c=c,
+            film_delta=delta,
         )
         self.log(
             f"   observe: {len(resid)} odometer ticks, ppm odo/marker {ppm_odo:.3f}/{ppm:.3f}, "

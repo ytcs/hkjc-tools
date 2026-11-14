@@ -232,16 +232,41 @@ line). Ruled out:
 
 Against the race film (non-official, non-HUD), recon is **flat at ~+0.2 s from 400 m to 100 m**
 (pooled medians +0.22/+0.24/+0.19/+0.14/+0.18; film − official at 400 m within ±0.12 s), then
-steps to −0.16 s at the line, mostly inside the last 50 m. This is not a paint-vs-odometer scale
-ramp, so no in-video scale correction is justified. Beyond 400 m there is no reference that is
-neither official nor the odometer. The odometer-only leader error is late too (ST9
+steps to −0.16 s at the line, mostly inside the last 50 m. Beyond 400 m there is no reference that
+is neither official nor the odometer. The odometer-only leader error is late too (ST9
 +0.86/+1.11/+0.82/+0.50 s), but that comparison is circular for the rendered horses: recon distance
-is fitted to the same ticks. **Cause not established; declared** (below).
+is fitted to the same ticks.
+
+**The paint pin causes the step.** With the ticks unpinned (no paint FINISH pin, no paint-derived
+convention offset), recon − film becomes one flat offset per race that continues through the line
+(e.g. ST9 +0.52…+0.63 s in the straight, +0.53 at the line; one exception, HV 0415). The pin
+stretched the last ~50 m: ST4 leader speed near the line is 17.0 m/s pinned vs 15.2 unpinned, and
+the film's 100 m → line average is 15.7. So the film supports the tick scale in the straight, and
+the render's painted FINISH is the wrong anchor.
+
+**Film-anchored metric, built but OFF by default** (`HKJC_FILM=1`; `film` stage +
+`film.anchor_offset`): ticks unpinned, minus one constant per race (+2.4…+11 m) that puts the render
+leader on the film's marker crossings, with the paint pin as fallback below 3 crossings. Against a
+clean control (15 races; 6-seed ensembles on ST4/ST3/ST1/ST9/HV 0520):
+- Robust gains: ST9 timing 2 → 4/5, sectional 0.455 → 0.232 s; ST1 sectional 0.36 → 0.25 s, leader
+  0.393 → 0.253 s (still a failure); ST6 0.157 → 0.080; ST8 0.236 → 0.105. Sectional better on
+  10/15; all-five timing 11 → 11/15.
+- Consistent regression on a declared gate: ST4 loses 2–3 horses' paths on every seed and ST1 4–5
+  (control 0–2). ST4 sectional 0.41 → 0.49 s.
+
+Those horses have no labelled tracklets, so they hang on finish-camera registration and
+orphan-chain matching. Both flip when the line speed changes, which moves the C prior and the
+anchor clock. A fixed-grid registration changes the control's ST4 naming too: ST4 registration is
+ill-posed because of the "3"/#7 misread. Not fixed, so the film anchor stays off. **Diagnostic
+only:** official finish gaps put the true camera C at 12.3–15.7 m/s × camera px/m (median ~13.4) on
+14 races. The horse-ruler prior (line speed × px/m) therefore overstates C by ~15–20%. This must
+not be used to set the ruler or any prior.
 
 **Declared before batch H (known failures, not fixed):**
 - The odometer-derived metric disagrees with official beyond the marker zone (leader late by
   0.2–0.9 s at early boundaries on some races), cause not established.
-- The leader is ~0.16 s early at the line: a step inside the last ~50 m, cause not established.
+- The leader is ~0.16 s early at the line, caused by the render-paint FINISH pin (above). The fix
+  exists but is off by default, because it costs horses' paths on ST4/ST1.
 - ST 1000 m straight: weak rail/metric (ST3 1.66 s at 400 m).
 - Finish-camera misreads of tailed-off horses (ST4 "3" is #7; ST7 #11).
 - ST4 finish ρ sits on the 0.90 gate line (ensemble median 0.90).
@@ -269,8 +294,11 @@ is fitted to the same ticks. **Cause not established; declared** (below).
 - **Odometer HUD vs painted markers**: in the 0-400 m zone the odometer tick scale is 1.3-4.8 % above
   the paint scale in px/m (all 15 turf races), i.e. the odometer counts FEWER metres than the paint
   over the same span (earlier wording "more metres" was inverted); cause unknown. Recon d sits between
-  the two (1-2.4 % short of the paint at the 400 m marker); the race film supports neither scale
-  over the other (3f).
+  the two (1-2.4 % short of the paint at the 400 m marker). The race film supports the TICK scale in
+  the straight (unpinned recon − film is flat; 3f).
+- **Film-anchored metric** (3f): turn it on once finish-camera identity no longer hinges on marginal
+  orphan-chain/registration matches. Candidates: give finish-read horses with no tracklets a path
+  seed so the EM association can place them, or make registration robust to tailed-off misreads.
 - **AWT** — OUT OF SCOPE for now (turf only). Known: head/shadow duplicates fixed by an anisotropic
   merge; far-side avatars on bends missed; the back-straight rail is framed under the legend band.
 - **Real-camera feeds (drone, patrol) + SAM 2** — the only independent source of positions: needed for

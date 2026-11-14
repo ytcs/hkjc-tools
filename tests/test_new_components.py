@@ -124,6 +124,20 @@ def test_film_marker_crossings_need_a_sweeping_line():
     assert abs(v - 100 / 6.0) < 1e-9 and abs(t - 72.0) < 1e-9
 
 
+def test_film_anchor_offset_recovers_constant():
+    """Render leader 6 m 'behind' reality at constant 16 m/s: the film crossings give delta = +6 m
+    (d_true = d - delta); fewer than FILM_MIN matched markers -> None."""
+    from hkjc.recon import film
+
+    t = np.arange(0.0, 40.0, 0.1)
+    d_true = 600.0 - 16.0 * t
+    d_render = d_true + 6.0
+    film_t = {m: (600.0 - m) / 16.0 for m in (400, 300, 200, 100)}
+    delta, per = film.anchor_offset(t, d_render, film_t)
+    assert abs(delta - 6.0) < 0.05 and len(per) == 4
+    assert film.anchor_offset(t, d_render, {400: 12.5, 300: 18.75})[0] is None
+
+
 def test_em_assign_negative_legend_evidence():
     """A horse missing from a fully read top-8 legend runs behind all 8 listed horses: it must not
     take a detection at the front, even when its own (vague) posterior points there."""

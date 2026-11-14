@@ -206,3 +206,37 @@ def leader_finish(film_t, *, vmin=12.0, vmax=22.0):
     if not (vmin <= v <= vmax):
         return None
     return film_t[a] + a / v, v
+
+
+FILM_MIN = 3  # crossings needed to anchor the metric on the film (else: the render-paint pin)
+
+
+def anchor_offset(t, d_lead, film_t, *, win=1.0):
+    """Constant metre offset that puts the render leader on the film's marker crossings.
+
+    ``t``/``d_lead``: the render leader's distance-to-go per frame (any metric that is right up to a
+    constant, e.g. the odometer ticks with no convention offset); ``film_t`` = {marker_m: race-clock
+    s}. Per marker: delta_k = v_k * (t_render(marker) - t_film), v_k = the leader's local speed over
+    +-``win`` s. -> (median delta in m, per-marker deltas) or (None, []) with < FILM_MIN crossings.
+    d_true = d - delta. MEASURED on 15 turf races (recon_v3 artifacts, journal 0137): with the ticks
+    unpinned, recon - film is one flat offset per race through the straight (+2.4..+11 m, spread
+    <= 3 m on most races) and it continues through the line; the render-paint pin made it a step in
+    the last 50 m (leader +0.2 s late at 400-100 m, -0.16 s early at the line). Used only with
+    HKJC_FILM=1 (it destabilises finish-camera identity on some races; see RaceRun.observe)."""
+    t, d_lead = np.asarray(t, float), np.minimum.accumulate(np.asarray(d_lead, float))
+    out = []
+    for mk, tf in film_t.items():
+        k = np.where(d_lead <= mk)[0]
+        if len(k) == 0 or k[0] == 0:
+            continue
+        a, b = k[0] - 1, k[0]
+        tc = t[a] + (d_lead[a] - mk) / max(d_lead[a] - d_lead[b], 1e-9) * (t[b] - t[a])
+        w = (t > tc - win) & (t < tc + win)
+        if w.sum() < 3:
+            continue
+        v = -np.polyfit(t[w], d_lead[w], 1)[0]
+        if 10.0 <= v <= 22.0:
+            out.append(v * (tc - tf))
+    if len(out) < FILM_MIN:
+        return None, out
+    return float(np.median(out)), out
