@@ -76,8 +76,12 @@ is recovered from the turf texture alone and the race is mapped once:
 6. **detection-level EM association** (`recon/assoc.py`) — frames are a continuous motion: every
    detection is re-assigned per frame by one joint Hungarian against all horses' fused posteriors
    (full Gaussian −2 log-likelihood incl. the log-det term, so vague out-of-view paths cannot steal
-   detections; clutter option; one-sided legend rank constraint), then the paths are re-fused; the
-   tracker fragments are only the initialisation.
+   detections; clutter option; legend rank constraint, two-sided where the rank is confident), then
+   the paths are re-fused; the tracker fragments are only the initialisation. Two finish-specific
+   rules: **negative evidence** — with camera recall r, detections in the last 15 m cost
+   −2·log(1 − r) for horses the finish camera never read; **shadow release** — two tight paths within
+   0.8 m along / 0.5 m lateral for ≥ 0.5 s in the last 3 s (a horse riding a neighbour's
+   detections) lose the weaker horse's render observations there.
 
 Hard-won facts (do not re-learn): camera is near-nadir with **no tilt** but **slow zoom** (similarity,
 not rigid); **LMEDS refits are biased** (integer FAST keypoints); **ECC refinement rejected**
@@ -104,7 +108,8 @@ observations are emitted. Near the line the render updates at only ~2-4 Hz with 
 (poses stay clean); crossings must be bracketed by samples < 0.3 s apart.
 **Sha Tin** uses a SIDE-ON finish camera with WHITE cloths and dark digits (HV: overhead, yellow on
 dark): digits are found by black-hat contrast with a white ring, grouped for two-digit numbers;
-recall per frame is partial (orders come out correct but incomplete — open).
+horses seen crossing the line are always kept (the first crosser used to be dropped), and the
+white-cloth reader runs only at Sha Tin (it added false reads on HV's overhead camera).
 
 ## 2c. Drone (open)
 
