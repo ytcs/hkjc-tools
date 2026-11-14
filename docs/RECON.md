@@ -303,8 +303,10 @@ The run followed protocol 3g on a RunPod RTX 4090: 11 races, 1310 s for the prim
 total. Nothing was changed afterwards.
 
 **Primary (default code): all five timing gates pass on 9/11 races.** That is 51/55 timing gates,
-with the winner correct on 11/11. Sha Tin passes 4/5, against 0/5 fresh Sha Tin races passing the
-leader gate in batch F. Happy Valley passes 5/6.
+with the winner correct on 11/11. Sha Tin passes 4/5; batch F's five fresh Sha Tin races (one of them
+AWT) passed the leader gate 0/5. Happy Valley passes 5/6. **Scope caveat:** the six HV races are R9
+of meetings that each already have a development race, so they are unseen RACES, not unseen
+meetings. Only the five Sha Tin races are meeting-disjoint.
 
 | race | leader s | sectional s (cov) | ρ | behind s | paths short | finish short | lateral m |
 |---|---|---|---|---|---|---|---|
@@ -320,10 +322,14 @@ leader gate in batch F. Happy Valley passes 5/6.
 | HV 05-20 R9 A 1200 | 0.191 | 0.248 (92 %) | 0.99 | 0.050 | 0 | 0 | n/a |
 | HV 05-27 R9 B 1200 | 0.206 | 0.179 (92 %) | 1.00 | 0.072 | 0 | 3 ✗ | 0.41 |
 
-Both timing failures are failures declared in 3f:
-- **HV 04-22 R9:** the leader is late at the early boundaries (+0.57/+0.53 s). The odometer-only
-  error is +0.36/+0.75 s, so it is in the render's own readout.
+Both timing failures match failures declared in 3f:
+- **HV 04-22 R9:** the leader is late (+0.57 s at 800 m, +0.53 s at 400 m, i.e. partly inside the
+  marker zone). It matches the declared class by shape; cause not established. The odometer-only
+  error, +0.36/+0.75 s, is circular evidence, as 3f notes.
 - **The 1000 m straight:** +0.75 s at 400 m.
+
+3g's expectation of Sha Tin leaders late at early boundaries did NOT show up at Sha Tin. First
+boundaries were +0.11 to +0.23 s on the four oval races.
 
 The other declared gates:
 - Coverage passes 11/11.
@@ -333,10 +339,10 @@ The other declared gates:
 
 Declared diagnostics:
 - The final product's residual against official is 0.02–0.10 s.
-- The innermost horse sits 1.5–2.8 m off the rail (median p5) on every oval race. The straight
-  shows −0.36 m at minimum, which is wrong, as expected.
-- The fitted finish-camera C is 11–27 % below its physical prior on all 11 races, consistent with
-  the dev diagnostic in 3f.
+- The innermost horse sits 1.9–2.8 m off the rail (median p5) on every oval race. The straight
+  shows 1.55 m median and −0.36 m minimum, which is wrong, as expected.
+- The video-only finish-camera C (the last pass before the official records are fused) is 4–33 %
+  below its physical prior on all 11 races, consistent with the dev diagnostic in 3f.
 - The signed leader error has the dev shape: early at the line on 11/11 (−0.02 to −0.33 s).
 
 **Secondary arm (`HKJC_FILM=1`, declared): 7/11, 50/55 timing gates.** Leader error is lower on
@@ -346,9 +352,21 @@ identity breaks:
 - Path count fails on 5 races (2 in the primary).
 
 This matches the dev-set finding: the film anchor improves the metric but destabilises the
-finish-camera/orphan-chain identity. It stays off. Recon − film at the markers is within ±0.15 s,
-but the anchor is fitted to the film, so this is not independent. The outliers (−0.61, +2.32 s)
-are single mismatched crossings.
+finish-camera/orphan-chain identity. It stays off.
+
+**The film reference is weaker on H than on dev.** Film − official at 400 m:
+- Sha Tin −0.12, −0.14, −0.24, −0.25 s, all early, against ±0.12 s on dev.
+- Happy Valley −0.32, +0.10, +0.68 s.
+
+Recon − film at the markers is not an independent check, because the anchor is fitted to the film.
+It is mostly within ±0.15 s, with these exceptions:
+- The straight: +0.24/−0.21 s.
+- HV 04-22: −0.33 s.
+- HV 04-15: −0.61 s at 300 m.
+- HV 05-20: +2.32 s at 300 m, a mismatched crossing that passed the speed filter at 12.5 m/s.
+
+**Batch H is now SPENT** (development set from here on). The next held-out claim needs a new batch,
+sealed by a metadata-only rule before any further development.
 
 ## 4. Open / next
 
