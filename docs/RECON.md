@@ -623,9 +623,12 @@ reproduces U exactly.
   path in the first pass. What the injection changes is the first EM pass's finish-camera inputs:
   the read fraction behind the near-line cost (2.06 → 2.51), the blind set, and the finish
   observations in fusion.
-- That pass has NOT CONVERGED when it stops. 1.2 % of labels still change at the 8th (last)
-  iteration. Across the 26 races at U, only 2 converge (< 0.2 %) before the cap; the other 24 end
-  with 0.2–3.7 % still changing.
+- Non-convergence was tested as the cause and RULED OUT (see "EM iterations to convergence"
+  below). The pass does stop unconverged (1.2 % of labels still changing at the 8th, last,
+  iteration), but at a cap of 30 the injection still relabels 2912 detections. Across the 26 races
+  at U, 10 first passes converge (< 0.2 %) within 8 iterations and 16 hit the cap.
+- The split happens at iteration 0: the injected run has paths for 14/14 horses after it0's fuse,
+  the control for 10/14.
 - Adding #11 too gives no gap for #11. It wins by a wide margin in the slow-motion post camera, so
   its cloth shares too few frames with the field. That exposed a latent bug: a first crosser that
   links nobody wiped every other gap. Fixed: the chain now starts at the crosser that links the
@@ -660,6 +663,15 @@ NOT ADOPTED. 6-seed perturbation ensembles on ST 05-24, ST4, ST8, HV 06-03 R3, S
 vs cap 30, 36 runs each) give identical timing gates on every run. Median sectionals move within
 the seed spread (ST3 0.181 → 0.170, ST 05-24 0.154 → 0.149, the others ±0.003), and the spreads do not
 narrow (ST4 ρ range 0.95–0.99 → 0.90–0.99). Convergence buys no robustness at 2–3× the EM time.
+
+**Baseline V (`recon-baseline-V` = e4ee137): U plus the chain-start guard and the digit-drop
+fix.** Nothing upstream of `finish_gaps` changed, and `finish_gaps` output is bit-identical to U on
+23 races (verified with final src; exactly 3 races differ). So the 26-race root
+(`data_cache/recon_V`) reuses U for those 23 and re-runs identify → fuse → validate for HV 04-15 R1,
+ST 05-17 and HV 06-03 R3. No pod run is needed. All five timing gates 23/26, timing gates 126/130,
+all gates 207 of 222 applicable (unchanged from U). 6-seed ensembles of the digit-drop fix (U code
+vs V code): timing 5/5 on every seed in both arms. HV 04-15 R1 ρ 0.94 [0.94, 0.95] → 0.97
+[0.96, 0.97] and behind-winner median 0.119 → 0.102 s; ST 05-17 is unchanged.
 
 ## 4. Open / next
 
