@@ -485,7 +485,9 @@ class RaceRun:
         mk, tt = np.zeros(0, int), np.zeros(0)
         if g.sum() >= 10:
             t_last = (hud[g, 0][np.argmin(hud[g, 2])] - self.clock_f0()) / FPS
-            got = film.crossings(self.video(), hud, t_last)
+            g_ = self.info.geometry
+            mx = g_.home_straight(self.info.course) - film.STRAIGHT_MARGIN
+            got = film.crossings(self.video(), hud, t_last, max_marker=mx)
             mk = np.array(sorted(got, reverse=True), int)
             tt = np.array([got[m] for m in mk], float)
         np.savez(self.p("film.npz"), markers=mk, t=tt)
@@ -1055,6 +1057,54 @@ class RaceRun:
         return out
 
     EM_ITERS = 8
+    SEED_BACK = 3.0  # s before its finish-camera crossing that a path-less horse is seeded
+    SEED_V_SD = 1.0  # m/s: speed uncertainty of a seeded horse (grows the seed's sd away from the line)
+
+    def _finish_seeds(self, paths, prior) -> dict:
+        """E-step-only SEED paths for horses the finish camera READ but that have no fused path.
+
+        MEASURED (26 turf races, in-sample census): 10 horses were read at the line (up to 45 reads),
+        crossed while the render was still running, finished 5th-12th -- and got NO path: they had no
+        labelled tracklet, and a finish observation alone cannot make one (no lateral, one instant),
+        so the detection-level E-step never considered them. The seed is the camera's crossing
+        (t_w + gap/C, sd as in finish_observations) moving at the field's line speed, sd growing by
+        SEED_V_SD per second away from the line, lateral = mid-course +- half the width; it lives
+        only inside assign_frames, and whatever detection runs it wins become ordinary render obs."""
+        if not paths:
+            return {}
+        quiet, self.log = self.log, (lambda *a, **k: None)
+        try:
+            fin = self.finish_observations(paths)
+        finally:
+            self.log = quiet
+        D = self.info.distance
+        v = []
+        for p in paths.values():
+            k = np.where((D - p.s > 0) & (D - p.s < 30) & (p.sd_s <= self.ANCHOR_SD))[0]
+            if len(k) > 5:
+                v.append(np.median(np.gradient(p.s[k], p.t[k])))
+        v_line = float(np.median(v)) if v else 16.5
+        out = {}
+        for o in fin:
+            h = o.horse
+            if h in paths:
+                continue
+            tc, sd0 = float(o.t[0]), float(o.sd_s)
+            tg = np.arange(tc - self.SEED_BACK, tc + 0.6, fusion.DT)
+            dt = tg - tc
+            sd_s = np.sqrt(sd0**2 + (self.SEED_V_SD * dt) ** 2)
+            w = prior.width
+            out[h] = fusion.Path(
+                h,
+                tg,
+                D + v_line * dt,
+                np.full(len(tg), 0.5 * w),
+                sd_s,
+                np.full(len(tg), 0.5 * w),
+                np.zeros(len(tg)),
+                {"seed": 1},
+            )
+        return out
     ANCHOR_SD = 3.0  # m: a fused crossing anchors the finish clock only where the path is tight
 
     def _em_associate(self, paths, horses, prior):
@@ -1071,7 +1121,6 @@ class RaceRun:
         frag = np.full(len(t), -1)
         for k, m in enumerate(T["members"]):
             frag[np.asarray(m, int)] = k
-        prev = None
         obs = []
         # finish camera NEGATIVE evidence: with recall r (fraction of the field it read), a horse
         # that IS at the line goes unread with probability ~(1 - r), so detections in the last 15 m
@@ -1103,31 +1152,57 @@ class RaceRun:
                 blind = [h for h in horses if h not in read and h not in shown]
                 if blind and os.environ.get("HKJC_BLIND", "1") != "0":
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
-        for it in range(self.EM_ITERS):
+        def em_pass(paths, targets, tag):
+            """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""
+            prev = lab = obs = None
             forbid = {}
-            lab, _chi = assoc.assign_frames(
-                fr, t, s_run, lat, paths, leg, near_line=near, n_field=len(horses), forbid_out=forbid
-            )
-            obs = assoc.runs_to_obs(lab, t, s_run, lat)
-            for k in np.unique(frag[(lab == 0) & (frag >= 0)]):
-                j = np.where((frag == k) & (lab == 0))[0]
-                if len(j) >= 3:
-                    j = j[np.argsort(t[j])]
-                    # the E-step's hard legend exclusions travel with the anonymous fragment, or
-                    # fusion's chi^2 / orphan association hands it straight back (HV 0520 #8)
-                    no = assoc.fragment_forbid(forbid, j)
-                    obs.append(
-                        fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
-                    )
-            paths, _a = self._fuse(obs, horses, prior)
-            changed = np.nan if prev is None else float((lab != prev).mean())
-            self.log(
-                f"   em-assoc it{it}: {np.mean(lab > 0):.0%} of detections assigned, "
-                f"{len(paths)}/{len(horses)} horses, changed {changed:.1%}"
-            )
-            if prev is not None and changed < 0.002:
-                break
-            prev = lab
+            for it in range(self.EM_ITERS):
+                forbid = {}
+                seeds = {}
+                if targets:
+                    seeds = {h: p for h, p in self._finish_seeds(paths, prior).items() if h in targets}
+                lab, _chi = assoc.assign_frames(
+                    fr,
+                    t,
+                    s_run,
+                    lat,
+                    {**paths, **seeds},
+                    leg,
+                    near_line=near,
+                    n_field=len(horses),
+                    forbid_out=forbid,
+                )
+                obs = assoc.runs_to_obs(lab, t, s_run, lat)
+                for k in np.unique(frag[(lab == 0) & (frag >= 0)]):
+                    j = np.where((frag == k) & (lab == 0))[0]
+                    if len(j) >= 3:
+                        j = j[np.argsort(t[j])]
+                        # the E-step's hard legend exclusions travel with the anonymous fragment,
+                        # or fusion's chi^2 / orphan association hands it back (HV 0520 #8)
+                        no = assoc.fragment_forbid(forbid, j)
+                        obs.append(
+                            fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
+                        )
+                paths, _a = self._fuse(obs, horses, prior)
+                changed = np.nan if prev is None else float((lab != prev).mean())
+                self.log(
+                    f"   em-assoc{tag} it{it}: {np.mean(lab > 0):.0%} of detections assigned, "
+                    f"{len(paths)}/{len(horses)} horses, changed {changed:.1%}"
+                    + (f", seeded {sorted(seeds)}" if seeds else "")
+                )
+                if prev is not None and changed < 0.002:
+                    break
+                prev = lab
+            return paths, lab, obs, forbid
+
+        paths, lab, obs, forbid = em_pass(paths, None, "")
+        # SEED pass, CONFINED to finish-read horses still path-less after the unseeded EM (seeding
+        # from it0 also fired for horses the EM places anyway and changed races with no such horse:
+        # ST4 sectional 0.409 -> 0.467 on common pairs). Races without a target are unchanged.
+        if os.environ.get("HKJC_SEED", "1") != "0":
+            targets = set(self._finish_seeds(paths, prior))
+            if targets:
+                paths, lab, obs, forbid = em_pass(paths, targets, " (seed)")
         # SHADOW paths: two horses cannot occupy one position. A horse whose own detections are
         # missing can lock onto a neighbour's (R03: unread #9 rode #7's detections through the line,
         # 0.8 s early -> wrong winner). Pairs within 0.8 m along / 0.5 m laterally for >= 0.5 s (both

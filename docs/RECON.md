@@ -368,6 +368,46 @@ It is mostly within ±0.15 s, with these exceptions:
 **Batch H is now SPENT** (development set from here on). The next held-out claim needs a new batch,
 sealed by a metadata-only rule before any further development.
 
+## 3i. In-sample fixes on all 26 turf races (2026-11-14) — all races are development races now
+
+Yardstick: observe → validate on the 15 dev races plus the 11 batch-H races, run locally. A local
+re-run of the H races matches the pod to 1e-6 m, with identical tracklets and gate numbers. Baseline:
+all five timing gates on 20/26, timing gates 117/130, all gates 188.
+
+**Census of horses that are path-less or vague at the line (46).**
+- 10 were READ by the finish camera, crossed while the render was still running, finished 5th–12th,
+  and still had no path. None had a labelled tracklet, and a finish observation alone cannot make
+  a path (no lateral, one instant).
+- 17 were unread and in view, but vague or path-less (a render identity failure; includes ST4's
+  runner-up).
+- About 19 were tailed off and still running when the render ended (structural).
+
+**Finish seeds (`RaceRun._finish_seeds`).** After the unseeded EM, each finish-read horse that is
+still path-less gets an E-step-only seed path: its camera crossing, the field's line speed, sd
+growing 1 m/s away from the line, lateral at mid-course ± half the width. The EM then iterates
+again; detection runs the seed wins become ordinary render observations.
+- Only 5 races change; the other 21 are byte-identical. All gates 188 → 196, timing gates 117 →
+  117.
+- Path count fixed on HV0415-9, ST1, HV0520, HV0527-3 and ST8; finish-n fixed on 3 of them.
+- Sectional on common (horse, boundary) pairs is unchanged or better; the average rises only
+  through newly scored horses.
+- 6-seed ensembles on the 5 races: paths short 0 on all 30 runs (unseeded: 2–3 on most); finish
+  short down on every race; timing gates unchanged. ST8 finish ρ 0.99 → 0.94 [0.90, 0.97].
+- REJECTED: seeding from the first iteration. It also fired for horses the EM places anyway,
+  changed races with no target (ST4 common-pair sectional 0.409 → 0.467), and failed HV0422-1
+  behind-winner.
+
+**Film markers restricted to the home straight (`film.STRAIGHT_MARGIN`).** A marker counts only if
+it is at least 20 m inside the course's home straight. Happy Valley's 400 m marker is on the bend
+(−0.32/+0.10/+0.68 s vs official), and HV course A's 300 m gave a +2.32 s mismatch. Only used with
+`HKJC_FILM=1`.
+
+**Finish-camera C (finding, not fixed).** The C prior does not bind: the anchor fit with and
+without it agrees within a few % on all 26. On 5 races (HV0415-1, HV0422-1, HV0513-1 and the two
+1000 m straights ST3/ST8) the render crossings fit the camera gaps to ≤ 0.1 s per horse, and
+leave-one-out C is stable, yet official finish gaps are 20–30 % larger. Render and camera agree with
+each other against official there; within 4 % on 7 other races. Cause not established.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

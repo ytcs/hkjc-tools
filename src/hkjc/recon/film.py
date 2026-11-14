@@ -132,9 +132,18 @@ def line_tracks(rows, *, max_gap=3, up_max=60.0, down_max=6.0):
     return [tr for tr in tracks if len(tr) >= 4 and tr[0][1][0] - tr[-1][1][0] >= SWEEP_PX]
 
 
-def crossings_from_rows(rows, odo_at, f0, fps=25.0):
-    """Leader crossings on sweeping marker tracks -> {marker_m: race-clock s}."""
+STRAIGHT_MARGIN = 20.0  # m: a marker counts only this far inside the home straight
+
+
+def crossings_from_rows(rows, odo_at, f0, fps=25.0, max_marker=None):
+    """Leader crossings on sweeping marker tracks -> {marker_m: race-clock s}. ``max_marker``: only
+    markers <= this (m) are accepted -- the front-on camera sees the stripes in the HOME STRAIGHT.
+    MEASURED (26 turf races, in-sample): Happy Valley's 400 m marker lies on the bend (straight
+    310-338 m) and its "crossings" were -0.32/+0.10/+0.68 s vs official; HV course A's 300 m (12 m
+    inside a 312 m straight) gave a +2.32 s mismatch. Sha Tin's 400 m (30 m inside 430 m) matched
+    official within +-0.12 s on 7 dev races."""
     got = {}
+    mks = MARKERS if max_marker is None else MARKERS[MARKERS <= max_marker]
     for tr in line_tracks(rows):
         seq = []
         for k, (_yc, x1, y1, x2, y2) in tr:
@@ -149,7 +158,7 @@ def crossings_from_rows(rows, odo_at, f0, fps=25.0):
                 o = odo_at(fc)
                 if not np.isfinite(o):
                     continue
-                cand = MARKERS[(o - MARKERS >= -5) & (o - MARKERS <= 40)]
+                cand = mks[(o - mks >= -5) & (o - mks <= 40)]
                 if len(cand):
                     mk = int(cand.max())
                     if mk not in got:
@@ -158,7 +167,7 @@ def crossings_from_rows(rows, odo_at, f0, fps=25.0):
     return _speed_consistent(got)
 
 
-def crossings(video, hud_rows, t_last, *, span_s=26.0, fps=25.0):
+def crossings(video, hud_rows, t_last, *, span_s=26.0, fps=25.0, max_marker=None):
     """Leader crossings of the painted markers -> {marker_m: race-clock s}. ``hud_rows`` = the HUD
     stage rows (frame, clock, odometer); ``t_last`` = approximate race-clock time of the finish."""
     ok = ~np.isnan(hud_rows[:, 1])
@@ -172,7 +181,7 @@ def crossings(video, hud_rows, t_last, *, span_s=26.0, fps=25.0):
         return ho[k] if abs(hf[k] - f) <= 6 else np.nan
 
     rows = scan(video, int(f0 + fps * (t_last - span_s)), int(f0 + fps * (t_last + 2)))
-    return crossings_from_rows(rows, odo_at, f0, fps)
+    return crossings_from_rows(rows, odo_at, f0, fps, max_marker=max_marker)
 
 
 def _speed_consistent(got, vmin=12.0, vmax=22.0):
