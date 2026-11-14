@@ -126,6 +126,16 @@ Validation set: HV C 1800/1200 night, HV A 1650, HV B 1650,
 HV C 2200 good-to-yielding, ST C 1600 day, ST AWT 1800 wet-slow, ST 1000 straight, ST B 1800 soft,
 ST AWT 1200 night.
 
+## 3b. Held-out validation (batch F, 2026-11-13)
+
+Eight races never inspected during development, chosen by a fixed rule from racecard metadata
+(earliest race per condition category on meetings not used in development), run once on frozen
+code. **Happy Valley generalises**: HV B 1200 and HV C+3 1650 pass every timing gate; HV A 1000
+passes the identity-free leader gate but not sectional/order. **Sha Tin does not**: all five fresh
+Sha Tin races (A 1200, A 2000, C+3 1400, AWT 1800, 1000 m straight) fail the identity-free leader
+gate with mid-race distance-metric errors (weak rail support on the straight chute and the AWT,
+markerless C+3). Lateral position has no working gate yet and is unvalidated.
+
 ## 4. Open / next
 
 - **Drone** — resolve along-track (seed on bend frames, track forward from the previous camera; or a
