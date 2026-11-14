@@ -21,6 +21,10 @@ def default_weights() -> str:
     env = os.environ.get("HKJC_AVATAR_WEIGHTS")
     if env:
         return env
+    if os.environ.get("HKJC_DEVICE", "cpu").startswith("cuda") and os.path.exists(
+        "models/avv_avatar_yolo11n.pt"
+    ):  # GPU path (opt-in; numerics differ slightly from the CPU ONNX path)
+        return "models/avv_avatar_yolo11n.pt"
     for f in (
         "models/avv_avatar_yolo11n.onnx",
         "models/avv_avatar_yolo11n.pt",
@@ -48,7 +52,13 @@ class AvatarDetector:
         """Detect on the render PANEL (945x535; ~2x fewer pixels than the letterboxed half frame).
         -> (N, 6) [cx, cy, w, h, conf, 0] in panel px; legend icon band rejected."""
         r = self.model.predict(
-            panel, conf=CONF, iou=IOU, imgsz=self.imgsz, verbose=False, rect=True
+            panel,
+            conf=CONF,
+            iou=IOU,
+            imgsz=self.imgsz,
+            verbose=False,
+            rect=True,
+            device=os.environ.get("HKJC_DEVICE", "cpu"),
         )[0]
         if len(r.boxes) == 0:
             return np.zeros((0, 6))
