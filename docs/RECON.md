@@ -297,6 +297,59 @@ not be used to set the ruler or any prior.
   - The 1000 m straight fails (weak rail/metric).
   - Path-count failures where horses tail off out of the render.
 
+## 3h. Batch H result (held-out, `recon-freeze-2`, run once on 2026-11-14)
+
+The run followed protocol 3g on a RunPod RTX 4090: 11 races, 1310 s for the primary run and 1415 s
+total. Nothing was changed afterwards.
+
+**Primary (default code): all five timing gates pass on 9/11 races.** That is 51/55 timing gates,
+with the winner correct on 11/11. Sha Tin passes 4/5, against 0/5 fresh Sha Tin races passing the
+leader gate in batch F. Happy Valley passes 5/6.
+
+| race | leader s | sectional s (cov) | ρ | behind s | paths short | finish short | lateral m |
+|---|---|---|---|---|---|---|---|
+| ST 05-24 R1 A 1600 | 0.217 | 0.211 (89 %) | 0.96 | 0.090 | 0 | 4 ✗ | n/a |
+| ST 05-31 R1 B 1200 | 0.134 | 0.205 (97 %) | 0.96 | 0.054 | 2 ✗ | 3 ✗ | 2.15 ✗ |
+| ST 05-09 R2 C 1200 | 0.168 | 0.155 (92 %) | 1.00 | 0.030 | 0 | 3 ✗ | 0.43 |
+| ST 05-17 R1 C+3 1800 | 0.108 | 0.167 (99 %) | 0.98 | 0.030 | 0 | 1 | 0.07 |
+| ST 05-09 R1 1000 straight | **0.388 ✗** | **0.369 ✗** (90 %) | 1.00 | 0.016 | 0 | 2 | n/a |
+| HV 04-15 R9 A 1200 | 0.105 | 0.171 (100 %) | 0.98 | 0.037 | 2 ✗ | 2 | n/a |
+| HV 04-22 R9 B 1200 | **0.421 ✗** | **0.431 ✗** (97 %) | 1.00 | 0.040 | 0 | 1 | 0.47 |
+| HV 04-29 R9 C 1650 | 0.124 | 0.109 (98 %) | 1.00 | 0.015 | 0 | 1 | 2.10 ✗ |
+| HV 05-13 R9 C+3 1650 | 0.127 | 0.201 (98 %) | 1.00 | 0.013 | 0 | 0 | 1.28 ✗ |
+| HV 05-20 R9 A 1200 | 0.191 | 0.248 (92 %) | 0.99 | 0.050 | 0 | 0 | n/a |
+| HV 05-27 R9 B 1200 | 0.206 | 0.179 (92 %) | 1.00 | 0.072 | 0 | 3 ✗ | 0.41 |
+
+Both timing failures are failures declared in 3f:
+- **HV 04-22 R9:** the leader is late at the early boundaries (+0.57/+0.53 s). The odometer-only
+  error is +0.36/+0.75 s, so it is in the render's own readout.
+- **The 1000 m straight:** +0.75 s at 400 m.
+
+The other declared gates:
+- Coverage passes 11/11.
+- Path count fails 2/11.
+- Finish-n fails 4/11.
+- Lateral scale fails 3 of the 7 races where it can be measured.
+
+Declared diagnostics:
+- The final product's residual against official is 0.02–0.10 s.
+- The innermost horse sits 1.5–2.8 m off the rail (median p5) on every oval race. The straight
+  shows −0.36 m at minimum, which is wrong, as expected.
+- The fitted finish-camera C is 11–27 % below its physical prior on all 11 races, consistent with
+  the dev diagnostic in 3f.
+- The signed leader error has the dev shape: early at the line on 11/11 (−0.02 to −0.33 s).
+
+**Secondary arm (`HKJC_FILM=1`, declared): 7/11, 50/55 timing gates.** Leader error is lower on
+8/11 (HV 05-20 0.191 → 0.036 s; the straight 0.388 → 0.249 s) and sectional error on 8/11. But
+identity breaks:
+- Two winners are wrong (ST 05-24, HV 05-27).
+- Path count fails on 5 races (2 in the primary).
+
+This matches the dev-set finding: the film anchor improves the metric but destabilises the
+finish-camera/orphan-chain identity. It stays off. Recon − film at the markers is within ±0.15 s,
+but the anchor is fitted to the film, so this is not independent. The outliers (−0.61, +2.32 s)
+are single mismatched crossings.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
