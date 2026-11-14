@@ -573,8 +573,8 @@ without it agrees within a few % on all 26. On 5 races (HV0415-1, HV0422-1, HV05
 leave-one-out C is stable, yet official finish gaps are 20–30 % larger. Render and camera agree with
 each other against official there; within 4 % on 7 other races. Cause not established.
 
-**Canonical in-sample baseline (`recon-baseline-U`, commit d3be006).** A from-scratch 26-race pod
-run of the default pipeline at d3be006 (every stage, including `film`, run end to end) reproduces the
+**Canonical in-sample baseline (`recon-baseline-U` = 1b018d4).** A from-scratch 26-race pod run of
+the default pipeline at d3be006 (differs from the tag only in comments; every stage, including `film`, run end to end) reproduces the
 local observe → validate run exactly: every metric is identical on all 26 races.
 - All five timing gates 23/26; timing gates 126/130; all gates 207/234.
 - Yardstick: local observe → validate, the same as the from-scratch run at U. This settles the
