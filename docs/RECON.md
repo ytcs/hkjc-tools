@@ -690,6 +690,19 @@ last missing horse when it has no anchor score" then hands #3 a mid-field chain 
 - Parked: no production gate depends on it. ST4's two count gates need a #10 reader AND an
   elimination fix together.
 
+**HV 04-22 R9 (two of the four timing failures): a shared scale error that the film can't
+measure reliably.** The race is film-anchored (4 marker crossings, not on the paint pin). The error
+is common-mode: the median over all 12 horses is +0.45 s late at 800 m, +0.39 s at 400 m and
+−0.20 s early at the line, so the last 400 m runs ~2.5 % short in time. Within the film window the
+anchored leader minus the film goes +0.15 s at 200 m to −0.11 s at 50 m, a slope of
++0.16 s/100 m, matching the official +0.15.
+- REJECTED: a two-parameter film anchor (offset + scale). Across the 26 races the film-marker
+  slope correlates with the official error slope at only r = 0.26. Examples: HV 05-13 R1 +0.145
+  against −0.04, HV 05-27 R9 −0.137 against +0.004, ST6 +0.104 against −0.006. Per-marker noise
+  (~0.1 s) over a 150 m window swamps the slope, so the term would fix this race and break others.
+- Declared. A scale reference spanning more of the straight is needed (the drone, or the
+  400 m marker, which sits on the bend at Happy Valley).
+
 **Baseline V (`recon-baseline-V` = e4ee137): U plus the chain-start guard and the digit-drop
 fix.** Nothing upstream of `finish_gaps` changed, and `finish_gaps` output is bit-identical to U on
 23 races (verified with final src; exactly 3 races differ). So the 26-race root
