@@ -639,6 +639,24 @@ prediction while x per u is bimodal, so "boxes too sparse" is NOT established. I
 because the ceiling above says even a perfect read costs ST4 a timing gate until the EM's #3
 assignment is robust.
 
+**Finish-camera digit drops must not delete a real short number (`finish_gaps`).** Both
+coincidence tests counted only frames shared with the longer number. On HV 06-03 R3, 3 dropped-digit
+"2" reads on the "12" cloth deleted the REAL #2: 37 reads, crossing after #12 had left; pixels show a
+different silk, black-and-white spots against #12's pink and cyan. The same happened on HV 04-15 R1.
+Now a number is dropped only if most of ALL its reads sit on the longer number's cloth.
+- ST4's "3" (9 of 10 on #13) and ST7's "4" are still dropped.
+- Three horses regain gaps, each in its correct relative order: HV 04-15 R1 #2, ST 05-17 #1 and
+  HV 06-03 R3 #2. No other race's gaps change (bit-identical).
+- Gates unchanged. HV 04-15 R1: ρ 0.94 → 0.97, behind-winner 0.120 → 0.105 s. ST 05-17: finish
+  short 2 → 1.
+
+**EM iterations to convergence (diagnostic `HKJC_EM_ITERS`; default still 8).** With a cap of 30,
+24/26 races converge (ST 05-24 and HV 05-27 R3 still hit the cap). Gates are unchanged (207).
+Sectional improves on ST 05-24 0.162 → 0.138, ST3 0.188 → 0.176, ST4 0.173 → 0.162 and
+ST9 0.221 → 0.215, and worsens on ST8 0.096 → 0.106. Convergence does NOT remove the ST4 ceiling
+sensitivity: with #10 injected at a cap of 30, 2912 detections are still relabelled and #3 takes
+385, so the two inputs reach different fixed points. Adoption is pending perturbation ensembles.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

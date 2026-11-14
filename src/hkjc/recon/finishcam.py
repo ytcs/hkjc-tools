@@ -410,7 +410,10 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
                         (np.abs(rm[k, 2] - r[2]).min() < 45)
                         and (np.abs(rm[k, 3] - r[3]).min() < 30)
                     )
-            if sa0 >= 2 and sa0 >= 0.5 * sh0:
+            # ... and only when MOST of n's reads sit on m's cloth: the tests count shared frames
+            # only, so 3 dropped-digit "2" reads on the "12" cloth deleted the REAL #2 (37 reads,
+            # crossing after #12 had left; pixels: a different silk) on HV 0603 R3 and HV 0415 R1.
+            if sa0 >= 2 and sa0 >= 0.5 * sh0 and sa0 >= 0.5 * len(rn):
                 gaps.pop(n)
                 break
             if m not in T:
@@ -425,7 +428,7 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
                     abs(np.interp(r[0], um, xm) - r[2]) < 45
                     and abs(np.interp(r[0], um, ym) - r[3]) < 30
                 )
-            if same >= 2 and same >= 0.5 * shared:
+            if same >= 2 and same >= 0.5 * shared and same >= 0.5 * len(rn):
                 gaps.pop(n)
                 break
     if not gaps:

@@ -1217,7 +1217,7 @@ class RaceRun:
             """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""
             prev = lab = obs = None
             forbid = {}
-            for it in range(self.EM_ITERS):
+            for it in range(int(os.environ.get("HKJC_EM_ITERS", self.EM_ITERS))):  # env: diagnostic
                 forbid = {}
                 seeds = {}
                 if targets:

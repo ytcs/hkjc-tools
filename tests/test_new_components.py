@@ -244,6 +244,22 @@ def test_finishcam_digit_drop_prefers_longer_number():
     assert 1 in T and np.median(T[1][2]) > 500  # #1's track is the real #1, not the "11" cloth
 
 
+def test_finishcam_digit_drop_keeps_a_real_short_number():
+    """A few "2" reads on the "12" cloth (dropped digit) must not delete the REAL #2, read crossing
+    later after #12 has left (HV 0603 R3: 3 of 37 "2" reads on the "12" cloth; the real #2 was
+    8th). A "3" read almost only on the "13" cloth (ST 0419 R4: 9 of 10) is still dropped."""
+    rows = [[u, u, 1460 - 20.0 * u, 300.0, 12, 0.9] for u in range(10, 60)]  # #12 crosses u 25
+    rows += [[u, u, 1460 - 20.0 * u + 5, 302.0, 2, 0.8] for u in (20, 21, 40)]  # "2" on the "12"
+    rows += [[u, u, 2400 - 20.0 * u, 500.0, 2, 0.9] for u in range(62, 110)]  # real #2, crosses u 72
+    order, gaps, _u = finishcam.finish_gaps(dict(line_x=960.0, reads=np.array(rows, float)))
+    assert 2 in gaps and order.index(12) < order.index(2)
+    rows = [[u, u, 1460 - 20.0 * u, 300.0, 13, 0.9] for u in range(10, 60)]
+    rows += [[u, u, 1460 - 20.0 * u + 5, 302.0, 3, 0.8] for u in range(12, 60, 5)]  # "3" on "13"
+    rows += [[u, u, 1900 - 20.0 * u, 500.0, 7, 0.9] for u in range(30, 80)]
+    order, gaps, _u = finishcam.finish_gaps(dict(line_x=960.0, reads=np.array(rows, float)))
+    assert 3 not in gaps and 13 in gaps and 7 in gaps
+
+
 def test_finishcam_isolated_first_crosser_keeps_the_field():
     """A winner far ahead (its cloth gone before the next horse crosses) must not wipe the gaps of
     the field, which chain among themselves."""
