@@ -34,16 +34,31 @@ def world_mask(panel, hud) -> np.ndarray:
 _ORB = {}
 
 
+def orb_scale() -> float:
+    """Feature-extraction scale (env HKJC_ORB_SCALE; 1.0 = full-res panel). Keypoints are always
+    returned in FULL-RES panel pixels; the RANSAC threshold scales with 1/scale."""
+    import os
+
+    return float(os.environ.get("HKJC_ORB_SCALE", "1.0"))
+
+
 def extract(panel, mask, n: int = 3000) -> Feats:
+    import os
+
     import cv2
 
+    sc = orb_scale()
+    if sc != 1.0:  # ~1/sc^2 fewer pixels; FAST/ORB on the downscaled panel
+        panel = cv2.resize(panel, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
+        mask = cv2.resize(mask, (panel.shape[1], panel.shape[0]), interpolation=cv2.INTER_NEAREST)
+        n = int(os.environ.get("HKJC_ORB_N", n))  # feature count (default unchanged)
     if n not in _ORB:
         _ORB[n] = cv2.ORB_create(nfeatures=n, fastThreshold=7)
     g = cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY)
     kp, des = _ORB[n].detectAndCompute(g, mask)
     if des is None:
         return Feats(np.zeros((0, 2), np.float32), np.zeros((0, 32), np.uint8))
-    return Feats(np.float32([k.pt for k in kp]), des)
+    return Feats(np.float32([k.pt for k in kp]) / sc, des)
 
 
 def sim_matrix(s, th_rad, tx, ty) -> np.ndarray:
@@ -118,7 +133,12 @@ def match(
         return None
     A, B = a.pts[ia], b.pts[ib]
     M, inl = cv2.estimateAffinePartial2D(
-        A, B, method=cv2.RANSAC, ransacReprojThreshold=thr, maxIters=4000, confidence=0.999
+        A,
+        B,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=thr / min(orb_scale(), 1.0),
+        maxIters=4000,
+        confidence=0.999,
     )
     if M is None or inl.sum() < min_inl:
         return None
@@ -127,4 +147,6 @@ def match(
     # a median refit snaps the step to whole pixels (speed-dependent bias that accumulates).
     S = umeyama(A[k], B[k])
     r = np.linalg.norm(A[k] @ S[:2, :2].T + S[:2, 2] - B[k], axis=1)
-    return Match(S, int(k.sum()), float(np.median(r)))
+    # residual in scale-normalised units (keypoints localise ~1/orb_scale coarser at reduced scale),
+    # so the callers' acceptance thresholds (median resid <= 1.3) keep their meaning
+    return Match(S, int(k.sum()), float(np.median(r)) * min(orb_scale(), 1.0))
