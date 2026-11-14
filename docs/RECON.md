@@ -150,6 +150,20 @@ independent reference from the real-camera feeds; and (b) our own errors on top 
 detection/rails, the straight chute's weak rail). Lateral position has no working gate yet
 and is unvalidated.
 
+## 3c. Clean frozen run (tag `recon-freeze-1`, 2026-11-14) — turf scope
+
+Scope: **turf only** (owner, 2026-11-14); the all-weather (dirt) track is out of scope for now — its
+failures are render-side (detections lost for seconds, the rail framed under the legend band,
+unreliable markers). One end-to-end run of the tagged commit on a pod (18 races in 37 min; CUDA
+detection), 15 turf races: all five timing gates pass on **9/15** — 7 of 8 Happy Valley races (incl.
+the three fresh ones) and Sha Tin ST6/ST8. The final product matches the official times to
+0.03-0.19 s on every race. Failures: Sha Tin fresh races fail the identity-free leader gate where the
+render's own HUD disagrees with the record (0.3-1.1 s, declining along the race); finish identity is
+FRAGILE — on fresh caches HV 0429's winner flipped and ST7's order collapsed (rho 0.53) though both
+passed on the development caches; the path-count gate fails on 5 races (tailed-off horses out of
+view). Lateral sanity (innermost horses 1.6-2.8 m off the rail) holds on every oval race; both
+straight-course races are wrong (0.2-0.6 m). The sealed held-out batches stay sealed.
+
 ## 4. Open / next
 
 - **Drone** — resolve along-track (seed on bend frames, track forward from the previous camera; or a
@@ -168,5 +182,9 @@ and is unvalidated.
   horse-specific (median-subtracted) and never strip a horse below half its render data.
 - **Odometer HUD vs painted markers**: over the final 200 m the HUD counts 2.7-4.3 % more metres
   than the markers on three HV races (same span; cause unknown) — the markers are the metric there.
-- **AWT** (bgsub detection): head/shadow duplicates fixed by an anisotropic merge along the body
-  axis; far-side avatars on bends still missed (map coverage?).
+- **AWT** — OUT OF SCOPE for now (turf only). Known: head/shadow duplicates fixed by an anisotropic
+  merge; far-side avatars on bends missed; the back-straight rail is framed under the legend band.
+- **Real-camera feeds (drone, patrol) + SAM 2** — the only independent source of positions: needed for
+  races where the render disagrees with the record, for lateral validation and for the start segment.
+  SAM 2 video segmentation seeded from fused render positions (GPU/pod) is the planned approach.
+- **Finish-identity robustness** — results flip with small detection differences (HV 0429, ST7).
