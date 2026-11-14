@@ -84,8 +84,8 @@ is recovered from the turf texture alone and the race is mapped once:
    detections) lose the weaker horse's render observations there. **Negative legend evidence** — a
    horse missing from a fully read top-8 legend ranks below 8th: it cannot take a detection that is
    surely inside the top 8 (detections ahead + every undetected horse + 1 < 8) or that is more than
-   8 m ahead of every listed horse's tight posterior (8 m: rail-projected position ranks horses a
-   few metres differently from the legend on bends). These HARD exclusions (and the blind-horse
+   8 m ahead of every listed horse's tight posterior (rail-projected position and the legend's
+   ranking disagree by a few metres; 4/8/16 m equivalent on the ensemble, 0.6 m failed). These HARD exclusions (and the blind-horse
    near-line cost) travel with the anonymous fragments the E-step leaves unassigned (`Obs.forbid`,
    majority of the fragment's detections); otherwise fusion's χ² / orphan association hands the
    fragment straight back (HV 0520 #8).
@@ -149,7 +149,11 @@ code. **Happy Valley: 2 of 3 fresh races pass every timing gate** (HV B 1200, HV
 1000 passes the identity-free leader gate but not sectional/order — a small sample. **Sha Tin: 0 of
 5** (A 1200, A 2000, C+3 1400, AWT 1800, 1000 m straight) pass the identity-free leader gate. A
 HUD-only check (odometer tick frame on the render clock vs the official leader time) shows two
-causes: (a) on some races the render ITSELF disagrees with the official record by 0.3-1.1 s,
+causes [AMENDED 2026-11-14: the HUD-only number also contains each race's odometer->paint convention
+offset (-3..-6 m, ~0.2-0.35 s), and on ST4/ST9 our painted-marker calibration FAILED (render frames
+lost to the legend gate, 3d) -> ticks-only metric; with markers found, ST4's calibrated leader error is
+0.13/0.08/0.17 s vs HUD-only 0.66/0.51/0.31 s. Remaining leader failures: ST9 0.5-0.7 s, ST1 0.69 s at
+its first boundary, ST3 1.66 s at 400 m (straight chute)]: (a) on some races the render ITSELF disagrees with the official record by 0.3-1.1 s,
 DECLINING along the race (e.g. 2026-04-26 R9: 0.86 -> 1.11 -> 0.82 -> 0.50 s) — not a constant clock
 offset; a geometry-only metric (marker scale, no ticks) is far worse on every race (the map scale
 drifts along the trip), so the ticks stay the metric and no render-side CV can remove this; it needs an
@@ -171,7 +175,7 @@ passed on the development caches; the path-count gate fails on 5 races (tailed-o
 view). Lateral sanity (innermost horses 1.6-2.8 m off the rail) holds on every oval race; both
 straight-course races are wrong (0.2-0.6 m). The sealed held-out batches stay sealed.
 
-## 3d. Render-gate and finish-anchor fixes (tag `recon-baseline-O`, 2026-11-14) — turf scope
+## 3d. Render-gate and finish-anchor fixes (tag `recon-baseline-O`, 2026-11-14) — turf, development races
 
 Two bugs found by checking the race film (left half of the aerial replay) against our paths:
 - **Render-active legend gate.** The legend sits higher on some layouts (~0.67 of the frame on ST
@@ -198,7 +202,7 @@ crossings (`recon/film.py`, line tracks that sweep up the image) match official 
 covers only the last 400 m, and replacing that boundary's error with the film's ~0.1 s would flip at
 most one race's leader gate. The early-race render lag dominates.
 
-## 3e. Identity: negative legend evidence (tag `recon-baseline-P`, 2026-11-14) — turf scope
+## 3e. Identity: negative legend evidence (tag `recon-baseline-P`, 2026-11-14) — turf, development races
 
 Judged on a **perturbation ensemble** (drop 1 % of detections at observe, 5 seeds + unperturbed;
 HV 0520, ST9, HV 0527, ST6): single-run gate moves inside a race's spread are not evidence (ST9's
@@ -206,9 +210,13 @@ rho spans 0.86-1.00 across seeds). HV 0520 sectional 0.269 [0.252-0.314] -> **0.
 (all five timing gates on every seed; #8 no longer rides a front-runner's fragment); ST6
 behind-winner 0.037 -> 0.019; ST9 / HV 0527 unchanged. The 15 turf races (fuse+validate on the
 `recon-baseline-O` stage artifacts): all five timing gates on **11/15**, timing gates **66/75**, winners
-15/15; declared gates: no regressions, +2 (ST4 path count, HV 0520 sectional). Rejected on the
-way: excluding a fragment if ANY of its detections was excluded (one frame's noise banned correct
-fragments); the 0.6 m floor margin (HV 0603 R3 lost #10/#5, closing from 9th-10th on a bend).
+15/15; declared gates: no regressions, +2 (ST4 path count, HV 0520 sectional). Ensemble on races the
+rule was not designed on: ST4 sectional 0.475 -> 0.413 (rho median 0.94 -> 0.90, range narrower:
+[0.79, 0.95] -> [0.90, 0.94]); ST7 0.221 -> 0.178 (worst seed 3/5 -> 5/5). ST9 has 8 runners: the
+top-8 legend is the whole field and the rule never applies. All 15 races are now DEVELOPMENT races
+(inspected); held-out evidence must come from the sealed batch H. Rejected on the
+way: the 0.6 m floor margin (HV 0603 R3 lost #10/#5, closing from 9th-10th). Majority vs union of a
+fragment's exclusions: indistinguishable (ensemble).
 
 ## 4. Open / next
 

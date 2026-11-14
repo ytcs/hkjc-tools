@@ -17,13 +17,15 @@ The fragments from the tracker are only the initialisation.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 CLUTTER = 16.0  # chi^2 cost of leaving a detection unassigned (4 sigma)
 RANK_EPS = 0.6  # m: a detection is "clearly ahead" if > RANK_EPS m closer to the finish
 RANK_COST = 50.0
 RANK_SOFT = 9.0  # 3 sigma: confident-rank mismatch with the legend
-FLOOR_EPS = 8.0  # m: 'ahead of every listed horse' margin (projected s is ambiguous on bends)
+FLOOR_EPS = 8.0  # m: 'ahead of every listed horse' margin (4/8/16 m equivalent; 0.6 m failed)
 
 
 def _legend_at(legend_rows):
@@ -129,12 +131,15 @@ def assign_frames(
                 # posterior among the listed horses cannot be h (a vague listed horse could only be
                 # further back, so the bound stays valid). The count bound alone left #8 on stray
                 # detections in frames with only ~7 of 12 horses detected. Margin FLOOR_EPS, not
-                # RANK_EPS: rail-projected s ranks horses a few metres differently from the legend
-                # on bends (HV 0603 R3: #10/#5, closing from 9th-10th, sat 2-5 m "ahead" of the
-                # legend's 8th and lost every detection with a 0.6 m margin).
+                # RANK_EPS: rail-projected s and the legend's ranking disagree by a few metres (HV
+                # 0603 R3: #10/#5, closing from 9th-10th, sat 2-5 m "ahead" of the legend's 8th and
+                # lost every detection with 0.6 m; cause not established — lateral offset, rail
+                # curvature or legend lag). Ensemble: 4, 8 and 16 m equivalent; rule off -> HV 0520
+                # sectional 0.147 -> 0.187 s.
                 lt = [c for c, h in enumerate(ok) if h in listed and tight[c]]
-                if lt:
-                    inside |= s[js] > ps[lt].min() + FLOOR_EPS
+                feps = float(os.environ.get("HKJC_FLOOR_EPS", FLOOR_EPS))  # diagnostic ("inf": off)
+                if lt and np.isfinite(feps):
+                    inside |= s[js] > ps[lt].min() + feps
                 if inside.any():
                     for col, h in enumerate(ok):
                         if h not in listed:
@@ -155,13 +160,14 @@ def assign_frames(
     return lab, chi
 
 
-def fragment_forbid(forbid, idx, frac=0.5):
+def fragment_forbid(forbid, idx, frac=None):
     """Horses excluded for a tracklet fragment: those the HARD legend costs excluded on at least
-    ``frac`` of its detections. REJECTED: the union over its detections — one frame's noise (a
-    clutter detection ahead inflating the rank count) banned whole correct fragments (HV 0603 R3:
-    #10 and #5 lost their paths)."""
+    ``frac`` of its detections (a conservative default against one frame's noise, e.g. a clutter
+    detection ahead inflating the rank count). MEASURED: indistinguishable from the union over its
+    detections on a 6-race perturbation ensemble (HV 0603 R3's lost #10/#5 were the floor margin)."""
     from collections import Counter
 
+    frac = float(os.environ.get("HKJC_FORBID_FRAC", 0.5)) if frac is None else frac  # diagnostic
     c = Counter(h for i in idx for h in forbid.get(int(i), ()))
     return frozenset(h for h, k in c.items() if k >= frac * len(idx))
 
