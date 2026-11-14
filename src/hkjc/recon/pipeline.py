@@ -48,8 +48,8 @@ FPS = 25.0
 
 
 def film_enabled() -> bool:
-    """The race-film metric anchor is OPT-IN (HKJC_FILM=1): see ``RaceRun.observe``."""
-    return os.environ.get("HKJC_FILM", "0") == "1"
+    """The race-film metric anchor: ON by default, HKJC_FILM=0 disables (``RaceRun.observe``)."""
+    return os.environ.get("HKJC_FILM", "1") != "0"
 
 
 STAGES = (
@@ -60,7 +60,7 @@ STAGES = (
     "detect",
     "hud",
     "rails",
-    "film",  # OPT-IN (HKJC_FILM=1): race-film marker crossings -> the metric's constant offset
+    "film",  # race-film marker crossings -> the metric's constant offset (HKJC_FILM=0: skipped)
     "observe",
     "finish",  # independent of the render; before identify (finish-camera identity votes)
     "identify",
@@ -148,7 +148,7 @@ class RaceRun:
         import multiprocessing as mp
 
         todo = [st for st in stages if st not in self.done_set() or st in force]
-        if not film_enabled():  # opt-in stage (see observe)
+        if not film_enabled():  # HKJC_FILM=0 (see observe)
             todo = [st for st in todo if st != "film"]
         bg = {}
 
@@ -536,17 +536,19 @@ class RaceRun:
                 have_markers = True
                 self.log(f"   observe: tick-seeded marker grid k={ks_seed.tolist()} ppm {ppm:.3f}")
         pin_env = os.environ.get("HKJC_PIN")  # diagnostic override: "1" force pin, "0" never
-        # OPT-IN (HKJC_FILM=1; journal 0137): the race film's REAL painted markers fix the metric's
-        # constant -- odometer ticks as the metric to the line (unpinned, no convention offset),
-        # shifted so the render leader meets the film's marker crossings. MEASURED: the render-paint
+        # DEFAULT (HKJC_FILM=0 disables; journals 0137/0139): the race film's REAL painted markers
+        # fix the metric's constant -- odometer ticks as the metric to the line (unpinned, no
+        # convention offset), shifted so the render leader meets the film's marker crossings. MEASURED: the render-paint
         # pin + paint-derived convention put the leader +0.2 s late over 400-100 m and -0.16 s early
         # at the line (a step in the last 50 m); on the ticks the film shows one flat offset per
         # race. Leader/sectional gains are robust (6-seed ensembles: ST9 timing 2 -> 4/5, sectional
         # 0.455 -> 0.232 s; ST1 sectional 0.36 -> 0.25 s), BUT it consistently loses 2-5 horses'
-        # paths on ST4/ST1 (declared path-count gate): those horses hinge on finish-camera
-        # registration and orphan-chain matching, which flip with the changed line speed (the pin
-        # stretched the last 50 m: 17.0 vs 15.2 m/s). Not fixed, so it stays OFF by default.
-        # Fallback inside the opt-in (< FILM_MIN crossings): the render-paint pin.
+        # paths on ST4/ST1 without the finish SEEDS (those horses hung on orphan-chain matching,
+        # which flips with the changed line speed: the pin stretched the last 50 m, 17.0 vs 15.2
+        # m/s). With seeds (26 races): timing gates 117 -> 120, leader mean 0.213 -> 0.166 s,
+        # sectional 0.243 -> 0.197 s; remaining losses are structural (ST3 tail horses cross at
+        # the render's end, ST4's ill-posed finish anchor) plus a 0.01 s photo finish (ST 05-24).
+        # Fallback (< FILM_MIN crossings): the render-paint pin.
         fz = self.p("film.npz")
         film_t = {}
         if fz.exists() and film_enabled():

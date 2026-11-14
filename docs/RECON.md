@@ -402,6 +402,37 @@ it is at least 20 m inside the course's home straight. Happy Valley's 400 m mark
 (−0.32/+0.10/+0.68 s vs official), and HV course A's 300 m gave a +2.32 s mismatch. Only used with
 `HKJC_FILM=1`.
 
+**Film-anchored metric is now the DEFAULT** (`HKJC_FILM=0` disables; tag `recon-baseline-Q`). With
+the seeds, it no longer costs paths. 26 races, deterministic, seeds on, film off → on:
+- All gates 196 → 198; timing gates 117 → 120; all five timing gates 20 → 19 (the photo finish
+  below).
+- Leader mean 0.213 → 0.166 s (Sha Tin 0.259 → 0.182, Happy Valley 0.173 → 0.152); sectional mean
+  0.243 → 0.197 s; signed leader bias +0.089 → −0.018 s.
+- ST9 2 → 4/5 and ST 05-09 R1 3 → 4/5 (its leader error of 0.249 s sits on the 0.25 gate, so it is
+  not a robust pass); ST1 passes the sectional gate.
+
+6-seed ensembles on ST4, ST1, ST 05-24, ST3, HV 05-27 R9:
+- ST1 timing 3 → 4/5 on every seed, sectional 0.350 → 0.220.
+- Sectional also better on ST3 (0.632 → 0.584) and HV 05-27 R9 (0.181 → 0.127).
+
+Declared losses:
+- **ST 05-24's winner** is wrong on 6/6 seeds (film off: 5/6 right). Official margin: a short head,
+  0.01 s ≈ 0.16 m, inside both paths' sd at the line. The runner-up #14 is unread by the camera.
+- **ST3's two tail horses** stop 0.3–0.8 m short of the line at the last render frame (structural:
+  the render ends ~1.2 s after the winner).
+- **ST4** loses 2 horses on 3/6 seeds. Its finish anchor is ill-posed (C drifts to 1209 px/s; the
+  "3"/#7 misread), so a seeded horse's crossing lands too late to win detections.
+- Film data for the dev races here comes from filtered cached scans; for HV0422-1 and HV0513-1 the
+  `film` stage ran locally.
+
+**Lateral-scale gate failures (6/26), not fixed; the gate is unchanged.** The rails-stage ppm equals
+the tick-seeded ppm within 1 %, so lateral and along-track share one scale. On ST7 (pixels) the
+map ends 4.0–4.4 m inside the racing rail for the whole trip: the fixed rail at 4.5 m is never
+imaged, and the ridge picks a faint line at 2.3 m (48–51 px on HV0422-1, ST7, ST 05-31 alike).
+REJECTED: counting only stations imaged to the expected rail + 1 m. It fixed HV0603-8 (5.89 → 8.03)
+but broke HV0429-3 (7.12 → 9.36) and left ST7 at 6.09: noise at low support. An independent lateral
+reference is needed.
+
 **Finish-camera C (finding, not fixed).** The C prior does not bind: the anchor fit with and
 without it agrees within a few % on all 26. On 5 races (HV0415-1, HV0422-1, HV0513-1 and the two
 1000 m straights ST3/ST8) the render crossings fit the camera gaps to ≤ 0.1 s per horse, and

@@ -230,8 +230,8 @@ def anchor_offset(t, d_lead, film_t, *, win=1.0):
     d_true = d - delta. MEASURED on 15 turf races (recon_v3 artifacts, journal 0137): with the ticks
     unpinned, recon - film is one flat offset per race through the straight (+2.4..+11 m, spread
     <= 3 m on most races) and it continues through the line; the render-paint pin made it a step in
-    the last 50 m (leader +0.2 s late at 400-100 m, -0.16 s early at the line). Used only with
-    HKJC_FILM=1 (it destabilises finish-camera identity on some races; see RaceRun.observe)."""
+    the last 50 m (leader +0.2 s late at 400-100 m, -0.16 s early at the line). Used by
+    the default pipeline (HKJC_FILM=0 disables; see RaceRun.observe)."""
     t, d_lead = np.asarray(t, float), np.minimum.accumulate(np.asarray(d_lead, float))
     out = []
     for mk, tf in film_t.items():
