@@ -229,6 +229,21 @@ def test_time_local_shift_recovers_per_frame_slip():
     assert n0 == 0 and not shift0.any()
 
 
+def test_finishcam_digit_drop_prefers_longer_number():
+    """'1' reads lying on the '11' cloth (a dropped digit) outnumber the real '11' reads: the winner
+    #11 must survive, and the real #1 (elsewhere) keeps its own track."""
+    rows = []
+    for u in range(20, 80, 6):  # the real "11" cloth, moving left
+        rows.append([u, u, 1300 - 10.0 * u, 300.0, 11, 0.9])
+    for u in range(21, 80, 3):  # the same cloth misread as "1" (more reads than "11")
+        rows.append([u, u, 1300 - 10.0 * u, 302.0, 1, 0.8])
+    for u in range(100, 140, 4):  # the real #1, another horse, another lane
+        rows.append([u, u, 1700 - 10.0 * u, 520.0, 1, 0.9])
+    T = finishcam.tracks(dict(line_x=960.0, reads=np.array(rows, float)))
+    assert 11 in T
+    assert 1 in T and np.median(T[1][2]) > 500  # #1's track is the real #1, not the "11" cloth
+
+
 def test_fusion_anonymous_association_respects_forbid():
     """An anonymous tracklet that the E-step's legend evidence excluded for a horse must not be
     handed to that horse by fusion's chi^2 association."""

@@ -450,6 +450,35 @@ all gates 198 → 202. A from-scratch 26-race pod run of the default pipeline at
 reproduces these exactly (the `film` stage ran end to end). Canonical baseline-S, built from those
 artifacts: 22/26, timing 124/130, gates 204.
 
+**Finish-camera digit drops (`finishcam.tracks` / `finish_gaps`; tag `recon-baseline-U`).**
+Pixels of the camera crops:
+- ST4's "3" reads are cloth #13 with the "1" dropped, 9 of 10 (one at confidence 0.99).
+- The winner #11's cloth is often read as "1".
+
+Two rules then misfired:
+- The digit-drop test required same-frame coincidence. One cloth gives one read per frame, so it
+  never fired, and the tailed-off #3 took #13's crossing, 6.2 s early.
+- The misread rule kept the number with more reads, so "1" (pooling the "11" cloth with the real #1)
+  dropped the WINNER #11.
+
+Fixes:
+- Compare a shorter number's reads with the longer number's interpolated track, and with a robust
+  line x(u) of its raw reads. Remove those reads and rebuild the shorter track from the rest.
+- When two numbers coincide, prefer the longer one.
+
+Results:
+- Only three races' finish orders change.
+- ST4 passes all five timing gates on 6/6 seeds (was 3/5): sectional 0.392 → 0.173 s,
+  behind-winner 0.614 → 0.040 s.
+- ST 05-31 regains #1 (path count and finish-n pass, 3/6 seeds).
+- ST 05-17 loses a mixed "1" read (no gate change).
+- 26 races: timing gates 124 → 126, gates 205 → 207.
+
+Still open:
+- ST4's #11 is read only in an earlier pass of the full feed (u 25–86; the line crossings are at
+  u 130–200), so it gets no gap.
+- ST4 #10 (2nd) has no path; #3 (tailed off) honestly has none.
+
 **Time-local pose-slip shift (`rails.time_local_shift`; tag `recon-baseline-T`).** The pixels show
 the cause on the straights: the render camera reverses (180°) at t ≈ 28–32 s. After the d(s)
 refit, the calibrated leader still departs from the odometer per FRAME: on ST3, −29 m at 30.2 s →

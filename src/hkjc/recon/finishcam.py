@@ -213,24 +213,67 @@ def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40,
 def tracks(sc, *, min_reads=4, y_tol=40.0):
     """Per number, its reads restricted to the dominant lateral (y) cluster (a misread of another
     horse's cloth sits at a different y), sorted by unique-frame index u. {num: (u, x, y) arrays}."""
-    R = sc["reads"]
+    R = np.asarray(sc["reads"])
     out = {}
-    for num in np.unique(R[:, 4]).astype(int):
-        r = R[R[:, 4] == num]
+
+    def build(r):
         if len(r) < min_reads:
-            continue
+            return None
         ys = r[:, 3]
         best = max(range(len(ys)), key=lambda i: (np.abs(ys - ys[i]) < y_tol).sum())
         r = r[np.abs(ys - ys[best]) < y_tol]
         if len(r) < min_reads or np.ptp(r[:, 2]) < 100:  # must actually move across the frame
-            continue
+            return None
         o = np.argsort(r[:, 0], kind="stable")
         uu, xx, yy = r[o, 0], r[o, 2], r[o, 3]
         # drop isolated misreads (e.g. a half-occluded "11" read as "1"): far from a running median
         med = np.array([np.median(xx[max(0, i - 3) : i + 4]) for i in range(len(xx))])
         k = np.abs(xx - med) < 80
-        if k.sum() >= min_reads:
-            out[num] = (uu[k], xx[k], yy[k])
+        return (uu[k], xx[k], yy[k]) if k.sum() >= min_reads else None
+
+    raw = {int(n): R[R[:, 4] == n] for n in np.unique(R[:, 4]).astype(int)}
+    for num, r in raw.items():
+        tr = build(r)
+        if tr is not None:
+            out[num] = tr
+    # DIGIT-DROP pre-pass: reads of a SHORTER number lying on a longer number's track ("1" on the "11"
+    # cloth) are that longer number's, minus a digit -- remove them and rebuild the shorter track from
+    # what is left. MEASURED (pixels, ST 0419 R4): "1" pooled the winner #11's cloth ("11" read as "1")
+    # with the real #1; its dominant y-cluster became #11's cloth, the coincidence rule below kept
+    # "1" (more reads) and DROPPED the winner #11 from the finish order.
+    for lng in sorted(list(out), key=lambda n: -len(str(n))):
+        if lng not in out:
+            continue
+        ul, xl, yl = out[lng]
+        for sh in list(raw):
+            if sh == lng or str(sh) not in str(lng) or len(str(sh)) >= len(str(lng)):
+                continue
+            r = raw[sh]
+            # the long number's RAW reads (its y-cluster), robust LINE x(u): the running-median filter
+            # trims sparse early reads (ST4 "11": u 25-86 read, track u 69-74), and the misread "1"s
+            # sat exactly in the trimmed part
+            rl = raw[lng]
+            rl = rl[np.abs(rl[:, 3] - np.median(yl)) < 30]
+            if len(rl) < 3:
+                continue
+            A = np.c_[rl[:, 0], np.ones(len(rl))]
+            coef = np.linalg.lstsq(A, rl[:, 2], rcond=None)[0]
+            res = np.abs(A @ coef - rl[:, 2])
+            keep = res < max(60.0, 2.5 * np.median(res))
+            coef = np.linalg.lstsq(A[keep], rl[keep, 2], rcond=None)[0]
+            inside = (r[:, 0] >= rl[:, 0].min() - 10) & (r[:, 0] <= rl[:, 0].max() + 10)
+            on = (
+                inside
+                & (np.abs(r[:, 0] * coef[0] + coef[1] - r[:, 2]) < 60)
+                & (np.abs(r[:, 3] - np.median(yl)) < 30)
+            )
+            if on.sum() >= 2:
+                raw[sh] = r[~on]
+                tr = build(raw[sh])
+                if tr is None:
+                    out.pop(sh, None)
+                else:
+                    out[sh] = tr
     # a MISREAD is the same physical cloth read under a second number (Sha Tin side-on camera:
     # 1/4/14 confusions put "#14" 1.4 s ahead of where it finished): two numbers whose tracks
     # coincide in (x, y) on shared frames -> keep the one with more reads
@@ -250,6 +293,10 @@ def tracks(sc, *, min_reads=4, y_tol=40.0):
                 if len(j) and np.abs(xa[j] - x).min() < 45 and np.abs(ya[j] - y).min() < 30:
                     same += 1
             if same >= max(2, 0.5 * len(ub)):
+                # a dropped digit is the common misread: prefer the LONGER number ("11" over "1")
+                if str(a) in str(b) and len(str(a)) < len(str(b)):
+                    drop.add(a)
+                    break
                 drop.add(b)
     return {n: v for n, v in out.items() if n not in drop}
 
@@ -330,16 +377,36 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
         for m in list(gaps):
             if m == n or str(n) not in str(m) or nreads.get(n, 0) >= nreads.get(m, 0):
                 continue
+            # compare against m's TRACK interpolated to each n-read's frame: one cloth yields ONE read
+            # per frame ("3" OR "13"), so same-frame coincidence never fired, and the horse moves
+            # ~60 px per unique frame. MEASURED (pixels, ST 0419 R4): 9 of 10 "3" reads sit on the
+            # "13" cloth (one at conf 0.99); kept, "#3" (tailed off, 7.5 s back) took #13's crossing
+            # -> placed 6.2 s early (behind-winner gate failure).
             rm = R[R[:, 4] == m]
-            shared = same = 0
+            sh0 = sa0 = 0  # same-frame coincidence (the original test: ST7's "4" next to "14")
             for r in rn:
                 k = np.where(np.abs(rm[:, 0] - r[0]) <= 1)[0]
                 if len(k):
-                    shared += 1
-                    same += bool(
+                    sh0 += 1
+                    sa0 += bool(
                         (np.abs(rm[k, 2] - r[2]).min() < 45)
                         and (np.abs(rm[k, 3] - r[3]).min() < 30)
                     )
+            if sa0 >= 2 and sa0 >= 0.5 * sh0:
+                gaps.pop(n)
+                break
+            if m not in T:
+                continue
+            um, xm, ym = T[m]
+            shared = same = 0
+            for r in rn:
+                if not (um[0] - 3 <= r[0] <= um[-1] + 3):
+                    continue
+                shared += 1
+                same += bool(
+                    abs(np.interp(r[0], um, xm) - r[2]) < 45
+                    and abs(np.interp(r[0], um, ym) - r[3]) < 30
+                )
             if same >= 2 and same >= 0.5 * shared:
                 gaps.pop(n)
                 break
