@@ -122,10 +122,20 @@ def horse_scale(frames_imgs, line_x):
 
     if not os.path.exists(COCO_WEIGHTS):
         return None
-    m = YOLO(COCO_WEIGHTS)
+    dev = os.environ.get("HKJC_DEVICE", "cpu")
+    if dev.startswith("intel:") and frames_imgs and frames_imgs[0].shape[:2] == (540, 960):
+        # Intel iGPU via OpenVINO (fixed 544x960 input for the half-res 960x540 frames): YOLOv8x
+        # at ~2.4 s/frame on the CPU was 75 s of the R08 finish scan
+        ov_dir = COCO_WEIGHTS.replace(".pt", "_544x960_openvino_model")
+        if not os.path.exists(ov_dir):
+            p = YOLO(COCO_WEIGHTS).export(format="openvino", imgsz=[544, 960], verbose=False)
+            os.rename(p, ov_dir)
+        m, kw = YOLO(ov_dir, task="detect"), dict(imgsz=(544, 960), device=dev)
+    else:
+        m, kw = YOLO(COCO_WEIGHTS), dict(imgsz=960)
     w = []
     for img in frames_imgs:
-        r = m.predict(img, conf=0.4, classes=[17], imgsz=960, verbose=False)[0]
+        r = m.predict(img, conf=0.4, classes=[17], verbose=False, **kw)[0]
         b = r.boxes.xyxy.cpu().numpy()
         for i, (x0, y0, x1, y1) in enumerate(b):
             others = np.delete(b, i, axis=0)

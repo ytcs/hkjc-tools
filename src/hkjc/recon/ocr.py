@@ -30,7 +30,24 @@ def _engine():
     from rapidocr_onnxruntime import RapidOCR
 
     n = int(os.environ.get("HKJC_OCR_THREADS", "-1"))  # parallel races: cap threads per process
-    return RapidOCR(intra_op_num_threads=n, inter_op_num_threads=1) if n > 0 else RapidOCR()
+    eng = RapidOCR(intra_op_num_threads=n, inter_op_num_threads=1) if n > 0 else RapidOCR()
+    dev = os.environ.get("HKJC_DEVICE", "cpu")
+    if dev.startswith("intel:"):  # the SAME PP-OCRv4 recogniser compiled for the Intel iGPU/NPU
+        eng.text_rec.session = _OVSession(eng.text_rec.session.session._model_path, dev)
+    return eng
+
+
+class _OVSession:
+    """Drop-in for RapidOCR's ONNX session: same model file, OpenVINO-compiled (dynamic width)."""
+
+    def __init__(self, model_path, dev):
+        import openvino as ov
+
+        core = ov.Core()
+        self.model = core.compile_model(core.read_model(model_path), dev.split(":", 1)[1].upper())
+
+    def __call__(self, x):
+        return [self.model(x)[0]]
 
 
 def rec_only(crop, scale: int = 3) -> tuple[str, float]:
