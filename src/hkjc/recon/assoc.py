@@ -38,8 +38,13 @@ def _legend_at(legend_rows):
     return at
 
 
-def assign_frames(frames, t, s, lat, paths, legend_rows, *, sd_s=0.8, sd_l=0.35, max_rank=8):
+def assign_frames(
+    frames, t, s, lat, paths, legend_rows, *, sd_s=0.8, sd_l=0.35, max_rank=8, near_line=None
+):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
+    ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
+    before the line) pay the extra cost for those horses — the finish camera's NEGATIVE evidence: a
+    horse it never read (while reading most of the field) is unlikely to be crossing with the field.
     Returns per-detection horse number (0 = clutter/unassigned) and per-detection chi^2."""
     from scipy.optimize import linear_sum_assignment
 
@@ -65,6 +70,13 @@ def assign_frames(frames, t, s, lat, paths, legend_rows, *, sd_s=0.8, sd_l=0.35,
         # nearby detection (HV 0527 #9, tailed off 3.4 s behind: path ended 2.8 s early).
         C = (s[js][:, None] - ps) ** 2 / vs + (lat[js][:, None] - pl) ** 2 / vl
         C = C + np.log(vs * vl / (sd_s**2 * sd_l**2))[None, :]
+        if near_line is not None:
+            s_from, pen = near_line
+            nl = s[js] >= s_from
+            if nl.any():
+                for col, h in enumerate(ok):
+                    if h in pen:
+                        C[nl, col] += pen[h]
         leg = at(int(frames[js[0]]))
         if leg is not None:
             ahead = np.array([(s[js] > s[j] + RANK_EPS).sum() for j in js])  # detections ahead
