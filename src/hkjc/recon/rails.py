@@ -392,12 +392,18 @@ def calibrate_distance_ticks(
         return np.r_[(sF1 - ev_s) / ppm1 + Bv(ev_s) - target, pin, smooth * np.diff(coef, 2)]
 
     r = least_squares(res, np.zeros(nb), loss="huber", f_scale=huber)
+    # the BASE fit's derivative sets the local px/m for LATERAL offsets: the local refit below is an
+    # along-track slip (the leader stalls then jumps); letting its derivative rescale lateral put
+    # ST3's p99 lateral at 30 m (course width 30.5; base fit 19.4 m)
+    dB = BSpline(t, r.x, k, extrapolate=True).derivative()
     # LOCAL map distortion: where the smoothed tick residual stays > LOCAL_RES_M, refit with dense
     # knots (LOCAL_KNOT_M) around it. MEASURED (26 turf races, in-sample): both 1000 m straights
-    # (ST 0419 R3, 0509 R1) show a 14-28 m distortion at ~410 m to go -- the render camera there
-    # defeats the similarity pose graph (leader "stalls" 40 m in 4 s, then jumps); the 150 m spline
-    # (huber: outliers) ignored it -> leader 1.66 s late at 400 m. Every other race: smoothed
-    # residual <= 6.9 m, so the refit never triggers there.
+    # (ST 0419 R3, 0509 R1) show a 14-28 m distortion at ~410 m to go: on all three straights the
+    # render camera SWINGS 180 deg between t ~ 28 and 32 s, and on these two the pose solve takes a
+    # ~2.5 % scale step during the swing (0.963 -> 0.938, 1.003 -> 0.978; ST 0607 R8: 0.993 ->
+    # 0.992, no distortion). The leader "stalls" 40 m in 4 s, then jumps; the 150 m spline (huber:
+    # outliers) ignored it -> leader 1.66 s late at 400 m. Every other race: smoothed residual
+    # <= 6.9 m, so the refit never triggers there.
     from scipy.ndimage import median_filter
 
     order = np.argsort(ev_s)
@@ -421,7 +427,6 @@ def calibrate_distance_ticks(
         nb = len(t) - k - 1
         r = least_squares(res, np.zeros(nb), loss="huber", f_scale=huber)
     Bsp = BSpline(t, r.x, k, extrapolate=True)
-    dB = Bsp.derivative()
 
     def d_of_s(x):
         x = np.asarray(x, float)

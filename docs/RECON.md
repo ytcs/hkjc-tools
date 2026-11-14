@@ -428,16 +428,24 @@ Declared losses:
 **Local map distortion on the 1000 m straights (`rails.LOCAL_RES_M`; tag `recon-baseline-R`).** The
 smoothed residual of the calibrated leader at the odometer ticks is ≤ 6.9 m on 24 races. On both
 failing straights it is 14 m (ST 05-09 R1) and 28 m (ST3) at ~410 m to go. There the leader
-"stalls" 40 m in 4 s and then jumps: the render camera on the straight defeats the similarity pose
-graph, and the 150 m spline under a huber loss treated it as outliers.
+"stalls" 40 m in 4 s and then jumps. MEASURED cause: on all three straights the render camera
+swings 180° between t ≈ 28 and 32 s. On these two the pose solve takes a ~2.5 % scale step during
+the swing (0.963 → 0.938 and 1.003 → 0.978); ST8 does not (0.993 → 0.992). The 150 m spline under a
+huber loss treated the result as outliers.
 
 Fix: where ≥ 4 consecutive ticks keep a smoothed residual > 10 m, refit with 25 m knots over that run
 ± 50 m, inside the tick-covered range. REJECTED: dense knots wherever any tick is flagged; one
 isolated tick at the race start sent knots into the sparse start (170 m residual).
 
+The local term applies to distance only. Lateral keeps the base fit's px/m: letting the refit's
+derivative rescale lateral put ST3's p99 lateral at 30 m, against a course width of 30.5 m and
+19.4 m from the base fit.
+
 Only the two straights change. Both now pass all five timing gates on every seed of a 6-seed
-ensemble: ST3 leader 0.527 → 0.214 s and sectional 0.593 → 0.200; ST 05-09 R1 leader 0.249 → 0.130
-and sectional 0.280 → 0.212. Totals: all five timing gates 19 → 21/26, timing gates 120 → 123,
+ensemble:
+- ST3: leader 0.527 → 0.214 s (boundaries +0.03/+0.53/−0.08, none unscored), sectional 0.593 →
+  0.174.
+- ST 05-09 R1: leader 0.249 → 0.130 s, sectional 0.280 → 0.171. Totals: all five timing gates 19 → 21/26, timing gates 120 → 123,
 all gates 198 → 202.
 
 **Lateral-scale gate failures (6/26), not fixed; the gate is unchanged.** The rails-stage ppm equals
