@@ -487,13 +487,24 @@ GIFs (`detect.silk_prototype`):
 - where the EM label is wrong (19 cases), the silk prefers the right group 19/19.
 
 As a bounded per-detection E-step cost (`assoc.SILK_W`, a `silk` stage, `det_idx` in tracks.npz),
-the result is chaotic:
+the result is not distinguishable from noise. The run-to-run spread of the hand-set score was never
+measured, so "worse" and "better" per race are unestablished:
 - hand-set label accuracy ranges from 49 to 58/79 across weights and normalisations (53 without);
 - ST4 goes 9 → 15/16 and ST 05-24 13 → 18/19, while ST 05-31 goes 12 → 7–9 and HV 05-27 R9 19 → 16;
 - gates on 26 races are unchanged (205 → 205).
 
-It is off by default, and the stage is skipped unless `HKJC_SILK_W > 0`. Next: silk aggregated over
-whole tracklets, with official prototypes, in identify.
+It is off by default, and the stage is skipped unless `HKJC_SILK_W > 0`.
+
+**PARKED (stop rule).**
+- Every hand-set EM error starts at identify: 9 tracklets labelled wrong there and 17 left
+  unlabelled. Of those 17, the EM later labels 10 wrong.
+- Averaging over tracklets does not help: aggregate top-1 is 34/79 against 40/79 per detection, so
+  the render-vs-GIF gap is a bias, not noise. Central crops do not help either.
+- The legend icons are flat drawings in the GIFs' style, so they do not bridge the gap.
+- Silk as a VETO failed on independent names: on 53 finish-camera-named tracklets across the 26
+  races, a 0.3 margin vetoes the true horse in 25 % (17 % of pure ones). On the hand set it looked
+  like 4 %, a per-crop, best-of-group lower bound.
+- Revisit only with render-domain prototypes.
 
 **The film reference's own bias (recorded, NOT corrected).** The film now sets every race's distance
 constant. Film − official at Sha Tin's 400 m marker is early on 9 of 10 races, mean −0.11 s:
