@@ -218,6 +218,35 @@ top-8 legend is the whole field and the rule never applies. All 15 races are now
 way: the 0.6 m floor margin (HV 0603 R3 lost #10/#5, closing from 9th-10th). Majority vs union of a
 fragment's exclusions: indistinguishable (ensemble).
 
+## 3f. Leader-timing error shape (diagnostic, 2026-11-14) — no code change
+
+Signed identity-free leader error (recon − official) on the 15 turf races: the SAME shape on every
+race, HV included. It is late at the early boundaries and early at the line (pooled mean by
+distance-to-go: 1600 m +0.43, 1200 +0.24, 800 +0.12, 400 +0.21, 0 m −0.16 s; 13/15 negative at the
+line). Ruled out:
+- **Clock rate:** the HUD clock is 25.000 fps on all 15.
+- **Rail configuration:** ST1 and ST9, the worst, are both course A.
+- **Render frame holes:** none > 0.4 s inside any race; the render starts at race clock 10.8–12.6 s.
+- **Render camera change near the line:** box size and aspect and pose scale are flat over the last 400 m.
+- **False positives in the raw leader:** the trace is smooth through the line.
+
+Against the race film (non-official, non-HUD), recon is **flat at ~+0.2 s from 400 m to 100 m**
+(pooled medians +0.22/+0.24/+0.19/+0.14/+0.18; film − official at 400 m within ±0.12 s), then
+steps to −0.16 s at the line, mostly inside the last 50 m. This is not a paint-vs-odometer scale
+ramp, so no in-video scale correction is justified. Beyond 400 m there is no reference that is
+neither official nor the odometer. The odometer-only leader error is late too (ST9
++0.86/+1.11/+0.82/+0.50 s), but that comparison is circular for the rendered horses: recon distance
+is fitted to the same ticks. **Cause not established; declared** (below).
+
+**Declared before batch H (known failures, not fixed):**
+- The odometer-derived metric disagrees with official beyond the marker zone (leader late by
+  0.2–0.9 s at early boundaries on some races), cause not established.
+- The leader is ~0.16 s early at the line: a step inside the last ~50 m, cause not established.
+- ST 1000 m straight: weak rail/metric (ST3 1.66 s at 400 m).
+- Finish-camera misreads of tailed-off horses (ST4 "3" is #7; ST7 #11).
+- ST4 finish ρ sits on the 0.90 gate line (ensemble median 0.90).
+- Path-count gate fails where tailed-off horses leave the render.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
@@ -237,8 +266,11 @@ fragment's exclusions: indistinguishable (ensemble).
 - **Legend identity** is the dominant remaining error (long tracklets carry one wrong label for a
   whole race: HV 0527 k3 "#8" is #12). Fusion's anchor-conflict demotion helps order but must stay
   horse-specific (median-subtracted) and never strip a horse below half its render data.
-- **Odometer HUD vs painted markers**: over the final 200 m the HUD counts 2.7-4.3 % more metres
-  than the markers on three HV races (same span; cause unknown) — the markers are the metric there.
+- **Odometer HUD vs painted markers**: in the 0-400 m zone the odometer tick scale is 1.3-4.8 % above
+  the paint scale in px/m (all 15 turf races), i.e. the odometer counts FEWER metres than the paint
+  over the same span (earlier wording "more metres" was inverted); cause unknown. Recon d sits between
+  the two (1-2.4 % short of the paint at the 400 m marker); the race film supports neither scale
+  over the other (3f).
 - **AWT** — OUT OF SCOPE for now (turf only). Known: head/shadow duplicates fixed by an anisotropic
   merge; far-side avatars on bends missed; the back-straight rail is framed under the legend band.
 - **Real-camera feeds (drone, patrol) + SAM 2** — the only independent source of positions: needed for

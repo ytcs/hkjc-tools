@@ -127,7 +127,7 @@ def render_active(panel, *, relaxed: bool = False) -> bool:
     # fills holes INSIDE the render segment): >= 5 boxes in a strip widened to 0.60 (MEASURED: legend
     # frames show 6-12 there, pre-race live frames <= 3). REJECTED: the widened strip with >= 1 box
     # (admitted 11-65 pre-race live frames per race); the fallback before the first strict frame
-    # (admitted the dissolve-tail frame of HV 0527 R3 -> pose gauge moved, map scale +1.1 %).
+    # (admitted a dissolve-tail frame of HV 0527 R3, which flipped its result 5/5 -> 2/5; px/m unchanged).
     strict = legend_boxes(0.70, 0.86) >= 1
     if not strict and not (relaxed and legend_boxes(0.60, 0.86) >= 5):
         return False

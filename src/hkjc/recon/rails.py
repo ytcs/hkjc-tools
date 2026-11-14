@@ -249,8 +249,9 @@ def tick_events(fu, s_lead, odo):
 
 def fit_marker_grid_seeded(ss, resp, ev_s, ev_v, *, spacing_m=50.0, kmax=8, rel=0.08, win_m=60.0):
     """Marker grid SEEDED by the odometer ticks (owner's prior: markers are exactly 50 m apart):
-    scale within +-rel of the ticks' zone scale (the HUD counts 3-4 % more metres than the paint),
-    FINISH within +-win_m of the tick-predicted finish; peaks at low thresholds, scored by response.
+    scale within +-rel of the ticks' zone scale (tick px/m 3-4 % above paint px/m: the HUD counts
+    FEWER metres than the paint), FINISH within +-win_m of the tick-predicted finish; peaks at low
+    thresholds, scored by response.
     The unseeded fit locked onto a coverage-edge artefact as FINISH on HV 0429 and read the true
     markers as map-scale drift. -> (ppm, sF, ks, ps) or None."""
     from scipy.signal import find_peaks
@@ -367,8 +368,8 @@ def calibrate_distance_ticks(
     sF1, ppm1 = float(lin.x[0]), float(lin.x[1])
     # scale check IN the marker zone (map scale drifts along the race, so the global tick ppm may
     # legitimately differ from the local marker ppm: R02A 20.26 global vs 21.72 local, c_m +0.3 m)
-    # MEASURED: over the final 200 m the HUD odometer counts 2.7-4.3 % more metres than the painted
-    # markers (R08 4.3, R03 3.4, R02A 2.7 %; same span — marker ppm 0-200 m = full-grid ppm, so a
+    # MEASURED: over the final 200 m the tick px/m is 2.7-4.3 % above the painted-marker px/m, i.e.
+    # the HUD counts FEWER metres than the markers (R08 4.3, R03 3.4, R02A 2.7 %; same span — marker ppm 0-200 m = full-grid ppm, so a
     # span/map-zoom mismatch is RULED OUT), while the global tick scale and the zone offset agree
     # (< 1.5 m). A property of the render's HUD. Mis-assigned grids are off by tens of metres or
     # > 20 % in scale, so the offset is the discriminating test and the scale tolerance is 8 %.
