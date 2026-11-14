@@ -991,16 +991,19 @@ class RaceRun:
             frag[np.asarray(m, int)] = k
         prev = None
         obs = []
-        # finish camera NEGATIVE evidence: when it read most of the field (>= 75 %), detections in the
-        # last 15 m cost +4 (2 sigma) for horses it never read (ST7: unread #3 took a wide leader's
-        # detections and "won"; it finished 1.93 s back)
+        # finish camera NEGATIVE evidence: with recall r (fraction of the field it read), a horse
+        # that IS at the line goes unread with probability ~(1 - r), so detections in the last 15 m
+        # cost -2 log(1 - r) for unread horses (ST7: unread #3 took a wide leader's detections and
+        # "won", 1.93 s back; ST5: unread #13, last). A fixed 75 %-recall cutoff missed ST5 (71 %).
         near = None
         if self.p("finish.npz").exists():
             zf = np.load(self.p("finish.npz"))
             _o, g0, _u = finishcam.finish_gaps(dict(line_x=float(zf["line_x"]), reads=zf["reads"]))
             read = {int(k) for k in g0}
-            if len(read) >= 0.75 * self.info.n:
-                near = (self.info.distance - 15.0, {h: 4.0 for h in horses if h not in read})
+            r = min(len(read) / max(self.info.n, 1), 0.95)
+            if read and r >= 0.5:
+                cost = float(-2.0 * np.log(1.0 - r))
+                near = (self.info.distance - 15.0, {h: cost for h in horses if h not in read})
         for it in range(self.EM_ITERS):
             lab, _chi = assoc.assign_frames(fr, t, s_run, lat, paths, leg, near_line=near)
             obs = assoc.runs_to_obs(lab, t, s_run, lat)
