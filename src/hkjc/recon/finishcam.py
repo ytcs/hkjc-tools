@@ -226,7 +226,11 @@ def tracks(sc, *, min_reads=4, y_tol=40.0):
             return None
         o = np.argsort(r[:, 0], kind="stable")
         uu, xx, yy = r[o, 0], r[o, 2], r[o, 3]
-        # drop isolated misreads (e.g. a half-occluded "11" read as "1"): far from a running median
+        # drop isolated misreads (e.g. a half-occluded "11" read as "1"): far from a running median.
+        # Known cost: SPARSE reads of a moving cloth look isolated (ST 0419 R4's winner #11, read at u
+        # 25/27/56 then 69-86 in the slow-motion post camera, loses the reads near the line -> no gap).
+        # REJECTED: a robust line x(u) instead -- restores #11 as winner but adds wrong placements
+        # elsewhere (26 races: timing gates 126 -> 123: ST1 wrong winner, ST 0509 R1 rho 0.87).
         med = np.array([np.median(xx[max(0, i - 3) : i + 4]) for i in range(len(xx))])
         k = np.abs(xx - med) < 80
         return (uu[k], xx[k], yy[k]) if k.sum() >= min_reads else None
