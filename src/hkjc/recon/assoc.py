@@ -71,12 +71,12 @@ def assign_frames(
         C = (s[js][:, None] - ps) ** 2 / vs + (lat[js][:, None] - pl) ** 2 / vl
         C = C + np.log(vs * vl / (sd_s**2 * sd_l**2))[None, :]
         if near_line is not None:
-            s_from, pen = near_line
-            nl = s[js] >= s_from
-            if nl.any():
-                for col, h in enumerate(ok):
-                    if h in pen:
-                        C[nl, col] += pen[h]
+            for s_from, pen in near_line if isinstance(near_line, list) else [near_line]:
+                nl = s[js] >= s_from
+                if nl.any():
+                    for col, h in enumerate(ok):
+                        if h in pen:
+                            C[nl, col] += pen[h]
         leg = at(int(frames[js[0]]))
         if leg is not None:
             ahead = np.array([(s[js] > s[j] + RANK_EPS).sum() for j in js])  # detections ahead

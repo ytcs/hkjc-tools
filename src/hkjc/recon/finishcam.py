@@ -337,7 +337,8 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
                 if len(k):
                     shared += 1
                     same += bool(
-                        (np.abs(rm[k, 2] - r[2]).min() < 45) and (np.abs(rm[k, 3] - r[3]).min() < 30)
+                        (np.abs(rm[k, 2] - r[2]).min() < 45)
+                        and (np.abs(rm[k, 3] - r[3]).min() < 30)
                     )
             if same >= 2 and same >= 0.5 * shared:
                 gaps.pop(n)

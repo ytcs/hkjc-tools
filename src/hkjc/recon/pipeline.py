@@ -1012,7 +1012,24 @@ class RaceRun:
             r = min(len(read) / max(self.info.n, 1), 0.95)
             if read and r >= 0.5 and os.environ.get("HKJC_NEGEV", "1") != "0":
                 cost = float(-2.0 * np.log(1.0 - r))
-                near = (self.info.distance - 15.0, {h: cost for h in horses if h not in read})
+                near = [(self.info.distance - 15.0, {h: cost for h in horses if h not in read})]
+                # NO identity evidence near the line (unread by the camera AND absent from the legend
+                # top 8 in the last 8 s before the line): final-stretch detections are not this horse's to take —
+                # it extrapolates with honest uncertainty instead of "finishing" on another horse's
+                # detections (ST7 #4, HV0415 #2 crossed with the leaders, 1.2-2.2 s early)
+                # window: the 8 s before the first horse reaches the line (a horse shown in the top 8
+                # earlier in the straight, then fading, has no identity evidence AT the line)
+                crossings = [
+                    p.t[np.argmax(self.info.distance - p.s <= 0)]
+                    for p in paths.values()
+                    if (self.info.distance - p.s <= 0).any()
+                ]
+                t_fin = min(crossings) if crossings else float(np.max(t))
+                late_frames = {int(f) for f, tt in zip(fr, t) if t_fin - 8.0 <= tt <= t_fin + 1.0}
+                shown = {int(x) for r_ in leg if int(r_[0]) in late_frames for x in r_[1:9] if x}
+                blind = [h for h in horses if h not in read and h not in shown]
+                if blind and os.environ.get("HKJC_BLIND", "1") != "0":
+                    near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
         for it in range(self.EM_ITERS):
             lab, _chi = assoc.assign_frames(fr, t, s_run, lat, paths, leg, near_line=near)
             obs = assoc.runs_to_obs(lab, t, s_run, lat)
