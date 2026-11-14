@@ -178,10 +178,12 @@ Two bugs found by checking the race film (left half of the aerial replay) agains
 15 turf races, full pipeline on a pod (RTX 4090, 760 s): all five timing gates on **10/15** (before:
 10/15 on the freeze-1 caches with the anchor fix, 9/15 at freeze-1); timing gates passed **65/75**
 (61); winner correct **15/15** (13). ST4 0 -> 3/5 and ST9 1 -> 2/5 (both winners now right; ST4's
-identity-free leader gate passes). **Regression: HV 0520 5 -> 4/5** (sectional 0.205 -> 0.264 s): its
-19 recovered frames move the pose GAUGE (the fixed frame is index K//2), and the map scale shifts
-2.6 %. Confirmed separately: on the OLD frames, moving only the fixed frame by 9 gives sectional 0.283 s.
-The pipeline is fragile to the choice of gauge; that is open (below). HV 0527 is bit-identical to a
+identity-free leader gate passes). **Regression: HV 0520 5 -> 4/5** (sectional 0.205 -> 0.264 s). It is
+not caused by its 19 recovered (genuine) frames as such: on the OLD frames, merely moving the pose
+solve's fixed frame by 9 changes detection positions by only 0.04 m median (p95 0.26 m), yet the tracker
+returns 40 tracklets instead of 39, the legend labels change, and a DIFFERENT set of horses gets wrong
+identities (sectional 0.283 s). The baseline also has mislabelled horses (#8 -1.65 s, #2 -0.61 s);
+the gate flips by chance. Identity is chaotic under tiny perturbations (open, below). HV 0527 is bit-identical to a
 control run without the gate change.
 
 Race film: in the straight it is a front-on camera that sees the painted 400m..50m stripes. Leader
@@ -192,10 +194,12 @@ most one race's leader gate. The early-race render lag dominates.
 
 ## 4. Open / next
 
-- **Pose gauge sensitivity** — results move with the choice of fixed frame (HV 0520: shifting it
-  9 frames turns sectional 0.205 -> 0.283 s). The gauge should be independent of the frame count and
-  chain origin (e.g. fix the map scale from a content-defined frame set, or fix the metric after the
-  solve), validated by a 15-race pass.
+- **Identity is chaotic under tiny perturbations** — a 0.04 m (median) change in detection positions
+  (moving the pose gauge on HV 0520) changes tracklet fragmentation (39 -> 40), legend labels and
+  which horses are mislabelled; per-race gate outcomes near the thresholds are partly luck. Needs
+  identity that does not hinge on tracklet boundaries (e.g. legend evidence assigned per detection
+  inside the EM, or multi-hypothesis tracking), checked by perturbation tests (shift the gauge, drop
+  1 % of frames) rather than single runs.
 - **Drone** — resolve along-track (seed on bend frames, track forward from the previous camera; or a
   two-scalar field centroid/length fit), then use it for the start segment, draw-seeded identity
   and the independent lateral check.
