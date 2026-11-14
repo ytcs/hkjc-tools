@@ -81,7 +81,14 @@ is recovered from the turf texture alone and the race is mapped once:
    rules: **negative evidence** — with camera recall r, detections in the last 15 m cost
    −2·log(1 − r) for horses the finish camera never read; **shadow release** — two tight paths within
    0.8 m along / 0.5 m lateral for ≥ 0.5 s in the last 3 s (a horse riding a neighbour's
-   detections) lose the weaker horse's render observations there.
+   detections) lose the weaker horse's render observations there. **Negative legend evidence** — a
+   horse missing from a fully read top-8 legend ranks below 8th: it cannot take a detection that is
+   surely inside the top 8 (detections ahead + every undetected horse + 1 < 8) or that is more than
+   8 m ahead of every listed horse's tight posterior (8 m: rail-projected position ranks horses a
+   few metres differently from the legend on bends). These HARD exclusions (and the blind-horse
+   near-line cost) travel with the anonymous fragments the E-step leaves unassigned (`Obs.forbid`,
+   majority of the fragment's detections); otherwise fusion's χ² / orphan association hands the
+   fragment straight back (HV 0520 #8).
 
 Hard-won facts (do not re-learn): camera is near-nadir with **no tilt** but **slow zoom** (similarity,
 not rigid); **LMEDS refits are biased** (integer FAST keypoints); **ECC refinement rejected**
@@ -178,12 +185,11 @@ Two bugs found by checking the race film (left half of the aerial replay) agains
 15 turf races, full pipeline on a pod (RTX 4090, 760 s): all five timing gates on **10/15** (before:
 10/15 on the freeze-1 caches with the anchor fix, 9/15 at freeze-1); timing gates passed **65/75**
 (61); winner correct **15/15** (13). ST4 0 -> 3/5 and ST9 1 -> 2/5 (both winners now right; ST4's
-identity-free leader gate passes). **Regression: HV 0520 5 -> 4/5** (sectional 0.205 -> 0.264 s). It is
-not caused by its 19 recovered (genuine) frames as such: on the OLD frames, merely moving the pose
-solve's fixed frame by 9 changes detection positions by only 0.04 m median (p95 0.26 m), yet the tracker
-returns 40 tracklets instead of 39, the legend labels change, and a DIFFERENT set of horses gets wrong
-identities (sectional 0.283 s). The baseline also has mislabelled horses (#8 -1.65 s, #2 -0.61 s);
-the gate flips by chance. Identity is chaotic under tiny perturbations (open, below). HV 0527 is bit-identical to a
+identity-free leader gate passes). **HV 0520 5 -> 4/5** (sectional 0.205 -> 0.264 s): on the common
+(horse, boundary) pairs v2 is no worse (0.169 vs 0.154; median 0.127 vs 0.140) — the jump is newly
+scored crossings of #8, mislabelled in both runs (fixed in 3e). The old frames' result was itself
+fragile: their legend-gate hole (39.5-42.5 s) is weakly tied in the pose graph, and moving the
+fixed frame shifts it by up to 2.4 m (sectional 0.283 s). HV 0527 is bit-identical to a
 control run without the gate change.
 
 Race film: in the straight it is a front-on camera that sees the painted 400m..50m stripes. Leader
@@ -192,14 +198,23 @@ crossings (`recon/film.py`, line tracks that sweep up the image) match official 
 covers only the last 400 m, and replacing that boundary's error with the film's ~0.1 s would flip at
 most one race's leader gate. The early-race render lag dominates.
 
+## 3e. Identity: negative legend evidence (tag `recon-baseline-P`, 2026-11-14) — turf scope
+
+Judged on a **perturbation ensemble** (drop 1 % of detections at observe, 5 seeds + unperturbed;
+HV 0520, ST9, HV 0527, ST6): single-run gate moves inside a race's spread are not evidence (ST9's
+rho spans 0.86-1.00 across seeds). HV 0520 sectional 0.269 [0.252-0.314] -> **0.147 [0.137-0.162]**
+(all five timing gates on every seed; #8 no longer rides a front-runner's fragment); ST6
+behind-winner 0.037 -> 0.019; ST9 / HV 0527 unchanged. The 15 turf races (fuse+validate on the
+`recon-baseline-O` stage artifacts): all five timing gates on **11/15**, timing gates **66/75**, winners
+15/15; declared gates: no regressions, +2 (ST4 path count, HV 0520 sectional). Rejected on the
+way: excluding a fragment if ANY of its detections was excluded (one frame's noise banned correct
+fragments); the 0.6 m floor margin (HV 0603 R3 lost #10/#5, closing from 9th-10th on a bend).
+
 ## 4. Open / next
 
-- **Identity is chaotic under tiny perturbations** — a 0.04 m (median) change in detection positions
-  (moving the pose gauge on HV 0520) changes tracklet fragmentation (39 -> 40), legend labels and
-  which horses are mislabelled; per-race gate outcomes near the thresholds are partly luck. Needs
-  identity that does not hinge on tracklet boundaries (e.g. legend evidence assigned per detection
-  inside the EM, or multi-hypothesis tracking), checked by perturbation tests (shift the gauge, drop
-  1 % of frames) rather than single runs.
+- **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
+  spans 0.86-1.00 across 1 %-detection-drop seeds). The HV 0520 flip under a gauge shift was a
+  LOCALIZED pose instability in a legend-gate hole (fixed in 3d), not global chaos.
 - **Drone** — resolve along-track (seed on bend frames, track forward from the previous camera; or a
   two-scalar field centroid/length fit), then use it for the start segment, draw-seeded identity
   and the independent lateral check.

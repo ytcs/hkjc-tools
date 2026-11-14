@@ -23,6 +23,7 @@ CLUTTER = 16.0  # chi^2 cost of leaving a detection unassigned (4 sigma)
 RANK_EPS = 0.6  # m: a detection is "clearly ahead" if > RANK_EPS m closer to the finish
 RANK_COST = 50.0
 RANK_SOFT = 9.0  # 3 sigma: confident-rank mismatch with the legend
+FLOOR_EPS = 8.0  # m: 'ahead of every listed horse' margin (projected s is ambiguous on bends)
 
 
 def _legend_at(legend_rows):
@@ -39,12 +40,27 @@ def _legend_at(legend_rows):
 
 
 def assign_frames(
-    frames, t, s, lat, paths, legend_rows, *, sd_s=0.8, sd_l=0.35, max_rank=8, near_line=None
+    frames,
+    t,
+    s,
+    lat,
+    paths,
+    legend_rows,
+    *,
+    sd_s=0.8,
+    sd_l=0.35,
+    max_rank=8,
+    near_line=None,
+    n_field=None,
+    forbid_out=None,
 ):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
     ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
     before the line) pay the extra cost for those horses — the finish camera's NEGATIVE evidence: a
     horse it never read (while reading most of the field) is unlikely to be crossing with the field.
+    ``n_field`` = runners in the race (for the negative legend evidence; default: horses with paths).
+    ``forbid_out`` (dict, optional) receives {detection index: set of horses} excluded by the HARD
+    legend costs, so later stages (fusion's anonymous association) cannot hand them back.
     Returns per-detection horse number (0 = clutter/unassigned) and per-detection chi^2."""
     from scipy.optimize import linear_sum_assignment
 
@@ -77,6 +93,9 @@ def assign_frames(
                     for col, h in enumerate(ok):
                         if h in pen:
                             C[nl, col] += pen[h]
+                            if forbid_out is not None and pen[h] >= CLUTTER:  # hard (blind horses)
+                                for i in np.where(nl)[0]:
+                                    forbid_out.setdefault(int(js[i]), set()).add(int(h))
         leg = at(int(frames[js[0]]))
         if leg is not None:
             ahead = np.array([(s[js] > s[j] + RANK_EPS).sum() for j in js])  # detections ahead
@@ -88,11 +107,42 @@ def assign_frames(
                     continue
                 col = ok.index(num)
                 C[ahead > r, col] += RANK_COST  # >= r+1 detections ahead: cannot be rank r+1
+                if forbid_out is not None:
+                    for i in np.where(ahead > r)[0]:
+                        forbid_out.setdefault(int(js[i]), set()).add(int(num))
                 # TWO-SIDED where the rank is confident (detected ahead == posterior ahead): a
                 # detection of known rank q must not take the legend's rank-r horse, r != q. The
                 # one-sided form never ATTRACTED, so tail labels drifted (HV 0527 '#9' in 5th).
                 conf = (ahead == post_ahead) & (ahead != r)
                 C[conf, col] += RANK_SOFT
+            # NEGATIVE legend evidence: a fully read top-max_rank legend that does NOT list horse h
+            # says h ranks below max_rank. A detection with at most ``ub`` horses possibly ahead
+            # (every detection ahead + every undetected horse + 1 for a false positive) is surely
+            # inside the top max_rank, so it cannot be h. HV 0520 #8 (outside the legend until 88 s)
+            # held a detection ranked 2-3 of 8-9 detected for ~50 s -> 2 s early at 1200/800 m.
+            listed = {int(x) for x in leg[:max_rank] if x > 0}
+            if len(listed) == max_rank:
+                nf = n_field or len(ok)
+                ub = np.array([(s[js] > s[j]).sum() for j in js]) + max(0, nf - len(js)) + 1
+                inside = ub < max_rank
+                # ... and h runs behind EVERY listed horse: a detection ahead of the rearmost TIGHT
+                # posterior among the listed horses cannot be h (a vague listed horse could only be
+                # further back, so the bound stays valid). The count bound alone left #8 on stray
+                # detections in frames with only ~7 of 12 horses detected. Margin FLOOR_EPS, not
+                # RANK_EPS: rail-projected s ranks horses a few metres differently from the legend
+                # on bends (HV 0603 R3: #10/#5, closing from 9th-10th, sat 2-5 m "ahead" of the
+                # legend's 8th and lost every detection with a 0.6 m margin).
+                lt = [c for c, h in enumerate(ok) if h in listed and tight[c]]
+                if lt:
+                    inside |= s[js] > ps[lt].min() + FLOOR_EPS
+                if inside.any():
+                    for col, h in enumerate(ok):
+                        if h not in listed:
+                            C[inside, col] += RANK_COST
+                    if forbid_out is not None:
+                        out = {int(h) for h in ok if h not in listed}
+                        for i in np.where(inside)[0]:
+                            forbid_out.setdefault(int(js[i]), set()).update(out)
         n, m = C.shape
         M = np.full((n, m + n), 1e6)
         M[:, :m] = C
@@ -103,6 +153,17 @@ def assign_frames(
                 lab[js[i]] = ok[k]
                 chi[js[i]] = C[i, k]
     return lab, chi
+
+
+def fragment_forbid(forbid, idx, frac=0.5):
+    """Horses excluded for a tracklet fragment: those the HARD legend costs excluded on at least
+    ``frac`` of its detections. REJECTED: the union over its detections — one frame's noise (a
+    clutter detection ahead inflating the rank count) banned whole correct fragments (HV 0603 R3:
+    #10 and #5 lost their paths)."""
+    from collections import Counter
+
+    c = Counter(h for i in idx for h in forbid.get(int(i), ()))
+    return frozenset(h for h, k in c.items() if k >= frac * len(idx))
 
 
 def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, tid0=50_000):

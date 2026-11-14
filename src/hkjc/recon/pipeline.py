@@ -467,6 +467,10 @@ class RaceRun:
 
     def observe(self):
         rows, X, hist, _P = self.world_dets()
+        seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness ensembles
+        if seed:  # drop 1 % of detections (seeded) -> spread of the downstream gate metrics
+            keep = np.random.default_rng(int(seed)).random(len(rows)) >= 0.01
+            rows, X, hist = rows[keep], X[keep], hist[keep]
         z = np.load(self.p("rail.npz"))
         m = np.load(self.p("metric.npz"))
         rf = rails.RailFrame.from_points(z["rail"], int(z["inner"]))
@@ -1041,13 +1045,21 @@ class RaceRun:
                 if blind and os.environ.get("HKJC_BLIND", "1") != "0":
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
         for it in range(self.EM_ITERS):
-            lab, _chi = assoc.assign_frames(fr, t, s_run, lat, paths, leg, near_line=near)
+            forbid = {}
+            lab, _chi = assoc.assign_frames(
+                fr, t, s_run, lat, paths, leg, near_line=near, n_field=len(horses), forbid_out=forbid
+            )
             obs = assoc.runs_to_obs(lab, t, s_run, lat)
             for k in np.unique(frag[(lab == 0) & (frag >= 0)]):
                 j = np.where((frag == k) & (lab == 0))[0]
                 if len(j) >= 3:
                     j = j[np.argsort(t[j])]
-                    obs.append(fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k)))
+                    # the E-step's hard legend exclusions travel with the anonymous fragment, or
+                    # fusion's chi^2 / orphan association hands it straight back (HV 0520 #8)
+                    no = assoc.fragment_forbid(forbid, j)
+                    obs.append(
+                        fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
+                    )
             paths, _a = self._fuse(obs, horses, prior)
             changed = np.nan if prev is None else float((lab != prev).mean())
             self.log(
@@ -1108,7 +1120,10 @@ class RaceRun:
                 j = np.where((frag == k) & (lab == 0) & ~drop)[0]
                 if len(j) >= 3:
                     j = j[np.argsort(t[j])]
-                    obs.append(fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k)))
+                    no = assoc.fragment_forbid(forbid, j)
+                    obs.append(
+                        fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
+                    )
             paths, _a = self._fuse(obs, horses, prior)
             self.log(f"   em-assoc: shadow paths -> {int(drop.sum())} detections released")
         np.savez(self.p("det_labels.npz"), labels=lab)  # per-detection EM identity (viz, audit)

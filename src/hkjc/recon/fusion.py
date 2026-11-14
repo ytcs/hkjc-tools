@@ -36,6 +36,7 @@ class Obs:
     feed: str
     horse: int = 0  # 0 = anonymous tracklet
     tid: int = -1
+    forbid: frozenset = frozenset()  # horses this (anonymous) tracklet cannot be (hard legend evidence)
 
 
 @dataclass
@@ -260,7 +261,8 @@ def fuse_race(
                 (
                     (chi2_against(o, p), h)
                     for h, p in paths.items()
-                    if not _overlaps(o, [x for x in mine[h] if x.feed == o.feed])
+                    if h not in o.forbid
+                    and not _overlaps(o, [x for x in mine[h] if x.feed == o.feed])
                 ),
                 key=lambda x: x[0],
             )
@@ -291,8 +293,13 @@ def fuse_race(
         }
         newly = {}
         for ch in chains:
+            no = frozenset().union(*(o.forbid for o in ch))  # E-step's legend exclusions
             sc = sorted(
-                ((_chain_vs_anchors(ch, anchors[h]), h) for h in missing if h not in newly),
+                (
+                    (_chain_vs_anchors(ch, anchors[h]), h)
+                    for h in missing
+                    if h not in newly and h not in no
+                ),
                 key=lambda x: x[0],
             )
             if (

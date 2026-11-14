@@ -122,3 +122,39 @@ def test_film_marker_crossings_need_a_sweeping_line():
     assert film.crossings_from_rows(static, lambda f: 310.0, f0=0.0) == {}
     t, v = film.leader_finish({200: 60.0, 100: 66.0})
     assert abs(v - 100 / 6.0) < 1e-9 and abs(t - 72.0) < 1e-9
+
+
+def test_em_assign_negative_legend_evidence():
+    """A horse missing from a fully read top-8 legend runs behind all 8 listed horses: it must not
+    take a detection at the front, even when its own (vague) posterior points there."""
+    from hkjc.recon import assoc
+
+    tg = np.arange(0, 10.01, 0.1)
+
+    def path(h, s0, sd):
+        return fusion.Path(h, tg, 15.0 * tg + s0, np.full_like(tg, 2.0), np.full_like(tg, sd),
+                           np.full_like(tg, 0.3), np.ones_like(tg))
+
+    paths = {h: path(h, -2.0 * h, 0.3) for h in range(1, 9)}  # listed, tight, 2 m apart
+    paths[9] = path(9, 5.0, 6.0)  # NOT listed; vague posterior sitting ahead of the field
+    t = np.full(9, 5.0)
+    s = np.array([80.0] + [75.0 - 2.0 * h for h in range(1, 9)])  # a front detection + the 8
+    lat = np.full(9, 2.0)
+    leg = np.array([[7, 1, 2, 3, 4, 5, 6, 7, 8]])
+    lab, _ = assoc.assign_frames(np.full(9, 7), t, s, lat, paths, leg, n_field=9)
+    assert lab[0] != 9  # the front detection is not the unlisted horse
+
+
+def test_fusion_anonymous_association_respects_forbid():
+    """An anonymous tracklet that the E-step's legend evidence excluded for a horse must not be
+    handed to that horse by fusion's chi^2 association."""
+    tg = np.arange(0.0, 10.0, 0.2)
+    lab = fusion.Obs(tg[:20], 15.0 * tg[:20], np.full(20, 2.0), 0.8, 0.35, "render", horse=1, tid=1)
+    anon = fusion.Obs(tg[20:], 15.0 * tg[20:], np.full(30, 2.0), 0.8, 0.35, "render", 0, 2)
+    prior = fusion.Prior(width=30.0)
+    _p, a = fusion.fuse_race([lab, anon], [1], prior, anchor_check=False)
+    assert a.get(2) == 1  # continuation of horse 1: associated
+    anon_no = fusion.Obs(tg[20:], 15.0 * tg[20:], np.full(30, 2.0), 0.8, 0.35, "render", 0, 2,
+                         frozenset({1}))
+    _p, a = fusion.fuse_race([lab, anon_no], [1], prior, anchor_check=False)
+    assert 2 not in a
