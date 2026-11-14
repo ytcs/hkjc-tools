@@ -272,6 +272,31 @@ not be used to set the ruler or any prior.
 - ST4 finish ρ sits on the 0.90 gate line (ensemble median 0.90).
 - Path-count gate fails where tailed-off horses leave the render.
 
+## 3g. Batch H protocol (declared BEFORE the run, 2026-11-14)
+
+- **Code:** tag `recon-freeze-2` (this commit). Default configuration: film anchor OFF.
+- **Races (sealed, never inspected):** 11 turf races chosen earlier by a fixed rule (journal 0135).
+  - Sha Tin 2026-05-24 R1 (A 1600), 05-31 R1 (B 1200), 05-09 R2 (C 1200), 05-17 R1 (C+3 1800),
+    05-09 R1 (1000 m straight). The AWT race is out of scope.
+  - Happy Valley R9 on 2026-04-15, 04-22, 04-29, 05-13, 05-20, 05-27.
+- **Run:** once, the full pipeline from scratch on a RunPod GPU pod. Code is fetched by tag; videos and
+  data are re-downloaded. No change after seeing results; failures are reported as failures.
+- **Primary result:** the fixed gates in `recon/validate.py` (five timing gates plus the declared
+  coverage, path-count, finish-n and lateral gates), per race and as counts.
+- **Secondary arm (declared now):** `HKJC_FILM=1` observe → validate on the same stage artifacts,
+  scored the same way. It answers whether the film anchor's dev-set gains and losses transfer.
+- **Declared diagnostics:**
+  - Signed leader error per boundary.
+  - HUD-only leader error.
+  - Innermost-horse lateral p5.
+  - Final-product residual vs official.
+  - Finish-camera C vs its physical prior.
+  - Recon − film at the markers (film arm).
+- **Expected from the development set (not a gate):**
+  - Sha Tin leader late at early boundaries.
+  - The 1000 m straight fails (weak rail/metric).
+  - Path-count failures where horses tail off out of the render.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
