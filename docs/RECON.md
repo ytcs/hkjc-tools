@@ -955,6 +955,23 @@ rail followed the fixed rail for ~4700 stations.
 - Not adopted. The rail geometry is right in pixels; what's open is the downstream fragility it
   exposes.
 
+
+**Baseline Z (`recon-baseline-Z`, 2026-11-15) = V + the straight-course rail side.** The defaults
+differ from V only in `rails.inner_side` (it changes ST8; ST3 and ST 05-09 R1 were already +1). The
+opt-ins (`HKJC_SEAMS`, `HKJC_RAIL_SCORE=binary`, `HKJC_FC_READS`) are off. The pod names W/X/Y above
+are runs, not tags, so this tag skips to Z.
+- 6-seed ensembles on locally rebuilt rails (`data_cache/exp_raw/V`, the same maps as the binary-rail
+  test):
+  - Non-lateral gates 198.0 per seed, timing 125.7, all five timing gates 22.7 races.
+  - Lateral 10 pass / 1 fail / 15 n/a.
+  - Hand-truth majority 57/79 (null spread 3: seeds 6–11 give 54).
+- Rejected (not kept in code): rejecting a finish anchor pinned at its C bound (ST 04-26 R1 binary
+  seeds: the winner becomes right, but ρ stays ≈ 0.83); the same with C fixed at the physical prior
+  (no better). The pin itself is a feedback loop: anchor C → finish observations → EM near-line
+  assignment → render crossings → the next anchor. On seed 3 every render crossing was compressed by
+  half (true C ≈ 1685 from the official deltas, validation-only; anchor 4000). It is rare: at seed 0
+  only 3 of ~600 passes pin.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
