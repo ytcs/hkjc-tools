@@ -228,7 +228,7 @@ class RaceRun:
         cache = self.cache()
         global _CACHE, _FEATS_PAR
         _CACHE = cache
-        yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"
+        yolo = os.environ.get("HKJC_WORLD_MASK", "yolo") == "yolo"  # default ON (HKJC_WORLD_MASK=v1: off)
         nw = _nproc()
         if yolo:  # one detector per worker; one accelerator context (as in ``detect``)
             accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))

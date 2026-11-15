@@ -85,7 +85,8 @@ def mask_boxes(mask, dets, grow: float = 1.6) -> np.ndarray:
 
 
 def world_mask_sel(panel, hud) -> np.ndarray:
-    """``world_mask`` (default) or ``world_mask_v2`` (env HKJC_WORLD_MASK=v2)."""
+    """``world_mask`` (default; the features stage adds the avatar boxes unless HKJC_WORLD_MASK=v1) or
+    ``world_mask_v2`` (env HKJC_WORLD_MASK=v2)."""
     if os.environ.get("HKJC_WORLD_MASK", "v1") == "v2":
         return world_mask_v2(panel, hud)
     return world_mask(panel, hud)
