@@ -407,3 +407,29 @@ def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps(monkeypatch):
     assert np.percentile(err, 99) < 3.0 and err[1200:1500].max() < 3.0
     monkeypatch.setenv("HKJC_RAIL_SMOOTH", "off")
     assert rails.smooth_rail(noisy, ok) is noisy  # off by default
+
+
+def test_identity_resolve_ties_names_tied_tracklets_by_appearance():
+    from hkjc.recon import identity
+    from hkjc.recon.silkmap import SILK_MAP
+
+    B = np.asarray(SILK_MAP)
+    nb = B.shape[1]
+    rng = np.random.default_rng(1)
+    proto = {n: rng.dirichlet(np.ones(nb)) for n in (1, 3, 8)}
+
+    def render(p):
+        q = np.clip(np.r_[p, 1.0] @ B, 1e-9, None)
+        return q / q.sum()
+
+    frames = np.arange(300)
+    members = [np.arange(0, 100), np.arange(100, 200), np.arange(200, 300)]
+    frame_of_det = np.r_[frames[:100], frames[:100], frames[:100]]  # three horses, same frames
+    votes = np.zeros((3, 9))
+    votes[0, 1] = 50.0  # tracklet 0: clearly #1
+    votes[1, [3, 8]] = 20.0  # tracklets 1, 2: tied {3, 8} (never in the legend's top 8)
+    votes[2, [3, 8]] = 20.0
+    labels = np.array([1, 0, 0])
+    sig = [render(proto[1]), render(proto[8]), render(proto[3])]
+    out = identity.resolve_ties(members, frame_of_det, votes, labels, sig, proto)
+    assert out.tolist() == [1, 8, 3]

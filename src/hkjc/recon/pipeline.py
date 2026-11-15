@@ -47,6 +47,11 @@ from ..data import RaceInfo, download_replay, replay_path
 FPS = 25.0
 
 
+def silk_ties_enabled() -> bool:
+    """Appearance tie-break for tie-vote tracklets (identity.resolve_ties; default on)."""
+    return os.environ.get("HKJC_SILK_TIES", "1") != "0"
+
+
 def track_app_enabled() -> bool:
     """Appearance-aware tracking (HKJC_TRACK_APP=1; needs the silk stage)."""
     return os.environ.get("HKJC_TRACK_APP", "0") != "0"
@@ -63,7 +68,7 @@ STAGES = (
     "pose",
     "worldmap",
     "detect",
-    "silk",  # v2 silk signatures + official prototypes (E-step appearance term; HKJC_SILK_W > 0 only)
+    "silk",  # v2 silk signatures + official prototypes (identify's tie-break; E-step if HKJC_SILK_W > 0)
     "hud",
     "rails",
     "film",  # race-film marker crossings -> the metric's constant offset (HKJC_FILM=0: skipped)
@@ -160,7 +165,9 @@ class RaceRun:
         todo = [st for st in stages if st not in self.done_set() or st in force]
         if not film_enabled():  # HKJC_FILM=0 (see observe)
             todo = [st for st in todo if st != "film"]
-        if not (float(os.environ.get("HKJC_SILK_W", 0)) > 0 or track_app_enabled()):  # off by default
+        if not (
+            float(os.environ.get("HKJC_SILK_W", 0)) > 0 or track_app_enabled() or silk_ties_enabled()
+        ):
             todo = [st for st in todo if st != "silk"]
         bg = {}
 
@@ -710,6 +717,7 @@ class RaceRun:
         else:
             lab, _sig, _proto = identity.assign(mem, T["rows"][:, 0], votes, T["hist"], nmax)
         lab = np.array([x if x in valid else 0 for x in lab])
+        lab = self._silk_ties(mem, T, votes, lab)
         n_elim, el_ok = 0, []
         if _fit is not None:  # ELIMINATION at the line: leftover tracklets vs leftover numbers
             at_line = {k for k in _fit["tc"] if lab[k]}
@@ -736,6 +744,25 @@ class RaceRun:
         )
 
     FINISH_VOTES = 40.0  # one finish-camera match ~ 4 s of unanimous legend votes
+
+    def _silk_ties(self, mem, T, votes, lab):
+        """identity.resolve_ties with the race's silk signatures (default on; HKJC_SILK_TIES=0
+        disables; needs silk.npz from the ``silk`` stage)."""
+        if not silk_ties_enabled() or not self.p("silk.npz").exists():
+            return lab
+        from .assoc import _collapse
+
+        zs = np.load(self.p("silk.npz"))
+        F = zs["feat"][T["det_idx"]].astype(float)
+        sig = []
+        for m in mem:
+            f = F[m]
+            f = f[f.sum(1) > 0]
+            sig.append(_collapse((f / f.sum(1, keepdims=True)).mean(0)) if len(f) >= 10 else None)
+        proto = {int(h): _collapse(p) for h, p in zip(zs["proto_no"], zs["proto"])}
+        valid = {r.no for r in self.info.runners}
+        out = identity.resolve_ties(mem, T["rows"][:, 0], votes, lab, sig, proto)
+        return np.array([x if x in valid else 0 for x in out])
 
     def _finish_identity(self, T=None, mem=None):
         """({tracklet index: number}, label-free fit) from the finish camera (1D registration of the
@@ -1076,6 +1103,7 @@ class RaceRun:
         valid = {r.no for r in self.info.runners}
         lab, _s, _p = identity.assign(mem, T["rows"][:, 0], v, T["hist"], nmax)
         lab = np.array([x if x in valid else 0 for x in lab])
+        lab = self._silk_ties(mem, T, v, lab)
         fixed = L["fixed"] if "fixed" in L.files else np.zeros(len(mem), int)
         for k in np.where(fixed > 0)[0]:  # finish-camera names win over time-overlapping rivals
             for u in np.where(lab == fixed[k])[0]:

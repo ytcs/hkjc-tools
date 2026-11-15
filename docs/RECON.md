@@ -1031,6 +1031,42 @@ the line.
   run parallel to the field's inner edge; (2) a preference for the nearest credible ridge inside the
   field; (3) support-weighted tangents (a smoother that does not take the bridges as data).
 
+
+**Baseline Z2 (`recon-baseline-Z2`, 2026-11-15): smooth-curve rails + silk tie-break (ADOPTED).**
+- `rails.smooth_rail` treats the rail as a smooth curve: a robust (Huber, IRLS), support-weighted
+  Whittaker smoother with a third-difference penalty, so straights and constant-radius arcs cost
+  nothing. Its cutoff is 20 m. Unsupported end runs are extended straight.
+  - It replaces linear gap bridging and noisy tangents. The raw-score line choice is unchanged.
+  - 4 m-chord kinks over 8° nearly vanish (ST 05-24 81 → 0, ST3 52 → 1, ST 04-26 R9 145 → 7).
+  - The marker grid is found on all 26 races; HV 04-15 R9 never had one.
+- `identity.resolve_ties` handles the tracklets the legend cannot separate: back-markers never in
+  its top 8 get exactly tied elimination votes, which left about 35 tie groups per run to EM luck.
+  - Each group is assigned by Hungarian matching on tracklet-level render-silk signatures against the
+    official silk prototypes, mapped into render appearance by `silkmap.SILK_MAP`.
+  - The map is a ridge fit on 187 legend-confident tracklets (labels from the legend, no official
+    data). Leave-one-race-out: top-1 33% → 47%, pairwise 78% → 88%.
+  - Hand truth on tie tracklets: 9 of 10 detections right (chance 3.5).
+  - Rejected: a draw tie-break, which scored 5/15, the same as the EM.
+  - The `silk` stage now runs by default.
+- Declared rule against the Z control (26 races × 6 seeds on the same maps):
+
+  | Metric | Control | Z2 | Rule |
+  |---|---|---|---|
+  | Non-lateral gates per seed | 198.0 | 200.0 | ≥ 198.0 ✓ |
+  | Lateral passes | 10 | 10 | ≥ 10 ✓ |
+  | Hand-truth majority | 57 | 58 | ≥ 54 ✓ |
+  | Timing gates | 125.7 | 125.5 | reported |
+  | All five timing gates (races) | 22.7 | 22.8 | reported |
+
+  - Per race: ST 04-26 R1 +6, ST4 +6 (its count gates now pass, but its timing gates go 30 → 24),
+    ST 05-31 +3, ST8 +2, ST 05-09 R2 +2, HV 05-27 R3 +1.
+  - Against that: HV 05-27 R9 −5 (honest: the control's 10th scored horse was #7, placed −0.88 s
+    early), ST 05-24 −2, HV 05-20 R2 −1.
+  - Each part alone failed: smoothing alone scored 197.8 (hand 53); ties on the old rails 197.7
+    (hand 48).
+- Verified: a from-scratch rails → validate run with defaults reproduces the T2 ensemble's seed 0
+  byte-for-byte (ST 04-26 R1).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

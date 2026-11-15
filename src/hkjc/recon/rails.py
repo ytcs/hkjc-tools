@@ -559,10 +559,14 @@ def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
     support-weighted Whittaker smoother in world px with a THIRD-difference penalty (straights and
     constant-radius arcs cost nothing; cutoff ~``wavelength`` stations = 20 m at 2 px/station).
     Unsupported stations get no data weight, so gaps are bridged by the smooth curve instead of
-    linear segments. MEASURED (9 problem races, 4 m-chord kinks > 8 deg): raw 16/6/6/18/13/145/14/64/66
-    -> 3/5/2/2/0/7/0/0/4, p95 distance to supported ridge points <= 8 px (0.4 m); ST8's rail heading
-    over the final 150 m swung +-12 deg -> +-5 deg. Off by default -> returns W unchanged."""
-    if os.environ.get("HKJC_RAIL_SMOOTH", "off") != "whittaker" or len(W) < 10 or ok.sum() < 10:
+    linear segments. MEASURED (26 races, 4 m-chord kinks > 8 deg): e.g. ST 05-24 81 -> 0, ST3 52 -> 1,
+    ST 04-26 R9 145 -> 7; p95 distance to supported ridge points <= 8 px (0.4 m); ST8's rail heading
+    over the final 150 m swung +-12 deg -> +-5 deg; the marker grid is found on all 26 races (HV 04-15
+    R9 never had one). ADOPTED 2026-11-15 together with identity.resolve_ties (26 races x 6 seeds,
+    rule declared before reading: non-lateral gates 198.0 -> 200.0 per seed, hand-truth majority
+    57 -> 58, lateral passes 10 = 10). Alone (no silk ties): 197.8, hand 53 (not adopted).
+    HKJC_RAIL_SMOOTH=off disables (diagnostic)."""
+    if os.environ.get("HKJC_RAIL_SMOOTH", "whittaker") != "whittaker" or len(W) < 10 or ok.sum() < 10:
         return W
     from scipy import sparse
     from scipy.sparse.linalg import spsolve
