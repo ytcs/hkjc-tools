@@ -301,8 +301,14 @@ def test_register_mask_boxes_zeroes_grown_avatar_boxes():
     assert m[50, 50] == 255  # input not modified
 
 
-def test_video_skip_gap1_rejects_one_frame_ticks():
-    """At 10 Hz render in 25 fps video a new tick one frame after the last one is a codec duplicate."""
+def test_video_grid_keep_drops_off_grid_reencodes():
+    """10 Hz render in 25 fps video: ticks at two fixed residues of frame % 5; a keyframe re-encode at
+    400 (off-grid) is dropped and the real ticks around it are kept at their own frames."""
     from hkjc.recon import video
 
-    assert video.skip_gap1(400, 399) and not video.skip_gap1(402, 399) and not video.skip_gap1(403, 400)
+    ticks = [k * 5 + o for k in range(60, 100) for o in (2, 4)]  # residues {2, 4} (HV 04-22 phase)
+    idx = sorted(ticks + [400, 500])
+    keep = video.grid_keep(idx)
+    assert [i for i, k in zip(idx, keep) if not k] == [400, 500]
+    assert all(keep[idx.index(t)] for t in (399, 402, 404))
+    assert video.grid_keep([1, 2, 3, 4, 5, 6, 7]).all()  # no dominant phase -> keep everything

@@ -145,13 +145,33 @@ def is_duplicate(a, b, tol: float = 3.0) -> bool:
     return float(np.abs(a[::4, ::4].astype(np.int16) - b[::4, ::4]).mean()) < tol
 
 
-def skip_gap1(i: int, prev_i: int) -> bool:
-    """A render tick ONE frame after the previous one is impossible: the render updates at 10 Hz in
-    25 fps video (gaps alternate 2/3 on all 26 races). MEASURED (HV 0422 R1/R9): a video KEYFRAME
-    every 100 frames re-encodes the same render state with codec noise (mean |diff| 3.8 > the 3.0
-    duplicate tolerance), so frames 400, 500, ... entered as new ticks with ZERO motion (pose stalls,
-    14 per race) -- the field "froze" for a tick and the tracker could rotate identities."""
-    return i - prev_i == 1
+def grid_keep(idx) -> np.ndarray:
+    """Boolean keep-mask over yielded frame indices: only frames ON the render's tick grid.
+
+    The render updates at exactly 10 Hz in 25 fps video, so new ticks start at two fixed residues of
+    ``frame % 5`` for a whole replay. MEASURED on all 26 races: one phase fits 99.9-100 % of the
+    yielded frames, and the first 40 ticks already give the same residues as the whole race. The
+    off-grid frames are re-encodes of the CURRENT tick that the fixed duplicate tolerance let through:
+    HV 04-22 R1/R9 have a video keyframe every 100 frames (codec noise 3.8 > tolerance 3.0, so 14 zero-
+    motion "ticks" per race), plus the first render frame and a few frames after render-gate dropouts
+    at the finish on the other races. The residues come from a majority vote over the whole replay;
+    the filter is skipped (all kept) if the top two residues do not hold >= 90 % of the frames or are
+    not 2-3 frames apart (not a 10 Hz render).
+
+    Filtering the de-dup stream AFTERWARDS is exact. An off-grid frame stays the duplicate
+    reference for the next frame, so the next real tick is compared against the keyframe's codec
+    noise and passes as it did before.
+    REJECTED: ``skip_gap1`` (drop a frame 1 after the last one, keep the old reference). The frame
+    after the keyframe then differed from the stale reference by the keyframe's noise and entered as
+    a zero-motion tick, and the next real ticks were stamped 1 frame late: HV 04-22 index
+    399,401,403,405 instead of 399,402,404; stalls 14 -> 14 per race (pod run W)."""
+    r = np.asarray(idx, dtype=np.int64) % 5
+    n = len(r)
+    cnt = np.bincount(r, minlength=5)
+    top = np.argsort(-cnt, kind="stable")[:2]
+    if n == 0 or cnt[top].sum() < 0.9 * n or (int(top[0]) - int(top[1])) % 5 not in (2, 3):
+        return np.ones(n, bool)
+    return np.isin(r, top)
 
 
 def iter_unique_render(
@@ -167,8 +187,6 @@ def iter_unique_render(
     import av
 
     prev = None
-    prev_i = -10
-    gap1 = os.environ.get("HKJC_FRAME_GAP1", "0") != "0"
     seen = False  # the strict render test has passed: the legend-strip fallback may fill holes
     with av.open(str(path)) as c:
         c.streams.video[0].thread_type = "AUTO"  # frame-threaded decode: same pixels, ~3x faster
@@ -186,9 +204,9 @@ def iter_unique_render(
             if box is None:
                 box = find_panel_box(img)
             p = box.crop(img)
-            if prev is not None and (is_duplicate(p, prev) or (gap1 and skip_gap1(i, prev_i))):
+            if prev is not None and is_duplicate(p, prev):
                 continue
-            prev, prev_i = p, i
+            prev = p
             yield (i, p, img) if keep_full else (i, p)
 
 
@@ -225,16 +243,22 @@ class FrameCache:
         from pathlib import Path
 
         root = Path(root)
-        idx, off, clocks, box = [], [0], [], None
+        idx, bufs, clocks, box = [], [], [], None
+        for i, p, full in iter_unique_render(path, keep_full=True):
+            box = box or find_panel_box(full)
+            ok, buf = cv2.imencode(".jpg", p, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            idx.append(i)
+            bufs.append(buf.tobytes())
+            y0, y1, x0, x1 = clock_box
+            clocks.append(full[y0:y1, x0:x1].copy())
+        if os.environ.get("HKJC_FRAME_GRID", "0") != "0":  # see grid_keep
+            keep = np.flatnonzero(grid_keep(idx))
+            idx, bufs, clocks = [idx[k] for k in keep], [bufs[k] for k in keep], [clocks[k] for k in keep]
+        off = [0]
         with open(root / "frames.bin", "wb") as fb:
-            for i, p, full in iter_unique_render(path, keep_full=True):
-                box = box or find_panel_box(full)
-                ok, buf = cv2.imencode(".jpg", p, [cv2.IMWRITE_JPEG_QUALITY, quality])
-                fb.write(buf.tobytes())
-                idx.append(i)
-                off.append(off[-1] + len(buf))
-                y0, y1, x0, x1 = clock_box
-                clocks.append(full[y0:y1, x0:x1].copy())
+            for b in bufs:
+                fb.write(b)
+                off.append(off[-1] + len(b))
         np.savez(
             root / "frames_idx.npz",
             idx=np.array(idx),
