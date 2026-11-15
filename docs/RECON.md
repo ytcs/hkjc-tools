@@ -711,10 +711,20 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
 - PIXELS: render avatars are distinguishable by eye and consistent within a race. Most tracklets
   are IMPURE: the silk changes mid-tracklet. On ST4 many tracks switch together at ~54 s, and the
   labels rotate (#7 → #13 → #12 → #5) while the silks stay unchanged.
-- Cause, from per-tick field speed: STALE render ticks. Some unique frames carry the previous horse
-  positions (field speed ~0 for 1–3 ticks at dt 0.04–0.12 s, then a 23–29 m/s catch-up). Anomalous
-  ticks: ST3 77, ST 05-31 32, ST 05-24 25, ST4 17, HV 05-27 R9 6, HV 06-03 R3 1. The switches are made
-  in `track`, not `stitch`.
+- Symptom, from per-tick field speed: the whole field's world speed drops to ~0 for 1–3 ticks,
+  then catches up at 23–29 m/s. Anomalous ticks: ST3 77, ST 05-31 32, ST 05-24 25, ST4 17,
+  HV 05-27 R9 6, HV 06-03 R3 1. The switches are made in `track`, not `stitch`.
+- CAUSE (pixels): POSE STALLS, not stale render positions; the pixel boxes move 4–6 px on those
+  ticks.
+  - On ST4 frames 1368–1373 the solved image centre moves < 1 px per tick (normally ~36) and gets no
+    catch-up afterwards. The features stage's stored step is already (2, −5) px with a spurious
+    0.5° rotation.
+  - Its RANSAC inliers sit on the HORSE AVATARS. The camera follows them, so they are static in the
+    image, and they outvote the weak turf.
+  - `register.world_mask` (a blacklist: V < 45 or vivid hue) misses brown-bodied and pastel-silk
+    avatars.
+  - A turf/rail WHITELIST mask gives (34–36, −11 to −13) px steps there with ~0 rotation.
+  - Stalled cached steps per race: 0–19 (ST3 19, HV 04-22 R1 14).
 - `tracking.common_shift` (HKJC_TRACK_SHIFT=1) estimates the per-tick shared along-track shift by a
   robust vote. On 26 races it costs 4 gates (ST3 ρ 0.98 → 0.88, behind-winner 0.056 → 0.211;
   HV 05-27 R3 ρ; HV 05-27 R9 finish-n). Not adopted.
@@ -727,8 +737,7 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
   - 6-seed ensembles on six races: timing identical, but unanimity 54.5 % → 49.9 % (ST4 45 → 57 %,
     ST8 48 → 17 %, ST3 25 → 19 %). Not adopted.
 - Open:
-  - fix stale ticks at the source (duplicate frames? check pixel boxes and the HUD clock);
-  - the appearance-only arm (no shift);
+  - the world-mask fix (pose stalls) through the full pipeline;
   - break the cross-seed disagreement down by stage (tracklet partition, identify, EM) before
     redesigning anything downstream.
 

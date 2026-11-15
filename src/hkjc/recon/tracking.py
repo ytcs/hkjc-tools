@@ -40,9 +40,11 @@ class Track:
 def common_shift(pred, S, L, sig_s, sig_l, span=6.0, step=0.1):
     """Along-track shift shared by ALL horses at one tick: the shift that lets the most predictions find
     a detection within 1 sigma (ties: smallest |shift|), refined by the median matched residual.
-    MEASURED (pixels + per-tick median speed): the render updates horse positions on its own cadence,
-    so some unique frames (camera motion only) carry STALE positions (whole-field speed ~0 for 1-3
-    ticks, then a 23-29 m/s catch-up; ST 0419 R4 53.6 s, 77 such ticks on ST3). A constant-velocity
+    MEASURED (pixels + per-tick median speed): on some ticks the whole field's world speed is ~0 for
+    1-3 ticks, then 23-29 m/s (ST 0419 R4 53.6 s). Cause (later, pixels): NOT stale render positions
+    (pixel boxes move 4-6 px on those ticks) but POSE STALLS -- the sequential step match locks onto
+    unmasked horse avatars (static in the image: the camera follows them), so the camera "stops"
+    (``register.world_mask`` misses brown-bodied / pastel-silk avatars). A constant-velocity
     prediction then runs ~1 horse spacing ahead and the Hungarian step ROTATES identities through a
     bunched field (ST4 54 s: '#7' -> '#13' -> '#12' -> '#5' a second later, silks unchanged).
     Hand-set: span 6 m, step 0.1 m. NOT ADOPTED (off by default, HKJC_TRACK_SHIFT=1): alone it cost 4
