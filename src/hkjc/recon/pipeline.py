@@ -698,7 +698,10 @@ class RaceRun:
         for k, num in fin.items():
             if num <= nmax:
                 votes[k, num] += self.FINISH_VOTES
-        lab, _sig, _proto = identity.assign(mem, T["rows"][:, 0], votes, T["hist"], nmax)
+        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0":  # global ML assignment (identity.assign_global)
+            lab = identity.assign_global(mem, T["rows"][:, 0], votes, nmax)
+        else:
+            lab, _sig, _proto = identity.assign(mem, T["rows"][:, 0], votes, T["hist"], nmax)
         lab = np.array([x if x in valid else 0 for x in lab])
         n_elim, el_ok = 0, []
         if _fit is not None:  # ELIMINATION at the line: leftover tracklets vs leftover numbers

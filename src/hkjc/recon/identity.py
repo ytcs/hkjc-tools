@@ -108,6 +108,75 @@ def assign(
     return lab, sig, proto
 
 
+def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10):
+    """Number the tracklets by the GLOBAL maximum-likelihood assignment (replaces ``assign``'s greedy
+    longest-first pass with a margin; switch HKJC_ID_GLOBAL=1).
+
+    Each legend vote names the tracklet's horse correctly with probability rho, otherwise one of
+    the other N-1 numbers uniformly. Labelling tracklet t with ``num`` instead of leaving it
+    unlabelled gains the log-likelihood ratio against a uniform label:
+        G[t, num] = v_num log(rho N) + (V_t - v_num) log((1 - rho) N / (N - 1)),
+    which grows with the evidence (200 votes outweigh 2; ``assign`` normalised them to the same
+    scale). An integer program maximises sum G subject to: at most one number per tracklet, and a
+    number on at most one tracklet at any frame (interval-graph cliques). Labels with G <= 0 stay 0.
+    No greedy order and no margin. rho is re-estimated from the labelled tracklets (votes agreeing
+    with the label / all their votes) until the labels stop changing.
+    MEASURED (6-seed ensembles, V artifacts): ``assign`` turned legend-argmax labels that were
+    72-100 % unanimous across 1 %-detection-drop seeds into 38-99 %; its silk term changed nothing."""
+    from scipy.optimize import Bounds, LinearConstraint, milp
+
+    T = len(members)
+    N = n_field
+    frames = [np.asarray(frame_of_det[np.asarray(m, int)]) for m in members]
+    ok = np.array([len(m) >= min_len for m in members])
+    lo = np.array([f.min() for f in frames])
+    hi = np.array([f.max() for f in frames])
+    V = votes[:, 1 : N + 1]
+    tot = V.sum(1, keepdims=True)
+    # interval cliques: at each tracklet start, the set of tracklets spanning it
+    cliques = []
+    for x in sorted(set(lo[ok].tolist())):
+        c = np.where(ok & (lo <= x) & (hi >= x))[0]
+        if len(c) > 1:
+            cliques.append(c)
+    lab = np.zeros(T, int)
+    rho = 0.5
+    for _ in range(iters):
+        G = V * np.log(rho * N) + (tot - V) * np.log((1 - rho) * N / (N - 1))
+        G[~ok] = 0.0
+        G = np.where(G > 0, G, 0.0)
+        nv = T * N
+        rows, cols = [], []
+        r = 0
+        for t in range(T):  # one number per tracklet
+            rows += [r] * N
+            cols += list(range(t * N, t * N + N))
+            r += 1
+        for c in cliques:  # one tracklet per number at any frame
+            for num in range(N):
+                rows += [r] * len(c)
+                cols += [t * N + num for t in c]
+                r += 1
+        A = np.zeros((r, nv))
+        A[rows, cols] = 1.0
+        res = milp(
+            -G.ravel(),
+            constraints=LinearConstraint(A, -np.inf, 1.0),
+            integrality=np.ones(nv),
+            bounds=Bounds(0, (G.ravel() > 0).astype(float)),
+        )
+        x = np.round(res.x).reshape(T, N)
+        new = np.where(x.max(1) > 0.5, x.argmax(1) + 1, 0)
+        lt = new > 0
+        if lt.any():
+            agree = V[lt, new[lt] - 1].sum()
+            rho = float(np.clip(agree / max(tot[lt].sum(), 1e-9), 1.5 / N, 0.99))
+        if np.array_equal(new, lab):
+            break
+        lab = new
+    return lab
+
+
 def legend_votes_completed(
     members,
     frame_of_det,

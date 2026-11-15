@@ -312,3 +312,21 @@ def test_video_grid_keep_drops_off_grid_reencodes():
     assert [i for i, k in zip(idx, keep) if not k] == [400, 500]
     assert all(keep[idx.index(t)] for t in (399, 402, 404))
     assert video.grid_keep([1, 2, 3, 4, 5, 6, 7]).all()  # no dominant phase -> keep everything
+
+
+def test_identity_assign_global_respects_overlap_and_evidence():
+    """Two overlapping tracklets both voting for #1: the stronger evidence takes it; the other is
+    left unlabelled (with reliable votes, 15 for #2 against 20 elsewhere is evidence AGAINST #2); a
+    later, non-overlapping fragment of the same horse may reuse #1."""
+    from hkjc.recon import identity
+
+    members = [np.arange(0, 10), np.arange(10, 20), np.arange(20, 30)]
+    frames = np.r_[np.arange(10), np.arange(10), np.arange(100, 110)]  # 0 and 1 overlap, 2 later
+    votes = np.zeros((3, 4))
+    votes[0, 1], votes[0, 2] = 50, 2
+    votes[1, 1], votes[1, 2] = 20, 15
+    votes[2, 1] = 30
+    lab = identity.assign_global(members, frames, votes, 3)
+    assert lab.tolist() == [1, 0, 1]
+    votes[1, 1], votes[1, 2] = 2, 25  # clear evidence for #2
+    assert identity.assign_global(members, frames, votes, 3).tolist() == [1, 2, 1]
