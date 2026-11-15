@@ -747,6 +747,23 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
     It re-encodes the same render state (mean |diff| 3.8 > the 3.0 duplicate tolerance), so frames
     400, 500, … entered as new ticks with zero motion (14 per race). At a 10 Hz render in 25 fps
     video a one-frame gap is impossible: gaps alternate 2/3 on all 26 races.
+    FAILED in pod run W: dropping the gap-1 frame kept the stale duplicate reference, so the frame
+    after each keyframe differed by the keyframe's codec noise and entered as a zero-motion tick, and
+    the next ticks were stamped 1 frame late (HV 04-22 index 399, 401, 403, 405 instead of 399, 402,
+    404). Stalls stayed at 14 per race; 7 races with a single gap-1 frame were shifted the same way.
+    Replaced by `video.grid_keep` (HKJC_FRAME_GRID=1). The render sits on two fixed residues of
+    frame % 5 for the whole replay (26/26 races, 99.9–100 %). Off-grid yields are dropped AFTER the
+    de-dup, which is exact: an HV 04-22 R1 decode equals the V stream minus off-grid frames,
+    byte-identical. Outside HV 04-22, off-grid frames are only the first render frame or follow a
+    render-gate dropout near the finish (none mid-race).
+  - Pod run W (both on, from scratch, commit 9073964), against V:
+    - All five timing gates 23 → 23, timing gates 126 → 124, all gates 207 → 201 (a failure).
+    - Frames are identical to V on 17 races; there W is a clean mask-only test. The other 9 races
+      were shifted by `skip_gap1`.
+    - Prediction (1) HOLDS for the mask. Pose stalls between the first render tick + 1 s and the
+      winner's finish fall from 48 to 30. Every mid-race horse-lock stall is gone (ST3 6, ST4 5,
+      ST 05-09 R1 4, ST8 3 → 0). What remains: the 28 HV 04-22 keyframes (the `skip_gap1`
+      failure) and one early stall each on HV 04-15 R1/R9.
   - Declared before the from-scratch run with both on:
     (1) mid-race stalls and field-speed anomalies go to ~0;
     (2) ST4's 54 s identity rotation disappears with the OLD tracker (eye strips);
