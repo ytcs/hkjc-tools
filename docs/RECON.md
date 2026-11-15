@@ -1005,6 +1005,32 @@ The binary-rails arm loses gates on two races:
 Neither arm is adopted. Next for that arm: make the fusion keep the camera's near-certain order at
 the line.
 
+
+**Advisor checks on the binary-rail and prior arms (2026-11-15).**
+- HV 05-27 R9: the control's 10th scored horse is #7, placed −0.88 s early on every seed, so it is a
+  false pass. The binary arms leave #7 unscored and lose no correct crossing, though they drop #10's
+  path on some seeds (#10 has no crossing in either arm).
+- ST8 is not a coin flip: the control names #2 on 5 of 6 seeds and the binary + prior arm names #12 on
+  5 of 6. Both arms see #12's render detection 0.4 m ahead of #2 at 55.6 s, with #12 5 m wider. The
+  control passes because it leaves that detection unassigned.
+  - Cause: on all three straights the rail heading swings 5–45° within 10–20 m over the last 150 m
+    (support only 17–29%; `fill_world` bridges with linear segments, and `RailFrame.from_points`' SG
+    fit uses the bridges as data). A 9° heading error moves a horse 12 m wide by ~1.9 m along-track.
+- Declared prediction for the binary rails: common-mode lateral events 77 → 51, and races with a
+  slide over 2 m/s 9 → 6. But rule (d) fails, because binary creates new switches: HV 05-27 R9 at
+  d ≈ 160–200 (outer white line, then a diagonal), and HV 05-20 R9 and ST 04-26 R9, where it dives
+  onto the apron-path edge on bends. Equal scoring lets faint edges compete with the rail.
+- Sha Tin course B measuring 6.6 m: A − B+2 = 6.5 m in the table, so the rail is consistent with
+  B+2 placement.
+- The binary + prior arm's hand-truth gain is ST 05-24 (13 → 19). The other three hand races are flat
+  or down 1–2, and the raw rail shows no switch event on ST 05-24.
+- Earlier null of 3 (one split) is too thin: ST 05-24's raw-rail majority was 13, 13, 8, 9 across
+  arms. The seam and raw + prior verdicts are unresolvable on the raw base. No gate null exists, so
+  sub-1 deltas are unreadable.
+- Next (rails, one design): (1) a stiff offset-slope limit, since the DP now allows 45° and real rails
+  run parallel to the field's inner edge; (2) a preference for the nearest credible ridge inside the
+  field; (3) support-weighted tangents (a smoother that does not take the bridges as data).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
