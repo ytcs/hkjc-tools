@@ -554,6 +554,45 @@ def inner_field(Ps, Nin, X, win=25, q=90):
     return np.interp(np.arange(len(Ps)), np.where(good)[0], hin[good])
 
 
+def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
+    """HKJC_RAIL_SMOOTH=whittaker (opt-in): the rail is a SMOOTH CURVE. Robust (Huber, IRLS)
+    support-weighted Whittaker smoother in world px with a THIRD-difference penalty (straights and
+    constant-radius arcs cost nothing; cutoff ~``wavelength`` stations = 20 m at 2 px/station).
+    Unsupported stations get no data weight, so gaps are bridged by the smooth curve instead of
+    linear segments. MEASURED (9 problem races, 4 m-chord kinks > 8 deg): raw 16/6/6/18/13/145/14/64/66
+    -> 3/5/2/2/0/7/0/0/4, p95 distance to supported ridge points <= 8 px (0.4 m); ST8's rail heading
+    over the final 150 m swung +-12 deg -> +-5 deg. Off by default -> returns W unchanged."""
+    if os.environ.get("HKJC_RAIL_SMOOTH", "off") != "whittaker" or len(W) < 10 or ok.sum() < 10:
+        return W
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+
+    n = len(W)
+    D = sparse.diags([-1.0, 3.0, -3.0, 1.0], [0, 1, 2, 3], shape=(n - 3, n))
+    P = (wavelength / (2 * np.pi)) ** 6 * (D.T @ D)
+    w0 = ok.astype(float) + 1e-4
+    w, Z = w0.copy(), W.copy()
+    for _ in range(iters):
+        A = (sparse.diags(w) + P).tocsc()
+        Z = np.c_[spsolve(A, w * W[:, 0]), spsolve(A, w * W[:, 1])]
+        r = np.hypot(*(W - Z).T)
+        w = w0 * np.where(r <= huber, 1.0, huber / np.maximum(r, 1e-9))
+    # unsupported END runs carry no data: continue straight along the last supported tangent (ST3
+    # binary: the rail beyond the finish curled back on itself, a 138 deg kink, at support 0.12)
+    idx = np.flatnonzero(ok)
+    lo, hi = int(idx[0]), int(idx[-1])
+    k = min(20, (hi - lo) // 2)
+    if k >= 2:
+        step = np.hypot(*np.diff(Z[lo : hi + 1], axis=0).T).mean()
+        t0 = Z[lo] - Z[lo + k]
+        t0 /= np.linalg.norm(t0) + 1e-12
+        t1 = Z[hi] - Z[hi - k]
+        t1 /= np.linalg.norm(t1) + 1e-12
+        Z[:lo] = Z[lo] + np.outer(np.arange(lo, 0, -1), t0) * step
+        Z[hi + 1 :] = Z[hi] + np.outer(np.arange(1, len(Z) - hi), t1) * step
+    return Z
+
+
 def fill_world(W, ok):
     """Bridge unsupported rail stations in WORLD coordinates (linear in station index between the
     supported neighbours). Interpolating the OFFSET instead puts a hump in the rail wherever the
@@ -666,6 +705,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     Rail0, ok = despike_world(Ps + ro[:, None] * Nin, ok)
     Rail, ok = refine_rail(img, cnt, to_px, Rail0, inner, ok)
     Rail, ok = despike_world(Rail, ok)
+    Rail = smooth_rail(Rail, ok)
     st = np.zeros(len(C), int)
     last = 0
     for k, c in enumerate(C):

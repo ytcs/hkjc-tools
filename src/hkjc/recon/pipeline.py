@@ -487,6 +487,7 @@ class RaceRun:
                 img, cnt, to_px, moved, int(out["inner"]), out["support"]
             )
             out["rail"], out["support"] = rails.despike_world(out["rail"], out["support"])
+            out["rail"] = rails.smooth_rail(out["rail"], out["support"])
             self.log(
                 f"   rails: extracted ridge was the FIXED rail -> moved {shift:.0f} px out to the "
                 f"movable rail (course gap {exp_gap:.1f} m, ridge support {ssup:.0%})"

@@ -388,3 +388,22 @@ def test_tracking_resolve_seams_merges_handover_duplicates_only():
     d[50:55] += 2.0  # 2.3 m apart: two horses -> a real conflict, left alone
     out = tracking.resolve_seams([B, A, C], fr, d, lat)
     assert sorted(len(m) for m in out) == [20, 50, 55]
+
+
+def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps(monkeypatch):
+    from hkjc.recon import rails
+
+    monkeypatch.setenv("HKJC_RAIL_SMOOTH", "whittaker")
+    rng = np.random.default_rng(0)
+    a = np.linspace(0, 1.2, 3000)  # an arc of radius 2000 px (stations ~0.8 px apart)
+    W = np.c_[2000 * np.cos(a), 2000 * np.sin(a)]
+    noisy = W + rng.normal(0, 1.0, W.shape)
+    ok = np.ones(len(W), bool)
+    ok[1200:1500] = False  # an unsupported gap ...
+    noisy[1200:1500] += np.linspace(0, 60, 300)[:, None]  # ... holding a bad linear bridge
+    noisy[2000:2005] += 40.0  # a burst of false ridge snaps
+    Z = rails.smooth_rail(noisy, ok)
+    err = np.hypot(*(Z - W).T)
+    assert np.percentile(err, 99) < 3.0 and err[1200:1500].max() < 3.0
+    monkeypatch.setenv("HKJC_RAIL_SMOOTH", "off")
+    assert rails.smooth_rail(noisy, ok) is noisy  # off by default
