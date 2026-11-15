@@ -815,20 +815,32 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
         pixels (stalls 48 → 2, ST4 rotation gone) but costs gates downstream.
       - Races losing on every seed: HV 04-15 R9, HV 05-20 R9, ST 06-07 R6. Also lower: ST 04-26
         R1, ST 05-09 R1, HV 05-27 R9. Gained: ST 05-31 R1.
-  - Finish-camera scale prior (`finishcam.RULER_CAL`, HKJC_FC_CAL=1, off by default):
+  - Finish-camera scale prior (`finishcam.RULER_CAL`, HKJC_FC_CAL=1|reg|anchor, off by default):
     - The COCO horse box includes the extended legs, so the ruler (2.6 m nose-to-tail) reads px/m
       high and the physical prior on C is too large.
-    - Registration C / prior over 26 races has median 0.856. 7/26 are pinned at the ±25 % window's
-      lower edge. HV 05-20 R9 locked onto an aliased C = 1.25 × prior: no tracklet named, #2/#3/#9
-      swapped.
-    - Calibrated on the 13 clean registrations (not at the edge, ≥ 80 % matched): 0.88, robust
-      sd 0.09 (HV 0.84, ST 0.91).
-    - Single run on Y's artifacts: all gates 202 → 204, all five timing gates 22 → 23. Fixes HV 05-20
-      R9, HV 04-15 R9 paths-short and the ST 04-26 R1 winner; loses HV 05-27 R3 ρ (0.96 → 0.89).
-      Hand set 55 → 48/79 (HV 05-27 R9 21 → 14/28). Ensembles pending.
-    - Adoption rule, declared before the ensembles are read: on the same artifacts, mean all gates
-      not below the base arm's, and no race losing a gate on all six seeds. Tested on V's artifacts
-      (calibration alone) and on Y's.
+    - The registration searches a ±25 % window around the prior. HV 05-20 R9 (pod run Y) locked onto
+      an aliased C = 1.25 × prior: no tracklet named, #2/#3/#9 swapped.
+    - Clean registrations (not at an edge, ≥ 80 % matched) span fitted C / prior 0.73–1.12. The
+      constant 0.90 centres the window on that range (window 0.68–1.13) and was FITTED to these 26
+      races. Edge-pinned races: Y 7 → 1. REJECTED: 0.88, the first median, taken over edge-excluded
+      fits only and biased high. REJECTED: 0.82, the median fixed point, which pins the clean high
+      fits.
+    - Adoption rule, declared before reading: mean all gates not below the base arm's, and no race
+      losing a gate on all six seeds.
+    - 26-race 6-seed ensembles:
+      - On V's artifacts: all gates 206.3 → 206.3, all five timing gates 22.83 → 23.00. It PASSES the
+        gate rule, but it is NOT ADOPTED because of hand truth. ST4 loses #5's finish-camera name on
+        3/6 seeds (11.0 → 9.0/16, on Y's artifacts too): its weakly determined registration (4–6 of
+        13 matched) only named #5 correctly while pinned at the old window edge. The hand set
+        belongs in the next rule.
+      - On Y's artifacts: 202.0 → 205.2, all five timing gates 22.17 → 23.50, the best timing arm.
+        Against plain V still −1.1 gates (ST 06-07 R6 lateral on every seed, finish-n).
+    - Split by prior (6 seeds, the six affected races). Neither half is clean:
+      - Registration-only recovers ST 04-26 R1 and HV 05-20 R9, but costs ST4's hand truth.
+      - Anchor-only recovers HV 04-15 R9 and keeps ST4, but costs HV 05-27 R3 and ST 05-24's hand
+        set on V.
+      - The hard registration window is the fragile part, not the constant. NOT ADOPTED in either
+        form.
   - Declared before the from-scratch run with both on:
     (1) mid-race stalls and field-speed anomalies go to ~0;
     (2) ST4's 54 s identity rotation disappears with the OLD tracker (eye strips);
