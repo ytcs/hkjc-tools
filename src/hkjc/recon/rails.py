@@ -59,9 +59,9 @@ def inner_side(T: np.ndarray, handedness: str | None = None) -> int:
     on 12/12 runs, ST8 +0.2..+0.7 on 11/12, ST3 ~0 where identity is weakest). 6-seed ensembles on
     the 3 straights x 2 pose variants: all gates 285 -> 286 (ST 0509 R1 45 -> 48, rho 1.00 on every
     seed; ST3 rho 0.91 -> 0.98; ST8 rho 0.92-0.95 -> 0.98-1.00 and behind-winner 0.055 -> 0.025 s,
-    but its close #2/#12 finish flipped on 1 of 6 seeds). Also REJECTED: a constant +1 (the first
-    version of this fix) -- HKJC also runs anti-clockwise races. HKJC_INNER=auto: the bare turning
-    sign everywhere (diagnostic)."""
+    but its close #2/#12 finish flipped on 1 of 6 seeds). Turf racing is clockwise (working
+    assumption): on every oval the measured sign is +1 anyway; it is kept as a physical check rather
+    than a hard-coded constant. HKJC_INNER=auto: the bare turning sign everywhere (diagnostic)."""
     cross = T[:-1, 0] * T[1:, 1] - T[:-1, 1] * T[1:, 0]
     turn = float(np.sum(np.arcsin(np.clip(cross, -1.0, 1.0))))
     if os.environ.get("HKJC_INNER", "") == "auto" or abs(turn) >= np.pi / 2:

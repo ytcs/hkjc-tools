@@ -976,6 +976,35 @@ are runs, not tags, so this tag skips to Z.
   half (true C ≈ 1685 from the official deltas, validation-only; anchor 4000). It is rare: at seed 0
   only 3 of ~600 passes pin.
 
+
+**Finish-camera scale: calibrated tight prior (2026-11-15; NOT adopted).** I graded the C estimators
+against the true C from the official finish deltas (validation-only). Over 26 races:
+- The anchor is mostly within ±10%.
+- The label-free registration misses by −24% to +30% on several races.
+- The horse-ruler prior reads ×1.17 high, but scatters only about ±10% once calibrated.
+- ST4's slow-motion camera breaks all three.
+
+So the prior is as good as the anchor and cannot be dragged by the EM. Its loose 30% sd is what let
+the anchor → EM → render-crossing loop carry C to 4000.
+
+Test: `HKJC_FC_CAL=anchor` plus `HKJC_ANCHOR_REL=0.12`. On ST 04-26 R1 (binary rails) it removes the
+lock-ins: ρ 0.95–1.00, timing 25/30 against 13/30 without the prior.
+
+Declared rule against the control (198.0 per seed), 26 races × 6 seeds:
+
+| Arm | Non-lateral gates/seed | Hand-truth majority | Notes |
+|---|---|---|---|
+| Raw rails + prior | 197.33 | 47 | fails the hand-truth rule too |
+| Binary rails + prior | 197.33 | 61 | all-five timing 22.67 (= control), lateral 10 passes |
+
+The binary-rails arm loses gates on two races:
+- HV 05-27 R9's honest finish count (−5).
+- ST8's 0.01 s photo finish (−3). The camera puts #2 ahead by 15 px (≈ 0.008 s) but the fused
+  crossings tie to the millisecond.
+
+Neither arm is adopted. Next for that arm: make the fusion keep the camera's near-certain order at
+the line.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

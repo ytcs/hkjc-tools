@@ -854,7 +854,12 @@ class RaceRun:
         v_line = float(np.median(v)) if v else 16.5  # m/s at the line (time sd -> metres)
         if np.isfinite(ppm_fc) and v:
             c_prior = v_line * ppm_fc * finishcam.ruler_cal("anchor")
-        cal = finishcam.anchor(gaps, t_cross, c_prior=c_prior)
+        # HKJC_ANCHOR_REL (diagnostic, NOT adopted): a tighter prior sd. With HKJC_FC_CAL=anchor and
+        # 0.12 it stops the EM feedback lock (ST 04-26 R1 binary rails: anchor C pinned at 4000 on
+        # seeds 3-5, true ~1685) but on 26 races x 6 seeds misses the declared gate rule by 0.67 per
+        # seed (raw rails 197.33, binary 197.33 vs 198.0); binary + prior: hand majority 61 vs 57.
+        rel = float(os.environ.get("HKJC_ANCHOR_REL", 0.30))
+        cal = finishcam.anchor(gaps, t_cross, c_prior=c_prior, c_prior_rel=rel)
         # label-free sanity check: the anchor fits the clock to LABELLED render paths, so wrong
         # labels drag it (R02A: C 3741-4000 vs ~1750, clock 0.5-1.2 s late). Registration of the
         # anonymous tracklet crossings to the gaps needs no labels (biased ~0.15 s early, MEASURED).
