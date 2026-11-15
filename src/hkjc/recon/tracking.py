@@ -239,8 +239,9 @@ def resolve_seams(members, frame_of, d, lat):
     are real conflicts (metres apart) and are left alone. Returns new members (list of int arrays).
     NOT ADOPTED (opt-in HKJC_SEAMS=1; rule declared before reading): 26 races x 6 seeds, all gates
     206.00 -> 206.17 per seed (ST 05-24 +1), but hand-truth majority 57 -> 48 of 79 (ST 05-24 13 -> 8,
-    ST 05-31 13 -> 9). On ST 05-24 the merge moved 9 detections and identify's labels were the same
-    bar one small tracklet: the loss is the EM amplifying a tiny input change, not the merge itself.
+    ST 05-31 13 -> 9). Observed on ST 05-24 seed 0: the merge moved 9 detections and identify's
+    labels were the same bar one small tracklet (16 -> 15 numbered), so the loss looks like the EM
+    amplifying a small input change rather than the merge itself.
     Retest only once the EM is stable to such perturbations."""
     mem = [np.asarray(m, int) for m in members]
     order = np.argsort([-len(m) for m in mem], kind="stable")

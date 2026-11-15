@@ -929,6 +929,32 @@ votes, ST 06-07 R6 #14 with 136).
   their render detections 3–10 s before the line. V passes the count gate by scoring a misplaced
   10th horse (ρ 0.92–0.96).
 
+
+**Rail switching: continuity-scored Viterbi (2026-11-15; NOT adopted, opt-in `HKJC_RAIL_SCORE=binary`).**
+The common-mode lateral velocity (the median over tracklets of dlat/dt per 20 m) shows field-wide
+"slides" of 1–6 m/s on most races. In the pixels these are rail SWITCHES. The raw-score Viterbi
+leaves the thin movable rail, which is a strong continuous ridge in the profile image, for the
+brighter fixed rail or apron edge about 6.6 m inside, bridging the two with a straight diagonal across
+open turf (ST 05-31 and ST7 chute junctions, the HV 04-22 R1 bend exit). On the ST 05-31 bend the raw
+rail followed the fixed rail for ~4700 stations.
+- Fix tested: score every ridge ≥ `min_r` as +1, so the Viterbi rewards continuity, not brightness.
+  The rail then follows the movable rail with no diagonals. On ST 04-26 R1 it also corrects the marker
+  grid: the raw fit had FINISH on the 50 m marker.
+- Declared rule (26 races × 6 seeds against a control rebuilt from the same maps): non-lateral gates,
+  lateral passes and hand truth must not drop, the last within the control's null spread (seeds 6–11:
+  majority 57 vs 54).
+- Result:
+  - Hand truth improves: majority 57 → 60, per-seed mean 50.7 → 59.3, ST 05-24 19/19 on every seed.
+  - Non-lateral gates drop 198.0 → 193.8 per seed:
+    - ST 04-26 R1: a 0.05 s finish now goes to #9 on 5 of 6 seeds, and seeds 3–5 collapse.
+    - HV 05-27 R9 finish-n: honest, the misplaced 10th horse is dropped.
+    - ST8: the #2/#12 finish flips.
+  - HV 04-15 R1 lost its marker grid (two marginal peaks).
+  - Lateral 10 pass / 1 fail → 10 / 3. Both Sha Tin course-B races become measurable at 6.6 m
+    against the table's 4.5 m; the rail is correct in pixels.
+- Not adopted. The rail geometry is right in pixels; what's open is the downstream fragility it
+  exposes.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

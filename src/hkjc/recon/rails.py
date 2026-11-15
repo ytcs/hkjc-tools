@@ -52,7 +52,8 @@ def inner_side(T: np.ndarray) -> int:
     other band edge -- on ST 0509 R1 it traced the mosaic's warped coverage boundary and dipped 15-25 m
     before the line, sliding the whole field ~3.5 m laterally, so association scrambled (#4 ended on a
     back-marker, 3.4 m short) -- and the draw prior put stall 1 on the wrong side (draw-vs-lateral
-    rho +0.73 with +1, -0.21 with -1). 6-seed ensembles on the 3 straights x 2 pose variants: all
+    rho +0.73 with +1, -0.21 with -1; on the +1 roots ST 05-09 R1 +0.5..+0.9 on 12/12 runs, ST8
+    +0.2..+0.7 on 11/12, ST3 ~0 where identity is weakest). 6-seed ensembles on the 3 straights x 2 pose variants: all
     gates 285 -> 286 (ST 0509 R1 45 -> 48, rho 1.00 on every seed; ST3 rho 0.91 -> 0.98; ST8 rho
     0.92-0.95 -> 0.98-1.00 and behind-winner 0.055 -> 0.025 s, but its close #2/#12 finish flipped on
     1 of 6 seeds)."""
@@ -108,7 +109,23 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
     the rail must lie INSIDE it (offset > prior_hi + margin is required by caller via R masking).
     Returns offset per station (NaN where no support)."""
     N, M = R.shape
-    score = np.where(R >= min_r, R, -1.0)
+    # HKJC_RAIL_SCORE=binary (opt-in, NOT adopted): every credible ridge scores +1, so the Viterbi
+    # rewards CONTINUITY, not brightness. MEASURED: the raw score abandoned the thin movable rail for
+    # the brighter fixed rail / apron edge ~6.6 m inside, bridged by a straight diagonal across open
+    # turf (ST 05-31 and ST7 chute junctions, HV 04-22 R1 bend exit), giving field-wide lateral
+    # "slides" of 4-6 m/s; on the ST 05-31 bend the raw rail followed the FIXED rail for ~4700
+    # stations while the field ran outside the movable one (pixels, 2x). Binary follows the movable
+    # rail and fixed ST 04-26 R1's marker grid (FINISH was on the 50 m marker). 26 races x 6 seeds
+    # (rule declared before reading): hand-truth majority 57 -> 60 (null spread 3), per-seed mean
+    # 50.7 -> 59.3 (ST 05-24 19/19 on every seed); but non-lateral gates 198.0 -> 193.8 per seed:
+    # ST 04-26 R1 (0.05 s finish now #9 on 5/6 seeds, seeds 3-5 collapse), HV 05-27 R9 finish-n
+    # (honest: the misplaced 10th horse is dropped), ST8 #2/#12 flips; HV 04-15 R1 lost its marker
+    # grid (two marginal peaks); lateral 10/1 -> 10/3 (ST course-B races now measurable: 6.6 m vs
+    # table 4.5 on both, correct rail in pixels).
+    if os.environ.get("HKJC_RAIL_SCORE", "raw") == "binary":
+        score = np.where(R >= min_r, 1.0, -1.0)
+    else:
+        score = np.where(R >= min_r, R, -1.0)
     acc = score[0].copy()
     back = np.zeros((N, M), int)
     oi = np.arange(M)
