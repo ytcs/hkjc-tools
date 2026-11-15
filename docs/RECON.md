@@ -764,6 +764,38 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
       winner's finish fall from 48 to 30. Every mid-race horse-lock stall is gone (ST3 6, ST4 5,
       ST 05-09 R1 4, ST8 3 → 0). What remains: the 28 HV 04-22 keyframes (the `skip_gap1`
       failure) and one early stall each on HV 04-15 R1/R9.
+  - Pod run X (both on with the first grid rule, from scratch, commit 36e4d48, 28 min), against V:
+    - All five timing gates 23 → 24, timing gates 126 → 127, all gates 207 → 205. Lost:
+      ST 05-09 R1 and HV 05-27 R9 finish-n, ST 06-07 R6 lateral scale (2.07 m, the same in W:
+      a real mask regression from the rails stage). Gained: the ST 05-24 winner.
+    - Mid-race pose stalls 48 → 2 (one early stall each on HV 04-15 R1/R9).
+    - Prediction (2) HOLDS (eye strips). V's ST4 rotates identities wholesale at 54–56 s: six
+      tracklets change silks and five new ones start. In X every long tracklet is pure from 12 to
+      82 s. The switches that remain are in the 36–44 s camera swing; V has them too.
+    - Prediction (3) HOLDS mechanically. The time-local shift fired only on ST3 at U (2 windows,
+      28.3 m) and fires nowhere in X. Turning the local refit off changes no race beyond 1e-4 s.
+      KEPT anyway: with the mask, ST3 and ST 05-09 R1 leader errors are about −0.2 s from 400 m
+      (V +0.10 / 0.00). That is a real residual after the swing which the thresholds no longer
+      catch.
+    - 6-seed ensembles on six races (V → X): final unanimity 54.5 → 59.6 % (ST3 25 → 53, ST4
+      45 → 66, ST8 48 → 23). Whole-race identity score 0.924/86.6 % → 0.928/90.1 %.
+      The identity score is Spearman of reconstructed vs official crossing times and the share of
+      horse-boundaries within 0.25 s after removing the common mode, intermediate boundaries
+      only (validation-only diagnostic). ST3 within-0.25 s 71 → 97 %.
+    - The first grid rule dropped EVERY off-grid frame, including the only copy of a tick after a
+      finish-zone render dropout. Finish-short went 31 (V) → 34 (W) → 39 (X). ST 05-24 differs from
+      W only by three dropped frames: its winner flipped and the hand set fell 15 → 10/19. FIXED
+      (5087fb9): only re-encodes of an already-kept tick are dropped (the 28 HV 04-22 keyframes).
+    - Mask only (W's artifacts, V frames), 6 seeds: ST 05-24 hand set mean 15.3/19 (V 12.3),
+      identity 0.949/88.3 % (V 0.909/81.3 %). ST8 unanimity 48 → 32 % with an unchanged identity
+      score (0.921/93 % vs 0.920/95 %): less stable, not less correct. Open.
+  - Declared before pod run Y (da14cc1: mask + corrected grid ON by default, from scratch, cuda):
+    - The 17 races whose W frames equal V's reproduce W bit-identically.
+    - HV 04-22 R1/R9 lose only their 14 keyframes each. The 7 races `skip_gap1` shifted in W get
+      V's frames back.
+    - Finish-short returns to W's level or better.
+    - Baselines with the avatar mask come from CUDA. The OpenVINO iGPU detector differs (ST4:
+      9122 vs 9129 detections), and its masks change the ORB steps on 603/705 frames.
   - Declared before the from-scratch run with both on:
     (1) mid-race stalls and field-speed anomalies go to ~0;
     (2) ST4's 54 s identity rotation disappears with the OLD tracker (eye strips);
