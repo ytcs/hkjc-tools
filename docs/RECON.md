@@ -1065,7 +1065,20 @@ the line.
   - Each part alone failed: smoothing alone scored 197.8 (hand 53); ties on the old rails 197.7
     (hand 48).
 - Verified: a from-scratch rails → validate run with defaults reproduces the T2 ensemble's seed 0
-  byte-for-byte (ST 04-26 R1).
+  byte-for-byte (ST 04-26 R1). The `silk` stage, run fresh, reproduces the `recon_silk` features the
+  map was fitted on exactly.
+- Follow-up checks:
+  - Cross-seed label unanimity 65.3% → 69.8%.
+  - Common-mode lateral events 77 → 70 only. Smoothing does not change the raw line choice, so the ST
+    05-31 and ST7 bends are still referenced to the fixed rail.
+  - Lateral 10 / 1 / 15 (confirmed after the rebuild).
+  - ST4: the tie-break gives #3, which tailed off, a WRONG path (sectional errors −0.9, −2.8, −4.4 s),
+    which is what fails its sectional gate (0.17 → 0.33 s). #10 gains a correct path, and the count
+    gates pass even without #3's false path.
+  - The hand-truth +1 is a reshuffle, not an identity gain: HV 05-27 R9 +4, ST 05-24 −4, ST4 +2,
+    ST 05-31 −1. ST 05-24 regressed on both yardsticks; that is open.
+  - `_silk_ties` now logs a WARNING when `silk.npz` is missing (it would otherwise silently test the
+    rails alone).
 
 ## 4. Open / next
 

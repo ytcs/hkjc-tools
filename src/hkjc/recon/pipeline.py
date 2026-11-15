@@ -748,7 +748,10 @@ class RaceRun:
     def _silk_ties(self, mem, T, votes, lab):
         """identity.resolve_ties with the race's silk signatures (default on; HKJC_SILK_TIES=0
         disables; needs silk.npz from the ``silk`` stage)."""
-        if not silk_ties_enabled() or not self.p("silk.npz").exists():
+        if not silk_ties_enabled():
+            return lab
+        if not self.p("silk.npz").exists():  # loud: without it this silently tests rails alone
+            self.log("   identify: WARNING silk.npz missing -> silk tie-break SKIPPED (run the silk stage)")
             return lab
         from .assoc import _collapse
 
