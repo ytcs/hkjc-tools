@@ -366,3 +366,20 @@ def test_rails_inner_side_is_right_on_a_straight():
     a = np.linspace(0, np.pi, 400)
     _P, T, _s = rails.resample_path(np.c_[500 * np.cos(-a), -500 * np.sin(-a)], 2.0, 80.0)
     assert rails.inner_sign(T) == 1 == rails.inner_side(T)
+
+
+def test_tracking_resolve_seams_merges_handover_duplicates_only():
+    from hkjc.recon import tracking
+
+    fr = np.r_[np.arange(0, 50), np.arange(45, 100), np.arange(20, 40)]  # A, B (seam 45-49), C
+    d = np.r_[np.linspace(500, 400, 50), np.linspace(410, 300, 55), np.linspace(460, 420, 20)]
+    lat = np.r_[np.full(50, 3.0), np.full(55, 3.1), np.full(20, 6.0)]
+    d[50:55] = d[45:50] + 0.3  # B's head boxes coincide with A's tail (one horse, two boxes)
+    A, B, C = np.arange(0, 50), np.arange(50, 105), np.arange(105, 125)
+    out = tracking.resolve_seams([B, A, C], fr, d, lat)
+    spans = sorted((fr[m].min(), fr[m].max(), len(m)) for m in out)
+    assert (0, 44, 45) in spans and (45, 99, 55) in spans  # the longer (B) keeps the seam frames
+    assert (20, 39, 20) in spans  # C (3 m to the side: a different horse) untouched
+    d[50:55] += 2.0  # 2.3 m apart: two horses -> a real conflict, left alone
+    out = tracking.resolve_seams([B, A, C], fr, d, lat)
+    assert sorted(len(m) for m in out) == [20, 50, 55]

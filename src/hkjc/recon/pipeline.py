@@ -664,6 +664,10 @@ class RaceRun:
         else:
             trs = tracking.stitch(tracking.track(times, -d, lat, fi, shift=tshift))
         trs.sort(key=lambda tk: -len(tk.t))
+        members = [np.array(tk.det) for tk in trs]
+        if os.environ.get("HKJC_SEAMS", "0") != "0":  # tracking.resolve_seams (NOT adopted)
+            members = tracking.resolve_seams(members, rows[:, 0], d, lat)
+            members.sort(key=lambda m: -len(m))
         np.savez(
             self.p("tracks.npz"),
             rows=rows,
@@ -672,7 +676,7 @@ class RaceRun:
             t=t,
             X=X,
             hist=hist,
-            members=np.array([np.array(tk.det) for tk in trs], dtype=object),
+            members=np.array(members + [None], dtype=object)[:-1],
             odo_c=c,
             film_delta=delta,
             det_idx=det_idx,
@@ -681,8 +685,8 @@ class RaceRun:
             f"   observe: {len(resid)} odometer ticks, ppm odo/marker {ppm_odo:.3f}/{ppm:.3f}, "
             f"marker-zone c {c_m:+.1f} m (grid shift {nsh}, convention c {c:+.1f} m) -> FINISH "
             f"{'pinned to markers' if pinned else 'from ticks'}, |res| p50 "
-            f"{np.median(np.abs(resid)):.2f} m); {len(trs)} tracklets, top lens "
-            f"{[len(tk.t) for tk in trs[: self.info.n]]}"
+            f"{np.median(np.abs(resid)):.2f} m); {len(members)} tracklets, top lens "
+            f"{[len(m) for m in members[: self.info.n]]}"
         )
 
     def identify(self):

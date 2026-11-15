@@ -221,3 +221,52 @@ def stitch(tracks, *, max_gap=6.0, sig_s=1.5, sig_l=0.6, gate=3.0, min_len=3):
         if len(out) == len(T):
             return out
         T = out
+
+
+SAME_ALONG = 0.8  # m: two DIFFERENT horses' centres cannot be this close along the track ...
+SAME_LAT = 0.5  # m: ... and laterally at once (side-by-side horses are ~1 m apart; shadow paths)
+
+
+def resolve_seams(members, frame_of, d, lat):
+    """Tracker HANDOVER duplicates: where two tracklets share frames and EVERY shared frame has their
+    detections physically coincident (< SAME_ALONG along and < SAME_LAT lateral: one horse, two
+    boxes), they are one horse. The shorter tracklet's detections inside the longer one's time span
+    join the longer (the coincident duplicates are dropped); the rest of it stays its own tracklet.
+    MEASURED (26 turf races, tag V): 54 tracklets with a clear legend-vote winner stayed unnumbered
+    because ``identity.assign`` forbids a number on two time-overlapping tracklets; ~12 of them
+    overlapped the number's holder by 1-15 frames at a seam with median |ds| 0.4-0.9 m, |dlat|
+    <= 0.2 m (HV 06-03 R8 #7: 162 votes, 1 frame; ST 06-07 R6 #14: 136 votes, 11 frames). The others
+    are real conflicts (metres apart) and are left alone. Returns new members (list of int arrays).
+    NOT ADOPTED (opt-in HKJC_SEAMS=1; rule declared before reading): 26 races x 6 seeds, all gates
+    206.00 -> 206.17 per seed (ST 05-24 +1), but hand-truth majority 57 -> 48 of 79 (ST 05-24 13 -> 8,
+    ST 05-31 13 -> 9). On ST 05-24 the merge moved 9 detections and identify's labels were the same
+    bar one small tracklet: the loss is the EM amplifying a tiny input change, not the merge itself.
+    Retest only once the EM is stable to such perturbations."""
+    mem = [np.asarray(m, int) for m in members]
+    order = np.argsort([-len(m) for m in mem], kind="stable")
+    for ia in order:  # longest first absorbs
+        for ib in order:
+            a, b = mem[ia], mem[ib]
+            if ia == ib or len(a) == 0 or len(b) == 0 or len(b) > len(a):
+                continue
+            a0, a1 = frame_of[a].min(), frame_of[a].max()
+            inside = b[(frame_of[b] >= a0) & (frame_of[b] <= a1)]
+            if len(inside) == 0:
+                continue
+            at = {int(f): j for f, j in zip(frame_of[a], a)}
+            shared = [(j, at[int(frame_of[j])]) for j in inside if int(frame_of[j]) in at]
+            if not shared:
+                continue
+            if not all(
+                abs(d[j] - d[k]) < SAME_ALONG and abs(lat[j] - lat[k]) < SAME_LAT for j, k in shared
+            ):
+                continue
+            dup = {j for j, _k in shared}
+            rest = np.setdiff1d(b, inside)
+            if len(rest) and frame_of[rest].min() < a0 and frame_of[rest].max() > a1:
+                inside = b  # b straddles a: its pieces would still overlap a -> all of it joins a
+            move = np.array([j for j in inside if j not in dup], int)
+            mem[ia] = np.array(sorted(np.r_[a, move], key=lambda j: frame_of[j]), int)
+            mem[ib] = np.setdiff1d(b, inside)
+            mem[ib] = mem[ib][np.argsort(frame_of[mem[ib]], kind="stable")]
+    return [m for m in mem if len(m)]

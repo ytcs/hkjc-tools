@@ -908,6 +908,27 @@ R1 flipped between V and Y (whose poses differ only by the avatar mask); ST8 was
   read for the E-step's negative evidence). It is opt-in and was not assessed on ensembles; it did not
   fix ST 05-09 R1.
 
+
+**Tracker seam duplicates (2026-11-15; not adopted).** 54 tracklets on V carry a clear legend-vote
+winner but stay unnumbered, because `identity.assign` forbids a number on time-overlapping
+tracklets. About 12 of them overlap the holder by 1–15 frames at a tracker handover, with detections
+coincident to < 1 m along and ≤ 0.2 m laterally (one horse, two boxes; e.g. HV 06-03 R8 #7 with 162
+votes, ST 06-07 R6 #14 with 136).
+- Fix tested: `tracking.resolve_seams` (`HKJC_SEAMS=1`). Where every shared frame is coincident
+  (< 0.8 m along and < 0.5 m lateral, the shadow-path bound), the shorter tracklet's part inside the
+  longer one's span joins the longer.
+- Declared rule: gates, hand truth and unanimity must all not drop. The control was the V26 rows,
+  verified byte-identical with current code.
+- Result:
+  - Gates 206.00 → 206.17 per seed.
+  - Hand-truth majority 57 → 48 of 79 (ST 05-24 13 → 8, ST 05-31 13 → 9).
+  - Not adopted. On ST 05-24 the merge moved 9 detections and left identify's labels the same, so the
+    loss is the EM's sensitivity to tiny input changes.
+- Also: HV 05-27 R9's finish-n "loss" under the avatar mask is honest. The mask arm scores 9 horses
+  with ρ 1.00 on every seed. The last three (#7, #10, #9) are unread by the finish camera and lose
+  their render detections 3–10 s before the line. V passes the count gate by scoring a misplaced
+  10th horse (ρ 0.92–0.96).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
