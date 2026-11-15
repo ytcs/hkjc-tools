@@ -736,8 +736,25 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
     48 s camera event.
   - 6-seed ensembles on six races: timing identical, but unanimity 54.5 % → 49.9 % (ST4 45 → 57 %,
     ST8 48 → 17 %, ST3 25 → 19 %). Not adopted.
+- Pose-stall fixes (code committed OFF by default; pose-only local check on 5 races):
+  - `register.mask_boxes` (HKJC_WORLD_MASK=yolo): the features stage also masks the avatar
+    detector's boxes, grown 1.6× to cover shadows. Mid-race stalls go to zero; what remains is the
+    render start, after the finish, and keyframes. HV 04-29 R3 keeps its loop closures (336) and
+    long-baseline d24 edges rise on every HV race.
+    REJECTED: a colour WHITELIST mask (`world_mask_v2`). It fixed the stall but dropped small static
+    world features (posts, markers): HV 04-29 R3 loop closures 335 → 0.
+  - `video.skip_gap1` (HKJC_FRAME_GAP1=1): HV 04-22 R1/R9's video has a keyframe every 100 frames.
+    It re-encodes the same render state (mean |diff| 3.8 > the 3.0 duplicate tolerance), so frames
+    400, 500, … entered as new ticks with zero motion (14 per race). At a 10 Hz render in 25 fps
+    video a one-frame gap is impossible: gaps alternate 2/3 on all 26 races.
+  - Declared before the from-scratch run with both on:
+    (1) mid-race stalls and field-speed anomalies go to ~0;
+    (2) ST4's 54 s identity rotation disappears with the OLD tracker (eye strips);
+    (3) ST3's camera swing may no longer need HKJC_TIME_SHIFT or the local d(s) refit (tested with
+    both off afterwards).
+    Gates may move both ways (downstream constants were tuned on stalled poses); judged on
+    ensembles and unanimity.
 - Open:
-  - the world-mask fix (pose stalls) through the full pipeline;
   - break the cross-seed disagreement down by stage (tracklet partition, identify, EM) before
     redesigning anything downstream.
 

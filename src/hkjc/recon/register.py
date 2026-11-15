@@ -33,6 +33,64 @@ def world_mask(panel, hud) -> np.ndarray:
     return ((hud > 0) & (blob == 0)).astype(np.uint8) * 255
 
 
+def world_mask_v2(panel, hud, *, blob_max=6000) -> np.ndarray:
+    """HUD-free pixels minus COMPACT NON-TURF blobs (avatars + shadows), dilated, as a 0/255 ORB mask.
+    Turf = the panel's dominant hue mode (per frame, so Happy Valley's yellower turf is not clipped) or
+    white (rail, markings); shadows = turf much darker than the local turf. Non-turf connected regions
+    smaller than ``blob_max`` px are masked; LARGER ones (stands, the all-weather track, paths: static
+    world structure) are kept.
+    MEASURED (pixels, ST 0419 R4 frames 1365-1373): the v1 blacklist (V < 45 or vivid hue) left
+    brown-bodied / pastel-silk avatars unmasked; the camera follows the field, so those avatars are
+    static in the image, and the step match locked onto them (111 inliers on horses): the camera
+    "stopped" for 3 ticks (image-centre step < 1 px vs 36), the field's world speed dropped to ~0 and
+    the tracker rotated identities. With this mask the steps there are (34-36, -11..-13) px."""
+    import cv2
+
+    hsv = cv2.cvtColor(panel, cv2.COLOR_BGR2HSV)
+    h, s_, v = (hsv[..., i].astype(np.int16) for i in range(3))
+    world = hud > 0
+    cand = world & (s_ >= 35) & (v >= 60)
+    hist = np.bincount(h[cand].ravel(), minlength=180) if cand.any() else np.zeros(180)
+    mode = int(np.argmax(np.convolve(hist, np.ones(7), "same")))
+    dh = np.minimum(np.abs(h - mode), 180 - np.abs(h - mode))
+    turf = (dh <= 15) & (s_ >= 30)
+    white = (s_ < 45) & (v > 165)
+    vloc = cv2.blur(v.astype(np.float32), (61, 61))
+    turf &= v >= 0.72 * vloc  # shadows: turf much darker than the local turf
+    non = (world & ~(turf | white)).astype(np.uint8)
+    non = cv2.morphologyEx(non, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    n, lab, st, _c = cv2.connectedComponentsWithStats(non)
+    small = np.zeros(n, bool)
+    small[1:] = st[1:, cv2.CC_STAT_AREA] < blob_max
+    bad = cv2.dilate(small[lab].astype(np.uint8), np.ones((9, 9), np.uint8))
+    return (world & (bad == 0)).astype(np.uint8) * 255
+
+
+def mask_boxes(mask, dets, grow: float = 1.6) -> np.ndarray:
+    """Zero ``mask`` inside each avatar box (cx, cy, w, h, ...) grown by ``grow`` (covers the shadow).
+    MEASURED (pixels, ST 0419 R4 frames 1365-1373): the colour blacklist leaves brown-bodied /
+    pastel-silk avatars unmasked; the camera follows the field, so they are static in the image and
+    the step match locked onto them (camera "stopped" 3 ticks). The avatar detector finds them; a
+    colour WHITELIST (``world_mask_v2``) also fixed the stall but dropped small static world features
+    (posts, markers): HV 0429 R3 loop closures 335 -> 0."""
+    m = mask.copy()
+    H, W = m.shape[:2]
+    for d in dets:
+        cx, cy, w, h = d[:4]
+        hw, hh = grow * w / 2, grow * h / 2
+        x0, x1 = int(max(0, cx - hw)), int(min(W, cx + hw + 1))
+        y0, y1 = int(max(0, cy - hh)), int(min(H, cy + hh + 1))
+        m[y0:y1, x0:x1] = 0
+    return m
+
+
+def world_mask_sel(panel, hud) -> np.ndarray:
+    """``world_mask`` (default) or ``world_mask_v2`` (env HKJC_WORLD_MASK=v2)."""
+    if os.environ.get("HKJC_WORLD_MASK", "v1") == "v2":
+        return world_mask_v2(panel, hud)
+    return world_mask(panel, hud)
+
+
 _ORB = {}
 
 

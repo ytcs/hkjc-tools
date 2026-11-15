@@ -104,7 +104,10 @@ def _feat_job(args):
     k, nfeat = args
     i, p = _CACHE.idx[k], _CACHE.panel(k)
     lt = video.legend_top(p)
-    f = register.extract(p, register.world_mask(p, video.hud_mask(p, lt)), nfeat)
+    m = register.world_mask_sel(p, video.hud_mask(p, lt))
+    if _DET is not None:  # HKJC_WORLD_MASK=yolo: also mask the avatar detector's boxes (+ shadows)
+        m = register.mask_boxes(m, _DET.panel(p, lt))
+    f = register.extract(p, m, nfeat)
     return int(i), lt, f, p.shape[:2]
 
 
@@ -225,7 +228,10 @@ class RaceRun:
         cache = self.cache()
         global _CACHE, _FEATS_PAR
         _CACHE = cache
-        with mp.get_context("fork").Pool(_nproc()) as pool:
+        yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"
+        with mp.get_context("fork").Pool(
+            min(_nproc(), 4) if yolo else _nproc(), initializer=_det_init if yolo else None
+        ) as pool:
             res = pool.map(_feat_job, [(k, nfeat) for k in range(len(cache))], chunksize=8)
         # a NEW pool: workers fork the parent's state, so the features must exist before forking
         _FEATS_PAR = [r[2] for r in res]

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import os
+
 import numpy as np
 
 # Static screen overlays inside the render panel (panel-relative px, 1080p product).
@@ -143,6 +145,15 @@ def is_duplicate(a, b, tol: float = 3.0) -> bool:
     return float(np.abs(a[::4, ::4].astype(np.int16) - b[::4, ::4]).mean()) < tol
 
 
+def skip_gap1(i: int, prev_i: int) -> bool:
+    """A render tick ONE frame after the previous one is impossible: the render updates at 10 Hz in
+    25 fps video (gaps alternate 2/3 on all 26 races). MEASURED (HV 0422 R1/R9): a video KEYFRAME
+    every 100 frames re-encodes the same render state with codec noise (mean |diff| 3.8 > the 3.0
+    duplicate tolerance), so frames 400, 500, ... entered as new ticks with ZERO motion (pose stalls,
+    14 per race) -- the field "froze" for a tick and the tracker could rotate identities."""
+    return i - prev_i == 1
+
+
 def iter_unique_render(
     path,
     *,
@@ -156,6 +167,8 @@ def iter_unique_render(
     import av
 
     prev = None
+    prev_i = -10
+    gap1 = os.environ.get("HKJC_FRAME_GAP1", "0") != "0"
     seen = False  # the strict render test has passed: the legend-strip fallback may fill holes
     with av.open(str(path)) as c:
         c.streams.video[0].thread_type = "AUTO"  # frame-threaded decode: same pixels, ~3x faster
@@ -173,9 +186,9 @@ def iter_unique_render(
             if box is None:
                 box = find_panel_box(img)
             p = box.crop(img)
-            if prev is not None and is_duplicate(p, prev):
+            if prev is not None and (is_duplicate(p, prev) or (gap1 and skip_gap1(i, prev_i))):
                 continue
-            prev = p
+            prev, prev_i = p, i
             yield (i, p, img) if keep_full else (i, p)
 
 

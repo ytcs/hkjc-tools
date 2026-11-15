@@ -288,3 +288,21 @@ def test_fusion_anonymous_association_respects_forbid():
                          frozenset({1}))
     _p, a = fusion.fuse_race([lab, anon_no], [1], prior, anchor_check=False)
     assert 2 not in a
+
+
+def test_register_mask_boxes_zeroes_grown_avatar_boxes():
+    """Avatar boxes (+ shadow margin) leave the ORB mask; the rest is untouched."""
+    from hkjc.recon import register
+
+    m = np.full((100, 200), 255, np.uint8)
+    out = register.mask_boxes(m, np.array([[50.0, 50.0, 20.0, 10.0, 0.9, 0.0]]), grow=1.6)
+    assert out[50, 50] == 0 and out[50, 50 + 15] == 0  # inside the grown box (half-width 16)
+    assert out[50, 50 + 20] == 255 and out[10, 150] == 255
+    assert m[50, 50] == 255  # input not modified
+
+
+def test_video_skip_gap1_rejects_one_frame_ticks():
+    """At 10 Hz render in 25 fps video a new tick one frame after the last one is a codec duplicate."""
+    from hkjc.recon import video
+
+    assert video.skip_gap1(400, 399) and not video.skip_gap1(402, 399) and not video.skip_gap1(403, 400)
