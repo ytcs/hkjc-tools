@@ -302,8 +302,9 @@ def test_register_mask_boxes_zeroes_grown_avatar_boxes():
 
 
 def test_video_grid_keep_drops_off_grid_reencodes():
-    """10 Hz render in 25 fps video: ticks at two fixed residues of frame % 5; a keyframe re-encode at
-    400 (off-grid) is dropped and the real ticks around it are kept at their own frames."""
+    """10 Hz render in 25 fps video: ticks at two fixed residues of frame % 5. A keyframe re-encode
+    at 400 (its tick started at 399, kept) is dropped. The first frame after a render-gate dropout
+    (on-grid start not yielded) is the only copy of its tick and is kept."""
     from hkjc.recon import video
 
     ticks = [k * 5 + o for k in range(60, 100) for o in (2, 4)]  # residues {2, 4} (HV 04-22 phase)
@@ -311,6 +312,8 @@ def test_video_grid_keep_drops_off_grid_reencodes():
     keep = video.grid_keep(idx)
     assert [i for i, k in zip(idx, keep) if not k] == [400, 500]
     assert all(keep[idx.index(t)] for t in (399, 402, 404))
+    gap = [i for i in ticks if not 450 <= i <= 474] + [473]  # dropout 450-474; 473 off-grid, its tick start 472 missing
+    assert video.grid_keep(sorted(gap)).all()
     assert video.grid_keep([1, 2, 3, 4, 5, 6, 7]).all()  # no dominant phase -> keep everything
 
 

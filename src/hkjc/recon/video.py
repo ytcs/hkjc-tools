@@ -146,32 +146,47 @@ def is_duplicate(a, b, tol: float = 3.0) -> bool:
 
 
 def grid_keep(idx) -> np.ndarray:
-    """Boolean keep-mask over yielded frame indices: only frames ON the render's tick grid.
+    """Boolean keep-mask over yielded frame indices: drop a frame only if it RE-ENCODES a tick
+    that is already kept.
 
     The render updates at exactly 10 Hz in 25 fps video, so new ticks start at two fixed residues of
     ``frame % 5`` for a whole replay. MEASURED on all 26 races: one phase fits 99.9-100 % of the
     yielded frames, and the first 40 ticks already give the same residues as the whole race. The
-    off-grid frames are re-encodes of the CURRENT tick that the fixed duplicate tolerance let through:
-    HV 04-22 R1/R9 have a video keyframe every 100 frames (codec noise 3.8 > tolerance 3.0, so 14 zero-
-    motion "ticks" per race), plus the first render frame and a few frames after render-gate dropouts
-    at the finish on the other races. The residues come from a majority vote over the whole replay;
-    the filter is skipped (all kept) if the top two residues do not hold >= 90 % of the frames or are
-    not 2-3 frames apart (not a 10 Hz render).
+    residues come from a majority vote over the whole replay; nothing is dropped if the top two do
+    not hold >= 90 % of the frames or are not 2-3 frames apart (not a 10 Hz render).
 
-    Filtering the de-dup stream AFTERWARDS is exact. An off-grid frame stays the duplicate
+    An off-grid frame is dropped only when the on-grid start of its tick (the latest on-grid frame
+    at or before it) was yielded too: then it is a re-encode of that tick. HV 04-22 R1/R9 have a
+    video keyframe every 100 frames, with codec noise 3.8 > tolerance 3.0, so 14 zero-motion
+    "ticks" per race came in. Any OTHER off-grid frame is kept: the first render frame, and the
+    first frame after a render-gate dropout, are the ONLY copy of a real tick (stamped 1-2 frames
+    late).
+    REJECTED: dropping every off-grid frame (pod run X). It removed the first frame after finish-zone
+    dropouts, so finish-short horses went 34 -> 39. ST 05-24 differs only by three dropped frames
+    (301, 2427, 2466): its winner flipped and the hand set fell 15 -> 10/19.
+    Filtering the de-dup stream AFTERWARDS is exact. A dropped keyframe stays the duplicate
     reference for the next frame, so the next real tick is compared against the keyframe's codec
     noise and passes as it did before.
     REJECTED: ``skip_gap1`` (drop a frame 1 after the last one, keep the old reference). The frame
     after the keyframe then differed from the stale reference by the keyframe's noise and entered as
     a zero-motion tick, and the next real ticks were stamped 1 frame late: HV 04-22 index
     399,401,403,405 instead of 399,402,404; stalls 14 -> 14 per race (pod run W)."""
-    r = np.asarray(idx, dtype=np.int64) % 5
+    idx = np.asarray(idx, dtype=np.int64)
+    r = idx % 5
     n = len(r)
     cnt = np.bincount(r, minlength=5)
     top = np.argsort(-cnt, kind="stable")[:2]
     if n == 0 or cnt[top].sum() < 0.9 * n or (int(top[0]) - int(top[1])) % 5 not in (2, 3):
         return np.ones(n, bool)
-    return np.isin(r, top)
+    on = np.isin(r, top)
+    have = set(idx[on].tolist())
+    keep = np.ones(n, bool)
+    for k in np.flatnonzero(~on):
+        g = int(idx[k]) - 1
+        while g % 5 not in top:  # the latest on-grid frame before this one = its tick's start
+            g -= 1
+        keep[k] = g not in have
+    return keep
 
 
 def iter_unique_render(
