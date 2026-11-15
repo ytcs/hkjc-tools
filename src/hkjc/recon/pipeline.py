@@ -229,9 +229,11 @@ class RaceRun:
         global _CACHE, _FEATS_PAR
         _CACHE = cache
         yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"
-        with mp.get_context("fork").Pool(
-            min(_nproc(), 4) if yolo else _nproc(), initializer=_det_init if yolo else None
-        ) as pool:
+        nw = _nproc()
+        if yolo:  # one detector per worker; one accelerator context (as in ``detect``)
+            accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
+            nw = 1 if accel else min(nw, 4)
+        with mp.get_context("fork").Pool(nw, initializer=_det_init if yolo else None) as pool:
             res = pool.map(_feat_job, [(k, nfeat) for k in range(len(cache))], chunksize=8)
         # a NEW pool: workers fork the parent's state, so the features must exist before forking
         _FEATS_PAR = [r[2] for r in res]
