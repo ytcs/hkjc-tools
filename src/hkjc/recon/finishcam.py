@@ -131,10 +131,13 @@ COCO_WEIGHTS = "models/coco_yolov8x.pt"
 RULER_CAL = 0.90
 
 
-def ruler_cal() -> float:
+def ruler_cal(where: str = "") -> float:
+    """RULER_CAL if HKJC_FC_CAL is "1" (both priors) or names ``where`` ("reg": the registration's
+    window, "anchor": the anchor's soft prior), else 1.0."""
     import os
 
-    return RULER_CAL if os.environ.get("HKJC_FC_CAL", "0") != "0" else 1.0
+    v = os.environ.get("HKJC_FC_CAL", "0")
+    return RULER_CAL if v == "1" or (where and v == where) else 1.0
 
 
 def horse_scale(frames_imgs, line_x):
