@@ -880,6 +880,34 @@ all gates 207 of 222 applicable (unchanged from U). 6-seed ensembles of the digi
 vs V code): timing 5/5 on every seed in both arms. HV 04-15 R1 ρ 0.94 [0.94, 0.95] → 0.97
 [0.96, 0.97] and behind-winner median 0.119 → 0.102 s; ST 05-17 is unchanged.
 
+
+**Straight-course rail side (2026-11-15; adopted).** `rails.inner_sign` took the inner side from
+the sign of the camera path's summed turning. Ovals turn |Σ| ≥ 2.7 (all +1: HK racing is clockwise).
+The three Sha Tin 1000 m straights turn |Σ| < 0.2, so the sign was noise. ST 04-19 R3 and ST 05-09
+R1 flipped between V and Y (whose poses differ only by the avatar mask); ST8 was −1 in both. With
+−1 the "rail" is the other band edge.
+- Pixels (ST 05-09 R1, Y): the −1 rail traced the mosaic's warped coverage boundary mid-race and
+  dipped 15–25 m before the line. The whole field slid ~3.5 m laterally at 56–57 s, association
+  scrambled (#9 onto the wide leader's detections, #4 onto a back-marker at 56.7 s) and #4's path
+  ended 3.4 m short.
+  - The +1 rail follows the lower band edge, which mid-race is a visible straight rail line (the
+    oval's curved rail joins below it).
+  - The draw prior also lands on the wrong side with −1: draw-vs-lateral ρ is +0.73 with +1 and
+    −0.21 with −1.
+- Fix: `rails.inner_side` returns +1 (right of travel; on the straight, stall 1 is on the right as
+  on the ovals). The old inference stays as the diagnostic `HKJC_INNER=auto`.
+- Declared before reading: all gates over 3 straights × {V, Y} × 6 seeds must not drop, and the rail
+  must sit on a real edge in pixels.
+- Result: 285 → 286.
+  - Y: 141 → 144 (ST 05-09 R1 45 → 48 with ρ 1.00 on every seed; ST3 ρ 0.91 → 0.98).
+  - V: 144 → 142. ST3 and ST 05-09 R1 are bit-identical (already +1). ST8 ρ 0.92–0.95 → 0.98–1.00
+    and behind-winner ≈0.055 → 0.025 s, but sectional 0.09 → 0.12 s and its close #2/#12 finish
+    flipped on 1 of 6 seeds (winner and finish-n).
+  - Ovals are unchanged (all already +1). No hand-truth race is a straight.
+- Also recorded: `HKJC_FC_READS=reads` (`finishcam.read_numbers`: count read-but-gapless cloths as
+  read for the E-step's negative evidence). It is opt-in and was not assessed on ensembles; it did not
+  fix ST 05-09 R1.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

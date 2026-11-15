@@ -350,3 +350,19 @@ def test_rails_fixed_rail_gap_finds_the_line_not_the_band_edge():
     rail = np.c_[np.arange(60.0, 440.0), np.full(380, 50.0)]
     gap, sup = rails.fixed_rail_gap(img, cnt, lambda W: np.asarray(W, float), rail, 1, ppm, 9.2)
     assert abs(gap - 9.5) < 0.2 and sup > 0.5
+
+
+def test_rails_inner_side_is_right_on_a_straight():
+    """A straight camera path's turning sign is noise; the rail side must not follow it."""
+    from hkjc.recon import rails
+
+    rng = np.random.default_rng(3)
+    x = np.arange(0, 2000, 2.0)
+    for k in range(6):  # tiny wobbles of either sign (|turn| << an oval's)
+        y = 0.5 * np.sin(x / (150 + 40 * k)) * (-1) ** k + rng.normal(0, 0.05, len(x))
+        _P, T, _s = rails.resample_path(np.c_[x, y], step=2.0, smooth=80.0)
+        assert rails.inner_side(T) == 1
+    # a clockwise oval (y down = right turn) agrees with the old inference
+    a = np.linspace(0, np.pi, 400)
+    _P, T, _s = rails.resample_path(np.c_[500 * np.cos(-a), -500 * np.sin(-a)], 2.0, 80.0)
+    assert rails.inner_sign(T) == 1 == rails.inner_side(T)

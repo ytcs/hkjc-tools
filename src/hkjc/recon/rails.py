@@ -4,11 +4,12 @@ Rails are extracted ONCE from the mosaic (horses averaged out), as 1-D ridge pea
 PROFILES taken at stations along the smoothed camera path, linked across stations by dynamic
 programming. The racing (movable) rail is the line the field runs just OUTSIDE of: the innermost
 horses bound it from outside, so the rail = the strongest thin-bright ridge a short way inside them.
-The INNER side is the path's mean turning side (venue/handedness-agnostic).
+The INNER side is the right of travel (HK racing is clockwise; see ``inner_side``).
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -39,6 +40,25 @@ def inner_sign(T: np.ndarray) -> int:
     The right normal of tangent (tx,ty) in y-down image coords is (-ty, tx)."""
     cross = T[:-1, 0] * T[1:, 1] - T[:-1, 1] * T[1:, 0]  # >0 = turning right (y down)
     return 1 if cross.sum() > 0 else -1
+
+
+def inner_side(T: np.ndarray) -> int:
+    """The racing rail's side of travel: +1 (RIGHT) -- Hong Kong racing is clockwise at both venues,
+    and on the Sha Tin 1000 m straight stall 1 is on the right of travel as on the ovals.
+    REJECTED: inferring it from the camera path's mean turning (``inner_sign``, kept as the
+    diagnostic HKJC_INNER=auto). Ovals turn |sum| >= 2.7 (all +1), but the three straights turn
+    |sum| < 0.2, so the sign was noise: ST 0419 R3 and ST 0509 R1 flipped between two runs of the same
+    video (pose differing only by the avatar mask), ST8 was -1 in both. With -1 the "rail" was the
+    other band edge -- on ST 0509 R1 it traced the mosaic's warped coverage boundary and dipped 15-25 m
+    before the line, sliding the whole field ~3.5 m laterally, so association scrambled (#4 ended on a
+    back-marker, 3.4 m short) -- and the draw prior put stall 1 on the wrong side (draw-vs-lateral
+    rho +0.73 with +1, -0.21 with -1). 6-seed ensembles on the 3 straights x 2 pose variants: all
+    gates 285 -> 286 (ST 0509 R1 45 -> 48, rho 1.00 on every seed; ST3 rho 0.91 -> 0.98; ST8 rho
+    0.92-0.95 -> 0.98-1.00 and behind-winner 0.055 -> 0.025 s, but its close #2/#12 finish flipped on
+    1 of 6 seeds)."""
+    if os.environ.get("HKJC_INNER", "right") == "auto":
+        return inner_sign(T)
+    return 1
 
 
 def right_normal(T):
@@ -599,7 +619,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X):
 
     Ce = np.vstack([ext(C[0], C[min(30, len(C) - 1)])[::-1], C, ext(C[-1], C[max(-31, -len(C))])])
     Ps, T, _s = resample_path(Ce, step=2.0, smooth=80.0)
-    inner = inner_sign(T)
+    inner = inner_side(T)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
     Q = (

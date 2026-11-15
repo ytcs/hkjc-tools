@@ -1189,6 +1189,16 @@ class RaceRun:
         return out
     ANCHOR_SD = 3.0  # m: a fused crossing anchors the finish clock only where the path is tight
 
+    @staticmethod
+    def _fc_read(zf) -> set:
+        """Horses the finish camera read (negative evidence / shadow-path tie-break). Default: the
+        horses with a GAP; HKJC_FC_READS=reads: every read cloth (finishcam.read_numbers -- a
+        back-marker crossing after the referenced cloths left the frame has reads but no gap)."""
+        sc = dict(line_x=float(zf["line_x"]), reads=zf["reads"])
+        if os.environ.get("HKJC_FC_READS", "gaps") == "reads":
+            return finishcam.read_numbers(sc)
+        return {int(k) for k in finishcam.finish_gaps(sc)[1]}
+
     def _em_associate(self, paths, horses, prior):
         """Detection-level EM (``assoc``): every detection re-assigned per frame against the
         continuous fused paths (+ one-sided legend rank constraint), paths re-fused; the tracker's
@@ -1218,8 +1228,7 @@ class RaceRun:
         near = None
         if self.p("finish.npz").exists():
             zf = np.load(self.p("finish.npz"))
-            _o, g0, _u = finishcam.finish_gaps(dict(line_x=float(zf["line_x"]), reads=zf["reads"]))
-            read = {int(k) for k in g0}
+            read = self._fc_read(zf)
             r = min(len(read) / max(self.info.n, 1), 0.95)
             if read and r >= 0.5 and os.environ.get("HKJC_NEGEV", "1") != "0":
                 cost = float(-2.0 * np.log(1.0 - r))
@@ -1302,8 +1311,7 @@ class RaceRun:
         cam = set()
         if self.p("finish.npz").exists():
             zf = np.load(self.p("finish.npz"))
-            _o, g, _u = finishcam.finish_gaps(dict(line_x=float(zf["line_x"]), reads=zf["reads"]))
-            cam = {int(k) for k in g}
+            cam = self._fc_read(zf)
         drop = np.zeros(len(t), bool)
         hs = sorted(paths)
         # only the finish-critical window (last 3 s before the first horse reaches the line): a

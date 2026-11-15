@@ -413,44 +413,8 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
     R = np.asarray(sc["reads"])
     nreads = {n: len(T[n][0]) for n in T}
     for n in list(gaps):
-        rn = R[R[:, 4] == n]
         for m in list(gaps):
-            if m == n or str(n) not in str(m) or nreads.get(n, 0) >= nreads.get(m, 0):
-                continue
-            # compare against m's TRACK interpolated to each n-read's frame: one cloth yields ONE read
-            # per frame ("3" OR "13"), so same-frame coincidence never fired, and the horse moves
-            # ~60 px per unique frame. MEASURED (pixels, ST 0419 R4): 9 of 10 "3" reads sit on the
-            # "13" cloth (one at conf 0.99); kept, "#3" (tailed off, 7.5 s back) took #13's crossing
-            # -> placed 6.2 s early (behind-winner gate failure).
-            rm = R[R[:, 4] == m]
-            sh0 = sa0 = 0  # same-frame coincidence (the original test: ST7's "4" next to "14")
-            for r in rn:
-                k = np.where(np.abs(rm[:, 0] - r[0]) <= 1)[0]
-                if len(k):
-                    sh0 += 1
-                    sa0 += bool(
-                        (np.abs(rm[k, 2] - r[2]).min() < 45)
-                        and (np.abs(rm[k, 3] - r[3]).min() < 30)
-                    )
-            # ... and only when MOST of n's reads sit on m's cloth: the tests count shared frames
-            # only, so 3 dropped-digit "2" reads on the "12" cloth deleted the REAL #2 (37 reads,
-            # crossing after #12 had left; pixels: a different silk) on HV 0603 R3 and HV 0415 R1.
-            if sa0 >= 2 and sa0 >= 0.5 * sh0 and sa0 >= 0.5 * len(rn):
-                gaps.pop(n)
-                break
-            if m not in T:
-                continue
-            um, xm, ym = T[m]
-            shared = same = 0
-            for r in rn:
-                if not (um[0] - 3 <= r[0] <= um[-1] + 3):
-                    continue
-                shared += 1
-                same += bool(
-                    abs(np.interp(r[0], um, xm) - r[2]) < 45
-                    and abs(np.interp(r[0], um, ym) - r[3]) < 30
-                )
-            if same >= 2 and same >= 0.5 * shared and same >= 0.5 * len(rn):
+            if _digit_drop(n, m, R, T, nreads):
                 gaps.pop(n)
                 break
     if not gaps:
@@ -465,6 +429,64 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
         v = np.asarray(est[n])
         sd[n] = max(15.0, 1.4826 * float(np.median(np.abs(v - np.median(v)))) / np.sqrt(len(v)))
     return order, gaps, ustar, sd
+
+
+def _digit_drop(n, m, R, T, nreads) -> bool:
+    """True when number ``n``'s reads are a DIGIT-DROP misread of ``m``'s cloth (see finish_gaps)."""
+    if m == n or str(n) not in str(m) or nreads.get(n, 0) >= nreads.get(m, 0):
+        return False
+    rn = R[R[:, 4] == n]
+    # compare against m's TRACK interpolated to each n-read's frame: one cloth yields ONE read
+    # per frame ("3" OR "13"), so same-frame coincidence never fired, and the horse moves
+    # ~60 px per unique frame. MEASURED (pixels, ST 0419 R4): 9 of 10 "3" reads sit on the
+    # "13" cloth (one at conf 0.99); kept, "#3" (tailed off, 7.5 s back) took #13's crossing
+    # -> placed 6.2 s early (behind-winner gate failure).
+    rm = R[R[:, 4] == m]
+    sh0 = sa0 = 0  # same-frame coincidence (the original test: ST7's "4" next to "14")
+    for r in rn:
+        k = np.where(np.abs(rm[:, 0] - r[0]) <= 1)[0]
+        if len(k):
+            sh0 += 1
+            sa0 += bool(
+                (np.abs(rm[k, 2] - r[2]).min() < 45) and (np.abs(rm[k, 3] - r[3]).min() < 30)
+            )
+    # ... and only when MOST of n's reads sit on m's cloth: the tests count shared frames
+    # only, so 3 dropped-digit "2" reads on the "12" cloth deleted the REAL #2 (37 reads,
+    # crossing after #12 had left; pixels: a different silk) on HV 0603 R3 and HV 0415 R1.
+    if sa0 >= 2 and sa0 >= 0.5 * sh0 and sa0 >= 0.5 * len(rn):
+        return True
+    if m not in T:
+        return False
+    um, xm, ym = T[m]
+    shared = same = 0
+    for r in rn:
+        if not (um[0] - 3 <= r[0] <= um[-1] + 3):
+            continue
+        shared += 1
+        same += bool(
+            abs(np.interp(r[0], um, xm) - r[2]) < 45 and abs(np.interp(r[0], um, ym) - r[3]) < 30
+        )
+    return same >= 2 and same >= 0.5 * shared and same >= 0.5 * len(rn)
+
+
+def read_numbers(sc) -> set:
+    """Numbers the finish camera READ (a cloth track, minus digit-drop misreads of another read
+    number) -- whether or not finish_gaps could give them a gap. A gap needs a crossing chained to
+    an earlier crosser or a frame shared with a referenced horse; a back-marker crossing after the
+    last referenced cloth has left the frame gets neither. Example (ST 0509 R1): #8/#9 (16/22 reads,
+    1.45/1.51 s back) had no gap, so the E-step's negative evidence treated them as unread and
+    "blind" (CLUTTER on every detection in the last 50 m). Used only with HKJC_FC_READS=reads
+    (opt-in, NOT assessed on ensembles): it did NOT fix that race's short #4 path (finish-n 7 -> 7);
+    the cause there was the straight-course rail side (rails.inner_side). Gapless read numbers on the 26 turf
+    races: real runners 0.87-2.4 s back (ST3 #14, ST9 #8, ST 0531 #6), the ST4 winner #11, and ST7
+    "#4" (a digit-drop of #14, removed here).
+    REJECTED for giving such horses a gap: integrating the cloth speed (px per unique frame) over
+    frames between crossings -- the post camera pans with the leaders (their cloths sit still in
+    frame), so the integral saturates (ST 0509 R1 #1/#6/#7, ST7 eight horses at one value)."""
+    T = tracks(sc)
+    R = np.asarray(sc["reads"])
+    nreads = {n: len(T[n][0]) for n in T}
+    return {int(n) for n in T if not any(_digit_drop(n, m, R, T, nreads) for m in T)}
 
 
 def calibrate(gaps, ref_behind, *, c_bounds=(200.0, 6000.0)):
