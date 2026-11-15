@@ -703,6 +703,35 @@ anchored leader minus the film goes +0.15 s at 200 m to −0.11 s at 50 m, a slo
 - Declared. A scale reference spanning more of the straight is needed (the drone, or the
   400 m marker, which sits on the bend at Happy Valley).
 
+**Identity fragility and the tracker (2026-11-14; code committed OFF by default).**
+Label-free fragility yardstick: per-detection label unanimity across 6 perturbation seeds (1 %
+detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV 06-03 R3 79 %; mean
+54.5 %. Hand-set spread across seeds: ST4 9–12/16, ST 05-24 9–15/19, so the earlier single-run silk
+"gains" sat inside the noise.
+- PIXELS: render avatars are distinguishable by eye and consistent within a race. Most tracklets
+  are IMPURE: the silk changes mid-tracklet. On ST4 many tracks switch together at ~54 s, and the
+  labels rotate (#7 → #13 → #12 → #5) while the silks stay unchanged.
+- Cause, from per-tick field speed: STALE render ticks. Some unique frames carry the previous horse
+  positions (field speed ~0 for 1–3 ticks at dt 0.04–0.12 s, then a 23–29 m/s catch-up). Anomalous
+  ticks: ST3 77, ST 05-31 32, ST 05-24 25, ST4 17, HV 05-27 R9 6, HV 06-03 R3 1. The switches are made
+  in `track`, not `stitch`.
+- `tracking.common_shift` (HKJC_TRACK_SHIFT=1) estimates the per-tick shared along-track shift by a
+  robust vote. On 26 races it costs 4 gates (ST3 ρ 0.98 → 0.88, behind-winner 0.056 → 0.211;
+  HV 05-27 R3 ρ; HV 05-27 R9 finish-n). Not adopted.
+- `tracking.calibrate_llr` + appearance cost (HKJC_TRACK_APP=1): −2 log(p_same/p_diff) of the TV
+  distance between a detection's silk and the track's running mean, learned per race. Feature AUC
+  is 0.96 at 1-detection lag. With the shift, on 26 races it costs 2 gates (ST1 winner, a 0.05 s near
+  dead heat; HV 05-27 R9 finish-n); hand set 52 → 53/79.
+  - By eye, tracklets are purer: ST4 has ~9 switches → ~3–4, and HV 05-27 R9's yellow survives the
+    48 s camera event.
+  - 6-seed ensembles on six races: timing identical, but unanimity 54.5 % → 49.9 % (ST4 45 → 57 %,
+    ST8 48 → 17 %, ST3 25 → 19 %). Not adopted.
+- Open:
+  - fix stale ticks at the source (duplicate frames? check pixel boxes and the HUD clock);
+  - the appearance-only arm (no shift);
+  - break the cross-seed disagreement down by stage (tracklet partition, identify, EM) before
+    redesigning anything downstream.
+
 **Baseline V (`recon-baseline-V` = e4ee137): U plus the chain-start guard and the digit-drop
 fix.** Nothing upstream of `finish_gaps` changed, and `finish_gaps` output is bit-identical to U on
 23 races (verified with final src; exactly 3 races differ). So the 26-race root

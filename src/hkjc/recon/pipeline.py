@@ -47,6 +47,11 @@ from ..data import RaceInfo, download_replay, replay_path
 FPS = 25.0
 
 
+def track_app_enabled() -> bool:
+    """Appearance-aware tracking (HKJC_TRACK_APP=1; needs the silk stage)."""
+    return os.environ.get("HKJC_TRACK_APP", "0") != "0"
+
+
 def film_enabled() -> bool:
     """The race-film metric anchor: ON by default, HKJC_FILM=0 disables (``RaceRun.observe``)."""
     return os.environ.get("HKJC_FILM", "1") != "0"
@@ -152,7 +157,7 @@ class RaceRun:
         todo = [st for st in stages if st not in self.done_set() or st in force]
         if not film_enabled():  # HKJC_FILM=0 (see observe)
             todo = [st for st in todo if st != "film"]
-        if not float(os.environ.get("HKJC_SILK_W", 0)) > 0:  # silk E-step term off by default
+        if not (float(os.environ.get("HKJC_SILK_W", 0)) > 0 or track_app_enabled()):  # off by default
             todo = [st for st in todo if st != "silk"]
         bg = {}
 
@@ -639,7 +644,17 @@ class RaceRun:
         t = (rows[:, 0] - self.clock_f0()) / FPS
         frames = np.unique(rows[:, 0])
         fi = np.searchsorted(frames, rows[:, 0])
-        trs = tracking.stitch(tracking.track((frames - self.clock_f0()) / FPS, -d, lat, fi))
+        times = (frames - self.clock_f0()) / FPS
+        tshift = os.environ.get("HKJC_TRACK_SHIFT", "0") != "0"
+        if track_app_enabled():  # appearance-aware tracking (render-domain silk continuity)
+            zs = np.load(self.p("silk.npz"))
+            F = zs["feat"][det_idx].astype(float)
+            F = F / np.maximum(F.sum(1, keepdims=True), 1e-9)
+            p1 = tracking.track(times, -d, lat, fi, shift=tshift)
+            llr = tracking.calibrate_llr(p1, F, t, fi, -d, lat)
+            trs = tracking.stitch(tracking.track(times, -d, lat, fi, shift=tshift, F=F, llr=llr))
+        else:
+            trs = tracking.stitch(tracking.track(times, -d, lat, fi, shift=tshift))
         trs.sort(key=lambda tk: -len(tk.t))
         np.savez(
             self.p("tracks.npz"),
