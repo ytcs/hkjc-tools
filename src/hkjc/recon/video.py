@@ -266,7 +266,7 @@ class FrameCache:
             bufs.append(buf.tobytes())
             y0, y1, x0, x1 = clock_box
             clocks.append(full[y0:y1, x0:x1].copy())
-        if os.environ.get("HKJC_FRAME_GRID", "1") != "0":  # see grid_keep (default ON)
+        if os.environ.get("HKJC_FRAME_GRID", "0") != "0":  # see grid_keep (off by default)
             keep = np.flatnonzero(grid_keep(idx))
             idx, bufs, clocks = [idx[k] for k in keep], [bufs[k] for k in keep], [clocks[k] for k in keep]
         off = [0]

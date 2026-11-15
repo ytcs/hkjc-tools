@@ -806,7 +806,15 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
         ST 06-07 R6 lateral scale.
       - ST 04-26 R1: winner lost (a 0.05 s near dead heat), leader gate gained.
       - HV 05-20 R9 behind-winner 0.287 s. The finish-camera registration aliased, below.
-    - 6-seed ensembles on all 26 races, V vs Y, are the judgement (running).
+    - 6-seed ensembles on all 26 races (observe → validate, 1 % detection-drop seeds), V → Y:
+      - All five timing gates mean 22.83 → 22.17; timing gates 125.8 → 124.5; all gates 206.3 →
+        202.0, seed range [205, 207] → [199, 206]; finish-short 31.3 → 32.2.
+      - Identity score 0.930/89.8 % → 0.931/90.0 %; unanimity 64.9 → 64.5 %; hand set mean ~50.7 →
+        ~53.0/79 (inside the per-seed spread).
+      - NOT ADOPTED: both defaults back OFF, so `main` behaves as tagged V. The mask is right in
+        pixels (stalls 48 → 2, ST4 rotation gone) but costs gates downstream.
+      - Races losing on every seed: HV 04-15 R9, HV 05-20 R9, ST 06-07 R6. Also lower: ST 04-26
+        R1, ST 05-09 R1, HV 05-27 R9. Gained: ST 05-31 R1.
   - Finish-camera scale prior (`finishcam.RULER_CAL`, HKJC_FC_CAL=1, off by default):
     - The COCO horse box includes the extended legs, so the ruler (2.6 m nose-to-tail) reads px/m
       high and the physical prior on C is too large.
@@ -818,6 +826,9 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
     - Single run on Y's artifacts: all gates 202 → 204, all five timing gates 22 → 23. Fixes HV 05-20
       R9, HV 04-15 R9 paths-short and the ST 04-26 R1 winner; loses HV 05-27 R3 ρ (0.96 → 0.89).
       Hand set 55 → 48/79 (HV 05-27 R9 21 → 14/28). Ensembles pending.
+    - Adoption rule, declared before the ensembles are read: on the same artifacts, mean all gates
+      not below the base arm's, and no race losing a gate on all six seeds. Tested on V's artifacts
+      (calibration alone) and on Y's.
   - Declared before the from-scratch run with both on:
     (1) mid-race stalls and field-speed anomalies go to ~0;
     (2) ST4's 54 s identity rotation disappears with the OLD tracker (eye strips);
