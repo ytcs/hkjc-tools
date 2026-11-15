@@ -767,7 +767,9 @@ class RaceRun:
                 continue
             vs.append(v)
         ppm_fc = float(z["ppm"]) if "ppm" in z.files else np.nan
-        c_prior = float(np.median(vs)) * ppm_fc if vs and np.isfinite(ppm_fc) else None
+        c_prior = (
+            float(np.median(vs)) * ppm_fc * finishcam.ruler_cal() if vs and np.isfinite(ppm_fc) else None
+        )
         m, fit = finishcam.identity_match(tc, gaps, c_prior=c_prior)
         if fit is not None:
             fit = dict(fit, tc=tc, gaps=gaps)
@@ -845,7 +847,7 @@ class RaceRun:
                 v.append(np.median(np.gradient(p.s[k], p.t[k])))
         v_line = float(np.median(v)) if v else 16.5  # m/s at the line (time sd -> metres)
         if np.isfinite(ppm_fc) and v:
-            c_prior = v_line * ppm_fc
+            c_prior = v_line * ppm_fc * finishcam.ruler_cal()
         cal = finishcam.anchor(gaps, t_cross, c_prior=c_prior)
         # label-free sanity check: the anchor fits the clock to LABELLED render paths, so wrong
         # labels drag it (R02A: C 3741-4000 vs ~1750, clock 0.5-1.2 s late). Registration of the

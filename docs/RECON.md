@@ -796,6 +796,28 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
     - Finish-short returns to W's level or better.
     - Baselines with the avatar mask come from CUDA. The OpenVINO iGPU detector differs (ST4:
       9122 vs 9129 detections), and its masks change the ORB steps on 603/705 frames.
+  - Pod run Y (da14cc1, defaults ON, from scratch, 46 min): every declared prediction HOLDS.
+    - The 17 races whose W frames equal V's reproduce W bit-identically.
+    - The 7 shifted races get V's frames back. HV 04-22 R1/R9 lose only their 14 keyframes each.
+    - Finish-short 31, the same as V.
+    - Gates vs V: all five timing gates 23 → 22, timing gates 126 → 125, all gates 207 → 202 (a
+      FAILURE on single runs):
+      - Mask, also in W: HV 04-15 R9 paths-short; ST 05-09 R1 and HV 05-27 R9 finish-n;
+        ST 06-07 R6 lateral scale.
+      - ST 04-26 R1: winner lost (a 0.05 s near dead heat), leader gate gained.
+      - HV 05-20 R9 behind-winner 0.287 s. The finish-camera registration aliased, below.
+    - 6-seed ensembles on all 26 races, V vs Y, are the judgement (running).
+  - Finish-camera scale prior (`finishcam.RULER_CAL`, HKJC_FC_CAL=1, off by default):
+    - The COCO horse box includes the extended legs, so the ruler (2.6 m nose-to-tail) reads px/m
+      high and the physical prior on C is too large.
+    - Registration C / prior over 26 races has median 0.856. 7/26 are pinned at the ±25 % window's
+      lower edge. HV 05-20 R9 locked onto an aliased C = 1.25 × prior: no tracklet named, #2/#3/#9
+      swapped.
+    - Calibrated on the 13 clean registrations (not at the edge, ≥ 80 % matched): 0.88, robust
+      sd 0.09 (HV 0.84, ST 0.91).
+    - Single run on Y's artifacts: all gates 202 → 204, all five timing gates 22 → 23. Fixes HV 05-20
+      R9, HV 04-15 R9 paths-short and the ST 04-26 R1 winner; loses HV 05-27 R3 ρ (0.96 → 0.89).
+      Hand set 55 → 48/79 (HV 05-27 R9 21 → 14/28). Ensembles pending.
   - Declared before the from-scratch run with both on:
     (1) mid-race stalls and field-speed anomalies go to ~0;
     (2) ST4's 54 s identity rotation disappears with the OLD tracker (eye strips);

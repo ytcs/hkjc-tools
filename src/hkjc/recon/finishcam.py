@@ -116,6 +116,20 @@ def cloth_reads(img, *, y_min=150, n_field=14, x_center=None, x_half=700, white=
 
 HORSE_LEN_M = 2.6  # nose-to-tail of a galloping thoroughbred at full stretch (+-8%): the ruler
 COCO_WEIGHTS = "models/coco_yolov8x.pt"
+# The COCO box of a galloping horse is wider than nose-to-tail (extended legs), so the ruler reads
+# px/m HIGH and the physical prior on the camera scale C (speed at the line x ruler) is too large.
+# MEASURED on the 13 of 26 races (pod run Y) whose label-free registration is clean (not at the
+# window edge, >= 80 % of tracklets within tol): fitted C / prior median 0.88 (robust sd 0.09; HV
+# 0.84, ST 0.91). Uncorrected, the registration's +-25 % window sat on the biased prior: 7/26 races
+# were pinned at its lower edge, and HV 05-20 R9 locked onto an aliased C = 1.25 x prior (no tracklet
+# named, the winner on the wrong tracklet). Applied where the prior is formed (HKJC_FC_CAL=1).
+RULER_CAL = 0.88
+
+
+def ruler_cal() -> float:
+    import os
+
+    return RULER_CAL if os.environ.get("HKJC_FC_CAL", "0") != "0" else 1.0
 
 
 def horse_scale(frames_imgs, line_x):
