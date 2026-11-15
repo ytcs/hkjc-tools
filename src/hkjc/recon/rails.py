@@ -42,24 +42,31 @@ def inner_sign(T: np.ndarray) -> int:
     return 1 if cross.sum() > 0 else -1
 
 
-def inner_side(T: np.ndarray) -> int:
-    """The racing rail's side of travel: +1 (RIGHT) -- Hong Kong racing is clockwise at both venues,
-    and on the Sha Tin 1000 m straight stall 1 is on the right of travel as on the ovals.
-    REJECTED: inferring it from the camera path's mean turning (``inner_sign``, kept as the
-    diagnostic HKJC_INNER=auto). Ovals turn |sum| >= 2.7 (all +1), but the three straights turn
-    |sum| < 0.2, so the sign was noise: ST 0419 R3 and ST 0509 R1 flipped between two runs of the same
-    video (pose differing only by the avatar mask), ST8 was -1 in both. With -1 the "rail" was the
-    other band edge -- on ST 0509 R1 it traced the mosaic's warped coverage boundary and dipped 15-25 m
-    before the line, sliding the whole field ~3.5 m laterally, so association scrambled (#4 ended on a
-    back-marker, 3.4 m short) -- and the draw prior put stall 1 on the wrong side (draw-vs-lateral
-    rho +0.73 with +1, -0.21 with -1; on the +1 roots ST 05-09 R1 +0.5..+0.9 on 12/12 runs, ST8
-    +0.2..+0.7 on 11/12, ST3 ~0 where identity is weakest). 6-seed ensembles on the 3 straights x 2 pose variants: all
-    gates 285 -> 286 (ST 0509 R1 45 -> 48, rho 1.00 on every seed; ST3 rho 0.91 -> 0.98; ST8 rho
-    0.92-0.95 -> 0.98-1.00 and behind-winner 0.055 -> 0.025 s, but its close #2/#12 finish flipped on
-    1 of 6 seeds)."""
-    if os.environ.get("HKJC_INNER", "right") == "auto":
+def inner_side(T: np.ndarray, handedness: str | None = None) -> int:
+    """The racing rail's side of travel (+1 right / clockwise, -1 left / anti-clockwise).
+    1. The camera path TURNS decisively (|summed turning| >= a quarter turn): its measured sign --
+       physical, so clockwise and anti-clockwise races are both handled without a table. MEASURED (26
+       turf races): ovals |sum| 2.7-8.8 rad.
+    2. Otherwise (a STRAIGHT: the three Sha Tin 1000 m races |sum| < 0.2) the sign is noise and comes
+       from the race's ``handedness`` ("left" -> -1, else +1: on the HKJC straight stall 1 is on the
+       right of travel).
+    REJECTED: the bare turning sign on straights -- ST 0419 R3 and ST 0509 R1 flipped between two
+    runs of the same video (pose differing only by the avatar mask), ST8 was -1 in both. With -1 the
+    "rail" was the other band edge -- on ST 0509 R1 it traced the mosaic's warped coverage boundary
+    and dipped 15-25 m before the line, sliding the whole field ~3.5 m laterally, so association
+    scrambled (#4 ended on a back-marker, 3.4 m short) -- and the draw prior put stall 1 on the wrong
+    side (draw-vs-lateral rho +0.73 with +1, -0.21 with -1; on the +1 roots ST 05-09 R1 +0.5..+0.9
+    on 12/12 runs, ST8 +0.2..+0.7 on 11/12, ST3 ~0 where identity is weakest). 6-seed ensembles on
+    the 3 straights x 2 pose variants: all gates 285 -> 286 (ST 0509 R1 45 -> 48, rho 1.00 on every
+    seed; ST3 rho 0.91 -> 0.98; ST8 rho 0.92-0.95 -> 0.98-1.00 and behind-winner 0.055 -> 0.025 s,
+    but its close #2/#12 finish flipped on 1 of 6 seeds). Also REJECTED: a constant +1 (the first
+    version of this fix) -- HKJC also runs anti-clockwise races. HKJC_INNER=auto: the bare turning
+    sign everywhere (diagnostic)."""
+    cross = T[:-1, 0] * T[1:, 1] - T[:-1, 1] * T[1:, 0]
+    turn = float(np.sum(np.arcsin(np.clip(cross, -1.0, 1.0))))
+    if os.environ.get("HKJC_INNER", "") == "auto" or abs(turn) >= np.pi / 2:
         return inner_sign(T)
-    return 1
+    return -1 if (handedness or "").lower().startswith(("left", "anti")) else 1
 
 
 def right_normal(T):
@@ -617,7 +624,7 @@ def refine_rail(img, cnt, to_px, Rail, inner, ok, half=25.0):
     return fill_world(Rail + dlt[:, None] * Nn, keep), keep
 
 
-def extract_racing_rail(img, cnt, to_px, G, shape, X):
+def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     """Racing rail on the map, in 3 passes:
       A. stations along the (extended) camera-centre path; innermost-horse offsets per station;
       B. re-station along the field's INNER EDGE (parallel to the racing rail by construction);
@@ -636,7 +643,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X):
 
     Ce = np.vstack([ext(C[0], C[min(30, len(C) - 1)])[::-1], C, ext(C[-1], C[max(-31, -len(C))])])
     Ps, T, _s = resample_path(Ce, step=2.0, smooth=80.0)
-    inner = inner_side(T)
+    inner = inner_side(T, handedness)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
     Q = (

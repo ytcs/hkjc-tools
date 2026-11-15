@@ -894,8 +894,12 @@ R1 flipped between V and Y (whose poses differ only by the avatar mask); ST8 was
     oval's curved rail joins below it).
   - The draw prior also lands on the wrong side with −1: draw-vs-lateral ρ is +0.73 with +1 and
     −0.21 with −1.
-- Fix: `rails.inner_side` returns +1 (right of travel; on the straight, stall 1 is on the right as
-  on the ovals). The old inference stays as the diagnostic `HKJC_INNER=auto`.
+- Fix: `rails.inner_side` uses the measured turning sign when the path turns decisively (at least a
+  quarter turn; the ovals measure 2.7–8.8 rad), which handles clockwise and anti-clockwise races
+  alike. On a straight it takes the side from the race's `handedness` (left → −1, else +1). Revised
+  2026-11-15: the first version was a constant +1, which is wrong because HKJC also runs
+  anti-clockwise races. The revision is identical on all 26 races. The bare turning sign stays as the
+  diagnostic `HKJC_INNER=auto`.
 - Declared before reading: all gates over 3 straights × {V, Y} × 6 seeds must not drop, and the rail
   must sit on a real edge in pixels.
 - Result: 285 → 286.

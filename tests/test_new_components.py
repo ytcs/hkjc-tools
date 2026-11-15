@@ -362,10 +362,15 @@ def test_rails_inner_side_is_right_on_a_straight():
         y = 0.5 * np.sin(x / (150 + 40 * k)) * (-1) ** k + rng.normal(0, 0.05, len(x))
         _P, T, _s = rails.resample_path(np.c_[x, y], step=2.0, smooth=80.0)
         assert rails.inner_side(T) == 1
-    # a clockwise oval (y down = right turn) agrees with the old inference
+        assert rails.inner_side(T, "left") == -1  # a straight takes the side from the race record
+    # a decisive turn uses the MEASURED sign, whatever the record says: clockwise and anti-clockwise
     a = np.linspace(0, np.pi, 400)
-    _P, T, _s = rails.resample_path(np.c_[500 * np.cos(-a), -500 * np.sin(-a)], 2.0, 80.0)
-    assert rails.inner_sign(T) == 1 == rails.inner_side(T)
+    for sgn in (1, -1):
+        P = np.c_[500 * np.cos(-a), -500 * sgn * np.sin(-a)]
+        _P, T, _s = rails.resample_path(P, 2.0, 80.0)
+        assert rails.inner_side(T, "right") == rails.inner_side(T, "left") == rails.inner_sign(T)
+    assert {rails.inner_side(rails.resample_path(np.c_[500 * np.cos(-a), -500 * g * np.sin(-a)],
+                                                 2.0, 80.0)[1]) for g in (1, -1)} == {1, -1}
 
 
 def test_tracking_resolve_seams_merges_handover_duplicates_only():

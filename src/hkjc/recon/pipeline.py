@@ -470,7 +470,9 @@ class RaceRun:
     def rails(self):
         img, cnt, to_px = self._map()
         rows, X, _h, P = self.world_dets()
-        out = rails.extract_racing_rail(img, cnt, to_px, P["G"], tuple(P["shape"]), X)
+        out = rails.extract_racing_rail(
+            img, cnt, to_px, P["G"], tuple(P["shape"]), X, self.info.geometry.handedness
+        )
         g = self.info.geometry
         exp_gap = g.width("A") - self.info.width if self.info.surface == "turf" else 0.0
         shift, ssup = rails.movable_rail_check(
