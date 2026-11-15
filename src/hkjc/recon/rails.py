@@ -680,9 +680,17 @@ def fixed_rail_gap(img, cnt, to_px, rail, inner, ppm, expected_m, *, band_m=2.5,
     T = np.gradient(rail, axis=0)
     T /= np.linalg.norm(T, axis=1, keepdims=True)
     Nin = inner * right_normal(T)
-    offs = np.arange((expected_m - band_m) * ppm, (expected_m + band_m) * ppm, 1.0)
-    L, S, V = sample_profiles(img, cnt, to_px, rail, Nin, offs)
-    R = ridge_response(L, S, V)
+    # ``ridge_response`` compares each offset with its sides via np.roll, which WRAPS at the window
+    # ends. Sampling only the +-band made offsets near the band edge compare against the far end
+    # and fire. MEASURED (ST 06-07 R6): on pod run Y's map the artefact at 10.8-11.5 m won 3755
+    # stations against 232 at the real rail (9.73 m on a wide window), giving 11.27 m; V's map had
+    # the same artefact at 786 stations. So the profile is sampled on a PADDED window and the
+    # argmax is taken inside the band only.
+    pad = 32
+    offs_all = np.arange((expected_m - band_m) * ppm - pad, (expected_m + band_m) * ppm + pad, 1.0)
+    L, S, V = sample_profiles(img, cnt, to_px, rail, Nin, offs_all)
+    R = ridge_response(L, S, V)[:, pad:-pad]
+    offs = offs_all[pad:-pad]
     k = np.argmax(R, axis=1)
     pk = R[np.arange(len(R)), k]
     sup = pk >= 6.0

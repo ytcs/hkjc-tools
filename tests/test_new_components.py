@@ -333,3 +333,20 @@ def test_identity_assign_global_respects_overlap_and_evidence():
     assert lab.tolist() == [1, 0, 1]
     votes[1, 1], votes[1, 2] = 2, 25  # clear evidence for #2
     assert identity.assign_global(members, frames, votes, 3).tolist() == [1, 2, 1]
+
+
+def test_rails_fixed_rail_gap_finds_the_line_not_the_band_edge():
+    """A thin bright line 9.5 m inside the racing rail (ppm 10) is measured at 9.5 m; a bright apron
+    beyond the band's far edge must not pull the estimate to the band edge."""
+    from hkjc.recon import rails
+
+    ppm = 10.0
+    img = np.full((260, 500, 3), 90, np.uint8)
+    img[143:148, :] = 125  # faint fixed rail: y = 50 + 9.5 m * ppm
+    img[:125, :] = 40  # dark ground at the band's near end (band 6.7-11.7 m -> y 117-167)
+    img[158:, :] = 150  # bright apron from inside the band's far end outward
+    # (with a wrapping side comparison, offsets near the far edge "see" the dark near end and fire)
+    cnt = np.ones((260, 500), np.float32)
+    rail = np.c_[np.arange(60.0, 440.0), np.full(380, 50.0)]
+    gap, sup = rails.fixed_rail_gap(img, cnt, lambda W: np.asarray(W, float), rail, 1, ppm, 9.2)
+    assert abs(gap - 9.5) < 0.2 and sup > 0.5

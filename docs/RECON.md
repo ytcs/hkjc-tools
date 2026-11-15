@@ -841,6 +841,25 @@ detection drop). At V: ST3 25 %, ST4 45 %, ST 05-24 50 %, ST8 48 %, ST9 80 %, HV
         set on V.
       - The hard registration window is the fragile part, not the constant. NOT ADOPTED in either
         form.
+  - Lateral-scale gate MEASUREMENT bug (`rails.fixed_rail_gap`, fixed for every arm; the threshold
+    is unchanged):
+    - `ridge_response` compares each offset with its sides via `np.roll`, which wraps around. The
+      gate sampled only the ±2.5 m band, so offsets near the band edge compared against the far end
+      and fired.
+    - ST 06-07 R6, the mask's one all-seeds blocker, in pixels: maps rebuilt locally from V's and Y's
+      poses reproduce the pod values exactly (9.68 / 11.27 m). On a wide window both maps show a
+      single fixed-rail ridge, at 9.59 / 9.73 m. The 11.27 m was the artefact (3755 stations vs 232
+      at the real rail).
+    - Fix: sample a padded window and take the argmax inside the band only. Unit test fails on the
+      old code.
+    - Re-scored on all 14 lateral races, maps rebuilt from each arm's pose:
+      - V: 8 pass / 6 fail → 10 pass / 1 fail / 3 n/a.
+      - Y: 7 pass / 7 fail → 10 pass / 0 fail / 4 n/a.
+      - Newly passing on both arms: HV 04-22 R1, HV 04-29 R9, HV 06-03 R8; on Y also ST 06-07 R6.
+      - ST 05-03 R7, HV 05-13 R9, ST 05-31 R1 → n/a: no supported ridge anywhere near the
+        expected gap (support ≤ 5 %). Their old ~2.3 m gaps were edge artefacts.
+      - HV 04-29 R3 is the same case: V's 8.20 m "pass" was the artefact. Now V fails (9.21 m,
+        weak) and Y is n/a.
   - Declared before the from-scratch run with both on:
     (1) mid-race stalls and field-speed anomalies go to ~0;
     (2) ST4's 54 s identity rotation disappears with the OLD tracker (eye strips);
