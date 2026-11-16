@@ -230,6 +230,54 @@ def _map_geometry(run):
     return rf, ppm, lat0, d_to_s
 
 
+def full_offset(run, windows=((20.0, 32.0), (40.0, 52.0))):
+    """Video seconds at race clock 0 for the FULL (TV) feed: the aerial feed's left panel is a scaled
+    copy of the TV picture, so the lag maximising thumbnail correlation between the two, added to the
+    aerial's clock offset. Measured on two windows; returns (offset, [lags], [correlations])."""
+    import av
+    import cv2
+
+    def thumbs(path, t0, t1, crop=None):
+        out = []
+        with av.open(str(path)) as c:
+            st = c.streams.video[0]
+            c.seek(int(max(t0 - 1, 0) / st.time_base), stream=st)
+            for fr in c.decode(st):
+                t = float(fr.pts * st.time_base)
+                if t < t0:
+                    continue
+                if t > t1:
+                    break
+                g = fr.to_ndarray(format="gray")
+                if crop:
+                    g = g[crop[0] : crop[1], crop[2] : crop[3]]
+                g = cv2.resize(g, (64, 36), interpolation=cv2.INTER_AREA).astype(float)
+                out.append((t, ((g - g.mean()) / (g.std() + 1e-6)).ravel()))
+        return out
+
+    a0 = run.clock_f0() / 25.0
+    lags, cors = [], []
+    for t0, t1 in windows:
+        A = thumbs(run.video("aerial"), t0, t1, crop=(270, 807, 0, 955))
+        F = thumbs(run.video("full"), t0 - 2, t1 + 2)
+        if not A or not F:
+            continue
+        fa = np.array([x[1] for x in A])
+        ff = np.array([x[1] for x in F])
+        best = None
+        for lag in range(-50, 51):
+            i0 = int(round((A[0][0] - F[0][0]) * 25)) + lag
+            if i0 < 0 or i0 + len(fa) > len(ff):
+                continue
+            r = float(np.mean(np.sum(fa * ff[i0 : i0 + len(fa)], 1) / fa.shape[1]))
+            if best is None or r > best[0]:
+                best = (r, lag / 25.0)
+        if best:
+            cors.append(best[0])
+            lags.append(best[1])
+    return (a0 + float(np.median(lags)) if lags else None), lags, cors
+
+
 def sync_video(
     run,
     out_path,
@@ -243,9 +291,11 @@ def sync_video(
 ):
     """Four replay feeds, time-synced on the race clock, beside the reconstructed positions on a track
     map drawn from the run's own measured rail. ``offsets`` = {feed: video seconds at race clock 0}
-    (aerial: ``run.clock_f0() / 25``; the others measured from their on-screen clock or the gate
-    opening, see RECON). Horses = official silk colour + saddlecloth number; a faint ring marks a
-    position with posterior sd > 1.5 m (extrapolated). Writes an H.264 MP4 via ffmpeg."""
+    (aerial: ``run.clock_f0() / 25``; full: ``full_offset(run)``; patrol/drone from the gate opening,
+    see RECON; ``None`` = feed not published, drawn blank). Horses = official silk colour +
+    saddlecloth number; a faint ring marks posterior sd 1.5-3 m, a hollow marker sd 3-10 m, and a
+    position with sd > 10 m is left out of the field view (the leader and window use sd < 3 m only).
+    Writes an H.264 MP4 via ffmpeg."""
     import subprocess
 
     import av
@@ -311,7 +361,8 @@ def sync_video(
     t1 = tmax + 1.0 if t1 is None else t1
     # decoders, positioned at race time t0
     conts, its, nxt = {}, {}, {}
-    for f in feeds:
+    feeds_ok = [f for f in feeds if offsets.get(f) is not None]
+    for f in feeds_ok:
         c = av.open(str(run.video(f)))
         st = c.streams.video[0]
         st.thread_type = "AUTO"
@@ -320,7 +371,7 @@ def sync_video(
         c.seek(int(max(tv - 2.0, 0) / st.time_base), stream=st)
         its[f] = c.decode(st)
         nxt[f] = None
-    cur = dict.fromkeys(feeds)
+    cur = dict.fromkeys(feeds_ok)
 
     def frame_at(f, tv):
         c, st = conts[f]
@@ -350,24 +401,28 @@ def sync_video(
         t = t0 + k / fps
         canvas = np.zeros((H, W, 3), np.uint8)
         for i, f in enumerate(feeds):
-            img = frame_at(f, t + offsets[f])
+            img = frame_at(f, t + offsets[f]) if f in feeds_ok else None
             x, y = (i % 2) * tile[0], (i // 2) * tile[1]
             if img is not None:
                 canvas[y : y + tile[1], x : x + tile[0]] = img
-            cv2.putText(canvas, f, (x + 8, y + tile[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            label = f if f in feeds_ok else f"{f} (not published)"
+            cv2.putText(canvas, label, (x + 8, y + tile[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
         mp = base.copy()
         cur_pos = {}
         for h in horses:
             r = pos(h, t)
             if r is not None:
                 cur_pos[h] = r
-        lead = min((r[1] for r in cur_pos.values()), default=None)
+        # honest display: the leader / window come from well-determined horses only (sd < 3 m); a
+        # vaguer position is drawn hollow, and one with sd > 10 m is left out of the field view
+        firm = {h: r for h, r in cur_pos.items() if r[2] < 3.0}
+        lead = min((r[1] for r in (firm or cur_pos).values()), default=None)
         for h, (p, d, sd) in cur_pos.items():
-            cv2.circle(mp, tuple(p), 4, col.get(h, (200, 200, 200)), -1, cv2.LINE_AA)
+            cv2.circle(mp, tuple(p), 4, col.get(h, (200, 200, 200)), -1 if sd < 3.0 else 1, cv2.LINE_AA)
         # straightened field view: x = metres behind the leader, y = lateral off the rail
         y0f, hf = Ho + 40, Hm - Ho - 70
         if cur_pos:
-            back = max(r[1] for r in cur_pos.values()) - lead
+            back = max(r[1] for r in (firm or cur_pos).values()) - lead
             win = max(30.0, 5.0 * np.ceil((back + 6.0) / 5.0))
             xs = lambda gap: int(Wm - 30 - gap / win * (Wm - 60))  # noqa: E731
             ys = lambda lat: int(y0f + hf - lat / width_m * hf)  # noqa: E731
@@ -378,13 +433,18 @@ def sync_video(
                 if gm % 10 == 0:
                     cv2.putText(mp, f"{gm:.0f}", (xs(gm) - 8, y0f + hf + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
             for h, (p, d, sd) in sorted(cur_pos.items(), key=lambda x: -x[1][1]):
+                if sd > 10.0 or not (-2.0 <= d - lead <= win + 2.0):
+                    continue
                 g = G[h]
                 lat = float(np.interp(t, g["t"], g["lat"]))
                 c = (xs(d - lead), ys(lat))
-                if sd > 1.5:
-                    cv2.circle(mp, c, 15, (180, 180, 180), 1, cv2.LINE_AA)
-                cv2.circle(mp, c, 11, col.get(h, (200, 200, 200)), -1, cv2.LINE_AA)
-                cv2.circle(mp, c, 11, (0, 0, 0), 1, cv2.LINE_AA)
+                if sd < 3.0:
+                    if sd > 1.5:
+                        cv2.circle(mp, c, 15, (180, 180, 180), 1, cv2.LINE_AA)
+                    cv2.circle(mp, c, 11, col.get(h, (200, 200, 200)), -1, cv2.LINE_AA)
+                    cv2.circle(mp, c, 11, (0, 0, 0), 1, cv2.LINE_AA)
+                else:  # extrapolated: hollow
+                    cv2.circle(mp, c, 11, col.get(h, (200, 200, 200)), 2, cv2.LINE_AA)
                 tw = cv2.getTextSize(str(h), cv2.FONT_HERSHEY_SIMPLEX, 0.45, 2)[0][0]
                 cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
                 cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)

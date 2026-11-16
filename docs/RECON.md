@@ -1552,8 +1552,20 @@ reconstruction's (`clock_f0`); the other three feeds carry no shared timestamp. 
 R8: the full feed shows the same on-screen clock (video = race clock + 1.32 s, three reads within
 0.02 s); patrol's starting gates open on the same frame as full's (1.20 s, image-difference spike in
 the gate region), so patrol = full; drone's gates open 1.14 s later (drone = race clock + 2.46 s).
-Gate opening itself is at clock −0.12 s on the full feed. Offsets are per race and are passed in; not
-yet automated. The course overview is drawn from the run's measured rail with d → rail arclength
+Gate opening itself is at clock −0.12 s on the full feed.
+- full: automated, `viz.full_offset` (the aerial's left panel is a scaled copy of the TV picture;
+  thumbnail correlation 0.66–0.92 on 26 races, two windows agree within 0.08 s). Full sits at clock
+  + 1.21–1.51 s.
+- patrol / drone: gate opening read by eye from 0.2 s contact sheets (26 races). Patrol opens at
+  1.15–1.4 s on every race; drone at 2.1–3.1 s. By eye the drone horses are only visible clear of the
+  gate ~0.35 s after the doors open (HV 06-03 R8 measured), so drone readings are corrected by
+  −0.35 s; expected error ±0.2 s (drone), ±0.1 s (patrol). ST7 has no published drone feed (404).
+- REJECTED for automation: a threshold or change-point on frame differences (cameras pan after the
+  start; ST 04-26 R9 drone fired at 0.04 s, HV 06-03 R8 full 1.62 vs 1.20) and matching the shared
+  finish-camera replay (it sits at a different edit position per feed: HV 06-03 R8 patrol −1.92 s,
+  drone 0 vs the live +0/+1.14 s).
+- Display honesty: the field view's leader and window use horses with sd < 3 m; sd 3–10 m is drawn
+  hollow and sd > 10 m is left out (ST4 #3, extrapolated at sd 14 m, was drawn "winning"). The course overview is drawn from the run's measured rail with d → rail arclength
 taken from the observe stage's own projection of the detections.
 
 ## 4. Open / next
