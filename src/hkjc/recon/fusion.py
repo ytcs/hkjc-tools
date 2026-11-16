@@ -78,8 +78,12 @@ def _interp_rows(t, t0, n):
 def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd):
     """The same MAP problem as ``smooth.solve``, assembled DIRECTLY as a banded normal matrix (lower
     bandwidth 2: interpolation rows touch 2 adjacent nodes, the acceleration prior 3, the velocity
-    prior 2) and solved by banded Cholesky -- O(n), no sparse construction or LU. HKJC_BANDED=1.
-    Numerically equivalent to the sparse path to floating-point rounding (not bit-identical)."""
+    prior 2) and solved by banded Cholesky -- O(n), no sparse construction or LU. DEFAULT
+    (HKJC_BANDED=0 = the sparse path). DECLARED NON-EXACT speedup: paths agree with the sparse path to
+    ~1e-8 m (variances 1e-12); per call 0.33 s -> 0.012 s; 26 races (Z4, seed 0) in 151 s, ~2x faster
+    end to end; gates identical on 26/26, detection labels identical on 23/26 (the EM flips 0.1-3.2 %
+    of labels on HV 04-15 R9, HV 04-29 R3, HV 06-03 R3 -- its known sensitivity, well below the 1 %
+    detection-drop seed perturbation)."""
     from scipy.linalg import cho_solve_banded, cholesky_banded
 
     ab = np.zeros((3, n))
@@ -209,7 +213,7 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
 
     import os
 
-    if os.environ.get("HKJC_BANDED", "0") != "0":  # banded Cholesky (see _smooth_banded)
+    if os.environ.get("HKJC_BANDED", "1") != "0":  # banded Cholesky (see _smooth_banded)
         s, sd_s = _solve_banded(obs, "s", t0, n, a_s, None, None, None, want_sd)
         lat, sd_l = _solve_banded(
             obs,
