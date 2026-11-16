@@ -1312,6 +1312,40 @@ restore the old rules).** Z5's finish-order inversions were traced in pixels to 
 - Remaining seed-0 pairs: HV 04-15 R9 (#2/#4 vs #9), ST3 (#5/#9, genuine reads, the jump race) and
   ST 05-24 R1 (#7/#13).
 
+**Straight courses: field-edge datum + measured fence offset (2026-11-16; baseline Z6, default;
+`HKJC_STRAIGHT_DATUM=0` = the oval extraction).** Outside d ≈ 400–550 the mosaic covers only 5–90 px
+inside the field edge, and the extracted "rail" there was sparse, unsupported grass texture: about
+0 px before the window and 25–60 px after it. No consistent on-map rail existed to keep. On a straight
+(the existing turning test, |summed turning| < a quarter turn, now `rails.is_straight`), the rail
+polyline is the field's inner-edge scaffold. It is smooth on the map, because the detections run in
+straight parallel lines through the window. The fence is a measurement: `lat0_px` is the median
+offset over the tracker's longest contiguous supported run (the fence where the mosaic shows it).
+ST3 gives 111 px (range 109–115), ST 05-09 R1 111 px (96–121; the oval rail branches off separately)
+and ST8 61 px (58–90). `lat0_px` is added to every lateral in observe. **Straight-course lateral is
+pack-edge-relative plus one measured constant**: drift of the pack against the fence along the
+straight (up to ≈ 1.8 m on ST8) is not modelled.
+- Blocking rail audit unmodified and passing: off-map runs 0 (ST3 was 44), marker grids unchanged
+  (6 markers, spacing ≤ 1 %), no kinks. The ovals' `rail.npz` is byte-identical (code path unchanged).
+- Rule declared before the run: 3 straights × 6 seeds against the current defaults.
+
+  | Straights | Control | Datum + fence (B) | Datum only (A) |
+  |---|---|---|---|
+  | ρ (mean of 3) | 0.884 | 0.923 (Δ +0.039, SE 0.011, better on 6/6 seeds) | 0.845 |
+  | ST3 / ST 05-09 R1 / ST8 ρ | 0.847 / 0.856 / 0.949 | 0.866 / 0.935 / 0.969 | 0.820 / 0.784 / 0.930 |
+  | Non-lateral gates per seed | 23.83 | 24.00 | 23.83 |
+  | ST3 hand majority (22) | 5 | 11 | 8 |
+
+  Arm A (datum without the fence constant) puts about 10 % of detections inside the rail, against
+  the 0.3 m box prior: the measured constant carries the gain.
+- Audit (descriptive): lateral slides on the straights 6 → 1–2 per race. `field_gap` rises (8 per
+  race on ST3 and ST 05-09 R1) because the pack really runs about 5.8 m off the fence there. Legend
+  negatives on ST 05-09 R1 rise from 0.8 to 6.0, which is open.
+- Whole set (26 races × 6 seeds, Z6 against Z5): non-lateral gates per seed 200.33 → 200.50, lateral
+  passes 10 → 10, timing 126.2 → 126.3, ρ 0.966 → 0.971, hand majority (8 races) 113 → 119.
+- Rejected: scoring unseen offsets 0 (rail bridged off-map, blocking), a slope bound (the step
+  becomes a ramp), a whole-course coverage band (ST4's rail clears it by about 2 px), a straight
+  Tukey line (the mosaic bends).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

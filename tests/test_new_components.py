@@ -543,3 +543,26 @@ def test_finishcam_static_object_does_not_outvote_a_moving_cloth():
     rows += [[u, u, 1532 - 43.0 * (u - 58), 356.0, 1, 0.99] for u in range(58, 88)]
     T = finishcam.tracks(dict(line_x=960.0, reads=np.array(rows, float)))
     assert 1 in T and np.median(T[1][2]) == 356.0 and np.ptp(T[1][1]) > 1000
+
+
+def test_rails_straight_datum_measures_the_fence_where_it_is_seen():
+    """Straight course: the rail polyline is the field-edge scaffold; the fence offset is the median
+    over the DP's LONGEST contiguous supported run (the fence where the mosaic shows it), not the
+    scattered texture support elsewhere."""
+    from hkjc.recon import rails
+
+    n = 3000
+    Ps = np.c_[np.arange(n) * 2.0, np.zeros(n)]
+    Nin = np.tile([0.0, 1.0], (n, 1))
+    hin = np.full(n, 5.0)
+    rail_off = np.full(n, np.nan)
+    rail_off[::37] = hin[::37] + np.random.default_rng(0).uniform(-10, 50, len(rail_off[::37]))
+    rail_off[1200:1700] = hin[1200:1700] + np.linspace(105, 115, 500)  # the seen fence
+    C = Ps[::10] + [0.0, -30.0]
+    out = rails.straight_datum(Ps, Nin, hin, rail_off, 1, C)
+    assert abs(out["lat0_px"] - 110.0) < 0.5
+    assert out["lat0_range"][0] >= 104.9 and out["lat0_range"][1] <= 115.1
+    assert np.allclose(out["rail"][:, 1], 5.0, atol=0.5) and out["support"].all()
+    assert rails.is_straight(np.tile([1.0, 0.0], (100, 1)))
+    th = np.linspace(0, np.pi, 200)
+    assert not rails.is_straight(np.c_[np.cos(th), np.sin(th)])

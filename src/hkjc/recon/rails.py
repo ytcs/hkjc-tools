@@ -62,11 +62,16 @@ def inner_side(T: np.ndarray, handedness: str | None = None) -> int:
     but its close #2/#12 finish flipped on 1 of 6 seeds). Turf racing is clockwise (working
     assumption): on every oval the measured sign is +1 anyway; it is kept as a physical check rather
     than a hard-coded constant. HKJC_INNER=auto: the bare turning sign everywhere (diagnostic)."""
-    cross = T[:-1, 0] * T[1:, 1] - T[:-1, 1] * T[1:, 0]
-    turn = float(np.sum(np.arcsin(np.clip(cross, -1.0, 1.0))))
-    if os.environ.get("HKJC_INNER", "") == "auto" or abs(turn) >= np.pi / 2:
+    if os.environ.get("HKJC_INNER", "") == "auto" or not is_straight(T):
         return inner_sign(T)
     return -1 if (handedness or "").lower().startswith(("left", "anti")) else 1
+
+
+def is_straight(T: np.ndarray) -> bool:
+    """The camera path never turns decisively (|summed turning| < a quarter turn). MEASURED (26 turf
+    races): ovals 2.7-8.8 rad, the three Sha Tin 1000 m straights < 0.2 (see ``inner_side``)."""
+    cross = T[:-1, 0] * T[1:, 1] - T[:-1, 1] * T[1:, 0]
+    return abs(float(np.sum(np.arcsin(np.clip(cross, -1.0, 1.0))))) < np.pi / 2
 
 
 def right_normal(T):
@@ -728,6 +733,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     Ce = np.vstack([ext(C[0], C[min(30, len(C) - 1)])[::-1], C, ext(C[-1], C[max(-31, -len(C))])])
     Ps, T, _s = resample_path(Ce, step=2.0, smooth=80.0)
     inner = inner_side(T, handedness)
+    straight = is_straight(T)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
     if os.environ.get("HKJC_HIN_ROBUST", "1") != "0":  # see robust_offset
@@ -752,19 +758,68 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
         seen = minimum_filter1d(V, 29, axis=1) > 0.5  # ridge_response's on-map window (2+12)*2+1
     rail_off = dp_track(R, offs, hin, jump=2.0, lam=2.0, min_r=4.0, seen=seen)
     ok = ~np.isnan(rail_off)
+    if straight and os.environ.get("HKJC_STRAIGHT_DATUM", "1") != "0":
+        return straight_datum(Ps, Nin, hin, rail_off, inner, C)
     n_ = np.arange(len(Ps))
     ro = gaussian_filter1d(np.interp(n_, n_[ok], rail_off[ok]), 5)
     Rail0, ok = despike_world(Ps + ro[:, None] * Nin, ok)
     Rail, ok = refine_rail(img, cnt, to_px, Rail0, inner, ok)
     Rail, ok = despike_world(Rail, ok)
     Rail = smooth_rail(Rail, ok)
+    return dict(
+        rail=Rail, support=ok, inner=inner, stations=Ps, Nin=Nin, st_of_frame=_station_of_frame(C, Ps)
+    )
+
+
+def _station_of_frame(C, Ps):
+    """Each camera frame's station (time-ordered search: disambiguates revisited ground)."""
     st = np.zeros(len(C), int)
     last = 0
     for k, c in enumerate(C):
         lo, hi = max(0, last - 50), min(len(Ps), last + 800)
         st[k] = lo + int(np.argmin(np.hypot(*(Ps[lo:hi] - c).T)))
         last = st[k]
-    return dict(rail=Rail, support=ok, inner=inner, stations=Ps, Nin=Nin, st_of_frame=st)
+    return st
+
+
+def straight_datum(Ps, Nin, hin, rail_off, inner, C):
+    """STRAIGHT COURSES (``is_straight``; DEFAULT, HKJC_STRAIGHT_DATUM=0 = the oval extraction): the rail
+    polyline is the field's INNER-EDGE scaffold ``Ps + hin * Nin`` and the fence is a MEASURED per-race
+    constant ``lat0_px`` (added to every lateral in observe).
+
+    WHY: on the three Sha Tin 1000 m straights the mosaic shows the real fence only at d ~400-550 (one
+    continuous ridge ~110 px = 5.8 m inside the field edge on ST3; 95 -> 120 px on ST 05-09 R1, where
+    the joining oval rail branches off separately; 60 -> 95 px on ST8). Elsewhere the fence is off
+    the map and the DP's "rail" was sparse unsupported grass texture next to the field (rel offset
+    ~0 px before the window, 25-60 px after): every lateral stepped 2-5 m at the window (lateral
+    slides, ST3's legend negatives and 25-45 % label coverage there). The field edge is smooth on the
+    map (detections run in straight parallel lines through the window), so it is a consistent datum;
+    the fence offset is taken where the fence is SEEN: the DP's longest contiguous supported run
+    (texture support is scattered). Straight-course lateral is therefore pack-edge-relative plus one
+    measured constant (pack/fence drift along the straight, up to ~1.8 m on ST8, is not modelled).
+    REJECTED: scoring unseen offsets 0 (HKJC_RAIL_UNSEEN: rail bridged off-map 1800-2800 stations,
+    blocking audit + lost marker grids); a slope bound on the DP (step -> ramp); a whole-course
+    coverage band for the DP (ST4's rail clears it by ~2 px); a Tukey straight line (the mosaic
+    bends)."""
+    ok = ~np.isnan(rail_off)
+    lat0, rng = 0.0, (np.nan, np.nan)
+    idx = np.flatnonzero(ok)
+    if len(idx):
+        cut = np.flatnonzero(np.diff(idx) > 1) + 1
+        run = max(np.split(idx, cut), key=len)
+        rel = rail_off[run] - hin[run]
+        lat0, rng = float(np.median(rel)), (float(rel.min()), float(rel.max()))
+    Rail = smooth_rail(Ps + hin[:, None] * Nin, np.ones(len(Ps), bool))
+    return dict(
+        rail=Rail,
+        support=np.ones(len(Ps), bool),
+        inner=inner,
+        stations=Ps,
+        Nin=Nin,
+        st_of_frame=_station_of_frame(C, Ps),
+        lat0_px=lat0,
+        lat0_range=np.array(rng),
+    )
 
 
 def movable_rail_check(img, cnt, to_px, rail, inner, X, expected_m, *, ppm_lo=15.0, ppm_hi=24.0):

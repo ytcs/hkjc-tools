@@ -499,6 +499,12 @@ class RaceRun:
                 f"   rails: extracted ridge was the FIXED rail -> moved {shift:.0f} px out to the "
                 f"movable rail (course gap {exp_gap:.1f} m, ridge support {ssup:.0%})"
             )
+        if "lat0_px" in out:
+            lo_, hi_ = out["lat0_range"]
+            self.log(
+                f"   rails: STRAIGHT course -> field-edge datum; fence measured {out['lat0_px']:.0f} px "
+                f"inside it (range {lo_:.0f}..{hi_:.0f})"
+            )
         np.savez(self.p("rail.npz"), frame_idx=P["idx"], **out)
         rf = rails.RailFrame.from_points(out["rail"], int(out["inner"]))
         # painted markers are drawn only near the END of the race: profile them on a FINAL-PASS
@@ -655,7 +661,12 @@ class RaceRun:
                 self.log(
                     f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m"
                 )
-        lat = lat_px / ppm_loc(s_px)
+        # straight courses: the rail polyline is the field-edge datum; lat0_px = the fence's measured
+        # offset inside it (rails.straight_datum). HKJC_STRAIGHT_LAT0=0: datum only (diagnostic)
+        lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+        if os.environ.get("HKJC_STRAIGHT_LAT0", "1") == "0":
+            lat0 = 0.0
+        lat = (lat_px + lat0) / ppm_loc(s_px)
         g = lat > -1.0  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]
         det_idx = self._wd_idx[g]
