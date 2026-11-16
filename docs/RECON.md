@@ -1108,6 +1108,37 @@ mean silk signature changes, using binary segmentation on the total-variation di
 - Line-choice metric for the next step (segments where the innermost horses run more than 4 m off
   the rail): Z2 15/347 (the ST 05-31 and ST7 bends, HV start areas), binary score 4/347.
 
+
+**Rail line choice: binary + nearness + robust scaffold + gap weight (2026-11-15; rule FAILED by 0.5/seed,
+offered to the owner as a trade).** Line-choice metric: segments where the innermost horses run more
+than 4 m off the rail.
+- Z3 scores 15/347: wrong lines on the ST 05-31 and ST7 bends and in the HV start areas. The raw
+  score's line choice is the cause, and smoothing doesn't change it.
+- Root causes found:
+  1. The brighter-ridge preference, addressed by the binary score plus a 0.002/px nearness cost inside
+     the field's inner edge.
+  2. Outlier runs in `inner_field`, addressed by `rails.robust_offset`. On HV 05-20 R9 a 107-station
+     run at up to 247 px bent the station scaffold, so every ridge folded into a V and all scorings
+     dived toward the apron path.
+  3. `smooth_rail` bulging over a long unsupported gap, addressed by giving unsupported DP points
+     weight 0.1. On ST 05-24, 815 stations bulged ~150 px off the map and lost the marker grid.
+- Results (26 races × 6 seeds against Z3):
+
+  | Arm | Non-lateral gates/seed | Hand-truth majority | Unanimity | Wrong-line segments |
+  |---|---|---|---|---|
+  | Z3 (control) | 200.0 | 62 | 74.1% | 15/347 |
+  | H1: raw score + robust scaffold | 200.0 | 53 | — | 15/347 |
+  | H2: binary + nearness + robust scaffold | 198.5 | 60 | 74.6% | 2/347 |
+  | H2′: H2 + gap weight 0.1 | 199.5 | 68 | 75.4% | 2/347 |
+
+  - H2 lost ST 05-24's marker grid, which is what the gap weight fixed.
+  - H2′: ST 05-24 hand truth 19/19 on every seed; timing 125.0, all five 22.0; lateral 10 passes;
+    marker grid found on all 26.
+  - H2′'s gate losses are threshold straddles, not control false passes: HV 05-27 R3 behind-winner
+    on 2 seeds, HV 05-20 R2 sectional on one more seed, ST 05-24 finish count on one more seed.
+- Not adopted under the declared rule. The opt-ins exist: `HKJC_RAIL_SCORE=binary`,
+  `HKJC_RAIL_NEAR=0.002`, `HKJC_HIN_ROBUST=1`, `HKJC_RAIL_GAPW=0.1`.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

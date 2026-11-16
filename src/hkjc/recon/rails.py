@@ -604,7 +604,7 @@ def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
     n = len(W)
     D = sparse.diags([-1.0, 3.0, -3.0, 1.0], [0, 1, 2, 3], shape=(n - 3, n))
     P = (wavelength / (2 * np.pi)) ** 6 * (D.T @ D)
-    w0 = ok.astype(float) + 1e-4
+    w0 = np.where(ok, 1.0, float(os.environ.get("HKJC_RAIL_GAPW", 1e-4)))  # unsupported: weak evidence
     w, Z = w0.copy(), W.copy()
     for _ in range(iters):
         A = (sparse.diags(w) + P).tocsc()
