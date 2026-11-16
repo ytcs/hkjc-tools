@@ -1266,8 +1266,8 @@ could never be numbered. ST4's ρ was also pinned at 0.99 by the 40-vote finish-
 1.3 m, ST8 0.4 → 2.6 → 0.4 m). On the map the detections run in straight parallel lines through the
 step, while the extracted rail moves. This stretch carries the straights' lateral slides, ST3's legend
 negatives and its low label coverage (25–45% of detections at t 32–37 s, with the fused paths bridging
-the gap). The mechanism is OPEN: either the extraction follows the wrong line there, or the reference
-rail itself steps (a course feature: the same d on three videos). A robust straight line in map
+the gap). RESOLVED in Z6 (below): the extraction followed grass texture outside the window, where the
+fence is off the map; the window is the one stretch where it followed the real fence. A robust straight line in map
 coordinates is not the fix: the mosaic bends (Tukey line inliers 30%, end errors up to 10 m on ST8).
 
 **Speed, continued (2026-11-15).** All exact (paths and labels byte-identical on 26/26 races):
@@ -1339,7 +1339,13 @@ straight (up to ≈ 1.8 m on ST8) is not modelled.
   the 0.3 m box prior: the measured constant carries the gain.
 - Audit (descriptive): lateral slides on the straights 6 → 1–2 per race. `field_gap` rises (8 per
   race on ST3 and ST 05-09 R1) because the pack really runs about 5.8 m off the fence there. Legend
-  negatives on ST 05-09 R1 rise from 0.8 to 6.0, which is open.
+  negatives on ST 05-09 R1 rise from 0.8 to 6.0 (same in the datum-only arm). Traced: the camera pose
+  STALLS for 2 frames at t ≈ 33.8 s (translation unchanged over frames 880–885 while the render image
+  moves normally, likely registration locking onto the straight's mowing stripes). A tracklet then
+  jumps 8 m onto the horse ahead and overlaps #3's next tracklet by 0.08 s, so joint identity's
+  one-number-per-frame constraint drops #3 from a 230-detection tracklet with 140 slot votes for it.
+  The same stall exists in Z5; there the tracklets happened not to overlap. Open: pose stalls on
+  uniform texture, and hard tracklet exclusivity at a few-frame end overlap.
 - Whole set (26 races × 6 seeds, Z6 against Z5): non-lateral gates per seed 200.33 → 200.50, lateral
   passes 10 → 10, timing 126.2 → 126.3, ρ 0.966 → 0.971, hand majority (8 races) 113 → 119.
 - Rejected: scoring unseen offsets 0 (rail bridged off-map, blocking), a slope bound (the step

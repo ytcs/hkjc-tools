@@ -14,6 +14,8 @@ RAIL (after ``rails``; BLOCKING -- an ensemble must not start on a rail that fai
 FIELD (after ``observe``)
   field_gap        100 m segments where the innermost horses (5th pct lateral) run > 4 m outside the
                    rail (the rail followed the wrong line: fixed rail, apron edge, band edge)
+                   -- fires BY CONSTRUCTION on straight courses since Z6 (lateral = field-edge datum +
+                   the measured fence offset, ~5.8 m on ST3 / ST 05-09 R1): descriptive only there
   lateral_slide    20 m bins where the whole field's median lateral velocity exceeds 0.8 m/s (a field
                    cannot slide sideways together: rail switches, scaffold folds)
 IDENTITY / FUSION (after ``fuse``)

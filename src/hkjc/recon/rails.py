@@ -126,7 +126,8 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
     three 1000 m straights the mosaic covers the real rail only at d ~400-550 (a continuous ridge
     ~110 px = 5.8 m inside the field edge); elsewhere the rail is off the map, every unseen offset
     scored -1, and the DP left the real rail for grass-mowing texture ridges next to the field,
-    stepping the lateral reference by 2-5 m (ST3, ST 05-09 R1, ST8 at the same d)."""
+    stepping the lateral reference by 2-5 m (ST3, ST 05-09 R1, ST8 at the same d). NOT adopted
+    (blocking: rail bridged off-map); straights use ``straight_datum`` since Z6."""
     N, M = R.shape
     # HKJC_RAIL_SCORE=binary (DEFAULT since baseline Z4 together with HKJC_RAIL_NEAR=0.002, robust_offset,
     # smooth_rail gap weight 0.1 and fusion LOGDET; HKJC_RAIL_SCORE=raw = the old brightness score):

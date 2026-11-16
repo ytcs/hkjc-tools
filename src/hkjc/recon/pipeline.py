@@ -664,6 +664,13 @@ class RaceRun:
         # straight courses: the rail polyline is the field-edge datum; lat0_px = the fence's measured
         # offset inside it (rails.straight_datum). HKJC_STRAIGHT_LAT0=0: datum only (diagnostic)
         lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+        if "lat0_px" not in z.files and os.environ.get("HKJC_STRAIGHT_DATUM", "1") != "0":
+            Tr = np.gradient(z["rail"], axis=0)
+            Tr /= np.linalg.norm(Tr, axis=1, keepdims=True) + 1e-12
+            if rails.is_straight(Tr):  # a stale rail.npz would silently run the old straight rail
+                raise RuntimeError(
+                    "rail.npz of a straight course has no lat0_px (pre-Z6 cache): re-run the rails stage"
+                )
         if os.environ.get("HKJC_STRAIGHT_LAT0", "1") == "0":
             lat0 = 0.0
         lat = (lat_px + lat0) / ppm_loc(s_px)
