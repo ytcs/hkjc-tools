@@ -145,10 +145,11 @@ def assign_frames(
                                     forbid_out.setdefault(int(js[i]), set()).add(int(h))
         leg = at(int(frames[js[0]]))
         if leg is not None:
-            ahead = np.array([(s[js] > s[j] + RANK_EPS).sum() for j in js])  # detections ahead
+            sj = s[js]
+            ahead = (sj[None, :] > sj[:, None] + RANK_EPS).sum(1)  # detections ahead (vectorised)
             # horses whose TIGHT posterior is ahead of each detection (completes undetected ones)
             tight = np.sqrt(vs - sd_s**2) < 2.0
-            post_ahead = np.array([((ps > s[j] + RANK_EPS) & tight).sum() for j in js])
+            post_ahead = ((ps[None, :] > sj[:, None] + RANK_EPS) & tight[None, :]).sum(1)
             for r, num in enumerate(leg[:max_rank]):
                 if num not in ok:
                     continue
@@ -170,7 +171,7 @@ def assign_frames(
             listed = {int(x) for x in leg[:max_rank] if x > 0}
             if len(listed) == max_rank:
                 nf = n_field or len(ok)
-                ub = np.array([(s[js] > s[j]).sum() for j in js]) + max(0, nf - len(js)) + 1
+                ub = (sj[None, :] > sj[:, None]).sum(1) + max(0, nf - len(js)) + 1
                 inside = ub < max_rank
                 # ... and h runs behind EVERY listed horse: a detection ahead of the rearmost TIGHT
                 # posterior among the listed horses cannot be h (a vague listed horse could only be
