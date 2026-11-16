@@ -148,8 +148,11 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
     return s, sd_s, lat, sd_l, cnt
 
 
-def chi2_against(o: Obs, path: Path):
-    """Mean chi^2 per observation of an anonymous tracklet against a horse's posterior path."""
+def chi2_against(o: Obs, path: Path, logdet: bool | None = None):
+    """Mean chi^2 per observation of an anonymous tracklet against a horse's posterior path
+    (+ the mean log det ratio when ``logdet``; default: ``LOGDET()``)."""
+    if logdet is None:
+        logdet = LOGDET()
     m = (o.t >= path.t[0]) & (o.t <= path.t[-1])
     if m.sum() < 3:
         return np.inf
@@ -160,11 +163,11 @@ def chi2_against(o: Obs, path: Path):
     r = 0.0
     if o.s is not None:
         r += np.nanmean((o.s[m] - ps) ** 2 / vs)
-        if LOGDET():
+        if logdet:
             r += np.nanmean(np.log(vs / o.sd_s**2))
     if o.lat is not None:
         r += np.nanmean((o.lat[m] - pl) ** 2 / vl)
-        if LOGDET():
+        if logdet:
             r += np.nanmean(np.log(vl / o.sd_l**2))
     return float(r)
 
@@ -177,7 +180,18 @@ def LOGDET() -> bool:  # noqa: N802
     99.3-101.3 s and "crossed" 1.4-2.0 s early with sd 0.56 m (behind-winner gate failures)."""
     import os
 
-    return os.environ.get("HKJC_ASSOC_LOGDET", "1") != "0"
+    return os.environ.get("HKJC_ASSOC_LOGDET", "1") == "1"
+
+
+def LOGDET_RANK() -> bool:  # noqa: N802
+    """HKJC_ASSOC_LOGDET=rank: GATE anonymous tracklets on plausibility (chi^2 <= chi2_max) and choose
+    among the plausible candidates by the full likelihood (chi^2 + log det). With log det in the gate
+    too (=1) a horse whose path went vague (+5..10) can never re-acquire a fragment: whole-race identity
+    score (official sectionals, validation-only) fell 0.953 -> 0.939 (ST 05-09 R1 0.896 -> 0.765, ST7
+    0.953 -> 0.909, ST 05-24 0.981 -> 0.938) while the gates rose."""
+    import os
+
+    return os.environ.get("HKJC_ASSOC_LOGDET", "1") == "rank"
 
 
 def _overlaps(a: Obs, b_list: list) -> bool:
@@ -271,16 +285,22 @@ def fuse_race(
         anon = sorted(
             [o for o in obs if o.horse == 0 and o.tid not in assign], key=lambda o: -len(o.t)
         )
+        rank_mode = LOGDET_RANK()
         for o in anon:
-            sc = sorted(
-                (
-                    (chi2_against(o, p), h)
-                    for h, p in paths.items()
-                    if h not in o.forbid
-                    and not _overlaps(o, [x for x in mine[h] if x.feed == o.feed])
-                ),
-                key=lambda x: x[0],
-            )
+            cand = [
+                h
+                for h, p in paths.items()
+                if h not in o.forbid and not _overlaps(o, [x for x in mine[h] if x.feed == o.feed])
+            ]
+            if rank_mode:  # gate on plausibility, choose by likelihood
+                cand = [h for h in cand if chi2_against(o, paths[h], logdet=False) <= chi2_max]
+                sc = sorted(((chi2_against(o, paths[h], logdet=True), h) for h in cand), key=lambda x: x[0])
+                if sc and np.isfinite(sc[0][0]) and (len(sc) == 1 or sc[1][0] >= margin * sc[0][0]):
+                    assign[o.tid] = sc[0][1]
+                    mine[sc[0][1]].append(o)
+                    changed = True
+                continue
+            sc = sorted(((chi2_against(o, paths[h]), h) for h in cand), key=lambda x: x[0])
             if not sc or not np.isfinite(sc[0][0]) or sc[0][0] > chi2_max:
                 continue
             if len(sc) > 1 and sc[1][0] < margin * sc[0][0]:

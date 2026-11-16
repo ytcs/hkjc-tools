@@ -777,10 +777,25 @@ class RaceRun:
     def _finish_identity(self, T=None, mem=None):
         """({tracklet index: number}, label-free fit) from the finish camera (1D registration of the
         tracklets' line-crossing times to the camera's gaps; tracklets ending < 30 m short are
-        extrapolated)."""
-        if T is None:
+        extrapolated). A pure function of tracks.npz + finish.npz: called with no arguments it is
+        CACHED on their mtimes (the fuse stage's EM loop called it ~12x per race, ~3 s; exact)."""
+        import copy
+
+        if T is not None:
+            return self._finish_identity_compute(T, mem)
+        key = tuple(
+            self.p(f).stat().st_mtime_ns if self.p(f).exists() else -1
+            for f in ("tracks.npz", "finish.npz")
+        )
+        c = getattr(self, "_fin_id_cache", None)
+        if c is None or c[0] != key:
             T = np.load(self.p("tracks.npz"), allow_pickle=True)
             mem = [np.asarray(m, int) for m in T["members"]]
+            c = (key, self._finish_identity_compute(T, mem))
+            self._fin_id_cache = c
+        return copy.deepcopy(c[1])
+
+    def _finish_identity_compute(self, T, mem):
         if not self.p("finish.npz").exists():
             return {}, None
         z = np.load(self.p("finish.npz"))
