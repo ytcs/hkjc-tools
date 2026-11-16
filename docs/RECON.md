@@ -1501,20 +1501,25 @@ start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one o
     passing), the same as recorded at pod run X. The marker-grid scale moves (ST3 17.8 → 19.2
     px/m), so this is the straights' distance mapping, not identity.
   - Run Y's losers (HV 04-15 R9, HV 05-20 R9, ST 06-07 R6) no longer lose.
-- HV 05-20 R2 traced (seed 0). The poses differ locally, not by gauge: the current pose's steps
-  are ~5 % larger over t 12–20, plus a 146 px jump at render start. The leader's distance mapping
-  still agrees within 1–3 m. The tracker partition is unchanged.
-  - The finish camera's identity registration changes: C 1658–1725 → 1763–1972 px/s (prior about
-    2000). It names a different set of tracklets and never names #2's 867-detection tracklet,
-    which in control carried 40 camera votes for #2.
-  - Legend ranks alone then give #2 to the 743-detection tracklet (#4's in control). The E-step
-    splits the big tracklet between #4 and #5.
-  - This is the identity match's alignment fragility (`finishcam.identity_match`), triggered by
-    slightly different crossing times. It is not a wrong mask pose.
-- Open: the identity match's alignment fragility, ST 05-31 and ST4's hand regressions, and the
-  straights' distance mapping under the mask. Under the mask, ST3 is stable but wrong (10/22 on
-  all six seeds), so check whether its full-race tracklets are pure across the camera swing. Then
-  a new arm with a new declared rule.
+- HV 05-20 R2: the poses differ locally (the current pose's steps are ~5 % larger over t 12–20),
+  but the leader's distance mapping agrees within 1–3 m and the tracker partition is unchanged.
+  - The finish camera names #2's tracklet in control and not under the mask. Every tracklet it
+    names in either arm matches the official finish times (6 seeds); why it skips #2 under the
+    mask is not yet measured.
+  - Without that name, identify gives #2 to #4's tracklet. The leaderboard votes are confused in
+    CONTROL too: the true #2 tracklet gets #2 78 / #4 55, the true #4 tracklet #2 54 / #4 5. Only
+    the camera's 40 votes rescue it. The vote counting in identify is under investigation.
+- ST 05-31: three of control's full-race tracklets split at t 34.3–35.8 under the mask, where the
+  pose steps and field speed agree between arms. The cause is untraced. ST4 is untraced.
+- ST3 hand truth: the old labels are QUARANTINED. Orange crops never considered #1's red/yellow
+  checks, so a crop third by position, where the leaderboard and the official result put #1, was
+  labelled {10, 11, 14}. Fresh labels (t 25 / 45, 24 detections) are development only: control
+  14/24, mask 13/24. Z8's hand benefit without ST3 is 107 → 111.
+- Straights under the mask: the odometer/marker scale ratio is 1.034–1.036 on all three (ovals
+  0.97–1.03; control straights scatter 0.93–1.03 under the stalls). How this maps to the leader
+  shift is not yet worked out.
+- Every cause found so far also exists in control; the mask only exposes it. Each gets fixed
+  against Z8 under its own declared rule, then the mask is re-run on the new baseline.
 
 ## 4. Open / next
 
