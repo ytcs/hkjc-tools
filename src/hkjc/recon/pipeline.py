@@ -714,14 +714,27 @@ class RaceRun:
             r.no for r in self.info.runners
         )  # saddlecloth numbers may have gaps (scratchings)
         valid = {r.no for r in self.info.runners}
-        votes = identity.legend_votes(mem, T["rows"][:, 0], T["d"], leg, nmax)
+        votes, rank, elim, elim_n = identity.legend_votes(
+            mem, T["rows"][:, 0], T["d"], leg, nmax, parts=True
+        )
         fin, _fit = self._finish_identity(T, mem)
+        fvotes = np.zeros_like(votes)
         for k, num in fin.items():
             if num <= nmax:
                 votes[k, num] += self.FINISH_VOTES
-        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0":  # joint ML assignment with silk evidence
+                fvotes[k, num] += self.FINISH_VOTES
+        glb = os.environ.get("HKJC_ID_GLOBAL", "0") != "0"
+        if glb:  # joint ML assignment: set-valued legend evidence + silk evidence
             lab = identity.assign_global(
-                mem, T["rows"][:, 0], votes, nmax, silk_llr=self._silk_llr(mem, T, nmax)
+                mem,
+                T["rows"][:, 0],
+                rank,
+                nmax,
+                silk_llr=self._silk_llr(mem, T, nmax),
+                elim=elim,
+                n_elim=elim_n,
+                extra=fvotes,
+                valid=valid,
             )
             lab = np.array([x if x in valid else 0 for x in lab])
         else:
@@ -746,7 +759,8 @@ class RaceRun:
                 fixed[k] = num
         for k in el_ok:
             fixed[k] = lab[k]
-        np.savez(self.p("labels.npz"), labels=lab, votes=votes, fixed=fixed)
+        extra = dict(rank=rank, elim=elim, n_elim=elim_n, fvotes=fvotes) if glb else {}
+        np.savez(self.p("labels.npz"), labels=lab, votes=votes, fixed=fixed, **extra)
         self.log(
             f"   identify: finish-camera named {len(fin)} + {n_elim} by elimination; "
             f"numbered {int((lab > 0).sum())}/{len(mem)} tracklets "
@@ -1158,9 +1172,19 @@ class RaceRun:
         v[:, :k] += v2[:, :k]
         nmax = max(r.no for r in self.info.runners)
         valid = {r.no for r in self.info.runners}
-        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0":
+        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0" and "rank" in L.files:
+            r1 = L["rank"].copy()
+            r1[:, :k] += v2[:, :k]
             lab = identity.assign_global(
-                mem, T["rows"][:, 0], v, nmax, silk_llr=self._silk_llr(mem, T, nmax)
+                mem,
+                T["rows"][:, 0],
+                r1,
+                nmax,
+                silk_llr=self._silk_llr(mem, T, nmax),
+                elim=L["elim"],
+                n_elim=L["n_elim"],
+                extra=L["fvotes"],
+                valid=valid,
             )
             lab = np.array([x if x in valid else 0 for x in lab])
         else:

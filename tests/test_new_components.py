@@ -491,3 +491,32 @@ def test_identity_assign_global_silk_breaks_ties_and_allows_none():
     silk[2, 2], silk[2, 3] = 2.0, -2.0  # tracklet 2 looks like #3
     lab = identity.assign_global(members, frame_of_det, votes, 4, silk_llr=silk)
     assert lab.tolist() == [1, 4, 3]
+
+
+def test_identity_assign_global_elimination_sets_number_back_markers():
+    """Back-markers with ONLY elimination evidence ("one of the m = N - 8 unlisted numbers") must
+    be numbered (silk picks which); the fractional 1/m encoding reads (m-1)/m of each vote as
+    contradiction and leaves them unnumbered."""
+    from hkjc.recon import identity
+
+    N, F = 14, 100
+    frame_of_det = np.tile(np.arange(F), 3)
+    members = [np.arange(k * F, (k + 1) * F) for k in range(3)]
+    rank = np.zeros((3, N + 1))
+    rank[0, 1] = 80.0  # a leader, clearly #1
+    unl = list(range(9, 15))  # always unlisted: 9..14 (m = 6)
+    elim = np.zeros((3, N + 1))
+    elim[1:, unl] = 80.0
+    n_elim = np.array([0.0, 80.0, 80.0])
+    silk = np.zeros((3, N))
+    silk[1, 13], silk[1, 12] = 1.0, -1.0  # tracklet 1 looks like #14
+    silk[2, 12], silk[2, 13] = 1.0, -1.0  # tracklet 2 looks like #13
+    frac = rank.copy()
+    frac[1:, unl] = 80.0 / 6
+    old = identity.assign_global(members, frame_of_det, frac, N, silk_llr=silk)
+    assert old.tolist() == [1, 0, 0]
+    kw = dict(silk_llr=silk, elim=elim, n_elim=n_elim)
+    assert identity.assign_global(members, frame_of_det, rank, N, **kw).tolist() == [1, 14, 13]
+    # a scratched number is not in the universe
+    lab = identity.assign_global(members, frame_of_det, rank, N, valid=set(range(1, 14)), **kw)
+    assert lab[2] == 13 and lab[1] not in (0, 13, 14)

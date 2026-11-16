@@ -14,11 +14,17 @@ from __future__ import annotations
 import numpy as np
 
 
-def legend_votes(members, frame_of_det, d, legend_rows, n_field, max_rank=8):
+def legend_votes(members, frame_of_det, d, legend_rows, n_field, max_rank=8, parts=False):
     """-> votes (n_tracklets, n_field+1): votes[t, num] = #frames tracklet t sat at the legend slot
-    holding saddlecloth ``num``."""
+    holding saddlecloth ``num``; ranks beyond the legend add 1/|missing| to every unlisted number.
+    ``parts=True`` -> (votes, rank, elim, n_elim): the same evidence kept SET-VALUED for
+    ``assign_global`` -- rank = slot votes only, elim[t, num] = #elimination frames whose unlisted set
+    contains num, n_elim[t] = #elimination frames."""
     T = len(members)
     votes = np.zeros((T, n_field + 1))
+    rank = np.zeros((T, n_field + 1))
+    elim = np.zeros((T, n_field + 1))
+    n_elim = np.zeros(T)
     det_track = {}
     for t, mem in enumerate(members):
         for j in mem:
@@ -49,13 +55,16 @@ def legend_votes(members, frame_of_det, d, legend_rows, n_field, max_rank=8):
             num = shown[r]
             if 1 <= num <= n_field:
                 votes[tracks[r], num] += 1
+                rank[tracks[r], num] += 1
         # elimination: ranks beyond the legend belong to the numbers NOT shown this frame
         if all(1 <= x <= n_field for x in shown) and len(set(shown)) == max_rank:
             missing = [x for x in range(1, n_field + 1) if x not in shown]
             for r in range(max_rank, present):
                 for num in missing:
                     votes[tracks[r], num] += 1.0 / len(missing)
-    return votes
+                elim[tracks[r], missing] += 1
+                n_elim[tracks[r]] += 1
+    return (votes, rank, elim, n_elim) if parts else votes
 
 
 def time_overlap(a_frames, b_frames) -> bool:
@@ -108,7 +117,21 @@ def assign(
     return lab, sig, proto
 
 
-def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10, silk_llr=None):
+def assign_global(
+    members,
+    frame_of_det,
+    votes,
+    n_field,
+    *,
+    min_len=3,
+    iters=10,
+    silk_llr=None,
+    elim=None,
+    n_elim=None,
+    extra=None,
+    valid=None,
+    max_rank=8,
+):
     """Number the tracklets by the GLOBAL maximum-likelihood assignment (replaces ``assign``'s greedy
     longest-first pass with a margin; switch HKJC_ID_GLOBAL=1).
 
@@ -122,7 +145,19 @@ def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10,
     No greedy order and no margin. rho is re-estimated from the labelled tracklets (votes agreeing
     with the label / all their votes) until the labels stop changing.
     MEASURED (6-seed ensembles, V artifacts): ``assign`` turned legend-argmax labels that were
-    72-100 % unanimous across 1 %-detection-drop seeds into 38-99 %; its silk term changed nothing."""
+    72-100 % unanimous across 1 %-detection-drop seeds into 38-99 %; its silk term changed nothing.
+
+    SET-VALUED elimination evidence (``elim``/``n_elim`` from ``legend_votes(parts=True)``; then
+    ``votes`` holds the slot votes only): a frame where tracklet t ranks beyond a fully read top-8
+    says "t is one of the m = N - 8 unlisted numbers" (true with probability rho_e, re-estimated
+    like rho): LLR log(rho_e N / m) for each number in the set, log((1 - rho_e) N / (N - m)) for
+    each listed one. WHY: fed as fractional votes (1/m each, the ``assign`` encoding) the uniform-
+    confusion model reads (m-1)/m of every elimination vote as evidence AGAINST each candidate, so
+    back-markers (no slot votes at all) can never be numbered -- the whole-horse losses of the first
+    HKJC_ID_GLOBAL ensemble (ST4 #3/#6/#10/#12/#14, ST7 #3/#7/#9/#10, ST 05-31 #3/#7/#11 in s0); it
+    dropped them identically with the silk term switched off. ``extra``: finish-camera votes, added
+    as slot evidence but kept out of the rho estimate (40 agreeing votes per name pinned rho at its
+    0.99 bound on ST4). ``valid``: runner numbers (scratched numbers are not in the universe)."""
     from scipy.optimize import Bounds, LinearConstraint, milp
 
     T = len(members)
@@ -131,8 +166,22 @@ def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10,
     ok = np.array([len(m) >= min_len for m in members])
     lo = np.array([f.min() for f in frames])
     hi = np.array([f.max() for f in frames])
-    V = votes[:, 1 : N + 1]
+    allowed = np.ones(N, bool)
+    if valid is not None:
+        allowed[:] = False
+        allowed[[x - 1 for x in valid if 1 <= x <= N]] = True
+    Nu = int(allowed.sum())  # size of the label universe
+    V = votes[:, 1 : N + 1] * allowed
+    X = np.zeros_like(V) if extra is None else extra[:, 1 : N + 1] * allowed
     tot = V.sum(1, keepdims=True)
+    totx = X.sum(1, keepdims=True)
+    sets = elim is not None
+    if sets:
+        E = elim[:, 1 : N + 1] * allowed
+        ne = np.asarray(n_elim, float)[:, None]
+        m_set = Nu - max_rank
+        sets = m_set >= 1 and ne.sum() > 0
+    rho_e = 0.9
     # interval cliques: at each tracklet start, the set of tracklets spanning it
     cliques = []
     for x in sorted(set(lo[ok].tolist())):
@@ -142,15 +191,24 @@ def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10,
     lab = np.zeros(T, int)
     rho = 0.5
     for _ in range(iters):
-        G = V * np.log(rho * N) + (tot - V) * np.log((1 - rho) * N / (N - 1))
+        lr_in, lr_out = np.log(rho * Nu), np.log((1 - rho) * Nu / (Nu - 1))
+        G = (V + X) * lr_in + (tot + totx - V - X) * lr_out
+        if sets:
+            G = (
+                G
+                + E * np.log(rho_e * Nu / m_set)
+                + (ne - E) * np.log((1 - rho_e) * Nu / (Nu - m_set))
+            )
         # silk_llr (pipeline: HKJC_ID_GLOBAL=1, NOT adopted): appearance evidence, only where the legend
         # has spoken at all. 26 races x 6 seeds vs Z4 (noise-aware rule declared before reading):
         # timing gates 126.0 -> 127.5, all five 23.0 -> 24.7 (fewer false paths: ST4 sect 0.32 -> 0.15),
         # but it leaves too many tracklets unnumbered -> whole horses lose paths (ST4/ST7/ST 05-31 -6
         # count gates): non-lateral 200.3 -> 197.5, hand majority 68 -> 60, idscore 0.954 -> 0.942.
         if silk_llr is not None:
-            G = G + np.where(tot > 0, silk_llr[:, :N], 0.0)
+            spoken = tot + totx + (ne if sets else 0.0)
+            G = G + np.where(spoken > 0, silk_llr[:, :N], 0.0)
         G[~ok] = 0.0
+        G[:, ~allowed] = 0.0
         G = np.where(G > 0, G, 0.0)
         nv = T * N
         rows, cols = [], []
@@ -177,7 +235,11 @@ def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10,
         lt = new > 0
         if lt.any():
             agree = V[lt, new[lt] - 1].sum()
-            rho = float(np.clip(agree / max(tot[lt].sum(), 1e-9), 1.5 / N, 0.99))
+            if tot[lt].sum() > 0:
+                rho = float(np.clip(agree / tot[lt].sum(), 1.5 / Nu, 0.99))
+            if sets and ne[lt].sum() > 0:
+                agree_e = E[lt, new[lt] - 1].sum() / ne[lt].sum()
+                rho_e = float(np.clip(agree_e, (m_set + 0.5) / Nu, 0.99))
         if np.array_equal(new, lab):
             break
         lab = new
