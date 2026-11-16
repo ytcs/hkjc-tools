@@ -1547,6 +1547,15 @@ start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one o
 - Every cause found so far also exists in control; the mask only exposes it. Each gets fixed
   against Z8 under its own declared rule, then the mask is re-run on the new baseline.
 
+**Synced four-feed video (`viz.sync_video`, 2026-11-16).** The aerial feed's race clock is the
+reconstruction's (`clock_f0`); the other three feeds carry no shared timestamp. Measured on HV 06-03
+R8: the full feed shows the same on-screen clock (video = race clock + 1.32 s, three reads within
+0.02 s); patrol's starting gates open on the same frame as full's (1.20 s, image-difference spike in
+the gate region), so patrol = full; drone's gates open 1.14 s later (drone = race clock + 2.46 s).
+Gate opening itself is at clock −0.12 s on the full feed. Offsets are per race and are passed in; not
+yet automated. The course overview is drawn from the run's measured rail with d → rail arclength
+taken from the observe stage's own projection of the detections.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

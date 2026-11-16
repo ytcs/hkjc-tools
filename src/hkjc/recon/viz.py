@@ -8,6 +8,9 @@
   straightened(run)        the map straightened along the rail stations (s -> x, inward -> y) with
                            the fitted rail and all horse points, in rows
   paths_plot(run)          fused paths: lateral vs distance-to-go, and gap-behind-leader vs time
+  sync_video(run, out, offsets)  the four replay feeds time-synced on the race clock beside the
+                           reconstruction (course overview from the measured rail + a straightened
+                           field view: metres behind the leader x lateral off the rail)
 Outputs go to ``<run dir>/viz/``.
 """
 
@@ -175,3 +178,225 @@ def paths_plot(run, name="paths.parquet"):
     plt.tight_layout()
     plt.savefig(_out(run, name.replace(".parquet", ".png")), dpi=70)
     plt.close(fig)
+
+
+def _silk_colour(horse_id):
+    """Dominant body colour (BGR) of the official silk image (non-white, non-transparent pixels)."""
+    from PIL import Image
+
+    from ..data.silks import silk_path
+
+    p = silk_path(horse_id)
+    if not p:
+        return (200, 200, 200)
+    g = np.array(Image.open(p).convert("RGB")).astype(int)
+    h, w = g.shape[:2]
+    body = g[int(0.45 * h) : int(0.8 * h), int(0.3 * w) : int(0.7 * w)].reshape(-1, 3)
+    keep = body[(body.max(1) - body.min(1) > 25) | (body.max(1) < 200)]
+    c = np.median(keep if len(keep) else body, axis=0)
+    return (int(c[2]), int(c[1]), int(c[0]))
+
+
+def _map_geometry(run):
+    """Track map from the run's own measured rail: (rail points px, outward normals, rail arclength px,
+    ppm, d -> rail arclength mapping). d <-> s_px is taken from the observe stage's own projection of
+    the detections (matched to tracks.npz), so the map uses exactly the reconstruction's geometry."""
+    T = np.load(run.p("tracks.npz"), allow_pickle=True)
+    z = np.load(run.p("rail.npz"))
+    m = np.load(run.p("metric.npz"))
+    rf = rails.RailFrame.from_points(z["rail"], int(z["inner"]))
+    rows, X, _h, _P = run.world_dets()
+    k_of = {int(f): k for k, f in enumerate(z["frame_idx"])}
+    hint = rf.s[z["st_of_frame"][[k_of[int(f)] for f in rows[:, 0]]]]
+    s_px, _l = rf.project(X, s_hint=hint, window=1200.0)
+    key = {tuple(np.round(r[:3], 2)): s for r, s in zip(rows, s_px)}
+    sT = np.array([key.get(tuple(np.round(r[:3], 2)), np.nan) for r in T["rows"]])
+    ok = np.isfinite(sT)
+    o = np.argsort(-T["d"][ok])  # d decreasing <-> s_px increasing
+    dd, ss = T["d"][ok][o], sT[ok][o]
+    # monotone d -> s_px: bin by d and take medians (projection noise), then interpolate
+    bins = np.arange(np.floor(dd.min()) - 5, dd.max() + 10, 5.0)
+    idx = np.digitize(dd, bins)
+    bd = np.array([np.median(dd[idx == i]) for i in np.unique(idx)])
+    bs = np.array([np.median(ss[idx == i]) for i in np.unique(idx)])
+    order = np.argsort(bd)
+    bd, bs = bd[order], bs[order]
+    lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+    ppm = float(m["ppm"])
+
+    def d_to_s(d):
+        return np.interp(d, bd, bs)  # beyond the observed range: clamped (drawn at the edge)
+
+    return rf, ppm, lat0, d_to_s
+
+
+def sync_video(
+    run,
+    out_path,
+    offsets: dict,
+    *,
+    paths_name="paths_video.parquet",
+    t0=None,
+    t1=None,
+    fps=25.0,
+    tile=(640, 360),
+):
+    """Four replay feeds, time-synced on the race clock, beside the reconstructed positions on a track
+    map drawn from the run's own measured rail. ``offsets`` = {feed: video seconds at race clock 0}
+    (aerial: ``run.clock_f0() / 25``; the others measured from their on-screen clock or the gate
+    opening, see RECON). Horses = official silk colour + saddlecloth number; a faint ring marks a
+    position with posterior sd > 1.5 m (extrapolated). Writes an H.264 MP4 via ffmpeg."""
+    import subprocess
+
+    import av
+    import cv2
+    import polars as pl
+
+    feeds = ["aerial", "full", "drone", "patrol"]
+    P = pl.read_parquet(run.p(paths_name))
+    horses = sorted(P["horse_no"].unique().to_list())
+    G = {h: P.filter(pl.col("horse_no") == h).sort("t") for h in horses}
+    G = {h: {c: g[c].to_numpy() for c in ("t", "d", "lat", "sd_s")} for h, g in G.items()}
+    col = {r.no: _silk_colour(r.horse_id) for r in run.info.runners}
+    rf, ppm, lat0, d_to_s = _map_geometry(run)
+    width_m = run.info.width if getattr(run.info, "width", None) else 30.0
+    # map frame: rotate the rail's principal axis horizontal, fit the panel
+    D = run.info.distance
+    s_lo, s_hi = d_to_s(np.array([D, -10.0]))
+    sel = (rf.s >= min(s_lo, s_hi) - 50 * ppm) & (rf.s <= max(s_lo, s_hi) + 20 * ppm)
+    Rin = rf.R[sel] + (0.0 - lat0) * rf.Nout[sel]
+    Rout = rf.R[sel] + (width_m * ppm - lat0) * rf.Nout[sel]
+    allp = np.vstack([Rin, Rout])
+    mu = allp.mean(0)
+    _u, _s, Vt = np.linalg.svd(allp - mu, full_matrices=False)
+    Wm, Hm = tile[0], 2 * tile[1]
+    Ho = int(0.5 * Hm)  # overview on top, straightened field view below
+    rot = lambda p: (np.atleast_2d(p) - mu) @ Vt.T  # noqa: E731
+    q = rot(allp)
+    sc = 0.88 * min(Wm / np.ptp(q[:, 0]), (Ho - 50) / np.ptp(q[:, 1]))  # long axis horizontal
+    cq = (q.max(0) + q.min(0)) / 2
+
+    def to_px(p):
+        r = rot(p) - cq
+        return np.c_[Wm / 2 + r[:, 0] * sc, (Ho + 40) / 2 + r[:, 1] * sc].astype(np.int32)
+
+    base = np.full((Hm, Wm, 3), (40, 90, 40), np.uint8)
+    base[Ho:] = (30, 30, 30)
+    poly = np.vstack([to_px(Rin), to_px(Rout)[::-1]])
+    cv2.fillPoly(base, [poly], (60, 140, 60))
+    cv2.polylines(base, [to_px(Rin)], False, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.polylines(base, [to_px(Rout)], False, (220, 220, 220), 1, cv2.LINE_AA)
+    sf = d_to_s(0.0)
+    jf = int(np.argmin(np.abs(rf.s - sf)))
+    fin = to_px(np.vstack([rf.R[jf] - lat0 * rf.Nout[jf], rf.R[jf] + (width_m * ppm - lat0) * rf.Nout[jf]]))
+    cv2.line(base, tuple(fin[0]), tuple(fin[1]), (0, 0, 255), 2, cv2.LINE_AA)
+
+    def pos(h, t):
+        g = G[h]
+        if t < g["t"][0] or t > g["t"][-1]:
+            return None
+        d = np.interp(t, g["t"], g["d"])
+        lat = np.interp(t, g["t"], g["lat"])
+        sd = np.interp(t, g["t"], g["sd_s"])
+        s = d_to_s(d)
+        j = np.clip(np.searchsorted(rf.s, s), 1, len(rf.s) - 1)
+        w = (s - rf.s[j - 1]) / max(rf.s[j] - rf.s[j - 1], 1e-9)
+        R = rf.R[j - 1] * (1 - w) + rf.R[j] * w
+        N = rf.Nout[j - 1] * (1 - w) + rf.Nout[j] * w
+        return to_px(R + (lat * ppm - lat0) * N)[0], d, sd
+
+    tmin = min(g["t"][0] for g in G.values())
+    tmax = max(g["t"][-1] for g in G.values())
+    t0 = tmin if t0 is None else t0
+    t1 = tmax + 1.0 if t1 is None else t1
+    # decoders, positioned at race time t0
+    conts, its, nxt = {}, {}, {}
+    for f in feeds:
+        c = av.open(str(run.video(f)))
+        st = c.streams.video[0]
+        st.thread_type = "AUTO"
+        conts[f] = (c, st)
+        tv = t0 + offsets[f]
+        c.seek(int(max(tv - 2.0, 0) / st.time_base), stream=st)
+        its[f] = c.decode(st)
+        nxt[f] = None
+    cur = dict.fromkeys(feeds)
+
+    def frame_at(f, tv):
+        c, st = conts[f]
+        while True:
+            if nxt[f] is None:
+                try:
+                    fr = next(its[f])
+                except StopIteration:
+                    return cur[f]
+                nxt[f] = (float(fr.pts * st.time_base), fr)
+            ts, fr = nxt[f]
+            if ts <= tv + 0.5 / fps:
+                cur[f] = cv2.resize(fr.to_ndarray(format="bgr24"), tile, interpolation=cv2.INTER_AREA)
+                nxt[f] = None
+            else:
+                return cur[f]
+
+    W, H = 2 * tile[0] + Wm, Hm
+    enc = subprocess.Popen(
+        ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
+         "-r", str(fps), "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+         "-pix_fmt", "yuv420p", str(out_path)],
+        stdin=subprocess.PIPE,
+    )
+    n = int(round((t1 - t0) * fps))
+    for k in range(n):
+        t = t0 + k / fps
+        canvas = np.zeros((H, W, 3), np.uint8)
+        for i, f in enumerate(feeds):
+            img = frame_at(f, t + offsets[f])
+            x, y = (i % 2) * tile[0], (i // 2) * tile[1]
+            if img is not None:
+                canvas[y : y + tile[1], x : x + tile[0]] = img
+            cv2.putText(canvas, f, (x + 8, y + tile[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        mp = base.copy()
+        cur_pos = {}
+        for h in horses:
+            r = pos(h, t)
+            if r is not None:
+                cur_pos[h] = r
+        lead = min((r[1] for r in cur_pos.values()), default=None)
+        for h, (p, d, sd) in cur_pos.items():
+            cv2.circle(mp, tuple(p), 4, col.get(h, (200, 200, 200)), -1, cv2.LINE_AA)
+        # straightened field view: x = metres behind the leader, y = lateral off the rail
+        y0f, hf = Ho + 40, Hm - Ho - 70
+        if cur_pos:
+            back = max(r[1] for r in cur_pos.values()) - lead
+            win = max(30.0, 5.0 * np.ceil((back + 6.0) / 5.0))
+            xs = lambda gap: int(Wm - 30 - gap / win * (Wm - 60))  # noqa: E731
+            ys = lambda lat: int(y0f + hf - lat / width_m * hf)  # noqa: E731
+            cv2.rectangle(mp, (30, y0f), (Wm - 30, y0f + hf), (60, 140, 60), -1)
+            cv2.line(mp, (30, y0f + hf), (Wm - 30, y0f + hf), (255, 255, 255), 2)
+            for gm in np.arange(0, win + 0.1, 5.0):
+                cv2.line(mp, (xs(gm), y0f + hf), (xs(gm), y0f + hf + 6), (200, 200, 200), 1)
+                if gm % 10 == 0:
+                    cv2.putText(mp, f"{gm:.0f}", (xs(gm) - 8, y0f + hf + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+            for h, (p, d, sd) in sorted(cur_pos.items(), key=lambda x: -x[1][1]):
+                g = G[h]
+                lat = float(np.interp(t, g["t"], g["lat"]))
+                c = (xs(d - lead), ys(lat))
+                if sd > 1.5:
+                    cv2.circle(mp, c, 15, (180, 180, 180), 1, cv2.LINE_AA)
+                cv2.circle(mp, c, 11, col.get(h, (200, 200, 200)), -1, cv2.LINE_AA)
+                cv2.circle(mp, c, 11, (0, 0, 0), 1, cv2.LINE_AA)
+                tw = cv2.getTextSize(str(h), cv2.FONT_HERSHEY_SIMPLEX, 0.45, 2)[0][0]
+                cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(mp, "metres behind leader  (rail at bottom)", (30, y0f - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (230, 230, 230), 1)
+        cv2.putText(mp, f"{run.info.key}  t = {t:6.2f} s", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        if lead is not None:
+            cv2.putText(mp, f"leader {max(lead, 0):5.0f} m to go", (Wm - 230, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(mp, "reconstruction, video only", (Wm - 230, Ho + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+        canvas[:, 2 * tile[0] :] = mp
+        enc.stdin.write(canvas.tobytes())
+    enc.stdin.close()
+    enc.wait()
+    for c, _st in conts.values():
+        c.close()
+    return str(out_path)
