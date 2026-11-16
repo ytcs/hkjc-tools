@@ -257,15 +257,44 @@ def tracks(sc, *, min_reads=4, y_tol=40.0):
 
 def _tracks(sc, *, min_reads=4, y_tol=40.0):
     """Per number, its reads restricted to the dominant lateral (y) cluster (a misread of another
-    horse's cloth sits at a different y), sorted by unique-frame index u. {num: (u, x, y) arrays}."""
+    horse's cloth sits at a different y), sorted by unique-frame index u. {num: (u, x, y) arrays}.
+
+    ONE CLOTH = ONE MOVING TRACK (DEFAULT since 2026-11-16; HKJC_FC_MOVE=0 / HKJC_FC_CONT=0 restore the
+    old rules for diagnosis):
+    - the dominant y-cluster is the one read at the most DISTINCT PLACES (45 px bins, the same-cloth
+      tolerance), then the most reads. MEASURED (pixels): ST8's "#1" was a static RAIL POST read ~60x at
+      x 1566 (it passed the ptp "must move" test only through 2 stray reads the running median later
+      removed) and outvoted the real #1 cloth (35 reads, x 1532 -> 293, conf 0.99); ST9's "#7" was a
+      tie (8 v 8 reads, first index won) between "7" read on #5's checked jockey silk (static) and the
+      real #7 cloth. REJECTED: the ptp test after the running median -- it drops genuine SHORT tracks
+      (ST4's winner #11 spans 95 px, ST9 #8 94 px over 4-7 unique frames).
+    - the coincidence rule (two numbers on one cloth) also counts reads on the other track CONTINUED
+      past its ends (linear, +-10 unique frames -- the digit-drop window). MEASURED (pixels): HV 04-15 R1's
+      "#1" was the "7" cloth read as "1" on the 4 unique frames BEFORE the "7" track starts (x on #7's
+      line extrapolated back to 2 px); the shared-frame test saw 1 shared frame and kept a phantom #1
+      9th (the real #1 finished ~4th, render silks) -> 2 finish-order inversions on every seed.
+    26 races: finish tracks change on 4 (all pixel-verified), 23 races' paths byte-identical; 6-seed
+    ensemble: every gate / idscore / hand-truth yardstick identical (paired Delta 0); finish-order audit
+    s0 8 -> 4 (interpolated crossings)."""
     R = np.asarray(sc["reads"])
     out = {}
+
+    import os
+
+    move = os.environ.get("HKJC_FC_MOVE", "1") != "0"
+
+    def support(r, inc):
+        if not move:
+            return inc.sum()
+        # distinct PLACES read (45 px = the same-cloth tolerance below), then reads: a static
+        # scene feature read at one spot in 60 frames must not outvote a moving cloth
+        return (len(np.unique(np.round(r[inc, 2] / 45.0))), inc.sum())
 
     def build(r):
         if len(r) < min_reads:
             return None
         ys = r[:, 3]
-        best = max(range(len(ys)), key=lambda i: (np.abs(ys - ys[i]) < y_tol).sum())
+        best = max(range(len(ys)), key=lambda i: support(r, np.abs(ys - ys[i]) < y_tol))
         r = r[np.abs(ys - ys[best]) < y_tol]
         if len(r) < min_reads or np.ptp(r[:, 2]) < 100:  # must actually move across the frame
             return None
@@ -329,7 +358,9 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
                     out[sh] = tr
     # a MISREAD is the same physical cloth read under a second number (Sha Tin side-on camera:
     # 1/4/14 confusions put "#14" 1.4 s ahead of where it finished): two numbers whose tracks
-    # coincide in (x, y) on shared frames -> keep the one with more reads
+    # coincide in (x, y) on shared frames (or on one track continued past its ends: see the
+    # docstring) -> keep the one with more reads
+    cont = os.environ.get("HKJC_FC_CONT", "1") != "0"
     nums = sorted(out, key=lambda n: -len(out[n][0]))
     drop = set()
     for i, a in enumerate(nums):
@@ -345,6 +376,14 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
                 j = np.where(np.abs(ua - u) <= 1)[0]
                 if len(j) and np.abs(xa[j] - x).min() < 45 and np.abs(ya[j] - y).min() < 30:
                     same += 1
+                elif (
+                    cont
+                    and not len(j)
+                    and ua[0] - 10 <= u <= ua[-1] + 10
+                    and abs(_x_at(out[a], u) - x) < 45
+                    and abs((ya[:4] if u < ua[0] else ya[-4:]).mean() - y) < 30
+                ):
+                    same += 1  # on a's track CONTINUED past its ends (see the docstring)
             if same >= max(2, 0.5 * len(ub)):
                 # a dropped digit is the common misread: prefer the LONGER number ("11" over "1")
                 if str(a) in str(b) and len(str(a)) < len(str(b)):

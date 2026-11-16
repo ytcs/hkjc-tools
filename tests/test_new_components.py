@@ -520,3 +520,26 @@ def test_identity_assign_global_elimination_sets_number_back_markers():
     # a scratched number is not in the universe
     lab = identity.assign_global(members, frame_of_det, rank, N, valid=set(range(1, 14)), **kw)
     assert lab[2] == 13 and lab[1] not in (0, 13, 14)
+
+
+def test_finishcam_misread_before_the_real_track_is_the_same_cloth():
+    """HV 04-15 R1: the "7" cloth read as "1" on the 4 unique frames BEFORE the "7" track starts
+    (no shared frame) lies on #7's line continued back -> one cloth, kept as #7; a real #1
+    elsewhere is unaffected."""
+    rows = [[u, u, 1486 - 38.0 * (u - 135), 310.0, 7, 0.95] for u in range(135, 168)]
+    rows += [[u, u, 1486 - 38.0 * (u - 135) + 2, 328.0, 1, 0.95] for u in range(131, 135)]
+    T = finishcam.tracks(dict(line_x=956.0, reads=np.array(rows, float)))
+    assert 7 in T and 1 not in T
+    rows += [[u, u, 1700 - 30.0 * (u - 100), 600.0, 1, 0.95] for u in range(100, 130)]
+    T = finishcam.tracks(dict(line_x=956.0, reads=np.array(rows, float)))
+    assert 7 in T and 1 in T and np.median(T[1][2]) == 600.0
+
+
+def test_finishcam_static_object_does_not_outvote_a_moving_cloth():
+    """ST8: a rail post read as "1" ~60x at one spot (plus 2 stray reads that pass the raw ptp test)
+    must not outvote the real #1 cloth moving across the frame in another lane."""
+    rows = [[u, u, 1566.0, 1052.0, 1, 0.8] for u in range(7, 127, 2)]
+    rows += [[30, 30, 405.0, 1037.0, 1, 0.6], [80, 80, 1278.0, 1029.0, 1, 0.7]]
+    rows += [[u, u, 1532 - 43.0 * (u - 58), 356.0, 1, 0.99] for u in range(58, 88)]
+    T = finishcam.tracks(dict(line_x=960.0, reads=np.array(rows, float)))
+    assert 1 in T and np.median(T[1][2]) == 356.0 and np.ptp(T[1][1]) > 1000

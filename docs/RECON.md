@@ -1292,6 +1292,26 @@ on the real rail. The rail is then bridged off-map for 1800–2800 contiguous st
 lose their marker grid, and the blocking rail audit fails, so it was not ensembled. A slope bound
 from the slide limit (0.05 m/m) only turns the step into a ramp.
 
+**Finish camera: one cloth = one moving track (2026-11-16; default, `HKJC_FC_MOVE`/`HKJC_FC_CONT`=0
+restore the old rules).** Z5's finish-order inversions were traced in pixels to two read errors in
+`finishcam.tracks`:
+- A misread just before the real track. HV 04-15 R1's camera "#1" was the "7" cloth, read as "1" on
+  the 4 unique frames before the "7" track starts. Its x lies within 2 px of #7's line extended back.
+  The coincidence rule compared only shared frames (one shared), so it kept a phantom #1 in 9th place.
+  The render's #1 at the line wears #1's silks. The rule now also counts reads on the other track
+  extended past its ends (±10 unique frames, the digit-drop window, same 45/30 px tolerance).
+- A static object outvoting a moving cloth. ST8's "#1" was a rail post, read about 60 times at one
+  spot, which outvoted the real #1 cloth in another lane. ST9's "#7" was "7" read on #5's checked
+  jockey silk, chosen over the real #7 cloth by a tie-break on index. The dominant lateral cluster is
+  now the one read at the most distinct places (45 px bins), then by read count. Rejected: a spread
+  test after the running median, which drops genuine short tracks (ST4's winner #11 spans 95 px).
+- Effect: finish tracks change on 4 of 26 races, all checked in pixels. 23 races are byte-identical
+  (ST7's change is a track already discounted). On the 6-seed ensemble every gate, ρ and hand-truth
+  yardstick is identical (paired Δ = 0). The seed-0 finish-order audit falls from 8 to 4 (interpolated
+  crossings). A census finds no static track left (smallest x spread 255 px of 283 tracks).
+- Remaining seed-0 pairs: HV 04-15 R9 (#2/#4 vs #9), ST3 (#5/#9, genuine reads, the jump race) and
+  ST 05-24 R1 (#7/#13).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
