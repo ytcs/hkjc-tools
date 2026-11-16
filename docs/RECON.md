@@ -1270,6 +1270,28 @@ the gap). The mechanism is OPEN: either the extraction follows the wrong line th
 rail itself steps (a course feature: the same d on three videos). A robust straight line in map
 coordinates is not the fix: the mosaic bends (Tukey line inliers 30%, end errors up to 10 m on ST8).
 
+**Speed, continued (2026-11-15).** All exact (paths and labels byte-identical on 26/26 races):
+`finishcam.finish_gaps` and `finishcam.tracks` are memoised on the reads (≈ 17 and 12 calls per race
+on the same cached reads), and `assign_frames` interpolates every horse's path state over all frame
+times in one vectorised call instead of ≈ 200k scalar `np.interp` calls. One race 13.5 → ≈ 11 s; 26
+races, one seed, in 83 s with 4 jobs.
+
+**B-course lateral gate (diagnosis, 2026-11-15; gate unchanged).** ST7 and ST 05-31 R1 ("B" Course
+in the HKJC record) measure the fixed-rail gap at 6.6 m against the course table's 4.5 m. ST7's map
+shows one clean fixed-rail ridge at 6.5–7.0 m (on 98% of on-map stations) and nothing near 4.5 m,
+while the C and C+3 races measure within 0.45 m of the table. The render draws the B fixed rail about
+2.1 m further in than the table. This is a render/table discrepancy, not a reconstruction scale
+error. The gate stays as it is and these two failures are reported as failures.
+
+**Straights, unseen-rail scoring (2026-11-15; opt-in `HKJC_RAIL_UNSEEN`, NOT adopted).** A ridge
+plot (station × offset, with the DP path and the field's inner edge) shows the real rail is on the
+mosaic only at d ≈ 400–550 on all three straights: a continuous ridge ≈ 110 px (5.8 m) inside the
+field edge, with the joining oval rail branching off it. Elsewhere the rail is off the map, and the
+DP rides grass-mowing texture next to the field. Scoring unseen offsets 0 instead of −1 keeps the DP
+on the real rail. The rail is then bridged off-map for 1800–2800 contiguous stations, ST3 and ST8
+lose their marker grid, and the blocking rail audit fails, so it was not ensembled. A slope bound
+from the slide limit (0.05 m/m) only turns the step into a ramp.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
