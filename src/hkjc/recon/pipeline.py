@@ -719,12 +719,15 @@ class RaceRun:
         for k, num in fin.items():
             if num <= nmax:
                 votes[k, num] += self.FINISH_VOTES
-        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0":  # global ML assignment (identity.assign_global)
-            lab = identity.assign_global(mem, T["rows"][:, 0], votes, nmax)
+        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0":  # joint ML assignment with silk evidence
+            lab = identity.assign_global(
+                mem, T["rows"][:, 0], votes, nmax, silk_llr=self._silk_llr(mem, T, nmax)
+            )
+            lab = np.array([x if x in valid else 0 for x in lab])
         else:
             lab, _sig, _proto = identity.assign(mem, T["rows"][:, 0], votes, T["hist"], nmax)
-        lab = np.array([x if x in valid else 0 for x in lab])
-        lab = self._silk_ties(mem, T, votes, lab)
+            lab = np.array([x if x in valid else 0 for x in lab])
+            lab = self._silk_ties(mem, T, votes, lab)
         n_elim, el_ok = 0, []
         if _fit is not None:  # ELIMINATION at the line: leftover tracklets vs leftover numbers
             at_line = {k for k in _fit["tc"] if lab[k]}
@@ -751,6 +754,35 @@ class RaceRun:
         )
 
     FINISH_VOTES = 40.0  # one finish-camera match ~ 4 s of unanimous legend votes
+
+    def _silk_llr(self, mem, T, nmax):
+        """(tracklets x numbers) silk log-likelihood ratio for identity.assign_global (None without
+        silk.npz): mapped official prototype vs the tracklet's mean render signature."""
+        if not self.p("silk.npz").exists():
+            self.log("   identify: WARNING silk.npz missing -> no appearance term")
+            return None
+        from .assoc import _collapse
+        from .silkmap import SILK_LLR_A, SILK_LLR_B, SILK_LLR_CLIP, SILK_MAP
+
+        Bm = np.asarray(SILK_MAP)
+        zs = np.load(self.p("silk.npz"))
+        F = zs["feat"][T["det_idx"]].astype(float)
+        proto = {}
+        for h, p in zip(zs["proto_no"], zs["proto"]):
+            q = np.clip(np.r_[_collapse(p), 1.0] @ Bm, 1e-9, None)
+            proto[int(h)] = q / q.sum()
+        out = np.zeros((len(mem), nmax))
+        for k, m in enumerate(mem):
+            f = F[m]
+            f = f[f.sum(1) > 0]
+            if len(f) < 10:
+                continue
+            sig = _collapse((f / f.sum(1, keepdims=True)).mean(0))
+            for h, q in proto.items():
+                if 1 <= h <= nmax:
+                    tv = 0.5 * np.abs(q - sig).sum()
+                    out[k, h - 1] = np.clip(SILK_LLR_A + SILK_LLR_B * tv, -SILK_LLR_CLIP, SILK_LLR_CLIP)
+        return out
 
     def _silk_ties(self, mem, T, votes, lab):
         """identity.resolve_ties with the race's silk signatures (default on; HKJC_SILK_TIES=0
@@ -1126,9 +1158,15 @@ class RaceRun:
         v[:, :k] += v2[:, :k]
         nmax = max(r.no for r in self.info.runners)
         valid = {r.no for r in self.info.runners}
-        lab, _s, _p = identity.assign(mem, T["rows"][:, 0], v, T["hist"], nmax)
-        lab = np.array([x if x in valid else 0 for x in lab])
-        lab = self._silk_ties(mem, T, v, lab)
+        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0":
+            lab = identity.assign_global(
+                mem, T["rows"][:, 0], v, nmax, silk_llr=self._silk_llr(mem, T, nmax)
+            )
+            lab = np.array([x if x in valid else 0 for x in lab])
+        else:
+            lab, _s, _p = identity.assign(mem, T["rows"][:, 0], v, T["hist"], nmax)
+            lab = np.array([x if x in valid else 0 for x in lab])
+            lab = self._silk_ties(mem, T, v, lab)
         fixed = L["fixed"] if "fixed" in L.files else np.zeros(len(mem), int)
         for k in np.where(fixed > 0)[0]:  # finish-camera names win over time-overlapping rivals
             for u in np.where(lab == fixed[k])[0]:

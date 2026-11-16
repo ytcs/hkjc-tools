@@ -25,3 +25,11 @@ SILK_MAP = [
     [0.00702, -0.03693, 0.02736, -0.00664, -0.02156, -0.01972, -0.02242, 0.01570, -0.00931, -0.01781, -0.03625, 0.05395, 0.02065, 0.08801],
     [0.06212, 0.13169, 0.06729, 0.01036, 0.03381, 0.03214, 0.03192, 0.03151, 0.02264, 0.03380, 0.02394, 0.05551, 0.26256, 0.11168],
 ]
+
+# Tracklet-level silk LOG-LIKELIHOOD RATIO as a function of the total-variation distance between the
+# tracklet's mean render signature and the MAPPED official prototype: LLR(tv) = A + B * tv, clipped to
+# +-CLIP. Fitted (linear in 16 histogram bins) on 201 true / 2251 false pairs of legend-confident
+# tracklets (26 races, Z4 seed 0; labels from the legend): +2.3 nats at tv 0.1, 0 at tv 0.35, -3 beyond.
+SILK_LLR_A = 2.24
+SILK_LLR_B = -6.37
+SILK_LLR_CLIP = 3.0

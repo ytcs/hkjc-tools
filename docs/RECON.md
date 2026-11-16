@@ -1198,6 +1198,41 @@ association uses χ² + log det.
   the "rank" association mode it motivated was removed.
 - Rule: never score a directory another run is writing into; new runs get their own tag.
 
+
+**Speed (2026-11-15).** Profile of one race: fuse ≈ 19 s of a ≈ 25 s observe → validate run (the EM
+loop: 11 fusion passes and 456 smoothing calls).
+- `_finish_identity` is cached on the tracks/finish mtimes. Exact (paths byte-identical); saves ≈ 3 s
+  per race.
+- `fusion.smooth` uses a banded Cholesky solve (lower bandwidth 2), assembled directly. This is a
+  DECLARED non-exact change.
+  - 0.33 → 0.012 s per call; 26 races in about half the time.
+  - Paths agree with the sparse path to ≈ 1e-8 m. Gates are identical on 26/26 races; labels on
+    23/26 (the EM flips 0.1–3.2% on three races).
+- `assign_frames` rank counts are vectorised. Exact on 26/26.
+- Rejected: a Takahashi selected-inverse for the variances. It is exact, but the Python loop is no
+  faster than LAPACK's multi-right-hand-side solve.
+
+**Joint identity with silk (2026-11-15; NOT adopted).** I added a calibrated silk log-likelihood
+ratio, LLR(tv) = 2.24 − 6.37·tv (from 201 true / 2251 false legend-confident pairs), to
+`assign_global`'s gain. Its "gain ≤ 0 stays unlabelled" is the "not in view" option.
+- Noise-aware rule against Z4 (6 seeds each; thresholds from the measured null):
+
+  | Metric | Z4 | Joint identity | Rule |
+  |---|---|---|---|
+  | Non-lateral gates per seed | 200.3 | 197.5 | ≥ 199.65 ✗ |
+  | Hand-truth majority | 68 | 60 | ≥ 65 ✗ |
+  | Identity score | 0.954 | 0.942 | ≥ 0.949 ✗ |
+  | Timing gates | 126.0 | 127.5 | reported |
+  | All five timing gates (races) | 23.0 | 24.7 | reported |
+
+- Timing improves because it names fewer tracklets wrongly (ST4's false #3 is gone; sectional
+  0.32 → 0.15 s). But it leaves too many tracklets unnumbered and whole horses lose paths.
+- Open: the "none" decision needs its own calibration; ρ re-estimated from labelled tracklets is
+  likely too strict.
+- Audit items left on Z4: slides at d 380–420 and 560 on all three straights (the warped mid-straight
+  mosaic, a render pose/map issue) and at d ≈ 420 on ovals (bend → straight). Legend-negative on ST3
+  (16) and ST 05-24 (6). Finish-order inversions on HV 04-15 R1 (4) and ST 04-26 R1 (3).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

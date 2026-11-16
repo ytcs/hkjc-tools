@@ -108,7 +108,7 @@ def assign(
     return lab, sig, proto
 
 
-def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10):
+def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10, silk_llr=None):
     """Number the tracklets by the GLOBAL maximum-likelihood assignment (replaces ``assign``'s greedy
     longest-first pass with a margin; switch HKJC_ID_GLOBAL=1).
 
@@ -143,6 +143,13 @@ def assign_global(members, frame_of_det, votes, n_field, *, min_len=3, iters=10)
     rho = 0.5
     for _ in range(iters):
         G = V * np.log(rho * N) + (tot - V) * np.log((1 - rho) * N / (N - 1))
+        # silk_llr (pipeline: HKJC_ID_GLOBAL=1, NOT adopted): appearance evidence, only where the legend
+        # has spoken at all. 26 races x 6 seeds vs Z4 (noise-aware rule declared before reading):
+        # timing gates 126.0 -> 127.5, all five 23.0 -> 24.7 (fewer false paths: ST4 sect 0.32 -> 0.15),
+        # but it leaves too many tracklets unnumbered -> whole horses lose paths (ST4/ST7/ST 05-31 -6
+        # count gates): non-lateral 200.3 -> 197.5, hand majority 68 -> 60, idscore 0.954 -> 0.942.
+        if silk_llr is not None:
+            G = G + np.where(tot > 0, silk_llr[:, :N], 0.0)
         G[~ok] = 0.0
         G = np.where(G > 0, G, 0.0)
         nv = T * N

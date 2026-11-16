@@ -475,3 +475,19 @@ def test_fusion_chi2_logdet_makes_vague_paths_pay(monkeypatch):
     assert fusion.chi2_against(o, vague) < fusion.chi2_against(o, tight)  # chi^2 alone: vague wins
     monkeypatch.setenv("HKJC_ASSOC_LOGDET", "1")
     assert fusion.chi2_against(o, vague) > fusion.chi2_against(o, tight)  # it pays for vagueness
+
+
+def test_identity_assign_global_silk_breaks_ties_and_allows_none():
+    from hkjc.recon import identity
+
+    frame_of_det = np.r_[np.arange(100), np.arange(100), np.arange(100)]
+    members = [np.arange(0, 100), np.arange(100, 200), np.arange(200, 300)]  # 3 horses, same frames
+    votes = np.zeros((3, 5))
+    votes[0, 1] = 60.0  # tracklet 0: clearly #1
+    votes[1, [3, 4]] = 20.0  # tracklets 1, 2: tied {3, 4} (never in the legend's top 8)
+    votes[2, [3, 4]] = 20.0
+    silk = np.zeros((3, 4))
+    silk[1, 3], silk[1, 2] = 2.0, -2.0  # tracklet 1 looks like #4
+    silk[2, 2], silk[2, 3] = 2.0, -2.0  # tracklet 2 looks like #3
+    lab = identity.assign_global(members, frame_of_det, votes, 4, silk_llr=silk)
+    assert lab.tolist() == [1, 4, 3]
