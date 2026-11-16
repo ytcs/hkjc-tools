@@ -1421,6 +1421,10 @@ positional cost of the correct horse is small (0.3–9), and a legend term pushe
   - ρ 0.971 → 0.974 (better on 6/6 seeds, just under its +0.005 benefit bar);
   - non-lateral 201.50 → 201.33 (SE 0.17; ST4's borderline sectional, 0.249 → 0.257 on one seed);
   - lateral 10, all five unchanged.
+- Fresh blind hand truth (labelled after Z8, never seeing pipeline labels; 77 detections): ST 06-07
+  R6, HV 05-13 R9, HV 05-20 R9 and ST8. ST8 rises 18 → 20/24 at Z6 on every seed, an independent
+  confirmation of the straight-course datum. Z7/Z8 are unchanged on all four. ST 06-07 R6 and
+  HV 05-13 R9 score 16/18 under every arm, so they don't discriminate.
 - Same defect class, NOT adopted (`HKJC_COUNT_HARD`, opt-in): giving the negative-legend count
   bound the same 4σ margin (counting detections within 4.5 m behind as possibly ahead) flips 35 % of
   its "surely inside the top 8" claims. On 26 × 6 against Z8: non-lateral −0.17 (SE 0.31), ρ −0.004
