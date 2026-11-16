@@ -17,6 +17,12 @@ def test_track_widths_by_course():
     assert hv.width("C") == 22.5 and hv.width("A") == 30.5
     assert track_for("ST", 1000).bend_segments == ()
     assert track_for("ST", 1650, "awt").width("AWT") == 22.8
+    # official course diagram (racing.hkjc.com .../racing-course), every listed setting
+    st = track_for("ST", 1400)
+    official_st = {"A": 30.5, "A+2": 28.5, "A+3": 27.5, "B": 26.0, "B+2": 24.0, "C": 21.3, "C+3": 18.3}
+    assert {c: st.width(c) for c in official_st} == official_st
+    official_hv = {"A": 30.5, "A+2": 28.5, "B": 26.5, "B+2": 24.5, "B+3": 23.5, "C": 22.5, "C+3": 19.5}
+    assert {c: hv.width(c) for c in official_hv} == official_hv
 
 
 @pytest.mark.skipif(

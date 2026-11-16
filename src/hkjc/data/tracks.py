@@ -102,7 +102,8 @@ HAPPY_VALLEY = TrackGeometry(
 )
 
 # Sha Tin turf — 1,900 m galloping oval, right-handed, 430 m home straight. Long
-# straights => a far weaker geometric draw bias than HV. Bend boundaries are a
+# straights => a far weaker geometric draw bias than HV. Widths verified 2026-11-16 against the
+# official course diagram (racing.hkjc.com/en-us/local/page/racing-course; A+3 was missing). Bend boundaries are a
 # two-turn reconstruction from circumference + home straight (straights ~910 m total,
 # two ~495 m bends); widths/home-straight are official.
 SHA_TIN_TURF = TrackGeometry(
@@ -112,7 +113,7 @@ SHA_TIN_TURF = TrackGeometry(
     circumference=1900.0,
     handedness="right",
     courses={
-        "A": (430.0, 30.5), "A+2": (430.0, 28.5),
+        "A": (430.0, 30.5), "A+2": (430.0, 28.5), "A+3": (430.0, 27.5),
         "B": (430.0, 26.0), "B+2": (430.0, 24.0),
         "C": (430.0, 21.3), "C+3": (430.0, 18.3),
     },

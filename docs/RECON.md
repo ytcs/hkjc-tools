@@ -1281,7 +1281,9 @@ in the HKJC record) measure the fixed-rail gap at 6.6 m against the course table
 shows one clean fixed-rail ridge at 6.5–7.0 m (on 98% of on-map stations) and nothing near 4.5 m,
 while the C and C+3 races measure within 0.45 m of the table. The render draws the B fixed rail about
 2.1 m further in than the table. This is a render/table discrepancy, not a reconstruction scale
-error. The gate stays as it is and these two failures are reported as failures.
+error. The gate stays as it is and these two failures are reported as failures. The official course
+diagram (racing.hkjc.com/en-us/local/page/racing-course, checked 2026-11-16) confirms the table
+(Sha Tin A 30.5 m, B 26.0 m, so the B gap is 4.5 m); the discrepancy is the render's.
 
 **Straights, unseen-rail scoring (2026-11-15; opt-in `HKJC_RAIL_UNSEEN`, NOT adopted).** A ridge
 plot (station × offset, with the DP path and the field's inner edge) shows the real rail is on the
