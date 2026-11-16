@@ -450,3 +450,13 @@ def test_tracking_split_by_appearance_cuts_identity_switches_only():
     members = [np.arange(240), np.arange(240, 440)]
     out = sorted(tracking.split_by_appearance(members, t, F), key=lambda m: m[0])
     assert [len(m) for m in out] == [120, 120, 200]
+
+
+def test_rails_robust_offset_ignores_a_long_outlier_run():
+    from hkjc.recon import rails
+
+    rng = np.random.default_rng(4)
+    h = 30 + 5 * np.sin(np.arange(6000) / 900.0) + rng.normal(0, 2, 6000)
+    h[3000:3110] = 240.0  # a 110-station run of outliers (sparse detections far inside the field)
+    z = rails.robust_offset(h)
+    assert np.abs(z[3000:3110] - 30 - 5 * np.sin(np.arange(3000, 3110) / 900.0)).max() < 6.0

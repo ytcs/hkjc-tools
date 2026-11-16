@@ -133,6 +133,11 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
         score = np.where(R >= min_r, 1.0, -1.0)
     else:
         score = np.where(R >= min_r, R, -1.0)
+    # HKJC_RAIL_NEAR (diagnostic): cost per px inside the field's inner edge -- the racing rail is the
+    # FIRST rail inside the horses, not a brighter line further in (fixed rail, apron edge)
+    near = float(os.environ.get("HKJC_RAIL_NEAR", 0.0))
+    if near > 0:
+        score = score - near * np.clip(offs[None, :] - np.asarray(prior_hi)[:, None], 0, None)
     acc = score[0].copy()
     back = np.zeros((N, M), int)
     oi = np.arange(M)
@@ -554,6 +559,31 @@ def inner_field(Ps, Nin, X, win=25, q=90):
     return np.interp(np.arange(len(Ps)), np.where(good)[0], hin[good])
 
 
+def robust_offset(h, *, wavelength=1000.0, huber=10.0, iters=8):
+    """The field's INNER-EDGE offset per station, robustly smoothed (Huber IRLS Whittaker, second-
+    difference penalty, cutoff ~``wavelength`` stations = 100 m at 2 px/station). ``inner_field`` is
+    a 90th percentile over a +-25-station window, so where detections are sparse a few outliers far
+    inside the field dictate it. MEASURED (HV 05-20 R9, stations 4746-4897): a 107-station run at up
+    to 247 px against ~30 px around it survived the 51-station median, bent the station scaffold, and
+    folded every rail ridge into a V that the DP could not follow (all scorings dived toward the apron
+    path). HKJC_HIN_ROBUST=1 (opt-in)."""
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+
+    n = len(h)
+    if n < 10:
+        return h
+    D = sparse.diags([1.0, -2.0, 1.0], [0, 1, 2], shape=(n - 2, n))
+    P = (wavelength / (2 * np.pi)) ** 4 * (D.T @ D)
+    w = np.ones(n)
+    z = h.copy()
+    for _ in range(iters):
+        z = spsolve((sparse.diags(w) + P).tocsc(), w * h)
+        r = np.abs(h - z)
+        w = np.where(r <= huber, 1.0, huber / np.maximum(r, 1e-9))
+    return z
+
+
 def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
     """HKJC_RAIL_SMOOTH=whittaker (opt-in): the rail is a SMOOTH CURVE. Robust (Huber, IRLS)
     support-weighted Whittaker smoother in world px with a THIRD-difference penalty (straights and
@@ -689,14 +719,16 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     inner = inner_side(T, handedness)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
-    Q = (
-        Ps
-        + gaussian_filter1d(median_filter(hin, 51, mode="nearest"), 40, mode="nearest")[:, None]
-        * Nin
-    )
+    if os.environ.get("HKJC_HIN_ROBUST", "0") != "0":  # see robust_offset (opt-in)
+        hs = robust_offset(hin)
+    else:
+        hs = gaussian_filter1d(median_filter(hin, 51, mode="nearest"), 40, mode="nearest")
+    Q = Ps + hs[:, None] * Nin
     Ps, T, _s = resample_path(Q, step=2.0, smooth=40.0)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
+    if os.environ.get("HKJC_HIN_ROBUST", "0") != "0":
+        hin = robust_offset(hin)
     offs = np.arange(-40, 261, 1.0)
     L, S, V = sample_profiles(img, cnt, to_px, Ps, Nin, offs)
     R = ridge_response(L, S, V)
