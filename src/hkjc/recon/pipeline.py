@@ -1422,6 +1422,11 @@ class RaceRun:
                     s_line=self.info.distance,
                     silk=silk,
                 )
+                n_pf = 0
+                if os.environ.get("HKJC_POSTFIN", "1") != "0":  # see assoc.release_post_finish
+                    lab, n_pf = assoc.release_post_finish(
+                        lab, t, s_run, self.info.distance, forbid
+                    )
                 obs = assoc.runs_to_obs(lab, t, s_run, lat)
                 for k in np.unique(frag[(lab == 0) & (frag >= 0)]):
                     j = np.where((frag == k) & (lab == 0))[0]
@@ -1439,6 +1444,7 @@ class RaceRun:
                     f"   em-assoc{tag} it{it}: {np.mean(lab > 0):.0%} of detections assigned, "
                     f"{len(paths)}/{len(horses)} horses, changed {changed:.1%}"
                     + (f", seeded {sorted(seeds)}" if seeds else "")
+                    + (f", {n_pf} post-finish detections released" if n_pf else "")
                 )
                 if prev is not None and changed < 0.002:
                     break

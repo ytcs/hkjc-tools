@@ -244,6 +244,39 @@ def fragment_forbid(forbid, idx, frac=None):
     return frozenset(h for h, k in c.items() if k >= frac * len(idx))
 
 
+def release_post_finish(lab, t, s, s_line, forbid=None, *, sd_s=0.8):
+    """INVARIANT: a horse that has crossed the line is not back on the course. A horse's detections
+    LATER than its first own detection past the line (s > s_line) that lie more than sqrt(CLUTTER) x
+    sd_s (4 sigma = 3.2 m: the E-step's own unassigned threshold) before the line are set anonymous,
+    and the horse is forbidden for them (``forbid`` {det: set}, which travels with the fragment).
+    MEASURED (ST 05-24 R1, Z6): two back-marker detections of an unnumbered tracklet (t 96.7 / 97.4, d
+    16.6 / 7.7) went to #7 after its own detections ended at d -7.3 (t 95.84); runs_to_obs merged them
+    into #7's single render run, the Gaussian smoother bent the path end 0.36 s late against its
+    finish-camera anchor (sd 0.19 m), the anchor check could not demote a horse's only render run,
+    and the late crossing dragged the camera clock fit (95.11 vs official 95.04) so the unanchored
+    #14 out-ran #1 (official short head). Census (Z6, 6 seeds): 4-6 such detections per seed in 2
+    races. A general monotone-progress rule was REJECTED before building: field-wide pose slips
+    (several horses reversing together, ST4 77.5 s, ST3 27 s) are not identity errors.
+    -> (labels, number released)."""
+    lab = lab.copy()
+    margin = np.sqrt(CLUTTER) * sd_s
+    n = 0
+    for h in np.unique(lab[lab > 0]):
+        k = np.flatnonzero(lab == h)
+        past = k[s[k] > s_line]
+        if not len(past):
+            continue
+        tf = t[past].min()
+        bad = k[(t[k] > tf) & (s[k] < s_line - margin)]
+        if len(bad):
+            lab[bad] = 0
+            n += len(bad)
+            if forbid is not None:
+                for j in bad:
+                    forbid.setdefault(int(j), set()).add(int(h))
+    return lab, n
+
+
 def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, tid0=50_000):
     """Per-horse observation runs (split at gaps > ``gap`` s) as fusion.Obs."""
     from .fusion import Obs

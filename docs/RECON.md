@@ -1352,6 +1352,38 @@ straight (up to ≈ 1.8 m on ST8) is not modelled.
   becomes a ramp), a whole-course coverage band (ST4's rail clears it by about 2 px), a straight
   Tukey line (the mosaic bends).
 
+**E-step: a finished horse is not back on the course (2026-11-16; baseline Z7, default;
+`HKJC_POSTFIN=0` disables).** ST 05-24 R1's reconstructed winner was #14 on every seed (official #1
+by a short head):
+- Two back-marker detections of an unnumbered tracklet (t 96.7 and 97.4, 16.6 and 7.7 m before the
+  line) went to #7 in the E-step, after #7's own detections had passed the line (d −7.3 at t 95.84).
+- `runs_to_obs` merged them into #7's single render run. The Gaussian smoother bent the end of the
+  path 0.36 s late, against the camera anchor (sd 0.19 m). The anchor check cannot remove a horse's
+  only render run.
+- The late crossing then dragged the camera clock fit (95.11 against the official 95.04), so #14,
+  which the camera never reads, out-ran #1 on the render clock.
+
+`assoc.release_post_finish` now makes such detections anonymous, and forbids that horse for them.
+"Such" means later than the horse's first detection past the line and more than √CLUTTER × 0.8 m
+(4σ = 3.2 m, the E-step's own threshold for leaving a detection unassigned) before it. Rejected
+before building: a general monotone-progress rule, because field-wide pose slips (ST4 77.5 s, ST3
+27 s: several horses reversing together) are not identity errors.
+- Census (Z6): 4–6 such detections per seed, in 2 races. The rule also fires in intermediate EM
+  iterations on ST4 and ST7 (1–2 detections each). The other 22 races are byte-identical at seed 0.
+- Rule declared before the run (26 races × 6 seeds, paired against Z6): non-lateral gates 200.50 →
+  201.50 (+1.0 on every seed: ST 05-24's winner now correct 6/6); timing 126.3 → 127.3; all five
+  23.3 → 24.3; lateral passes 10 → 10; ρ 0.971 → 0.971; hand majority 119 → 118 (one ST 05-24
+  detection's colour group splits).
+
+**Open after Z7 (traced, not fixed).**
+- HV 04-15 R9: the E-step relabels the last 26 detections of a correctly identified #2 (purple silk,
+  identify agrees, camera times agree) as #9. The legend ranks of the close #3/#2/#5/#4 bunch flip
+  frame to frame and drive the swap.
+- ST 05-24 R1: the camera's "1" track pools two cloths (#1, and #14 read as "1"; two reads per frame
+  12 px apart). #14 remains unread.
+- ST 05-09 R1 #3: a 2-frame camera-pose stall (above).
+- `finish_n_short` (ST7, ST 05-09 R2, ST 05-24, HV 05-27 R9) is the largest remaining failure class.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

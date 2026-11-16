@@ -566,3 +566,23 @@ def test_rails_straight_datum_measures_the_fence_where_it_is_seen():
     assert rails.is_straight(np.tile([1.0, 0.0], (100, 1)))
     th = np.linspace(0, np.pi, 200)
     assert not rails.is_straight(np.c_[np.cos(th), np.sin(th)])
+
+
+def test_assoc_release_post_finish_frees_detections_of_a_finished_horse():
+    """ST 05-24 R1 #7: detections later than the horse's own detection past the line that sit > 4 sd
+    before the line are released (and the horse forbidden for them); a horse still running is
+    untouched."""
+    from hkjc.recon import assoc
+
+    D = 1200.0
+    t = np.r_[np.arange(90, 96, 0.5), 96.7, 97.4, np.arange(90, 98, 0.5)]
+    s7 = np.r_[np.linspace(1100, 1207.3, 12), D - 16.6, D - 7.7]
+    s9 = np.linspace(1050, 1199.0, 16)  # never crosses
+    s = np.r_[s7, s9]
+    lab = np.r_[np.full(14, 7), np.full(16, 9)]
+    forbid = {}
+    out, n = assoc.release_post_finish(lab, t, s, D, forbid)
+    assert n == 2 and (out[12:14] == 0).all() and (out[:12] == 7).all() and (out[14:] == 9).all()
+    assert forbid == {12: {7}, 13: {7}}
+    out2, n2 = assoc.release_post_finish(out, t, s, D)
+    assert n2 == 0 and (out2 == out).all()
