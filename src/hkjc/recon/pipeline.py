@@ -1125,15 +1125,23 @@ class RaceRun:
 
     ANCHOR_CHECK = True  # env HKJC_ANCHOR_CHECK=0 disables (on/off sweeps)
 
-    def _fuse(self, obs, horses, prior):
+    def _fuse(self, obs, horses, prior, tail=0.0):
+        """Render-fused posterior, then + finish camera. ``tail`` (s): the LAST fusion's grid runs
+        that far past the data (prior-only nodes; used once, after the EM -- see fuse)."""
         import os
 
         ac = self.ANCHOR_CHECK and os.environ.get("HKJC_ANCHOR_CHECK", "1") != "0"
         st = {}
         paths, assign = fusion.fuse_race(obs, horses, prior, anchor_check=ac, stats=st)
         fin = self.finish_observations(paths)  # second pass: + finish camera
-        if fin:
-            paths, assign = fusion.fuse_race(obs + fin, horses, prior, anchor_check=ac, stats=st)
+        tr = None
+        if tail > 0:
+            ts = np.concatenate([o.t for o in obs + fin])
+            tr = (float(ts.min()), float(ts.max()) + tail)
+        if fin or tr is not None:
+            paths, assign = fusion.fuse_race(
+                obs + fin, horses, prior, anchor_check=ac, stats=st, t_range=tr
+            )
         if st.get("demoted"):
             self.log(f"   fuse: anchor check demoted {st['demoted']} render tracklets")
         return paths, assign
@@ -1240,6 +1248,9 @@ class RaceRun:
             pv, assign = self._fuse(obs, horses, prior)
         if os.environ.get("HKJC_EM_ASSOC", "1") != "0":
             obs, pv = self._em_associate(pv, horses, prior)
+        tail = float(os.environ.get("HKJC_FINAL_TAIL", 0.0))  # under test (seconds)
+        if tail > 0:  # once, after the EM: nothing downstream of the E-step sees the tail
+            pv, _a = self._fuse(obs, horses, prior, tail=tail)
         self._write_paths(pv, "paths_video.parquet")
         obs_f = self._metric_corrected(obs, pv)
         pf, _a = self._fuse(obs_f + self.official_observations(), horses, prior)
@@ -1349,6 +1360,44 @@ class RaceRun:
             return finishcam.read_numbers(sc)
         return {int(k) for k in finishcam.finish_gaps(sc)[1]}
 
+    def _fc_covered(self, paths, horses, read) -> set:
+        """Unread horses whose camera NON-READ is evidence: those predicted to cross while the camera
+        covered the line (predicted crossing <= the camera's latest crossing time). Predicted
+        crossing: the posterior's own crossing, else end-speed extrapolation; a horse without a path
+        counts as covered (no prediction to exempt it). MEASURED (Z8): every back marker barred in the
+        last 50 m by the blind cost was predicted to cross 0.1-2.0 s AFTER the camera's last crossing
+        (ST7, ST 05-09 R2, ST 05-24, HV 05-27 R9) while its detections were rendered there.
+        OPT-IN HKJC_FC_COVER=1, NOT ADOPTED (2026-11-16, 26 x 6 vs Z8): non-lateral -1.83 per seed (SE
+        0.40), all-five -1.17. A VAGUE late prediction is no evidence either: ST7 #11 (last, 5.4 s back,
+        own detections ending 200 m out) and ST4 #9 were exempted by end-speed extrapolation, took other
+        horses' near-line detections and crossed 3.66 / 0.81 s early -- the blind rule's original case.
+        With HKJC_FINAL_TAIL=3 as well: finish-n gained on ST7 / ST 05-09 R2 / ST 05-24, all-five -1.33
+        (SE 0.21); the final tail also changed fusion's orphan decisions (its "covered" share depends on
+        the grid length: HV 05-20 R9 #9 moved 1.8 m), so it was not a clean post-EM extension."""
+        D = self.info.distance
+        fin = self.finish_observations(paths)
+        if not fin:
+            return set(horses)
+        t_last = max(float(o.t[0]) for o in fin)
+        out = set()
+        for h in horses:
+            if h in read:
+                continue
+            p = paths.get(h)
+            if p is None or len(p.t) < 12:
+                out.add(h)
+                continue
+            d = D - p.s
+            k = np.flatnonzero(d <= 0)
+            if len(k):
+                tc = float(p.t[k[0]])
+            else:
+                v = (p.s[-1] - p.s[-11]) / (p.t[-1] - p.t[-11])
+                tc = float(p.t[-1] + d[-1] / v) if v > 0 else np.inf
+            if tc <= t_last:
+                out.add(h)
+        return out
+
     def _em_associate(self, paths, horses, prior):
         """Detection-level EM (``assoc``): every detection re-assigned per frame against the
         continuous fused paths (+ one-sided legend rank constraint), paths re-fused; the tracker's
@@ -1398,6 +1447,10 @@ class RaceRun:
                 late_frames = {int(f) for f, tt in zip(fr, t) if t_fin - 8.0 <= tt <= t_fin + 1.0}
                 shown = {int(x) for r_ in leg if int(r_[0]) in late_frames for x in r_[1:9] if x}
                 blind = [h for h in horses if h not in read and h not in shown]
+                if os.environ.get("HKJC_FC_COVER", "0") != "0":  # under test: see _fc_covered
+                    cov = self._fc_covered(paths, horses, read)
+                    near = [(s_, {h: c for h, c in pen.items() if h in cov}) for s_, pen in near]
+                    blind = [h for h in blind if h in cov]
                 if blind and os.environ.get("HKJC_BLIND", "1") != "0":
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
         def em_pass(paths, targets, tag):

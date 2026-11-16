@@ -1385,9 +1385,17 @@ before building: a general monotone-progress rule, because field-wide pose slips
   12 px apart). #14 remains unread.
 - ST 05-09 R1 #3: a 2-frame camera-pose stall (above).
 - `finish_n_short` (ST7, ST 05-09 R2, ST 05-24, HV 05-27 R9) is the largest remaining failure class.
-  The missing finishers are back markers (officially 10th–14th). The camera does not read them and
-  their render detections end 50–200 m before the line, so no feed observes them at the finish.
-  The exception is ST 05-09 R2 #10: the fusion grid ends at the latest observation (70.77 s, its
+  The missing finishers are back markers (officially 10th–14th). The camera does not read them.
+  CORRECTED (2026-11-16): they ARE rendered in the last 50 m. Detections lie unassigned along their
+  paths (ST7 #4 17 down to d 8 m, ST 05-09 R2 #9 18 down to d 3 m, HV 05-27 R9 #7 9 down to d 16 m).
+  The blind near-line cost bars them, and the video then ends before they cross. Every one is
+  predicted to cross after the camera's last crossing, so a non-read says nothing about them.
+  Two arms failed (26 × 6 against Z8, `HKJC_FC_COVER`, `HKJC_FINAL_TAIL`):
+  - Restricting the camera's negative evidence to horses predicted to cross inside its coverage:
+    non-lateral −1.83 per seed (SE 0.40). Vague predictions also exempted tailed-off horses: ST7 #11
+    (own detections ending 200 m out) took others' near-line detections and crossed 3.66 s early.
+  - With a 3 s final grid tail added: finish counts gained on three races, all five −1.33 (SE 0.21).
+  The other exception is ST 05-09 R2 #10: the fusion grid ends at the latest observation (70.77 s, its
   own camera observation at 70.749), and its path is still 0.2 m short at the last node. Rejected:
   prior-only grid nodes past the data. The extrapolated tails feed the EM, labels changed on most
   races (up to 4–6 %), and the tail length changed the outcome.
