@@ -1503,19 +1503,18 @@ start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one o
   - Run Y's losers (HV 04-15 R9, HV 05-20 R9, ST 06-07 R6) no longer lose.
 - HV 05-20 R2: the poses differ locally (the current pose's steps are ~5 % larger over t 12–20),
   but the leader's distance mapping agrees within 1–3 m and the tracker partition is unchanged.
-  - On a shared clock (first crossing = official winning time), control's camera alignment is
-    partly wrong: it names #11's tracklet #5 and #5's tracklet #3. The mask's alignment names five
-    tracklets (within 0.09 s of the official times) but omits #2. The #2/#8/#4/#1 bunch crosses
-    about 0.12 s late as a group, in control's label
-    order, so control's final #2 is right. Pixels: both tracklets are pure from t 30 to 99. The
-    t 71–79 swap is a real disagreement between the leaderboard's order and ours. Over the two
-    tracklets the votes favour the wrong pairing 109 : 83, so only external evidence fixes it.
-  - `identity_match`'s own fit: control t_w 99.303 s (off the winner's tracklet at ~99.07, hence
-    the #11/#5 misnames); mask t_w 99.068 s, where #2's tracklet lands nearest #8's slot and fails
-    the 0.15 s separation. The bunch is late because near the line the render samples only every
-    0.4–0.6 s, and the last frame before the gap (t 99.86) puts all four horses ~1.7 m short.
-    Identify's crossing uses only that sample. Shared-clock scoring of control's camera names on
-    all 26 races finds suspect names only here (2 of 45).
+  - Pixels (control, t 97–102): the 874-detection tracklet is #11, the 43-detection one #5, the
+    120-detection one #3, the 210-detection one #7. Control's camera named the first two #5 and
+    #3 (identify overrode the first). The mask's camera names are right but omit #2, which lands
+    nearest #8's slot and fails the 0.15 s separation. On HV 05-20 R2 the render's crossing times
+    are inconsistent between groups of horses by ~0.15 s (render-vs-camera residual sd 0.078 s,
+    max 0.18 s).
+  - Across the 26 races that residual is normally ~0.03 s (pooled robust sd 0.029 s, p90
+    0.066 s), so the identity match's 0.08 s tolerance and 0.15 s separation are ~3σ / 5σ.
+    HV 05-20 R2 is race-specific; recorded and not pursued further. ST 04-26 R1's least-squares
+    camera fit is broken (C 6727 px/s, residual sd 0.125 s): open.
+  - An earlier "shared clock" scoring anchored on the first crossing, which the leader gate
+    shows is 0.14–0.17 s early here; its conclusions (and the "2 of 45 suspect" census) are void.
   - Leaderboard lag: vote consistency peaks with the leaderboard ~0.45 s behind the render
     (22/26 races), but the gain is small (0.815 → 0.819), and a replay of identify (reproducing
     the pipeline's labels on 603/611 tracklets) shows no hand-accuracy change at 0.3–0.45 s.
