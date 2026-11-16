@@ -1518,6 +1518,18 @@ start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one o
 - Straights under the mask: the odometer/marker scale ratio is 1.034–1.036 on all three (ovals
   0.97–1.03; control straights scatter 0.93–1.03 under the stalls). How this maps to the leader
   shift is not yet worked out.
+- Identify's leaderboard votes rank detections by EXACT distance (no margin). On camera-named
+  tracklets (26 races, 11,189 votes), a vote is right 66.5 % of the time when its detection is
+  within 0.5 m of a neighbour, 79–88 % at 0.5–3 m, and ~100 % beyond 3 m. REJECTED: ranking by
+  own-lane distance (d + lat × remaining turning). Label-free vote consistency fell 0.85 → 0.52,
+  and every lateral correction tried was worse than plain rail-projected distance.
+  - When a vote is wrong, the true horse is in the adjacent slot two-thirds of the time and
+    essentially never far away. 80 % of wrong votes come in runs of 10+ frames, so the model's
+    independent, uniform-error assumption is doubly wrong.
+  - NOT pursued: set-valued near-level votes ("one of the slots within M"). On an offline
+    leave-camera-out replay (53 camera-named tracklets, Z8 seed 0) the old model scores 31 right /
+    8 wrong, and the set model at M = 1.13–4.53 m gives 27–33 / 7–12, not flat in M. The
+    correlated runs are unaddressed.
 - Every cause found so far also exists in control; the mask only exposes it. Each gets fixed
   against Z8 under its own declared rule, then the mask is re-run on the new baseline.
 
