@@ -116,7 +116,9 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
     the rail must lie INSIDE it (offset > prior_hi + margin is required by caller via R masking).
     Returns offset per station (NaN where no support)."""
     N, M = R.shape
-    # HKJC_RAIL_SCORE=binary (opt-in, NOT adopted): every credible ridge scores +1, so the Viterbi
+    # HKJC_RAIL_SCORE=binary (DEFAULT since baseline Z4 together with HKJC_RAIL_NEAR=0.002, robust_offset,
+    # smooth_rail gap weight 0.1 and fusion LOGDET; HKJC_RAIL_SCORE=raw = the old brightness score):
+    # every credible ridge scores +1, so the Viterbi
     # rewards CONTINUITY, not brightness. MEASURED: the raw score abandoned the thin movable rail for
     # the brighter fixed rail / apron edge ~6.6 m inside, bridged by a straight diagonal across open
     # turf (ST 05-31 and ST7 chute junctions, HV 04-22 R1 bend exit), giving field-wide lateral
@@ -129,13 +131,13 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
     # (honest: the misplaced 10th horse is dropped), ST8 #2/#12 flips; HV 04-15 R1 lost its marker
     # grid (two marginal peaks); lateral 10/1 -> 10/3 (ST course-B races now measurable: 6.6 m vs
     # table 4.5 on both, correct rail in pixels).
-    if os.environ.get("HKJC_RAIL_SCORE", "raw") == "binary":
+    if os.environ.get("HKJC_RAIL_SCORE", "binary") == "binary":
         score = np.where(R >= min_r, 1.0, -1.0)
     else:
         score = np.where(R >= min_r, R, -1.0)
     # HKJC_RAIL_NEAR (diagnostic): cost per px inside the field's inner edge -- the racing rail is the
     # FIRST rail inside the horses, not a brighter line further in (fixed rail, apron edge)
-    near = float(os.environ.get("HKJC_RAIL_NEAR", 0.0))
+    near = float(os.environ.get("HKJC_RAIL_NEAR", 0.002))
     if near > 0:
         score = score - near * np.clip(offs[None, :] - np.asarray(prior_hi)[:, None], 0, None)
     acc = score[0].copy()
@@ -566,7 +568,7 @@ def robust_offset(h, *, wavelength=1000.0, huber=10.0, iters=8):
     inside the field dictate it. MEASURED (HV 05-20 R9, stations 4746-4897): a 107-station run at up
     to 247 px against ~30 px around it survived the 51-station median, bent the station scaffold, and
     folded every rail ridge into a V that the DP could not follow (all scorings dived toward the apron
-    path). HKJC_HIN_ROBUST=1 (opt-in)."""
+    path). Default since baseline Z4 (HKJC_HIN_ROBUST=0 disables)."""
     from scipy import sparse
     from scipy.sparse.linalg import spsolve
 
@@ -604,7 +606,7 @@ def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
     n = len(W)
     D = sparse.diags([-1.0, 3.0, -3.0, 1.0], [0, 1, 2, 3], shape=(n - 3, n))
     P = (wavelength / (2 * np.pi)) ** 6 * (D.T @ D)
-    w0 = np.where(ok, 1.0, float(os.environ.get("HKJC_RAIL_GAPW", 1e-4)))  # unsupported: weak evidence
+    w0 = np.where(ok, 1.0, float(os.environ.get("HKJC_RAIL_GAPW", 0.1)))  # unsupported: weak evidence
     w, Z = w0.copy(), W.copy()
     for _ in range(iters):
         A = (sparse.diags(w) + P).tocsc()
@@ -719,7 +721,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     inner = inner_side(T, handedness)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
-    if os.environ.get("HKJC_HIN_ROBUST", "0") != "0":  # see robust_offset (opt-in)
+    if os.environ.get("HKJC_HIN_ROBUST", "1") != "0":  # see robust_offset
         hs = robust_offset(hin)
     else:
         hs = gaussian_filter1d(median_filter(hin, 51, mode="nearest"), 40, mode="nearest")
@@ -727,7 +729,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     Ps, T, _s = resample_path(Q, step=2.0, smooth=40.0)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
-    if os.environ.get("HKJC_HIN_ROBUST", "0") != "0":
+    if os.environ.get("HKJC_HIN_ROBUST", "1") != "0":
         hin = robust_offset(hin)
     offs = np.arange(-40, 261, 1.0)
     L, S, V = sample_profiles(img, cnt, to_px, Ps, Nin, offs)

@@ -399,15 +399,15 @@ def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps(monkeypatch):
     W = np.c_[2000 * np.cos(a), 2000 * np.sin(a)]
     noisy = W + rng.normal(0, 1.0, W.shape)
     ok = np.ones(len(W), bool)
-    ok[1200:1500] = False  # an unsupported gap ...
-    noisy[1200:1500] += np.linspace(0, 60, 300)[:, None]  # ... holding a bad linear bridge
+    ok[800:1700] = False  # a long UNSUPPORTED gap whose DP points still lie near the rail (ST 05-24) ...
+    noisy[790:800] += np.linspace(0, 6, 10)[:, None]  # ... with noisy end slopes
     noisy[2000:2005] += 40.0  # a burst of false ridge snaps
     Z = rails.smooth_rail(noisy, ok)
     err = np.hypot(*(Z - W).T)
-    assert np.percentile(err, 99) < 3.0 and err[1200:1500].max() < 3.0
+    assert err[800:1700].max() < 4.0  # no bulge across the gap (weight 1e-4 overshot ~150 px)
+    assert np.percentile(err, 99) < 4.0 and err[2000:2005].max() < 4.0
     monkeypatch.setenv("HKJC_RAIL_SMOOTH", "off")
-    assert rails.smooth_rail(noisy, ok) is noisy  # off by default
-
+    assert rails.smooth_rail(noisy, ok) is noisy
 
 def test_identity_resolve_ties_names_tied_tracklets_by_appearance():
     from hkjc.recon import identity

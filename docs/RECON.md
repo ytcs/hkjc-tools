@@ -1139,6 +1139,49 @@ than 4 m off the rail.
 - Not adopted under the declared rule. The opt-ins exist: `HKJC_RAIL_SCORE=binary`,
   `HKJC_RAIL_NEAR=0.002`, `HKJC_HIN_ROBUST=1`, `HKJC_RAIL_GAPW=0.1`.
 
+
+**Consistency audit (`recon/audit.py`, 2026-11-15).** Every failure found by eye broke a one-line
+invariant, so these are now measured per race and written to `audit.json` by the validate stage. No
+official data is used.
+- Rail (blocking before any ensemble): rail off the map (block on a contiguous run over 100
+  stations), marker grid found, marker spacing against arclength, and kinks.
+- Field: rail-to-field gap (segments where the innermost horses run more than 4 m off the rail) and
+  common-mode lateral slides.
+- Identity, reprojection against the inputs: legend negative evidence (an unlisted horse more than
+  8 m ahead of the rearmost tight listed horse), legend rank, ghost crossings (a tight crossing
+  without the horse's own detections and without a camera read), and finish-camera order inversions.
+- Recall on today's known failures: 11 of 12 caught, each on the invariant meant to catch it.
+  - Straight-course slides 15 vs 6; raw diagonals' field gap 4 vs 0; binary dives' slides 6 vs 2
+    and 8 vs 4; ST 05-24 bulge 699 off-map stations vs 0; HV 05-20 R9 V kinks 4 vs 0.
+  - HV 05-27 R3 #9 and HV 05-27 R9 #7 as ghost crossings; the pinned anchor as 8 finish-order
+    inversions vs 1.
+  - Missed: ST4's #3 on a lookalike (not caught after the floor rule removed the negative-legend noise).
+- The blocking threshold is derived from clean rails (maximum contiguous off-map run 44 stations,
+  the straights' band-edge rails) against the bulge (699).
+
+**Baseline Z4 (`recon-baseline-Z4`, 2026-11-15): Z3 + rail line choice + likelihood association
+(ADOPTED).** Rails use the binary ridge score, a 0.002/px nearness cost inside the field edge, the
+robust field-edge scaffold (`robust_offset`) and `smooth_rail` gap weight 0.1. Fusion's anonymous
+association uses χ² + log det.
+- Declared rule against Z3 (26 races × 6 seeds):
+
+  | Metric | Z3 | Z4 | Rule |
+  |---|---|---|---|
+  | Non-lateral gates per seed | 200.0 | 200.33 | ≥ 200.0 ✓ |
+  | Lateral passes | 10 | 10 | ≥ 10 ✓ |
+  | Hand-truth majority | 62 | 68 | ≥ 59 ✓ |
+  | Timing gates | 125.5 | 126.0 | reported |
+  | All five timing gates (races) | 22.5 | 23.0 | reported |
+
+  Log-det alone on Z3 missed the rule (199.5, hand 68).
+- Audit vector, seed 0, 26 races (Z3 → Z4):
+  - Better: kinks 34 → 5, rail-to-field gap 15 → 2, lateral slides 71 → 52, legend rank 302 → 271,
+    ghost crossings 1 → 0, rail off map 99 → 90.
+  - Worse: finish-order inversions 7 → 16 (HV 04-15 R1 4, ST 04-26 R1 3) and legend negative
+    26 → 37 (ST3 16). These are next in the audit queue.
+- A defaults-only run reproduces the ensemble's seed 0 byte-for-byte (ST 05-24); `audit.json`
+  passes rail blocking.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

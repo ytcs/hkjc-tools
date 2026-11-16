@@ -1423,3 +1423,14 @@ class RaceRun:
         res = _v.validate(self)
         self.p("validation.json").write_text(json.dumps(res, indent=1, default=float))
         self.log(_v.summary_line(self.info.key, res))
+        # label-free consistency audit (recon.audit): written beside the gates, never fails a run
+        from . import audit as _a
+
+        try:
+            au = _a.audit(self)
+            au["rail_blocking"] = _a.rail_blocking(au)
+            self.p("audit.json").write_text(json.dumps(au, indent=1, default=str))
+            if au["rail_blocking"]:
+                self.log(f"   audit: RAIL BLOCKING {au['rail_blocking']}")
+        except Exception as e:  # noqa: BLE001 -- diagnostics only
+            self.log(f"   audit: failed ({e})")
