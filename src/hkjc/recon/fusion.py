@@ -342,6 +342,10 @@ def fuse_race(
     runner-up by ``margin``x, and must not overlap in time with the horse's tracklets from the SAME
     feed), then everything is re-fused. Returns ({horse: Path}, assignment {tid: horse})."""
     ts = np.concatenate([o.t for o in obs])
+    # the grid ends at the LATEST observation. REJECTED (2026-11-16): prior-only nodes past the data so
+    # a horse crossing at the very end gets a crossing node (ST 05-09 R2 #10: its camera obs at 70.749,
+    # grid end 70.77, path 0.2 m short): the extrapolated tails feed the EM (E-step, finish seeds,
+    # anchors) -- labels changed on most races (up to 4-6 %), and a 2 s tail lost a crossing a 1 s one kept.
     lo, hi = (ts.min(), ts.max()) if t_range is None else t_range
     t_grid = np.arange(lo, hi + DT / 2, DT)
     assign = {o.tid: o.horse for o in obs if o.horse > 0}

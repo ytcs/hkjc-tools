@@ -51,8 +51,15 @@ def reproject(run, want):
         img = p.copy()
         st = z["st_of_frame"][k]
         sel = slice(max(0, st - 500), min(len(rf.R), st + 500))
+        # straight courses (Z6): the polyline is the field-edge DATUM; the racing rail drawn (and the
+        # lateral reference) is the fence measured lat0_px inside it (rails.straight_datum)
+        lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+        if lat0:
+            W = rf.R[sel]
+            uv = (np.c_[W, np.ones(len(W))] @ Gi.T)[:, :2].astype(np.int32)
+            cv2.polylines(img, [uv], False, (160, 160, 160), 1)
         for off, col in ((0, (255, 0, 255)), (5 * ppm, (255, 255, 0)), (10 * ppm, (255, 255, 0))):
-            W = rf.R[sel] + off * rf.Nout[sel]
+            W = rf.R[sel] + (off - lat0) * rf.Nout[sel]
             uv = (np.c_[W, np.ones(len(W))] @ Gi.T)[:, :2].astype(np.int32)
             cv2.polylines(img, [uv], False, col, 2 if off == 0 else 1)
         rows = T["rows"]

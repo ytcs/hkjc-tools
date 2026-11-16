@@ -1383,6 +1383,15 @@ before building: a general monotone-progress rule, because field-wide pose slips
   12 px apart). #14 remains unread.
 - ST 05-09 R1 #3: a 2-frame camera-pose stall (above).
 - `finish_n_short` (ST7, ST 05-09 R2, ST 05-24, HV 05-27 R9) is the largest remaining failure class.
+  The missing finishers are back markers (officially 10th–14th). The camera does not read them and
+  their render detections end 50–200 m before the line, so no feed observes them at the finish.
+  The exception is ST 05-09 R2 #10: the fusion grid ends at the latest observation (70.77 s, its
+  own camera observation at 70.749), and its path is still 0.2 m short at the last node. Rejected:
+  prior-only grid nodes past the data. The extrapolated tails feed the EM, labels changed on most
+  races (up to 4–6 %), and the tail length changed the outcome.
+- Reprojection check of Z6 (`viz.reproject` now draws the measured fence, with the datum in grey):
+  on ST3 the fence line lies on the real fence inside the window (f753, d 483 m) and within about
+  0.5 m of it outside (f478, d 701 m), where the mosaic never covered it.
 
 ## 4. Open / next
 
