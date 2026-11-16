@@ -432,8 +432,10 @@ def sync_video(
                 cv2.line(mp, (xs(gm), y0f + hf), (xs(gm), y0f + hf + 6), (200, 200, 200), 1)
                 if gm % 10 == 0:
                     cv2.putText(mp, f"{gm:.0f}", (xs(gm) - 8, y0f + hf + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+            unplaced = sorted(set(col) - set(cur_pos))
             for h, (p, d, sd) in sorted(cur_pos.items(), key=lambda x: -x[1][1]):
                 if sd > 10.0 or not (-2.0 <= d - lead <= win + 2.0):
+                    unplaced.append(h)
                     continue
                 g = G[h]
                 lat = float(np.interp(t, g["t"], g["lat"]))
@@ -449,6 +451,9 @@ def sync_video(
                 cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
                 cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
             cv2.putText(mp, "metres behind leader  (rail at bottom)", (30, y0f - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (230, 230, 230), 1)
+            if unplaced:  # no firm position in this window: listed, never silently dropped
+                txt = "not placed: " + " ".join(f"#{h}" for h in sorted(unplaced))
+                cv2.putText(mp, txt, (36, y0f + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
         cv2.putText(mp, f"{run.info.key}  t = {t:6.2f} s", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         if lead is not None:
             cv2.putText(mp, f"leader {max(lead, 0):5.0f} m to go", (Wm - 230, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)

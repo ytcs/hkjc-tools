@@ -1572,6 +1572,24 @@ Gate opening itself is at clock −0.12 s on the full feed.
   hollow and sd > 10 m is left out (ST4 #3, extrapolated at sd 14 m, was drawn "winning"). The course overview is drawn from the run's measured rail with d → rail arclength
 taken from the observe stage's own projection of the detections.
 
+**Per-horse census (2026-11-16): what a viewer of the synced video sees.** Per horse and seed (26 races
+× 6 seeds): firm share (posterior sd < 3 m over its race), scored at the line, and the largest
+boundary error with each boundary's race median removed (the common mode is a clock/scale shift of
+the whole field, invisible on screen). Good = firm ≥ 90 %, scored, relative error ≤ 0.25 s (~4 m).
+HV 06-03 R8 (judged good by eye) scores 100 %; with the raw (not common-mode-removed) error it scored
+17 %, so race-mean gates and raw errors are the wrong yardstick for the video.
+- Z8: 81.4 % of horse-runs good; 100 % on HV 06-03 R8, HV 06-03 R3, ST 06-07 R6, HV 05-13 R1;
+  ≥ 90 % on 9 more. Worst: ST3 50 %, ST4 57 %, HV 05-27 R3 58 %, ST 05-09 R2 / HV 05-20 R2 67 %.
+- Two failure modes. Unscored at the line (31 distinct horses; ST7 29 %, HV 05-27 R9 25 %,
+  ST 05-09 R2 24 %, ST 05-24 21 %, ST 05-09 R1 20 % of horses; the back-marker / video-limit class).
+  Relative errors > 0.25 s, mostly 0.25–0.5 s (4–8 m); large: ST4 #3 ~4 s, HV 05-20 R2 #5 / #12
+  ~1 s on every seed, HV 05-27 R3 #5 0.73 s, ST4 #12 / #14 ~0.6 s.
+- Mask (descriptive only, not a decision): 82.7 %; ST3 50 → 85 %, ST 05-09 R1 68 → 80 %,
+  HV 05-20 R2 67 → 57 %, ST 05-24 74 → 67 %.
+- `viz.sync_video` now lists horses with no firm position in the window ("not placed") instead of
+  dropping them silently; sd does not flag confident errors (ST4 #3 sits on wrong detections at
+  sd 0.17 m on seed 1).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
