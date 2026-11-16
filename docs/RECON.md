@@ -1559,7 +1559,11 @@ Gate opening itself is at clock −0.12 s on the full feed.
 - patrol / drone: gate opening read by eye from 0.2 s contact sheets (26 races). Patrol opens at
   1.15–1.4 s on every race; drone at 2.1–3.1 s. By eye the drone horses are only visible clear of the
   gate ~0.35 s after the doors open (HV 06-03 R8 measured), so drone readings are corrected by
-  −0.35 s; expected error ±0.2 s (drone), ±0.1 s (patrol). ST7 has no published drone feed (404).
+  −0.35 s. Precision is NOT established: both feeds assume gate opening at clock −0.12 s, measured
+  on HV 06-03 R8 only (on ST4 the full feed's gates read ~0.3 s later than its clock implies), and a
+  winner-crossing cross-check at contact-sheet resolution was inconclusive (the drone frame does
+  not show the line clearly). Treat patrol/drone as approximate (a few tenths of a second).
+  ST7 has no published drone feed (404).
 - REJECTED for automation: a threshold or change-point on frame differences (cameras pan after the
   start; ST 04-26 R9 drone fired at 0.04 s, HV 06-03 R8 full 1.62 vs 1.20) and matching the shared
   finish-camera replay (it sits at a different edit position per feed: HV 06-03 R8 patrol −1.92 s,
