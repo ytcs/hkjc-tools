@@ -160,9 +160,24 @@ def chi2_against(o: Obs, path: Path):
     r = 0.0
     if o.s is not None:
         r += np.nanmean((o.s[m] - ps) ** 2 / vs)
+        if LOGDET():
+            r += np.nanmean(np.log(vs / o.sd_s**2))
     if o.lat is not None:
         r += np.nanmean((o.lat[m] - pl) ** 2 / vl)
+        if LOGDET():
+            r += np.nanmean(np.log(vl / o.sd_l**2))
     return float(r)
+
+
+def LOGDET() -> bool:  # noqa: N802
+    """HKJC_ASSOC_LOGDET=1 (opt-in): score anonymous tracklets by the full Gaussian -2 log-likelihood
+    (chi^2 + log det ratio vs a tight prediction), as the E-step does (assoc.assign_frames). chi^2
+    alone lets a VAGUE, extrapolated path accept anything. MEASURED (HV 05-27 R3, H2' rails, seeds 2
+    and 3): #9 (last, 3.36 s back, unread; own detections end at 90.2 s) took an anonymous fragment at
+    99.3-101.3 s and "crossed" 1.4-2.0 s early with sd 0.56 m (behind-winner gate failures)."""
+    import os
+
+    return os.environ.get("HKJC_ASSOC_LOGDET", "0") != "0"
 
 
 def _overlaps(a: Obs, b_list: list) -> bool:

@@ -460,3 +460,18 @@ def test_rails_robust_offset_ignores_a_long_outlier_run():
     h[3000:3110] = 240.0  # a 110-station run of outliers (sparse detections far inside the field)
     z = rails.robust_offset(h)
     assert np.abs(z[3000:3110] - 30 - 5 * np.sin(np.arange(3000, 3110) / 900.0)).max() < 6.0
+
+
+def test_fusion_chi2_logdet_makes_vague_paths_pay(monkeypatch):
+    from hkjc.recon import fusion
+
+    t = np.linspace(0, 2, 21)
+    o = fusion.Obs(t, 100 + 16 * t + 4.0, np.full_like(t, 3.0), 0.8, 0.35, "render")  # 4 m ahead
+    def path(sd):
+        return fusion.Path(1, t, 100 + 16 * t, np.full_like(t, 3.0), np.full_like(t, sd),
+                           np.full_like(t, sd), np.ones_like(t))
+    tight, vague = path(1.5), path(9.0)
+    monkeypatch.setenv("HKJC_ASSOC_LOGDET", "0")
+    assert fusion.chi2_against(o, vague) < fusion.chi2_against(o, tight)  # chi^2 alone: vague wins
+    monkeypatch.setenv("HKJC_ASSOC_LOGDET", "1")
+    assert fusion.chi2_against(o, vague) > fusion.chi2_against(o, tight)  # it pays for vagueness
