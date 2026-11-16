@@ -1453,6 +1453,24 @@ class RaceRun:
                     blind = [h for h in blind if h in cov]
                 if blind and os.environ.get("HKJC_BLIND", "1") != "0":
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
+        # HKJC_BLIND_CARRY=1 (opt-in, NOT ADOPTED 2026-11-16): the blind horse's CLUTTER near the line is
+        # waived on its OWN tracker fragment's continuation (identify labelled the fragment as it AND
+        # this pass assigned the fragment's pre-zone detections to it; see assoc.assign_frames). Safe
+        # (s0, 26 races): exempted exactly the 9 predicted (horse, fragment) pairs at every iteration,
+        # 17 untouched races byte-identical, ST7 #11 / ST4 #9's stolen fragments (no identify label)
+        # still barred; precision on hand-labelled zone detections 309/327. But NO gate benefit: the
+        # target back markers are video-limited (ST7, ST 05-09 R2 short of the line at video end; HV
+        # 05-27 R9 #7 unrendered for its last 16 m, sd 1.78 > 1.5 at the line) and ST 05-24 #4's last
+        # detection is dropped by runs_to_obs (an EM 2-cycle). With HKJC_RUN_MIN=1 as well: ST 05-24
+        # timing 5/5 -> 3/5 (sparse near-line singletons bend paths: #14 +1.02 s) -- the Z7 failure.
+        carry = None
+        if os.environ.get("HKJC_BLIND_CARRY", "0") != "0":
+            Lid = np.load(self.p("labels.npz"))["labels"]
+            idl = np.zeros(len(t), int)
+            for k, m in enumerate(T["members"]):
+                idl[np.asarray(m, int)] = Lid[k]
+            carry = (frag, idl)
+
         def em_pass(paths, targets, tag):
             """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""
             prev = lab = obs = None
@@ -1462,6 +1480,7 @@ class RaceRun:
                 seeds = {}
                 if targets:
                     seeds = {h: p for h, p in self._finish_seeds(paths, prior).items() if h in targets}
+                exempt = {}
                 lab, _chi = assoc.assign_frames(
                     fr,
                     t,
@@ -1474,7 +1493,11 @@ class RaceRun:
                     forbid_out=forbid,
                     s_line=self.info.distance,
                     silk=silk,
+                    carry=carry,
+                    exempt_out=exempt,
                 )
+                if exempt:
+                    self.log(f"   em-assoc{tag} it{it}: blind carry exempt {dict(sorted(exempt.items()))}")
                 n_pf = 0
                 if os.environ.get("HKJC_POSTFIN", "1") != "0":  # see assoc.release_post_finish
                     lab, n_pf = assoc.release_post_finish(

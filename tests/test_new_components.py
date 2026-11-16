@@ -616,3 +616,33 @@ def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count(monkeypatch):
     new, _ = assoc.assign_frames(frames, t, s, lat, paths, legend)
     assert old[2] != 4  # 0.6 m margin: #4 (legend 3rd) barred from its own det, 0.9 m behind #3's
     assert new.tolist() == [1, 2, 4, 3]
+
+
+def test_assoc_blind_carry_waives_the_hard_near_line_cost_only_for_carried_identity():
+    """A blind horse's own tracker fragment entering the near-line zone keeps its identity when identify
+    labelled the fragment as that horse AND this pass assigned its pre-zone detections to it. A fragment
+    without pre-zone detections, or one identify labelled otherwise, stays barred."""
+    from hkjc.recon import assoc, fusion
+
+    tg = np.arange(0, 10.01, 0.1)
+    paths = {7: fusion.Path(7, tg, 10.0 * tg, np.full_like(tg, 3.0), np.full_like(tg, 0.3),
+                            np.full_like(tg, 0.3), np.ones_like(tg))}
+    t = np.arange(1.0, 9.01, 0.5)  # one detection per frame on #7's path: s 10 -> 90
+    s, lat, frames = 10.0 * t, np.full(len(t), 3.0), np.arange(len(t))
+    leg = np.zeros((0, 9), int)
+    near = [(60.0, {7: assoc.CLUTTER})]  # zone: s >= 60 (the last 30 m of a 90 m "race")
+    zone = s >= 60.0
+    frag = np.zeros(len(t), int)
+    ex = {}
+    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near,
+                                 carry=(frag, np.full(len(t), 7)), exempt_out=ex)
+    assert (lab == 7).all() and ex == {(7, 0): int(zone.sum())}
+    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near,
+                                 carry=(frag, np.full(len(t), 9)))  # identify says another horse
+    assert (lab[zone] == 0).all() and (lab[~zone] == 7).all()
+    frag2 = np.where(zone, 1, 0)  # the zone detections are a NEW fragment (no pre-zone part)
+    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near,
+                                 carry=(frag2, np.full(len(t), 7)))
+    assert (lab[zone] == 0).all()
+    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near)  # off: unchanged rule
+    assert (lab[zone] == 0).all()

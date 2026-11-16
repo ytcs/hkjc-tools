@@ -1399,6 +1399,49 @@ before building: a general monotone-progress rule, because field-wide pose slips
   own camera observation at 70.749), and its path is still 0.2 m short at the last node. Rejected:
   prior-only grid nodes past the data. The extrapolated tails feed the EM, labels changed on most
   races (up to 4–6 %), and the tail length changed the outcome.
+- `finish_n_short` per race, traced at Z8 (2026-11-16; corrects the paragraph above, which said
+  the video ends before every back marker crosses):
+  - ST7 (short 4): #4 is still 8 m short of the line on the last frame, #10 3 m short with no
+    detections after 70.8 m to go, and #11's own detections end 200 m out. Video-limited.
+  - ST 05-09 R2 (short 3): #9 is 3 m and #11 9 m short on the last frame; #10 is 0.3 m short at
+    the grid end. Video-limited.
+  - HV 05-27 R9 (short 3): the render has no detections between t 70.56 and 72.28, then one
+    frame of 4 untracked detections. #7 is unobserved for its last 16 m, so its sd at the line is
+    1.78 m (gate 1.5). #9 and #10 lose their detections 73–87 m out. Video-limited.
+  - ST 05-24 (short 3): #4 has a detection gap from 64 m, then 4 sparse detections in the last
+    25 m (the last past the line) that the blind cost bars. #8 and #12 have no detections after
+    125 / 90 m. Reachable only for #4 (see the two arms below).
+  - These are 17 of the 23 seed-fails. They stay reported failures.
+  - The finish camera's segment ends 8–19 unique frames after its last read crossing (HV 05-27 R9:
+    #10 is read still approaching the line). A non-read says nothing about a horse crossing after
+    that, but no reader fix can recover these horses either.
+- NOT ADOPTED: `HKJC_BLIND_CARRY` (opt-in). It waives the blind cost on a blind horse's OWN tracker
+  fragment: identify labelled the fragment as that horse AND the same E-step pass assigned the
+  fragment's detections before the zone to it by majority.
+  - Safety held on one seed. It exempted exactly the 9 predicted (horse, fragment) pairs at every
+    iteration, and the 17 untouched races were byte-identical.
+  - The fragments ST7 #11 and ST4 #9 stole under `HKJC_FC_COVER` have no identify label, so they
+    stay barred. The E-step-majority-only variant would have exempted ST4 #9's stolen fragments on
+    4 of 6 seeds, so it was ruled out.
+  - Precision on hand-labelled zone detections, all horses: 309 of 327 correct when the predicate
+    fires. The wrong ones are HV 05-27 #3 on #6's fragment; #3 is read, so the exemption doesn't
+    touch it.
+  - No gate benefit. ST3 #14 became scored (−0.03 s), but HV 05-27 #7 and ST 05-24 #4 stayed
+    unscored.
+  - On ST 05-24 the exemption ran in an EM 2-cycle (4 / 2 detections exempted on alternate
+    iterations). `runs_to_obs` drops runs of fewer than 3 detections after splitting at 1 s gaps,
+    so #4's last detection (1.36 s after the previous) was dropped once it was #4's. The grid then
+    shrank to 97.40, the detection fell out of range and went anonymous again (an anonymous fragment
+    forms one observation with no gap split).
+- NOT ADOPTED: `HKJC_RUN_MIN=1` (keep short runs, opt-in), tested together with the carry on one
+  seed against Z8.
+  - ST 05-24 timing 5/5 → 3/5 (ρ 1.00 → 0.86). Sparse singletons near the line bend paths and drag
+    the camera clock: #14 +1.02 s, #1 and #6 +0.3 s. This is the Z7 failure.
+  - Behind-winner worse on ST3, ST4 and ST7. HV 05-27 R9 finish-n 3 → 2.
+  - It changed 3 races predicted identical (HV 04-22 R1, HV 05-13 R1, ST 05-31). The short runs
+    also occur in intermediate EM iterations, not only in the final labels.
+  - In Z8, 103 assigned detections over 22 races are dropped by the 3-detection minimum (baseline
+    G, no recorded rationale), mostly at or past the line.
 - Reprojection check of Z6 (`viz.reproject` now draws the measured fence, with the datum in grey):
   on ST3 the fence line lies on the real fence inside the window (f753, d 483 m) and within about
   0.5 m of it outside (f478, d 701 m), where the mosaic never covered it.

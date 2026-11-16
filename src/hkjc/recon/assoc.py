@@ -80,6 +80,8 @@ def assign_frames(
     forbid_out=None,
     s_line=None,
     silk=None,
+    carry=None,
+    exempt_out=None,
 ):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
     ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
@@ -91,6 +93,11 @@ def assign_frames(
     ``s_line`` = race distance (metres run at the line): enables the final-stretch rank attraction.
     ``forbid_out`` (dict, optional) receives {detection index: set of horses} excluded by the HARD
     legend costs, so later stages (fusion's anonymous association) cannot hand them back.
+    ``carry`` = (fragment, identify label) per detection: a HARD near-line cost (the blind horse's
+    CLUTTER) is waived for horse h on a detection whose tracker fragment identify labelled h AND whose
+    detections before the zone THIS pass assigned to h by majority -- identity carried into the zone
+    by the tracker's continuity (see the pipeline's HKJC_BLIND_CARRY). ``exempt_out`` (dict) receives
+    {(horse, fragment): detections exempted}.
     Returns per-detection horse number (0 = clutter/unassigned) and per-detection chi^2."""
     from scipy.optimize import linear_sum_assignment
 
@@ -104,6 +111,18 @@ def assign_frames(
     # path state at every frame's time, interpolated per horse in one vectorised call (np.interp is
     # pointwise, so the values equal the per-frame scalar calls exactly)
     tf = t[order[bounds[:-1]]]
+    s_zone = None
+    if carry is not None and near_line is not None:
+        hard = [
+            sf
+            for sf, pen in (near_line if isinstance(near_line, list) else [near_line])
+            if any(v >= CLUTTER for v in pen.values())
+        ]
+        if hard:
+            s_zone = min(hard)
+            c_frag, c_id = carry
+            pre_n: dict = {}  # fragment -> its pre-zone detections assigned so far (this pass)
+            pre_h: dict = {}  # (fragment, horse) -> of those, assigned to horse
     if hs:
         inr = np.array([(paths[h].t[0] <= tf) & (tf <= paths[h].t[-1]) for h in hs]).T
         PS = np.array([np.interp(tf, paths[h].t, paths[h].s) for h in hs]).T
@@ -148,9 +167,21 @@ def assign_frames(
                 if nl.any():
                     for col, h in enumerate(ok):
                         if h in pen:
-                            C[nl, col] += pen[h]
+                            hit = nl
+                            if pen[h] >= CLUTTER and s_zone is not None:
+                                fj = c_frag[js]
+                                ex = nl & (c_id[js] == h) & (fj >= 0)
+                                for i in np.where(ex)[0]:
+                                    f = int(fj[i])
+                                    n_pre = pre_n.get(f, 0)
+                                    if not (n_pre and pre_h.get((f, h), 0) > 0.5 * n_pre):
+                                        ex[i] = False
+                                    elif exempt_out is not None:
+                                        exempt_out[(int(h), f)] = exempt_out.get((int(h), f), 0) + 1
+                                hit = nl & ~ex
+                            C[hit, col] += pen[h]
                             if forbid_out is not None and pen[h] >= CLUTTER:  # hard (blind horses)
-                                for i in np.where(nl)[0]:
+                                for i in np.where(hit)[0]:
                                     forbid_out.setdefault(int(js[i]), set()).add(int(h))
         leg = at(int(frames[js[0]]))
         if leg is not None:
@@ -247,6 +278,13 @@ def assign_frames(
             if k < m and C[i, k] < CLUTTER:
                 lab[js[i]] = ok[k]
                 chi[js[i]] = C[i, k]
+        if s_zone is not None:  # running pre-zone label counts per fragment (causal: time order)
+            for j in js:
+                f = int(c_frag[j])
+                if f >= 0 and s[j] < s_zone:
+                    pre_n[f] = pre_n.get(f, 0) + 1
+                    if lab[j]:
+                        pre_h[(f, int(lab[j]))] = pre_h.get((f, int(lab[j])), 0) + 1
     return lab, chi
 
 
@@ -296,8 +334,21 @@ def release_post_finish(lab, t, s, s_line, forbid=None, *, sd_s=0.8):
 
 
 def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, tid0=50_000):
-    """Per-horse observation runs (split at gaps > ``gap`` s) as fusion.Obs."""
+    """Per-horse observation runs (split at gaps > ``gap`` s) as fusion.Obs. Runs shorter than
+    HKJC_RUN_MIN detections (default 3, from baseline G, no recorded rationale) are DROPPED -- while
+    the same detections left anonymous form one Obs (>= 3, no gap split), so assigning a detection to
+    its horse can give fusion LESS than leaving it unowned. MEASURED (Z8, s0): 103 assigned
+    detections dropped over 22 races, mostly at or past the line (they pin the crossing). ST 05-24 #4
+    (with HKJC_BLIND_CARRY): its last detection (t 98.76, d -9.4, 1.36 s after the previous) became a
+    1-detection run and was dropped; the grid shrank to 97.40, the detection fell out of range, went
+    anonymous, the grid grew back -- an EM 2-cycle (exempt 4/2/4/2)."""
     from .fusion import Obs
+
+    # HKJC_RUN_MIN=1 (opt-in, NOT ADOPTED 2026-11-16; with HKJC_BLIND_CARRY, s0 vs Z8): ST 05-24 timing
+    # 5/5 -> 3/5 (rho 1.00 -> 0.86; #14 +1.02 s, #1/#6 +0.3 s: sparse singletons near the line bend
+    # paths and drag the camera clock, the Z7 failure), behind-winner worse on ST3/ST4/ST7; HV 05-27 R9
+    # finish-n 3 -> 2. Changed 3 races predicted identical (short runs in intermediate EM iterations).
+    min_len = int(os.environ.get("HKJC_RUN_MIN", 3))
 
     out = []
     tid = tid0
@@ -306,7 +357,7 @@ def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, 
         k = k[np.argsort(t[k])]
         cut = np.r_[0, np.where(np.diff(t[k]) > gap)[0] + 1, len(k)]
         for a, b in zip(cut[:-1], cut[1:]):
-            if b - a < 3:
+            if b - a < min_len:
                 continue
             kk = k[a:b]
             out.append(Obs(t[kk], s[kk], lat[kk], sd_s, sd_l, feed, horse=int(h), tid=tid))
