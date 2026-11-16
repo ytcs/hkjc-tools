@@ -1421,6 +1421,13 @@ positional cost of the correct horse is small (0.3–9), and a legend term pushe
   - ρ 0.971 → 0.974 (better on 6/6 seeds, just under its +0.005 benefit bar);
   - non-lateral 201.50 → 201.33 (SE 0.17; ST4's borderline sectional, 0.249 → 0.257 on one seed);
   - lateral 10, all five unchanged.
+- Same defect class, NOT adopted (`HKJC_COUNT_HARD`, opt-in): giving the negative-legend count
+  bound the same 4σ margin (counting detections within 4.5 m behind as possibly ahead) flips 35 % of
+  its "surely inside the top 8" claims. On 26 × 6 against Z8: non-lateral −0.17 (SE 0.31), ρ −0.004
+  on 6/6 seeds, no benefit.
+- Blind near-line cost: a refined arm was ruled out on cached data before running. The E-step's
+  tightness cut (sd < 2 m) does not separate the rendered back markers from ST4 #9 (sd 1.22 m at the
+  zone), which crossed 0.81 s early when exempted. The rule stays as it is.
 - Still open from the same diagnosis: the blind near-line cost removes a correctly placed unread
   back marker (HV 05-27 R9 #7 at d 49 m, positional cost 0.3 → 16.3). ST3 at t 34.98 has a
   frame-wide 3.5–4.4 m along-track offset (positional costs 18–29).

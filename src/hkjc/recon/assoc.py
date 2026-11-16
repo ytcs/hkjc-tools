@@ -190,7 +190,15 @@ def assign_frames(
             listed = {int(x) for x in leg[:max_rank] if x > 0}
             if len(listed) == max_rank:
                 nf = n_field or len(ok)
-                ub = (sj[None, :] > sj[:, None]).sum(1) + max(0, nf - len(js)) + 1
+                # HKJC_COUNT_HARD=1 (opt-in, NOT ADOPTED 2026-11-16): count dets within 4 sigma BEHIND as
+                # possibly ahead -- flips 35 % of "inside" claims; 26 x 6 vs Z8: non-lateral -0.17 (SE
+                # 0.31), idscore -0.004 on 6/6 seeds, no benefit. The strict count earns its hard claims.
+                if os.environ.get("HKJC_COUNT_HARD", "0") != "0":
+                    m4 = np.sqrt(CLUTTER * 2.0) * sd_s
+                    ahead_c = (sj[None, :] > sj[:, None] - m4).sum(1) - 1  # minus itself
+                else:
+                    ahead_c = (sj[None, :] > sj[:, None]).sum(1)
+                ub = ahead_c + max(0, nf - len(js)) + 1
                 inside = ub < max_rank
                 # ... and h runs behind EVERY listed horse: a detection ahead of the rearmost TIGHT
                 # posterior among the listed horses cannot be h (a vague listed horse could only be
