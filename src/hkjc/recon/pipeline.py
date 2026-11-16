@@ -1172,7 +1172,12 @@ class RaceRun:
         v[:, :k] += v2[:, :k]
         nmax = max(r.no for r in self.info.runners)
         valid = {r.no for r in self.info.runners}
-        if os.environ.get("HKJC_ID_GLOBAL", "1") != "0" and "rank" in L.files:
+        if os.environ.get("HKJC_ID_GLOBAL", "1") != "0":
+            if "rank" not in L.files:  # a cached labels.npz from the old identify (assign) path
+                raise RuntimeError(
+                    "labels.npz has no set-valued legend votes (written by identify with "
+                    "HKJC_ID_GLOBAL=0 or before baseline Z5): re-run the identify stage"
+                )
             r1 = L["rank"].copy()
             r1[:, :k] += v2[:, :k]
             lab = identity.assign_global(

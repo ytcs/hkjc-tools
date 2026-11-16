@@ -1260,14 +1260,15 @@ could never be numbered. ST4's ρ was also pinned at 0.99 by the 40-vote finish-
   (6/16) score low in both arms.
 - A defaults-only run reproduces the ensemble's seed 0 byte-for-byte (ST4, HV 05-27 R9).
 
-**Straight-course mid-section (diagnosis, 2026-11-15; no code change yet).** On all three 1000 m
-straights the field's innermost lateral position jumps by 2–5 m over d ≈ 400–550 and back (5th
-percentile: ST3 1.0 → 5.5 → 0.8 m, ST 05-09 R1 1.9 → 6.5 → 1.3 m, ST8 0.4 → 2.6 → 0.4 m). The
-detections run in straight parallel lines on the map; the extracted rail bulges, following the
-coverage edge (ST3) or the inner edge of the joining oval course (ST 05-09 R1, ST8). This is where
-the lateral slides, ST3's legend negatives and its low label coverage (25–45% of detections at
-t 32–37 s, with fused paths bridging the gap) come from. A robust straight line in map coordinates is
-NOT the fix: the mosaic bends (Tukey line inliers 30%, end errors up to 10 m on ST8).
+**Straight-course mid-section (diagnosis, 2026-11-15; no code change yet).** Measured: on all three
+1000 m straights the field's innermost lateral position (relative to the extracted rail) steps out by
+2–5 m over d ≈ 400–550 and back (5th percentile: ST3 1.0 → 5.5 → 0.8 m, ST 05-09 R1 1.9 → 6.5 →
+1.3 m, ST8 0.4 → 2.6 → 0.4 m). On the map the detections run in straight parallel lines through the
+step, while the extracted rail moves. This stretch carries the straights' lateral slides, ST3's legend
+negatives and its low label coverage (25–45% of detections at t 32–37 s, with the fused paths bridging
+the gap). The mechanism is OPEN: either the extraction follows the wrong line there, or the reference
+rail itself steps (a course feature: the same d on three videos). A robust straight line in map
+coordinates is not the fix: the mosaic bends (Tukey line inliers 30%, end errors up to 10 m on ST8).
 
 ## 4. Open / next
 
