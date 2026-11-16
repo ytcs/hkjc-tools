@@ -133,7 +133,11 @@ def assign_global(
     max_rank=8,
 ):
     """Number the tracklets by the GLOBAL maximum-likelihood assignment (replaces ``assign``'s greedy
-    longest-first pass with a margin; switch HKJC_ID_GLOBAL=1).
+    longest-first pass with a margin). DEFAULT since baseline Z5 (HKJC_ID_GLOBAL=0 restores ``assign``
+    + ``resolve_ties``), with the set-valued elimination evidence and the silk LLR below. Paired 6-seed
+    ensembles on 26 races vs Z4b (rule declared before the run): non-lateral gates 200.33 = 200.33,
+    lateral 10 = 10, idscore rho 0.954 -> 0.966 (+0.013, better on 6/6 seeds), hand majority (8 races,
+    151 detections) 108 -> 113; audit legend rank 266 -> 214, finish-order inversions 13.8 -> 9.0.
 
     Each legend vote names the tracklet's horse correctly with probability rho, otherwise one of
     the other N-1 numbers uniformly. Labelling tracklet t with ``num`` instead of leaving it
@@ -199,11 +203,9 @@ def assign_global(
                 + E * np.log(rho_e * Nu / m_set)
                 + (ne - E) * np.log((1 - rho_e) * Nu / (Nu - m_set))
             )
-        # silk_llr (pipeline: HKJC_ID_GLOBAL=1, NOT adopted): appearance evidence, only where the legend
-        # has spoken at all. 26 races x 6 seeds vs Z4 (noise-aware rule declared before reading):
-        # timing gates 126.0 -> 127.5, all five 23.0 -> 24.7 (fewer false paths: ST4 sect 0.32 -> 0.15),
-        # but it leaves too many tracklets unnumbered -> whole horses lose paths (ST4/ST7/ST 05-31 -6
-        # count gates): non-lateral 200.3 -> 197.5, hand majority 68 -> 60, idscore 0.954 -> 0.942.
+        # silk_llr: appearance evidence, only where the legend has spoken at all. The FIRST version
+        # (elimination fed as fractional votes) failed its rule: non-lateral 200.3 -> 197.5, hand 68 ->
+        # 60, idscore 0.954 -> 0.942 (whole back-markers unnumbered); see SET-VALUED above.
         if silk_llr is not None:
             spoken = tot + totx + (ne if sets else 0.0)
             G = G + np.where(spoken > 0, silk_llr[:, :N], 0.0)

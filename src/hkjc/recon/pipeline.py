@@ -723,7 +723,7 @@ class RaceRun:
             if num <= nmax:
                 votes[k, num] += self.FINISH_VOTES
                 fvotes[k, num] += self.FINISH_VOTES
-        glb = os.environ.get("HKJC_ID_GLOBAL", "0") != "0"
+        glb = os.environ.get("HKJC_ID_GLOBAL", "1") != "0"
         if glb:  # joint ML assignment: set-valued legend evidence + silk evidence
             lab = identity.assign_global(
                 mem,
@@ -1172,7 +1172,7 @@ class RaceRun:
         v[:, :k] += v2[:, :k]
         nmax = max(r.no for r in self.info.runners)
         valid = {r.no for r in self.info.runners}
-        if os.environ.get("HKJC_ID_GLOBAL", "0") != "0" and "rank" in L.files:
+        if os.environ.get("HKJC_ID_GLOBAL", "1") != "0" and "rank" in L.files:
             r1 = L["rank"].copy()
             r1[:, :k] += v2[:, :k]
             lab = identity.assign_global(

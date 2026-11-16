@@ -1233,6 +1233,42 @@ ratio, LLR(tv) = 2.24 − 6.37·tv (from 201 true / 2251 false legend-confident 
   mosaic, a render pose/map issue) and at d ≈ 420 on ovals (bend → straight). Legend-negative on ST3
   (16) and ST 05-24 (6). Finish-order inversions on HV 04-15 R1 (4) and ST 04-26 R1 (3).
 
+**Baseline Z5 (`recon-baseline-Z5`, 2026-11-15): joint identity with set-valued legend evidence
+(ADOPTED).** Diagnosis of the failed joint-identity run: it dropped the same horses with the silk
+term switched off. The dropped tracklets are back-markers whose only legend evidence is elimination
+("one of the m = N − 8 unlisted numbers"). Fed as 1/m fractional votes, the uniform-confusion
+likelihood reads (m − 1)/m of every such vote as evidence against each candidate, so these tracklets
+could never be numbered. ST4's ρ was also pinned at 0.99 by the 40-vote finish-camera names.
+- Fix, with no new knobs: `legend_votes(parts=True)` keeps elimination set-valued. An elimination
+  frame scores log(ρₑN/m) for every number in the set and log((1 − ρₑ)N/(N − m)) for each listed one,
+  with ρₑ re-estimated like ρ. Finish-camera votes count as evidence but are kept out of the ρ
+  estimate. Scratched numbers are not in the label universe.
+- Paired rule against Z4b (seeds 0–5, declared before the run; SE from the per-seed differences):
+
+  | Metric | Z4b | Z5 | Rule |
+  |---|---|---|---|
+  | Non-lateral gates per seed | 200.33 | 200.33 | Δ ≥ −2 SE (−0.73) ✓ |
+  | Lateral passes | 10 | 10 | ≥ 10 ✓ |
+  | Hand majority (8 races, 151 dets) | 108 | 113 | ≥ 105 ✓; benefit ≥ 111 ✓ |
+  | Identity score ρ | 0.954 | 0.966 | Δ ≥ −0.005 ✓; benefit ≥ +0.005 ✓ (6/6 seeds) |
+  | Timing gates / all five | 126.0 / 23.0 | 126.2 / 23.2 | reported |
+
+- Audit per seed (descriptive): legend rank 266 → 214, finish-order inversions 13.8 → 9.0, legend
+  negative 28.8 → 26.5; slides and field gap unchanged.
+- Hand truth extended blind (crops without labels, coarse colour groups, written before reading
+  results) to ST7, ST3, HV 04-15 R1 and ST 04-26 R1: 79 → 151 detections. ST3 (4–6/22) and ST 04-26 R1
+  (6/16) score low in both arms.
+- A defaults-only run reproduces the ensemble's seed 0 byte-for-byte (ST4, HV 05-27 R9).
+
+**Straight-course mid-section (diagnosis, 2026-11-15; no code change yet).** On all three 1000 m
+straights the field's innermost lateral position jumps by 2–5 m over d ≈ 400–550 and back (5th
+percentile: ST3 1.0 → 5.5 → 0.8 m, ST 05-09 R1 1.9 → 6.5 → 1.3 m, ST8 0.4 → 2.6 → 0.4 m). The
+detections run in straight parallel lines on the map; the extracted rail bulges, following the
+coverage edge (ST3) or the inner edge of the joining oval course (ST 05-09 R1, ST8). This is where
+the lateral slides, ST3's legend negatives and its low label coverage (25–45% of detections at
+t 32–37 s, with fused paths bridging the gap) come from. A robust straight line in map coordinates is
+NOT the fix: the mosaic bends (Tukey line inliers 30%, end errors up to 10 m on ST8).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
