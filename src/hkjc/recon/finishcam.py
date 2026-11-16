@@ -232,7 +232,30 @@ def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40,
     )
 
 
+_TRACKS_CACHE: dict = {}
+
+
+def _reads_key(sc):
+    import hashlib
+
+    R = np.ascontiguousarray(np.asarray(sc["reads"]))
+    return (R.shape, str(R.dtype), hashlib.sha1(R.tobytes()).hexdigest())
+
+
 def tracks(sc, *, min_reads=4, y_tol=40.0):
+    """Memoised ``_tracks`` (a pure function of the reads; called ~12x per fuse on the same reads).
+    Exact: returns deep copies."""
+    import copy
+
+    key = (_reads_key(sc), float(min_reads), float(y_tol))
+    if key not in _TRACKS_CACHE:
+        if len(_TRACKS_CACHE) > 64:
+            _TRACKS_CACHE.clear()
+        _TRACKS_CACHE[key] = _tracks(sc, min_reads=min_reads, y_tol=y_tol)
+    return copy.deepcopy(_TRACKS_CACHE[key])
+
+
+def _tracks(sc, *, min_reads=4, y_tol=40.0):
     """Per number, its reads restricted to the dominant lateral (y) cluster (a misread of another
     horse's cloth sits at a different y), sorted by unique-frame index u. {num: (u, x, y) arrays}."""
     R = np.asarray(sc["reads"])
@@ -360,17 +383,8 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
     """Memoised ``_finish_gaps`` (a pure function of line_x and the reads; the fuse stage calls it
     ~17x per race on the same cached reads, 1.6 s of a 13.5 s race). Exact: returns deep copies."""
     import copy
-    import hashlib
 
-    R = np.ascontiguousarray(np.asarray(sc["reads"]))
-    key = (
-        float(sc["line_x"]),
-        R.shape,
-        str(R.dtype),
-        hashlib.sha1(R.tobytes()).hexdigest(),
-        float(max_dx),
-        bool(with_sd),
-    )
+    key = (float(sc["line_x"]), _reads_key(sc), float(max_dx), bool(with_sd))
     if key not in _GAPS_CACHE:
         if len(_GAPS_CACHE) > 64:
             _GAPS_CACHE.clear()

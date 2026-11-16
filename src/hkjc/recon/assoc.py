@@ -101,16 +101,25 @@ def assign_frames(
     order = np.argsort(frames, kind="stable")
     fr_sorted = frames[order]
     bounds = np.r_[0, np.where(np.diff(fr_sorted))[0] + 1, len(order)]
-    for a, b in zip(bounds[:-1], bounds[1:]):
+    # path state at every frame's time, interpolated per horse in one vectorised call (np.interp is
+    # pointwise, so the values equal the per-frame scalar calls exactly)
+    tf = t[order[bounds[:-1]]]
+    if hs:
+        inr = np.array([(paths[h].t[0] <= tf) & (tf <= paths[h].t[-1]) for h in hs]).T
+        PS = np.array([np.interp(tf, paths[h].t, paths[h].s) for h in hs]).T
+        PL = np.array([np.interp(tf, paths[h].t, paths[h].lat) for h in hs]).T
+        PVS = np.array([np.interp(tf, paths[h].t, paths[h].sd_s) for h in hs]).T
+        PVL = np.array([np.interp(tf, paths[h].t, paths[h].sd_l) for h in hs]).T
+    for fi, (a, b) in enumerate(zip(bounds[:-1], bounds[1:])):
         js = order[a:b]
-        tj = t[js[0]]
-        ok = [h for h in hs if paths[h].t[0] <= tj <= paths[h].t[-1]]
-        if not ok:
+        if not hs or not inr[fi].any():
             continue
-        ps = np.array([np.interp(tj, paths[h].t, paths[h].s) for h in ok])
-        pl = np.array([np.interp(tj, paths[h].t, paths[h].lat) for h in ok])
-        vs = np.array([np.interp(tj, paths[h].t, paths[h].sd_s) for h in ok]) ** 2 + sd_s**2
-        vl = np.array([np.interp(tj, paths[h].t, paths[h].sd_l) for h in ok]) ** 2 + sd_l**2
+        cols = np.flatnonzero(inr[fi])
+        ok = [hs[c] for c in cols]
+        ps = PS[fi, cols]
+        pl = PL[fi, cols]
+        vs = PVS[fi, cols] ** 2 + sd_s**2
+        vl = PVL[fi, cols] ** 2 + sd_l**2
         # full Gaussian -2 log-likelihood relative to a tight prediction: chi^2 + log det ratio. A
         # horse whose path is VAGUE (out of view, extrapolated) must pay for it, or it steals any
         # nearby detection (HV 0527 #9, tailed off 3.4 s behind: path ended 2.8 s early).
