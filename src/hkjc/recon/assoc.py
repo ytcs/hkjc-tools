@@ -156,6 +156,16 @@ def assign_frames(
         if leg is not None:
             sj = s[js]
             ahead = (sj[None, :] > sj[:, None] + RANK_EPS).sum(1)  # detections ahead (vectorised)
+            # HARD exclusions (RANK_COST + forbid_out) need a CERTAIN ahead-count: ahead by more than
+            # the E-step's 4 sigma on a difference of two detections (sqrt(CLUTTER * 2) * sd_s = 4.5 m).
+            # DEFAULT since baseline Z8 (HKJC_RANK_HARD=0: the 0.6 m RANK_EPS). MEASURED (ST 04-26 R1,
+            # t 40.02): two dets 0.9 m apart counted the second as "clearly" 4th and hard-excluded the
+            # legend's 3rd (#9, positional cost 1.6) and 4th (#14, 7.6) -- correct identify labels left
+            # unassigned. 26 x 6 vs Z7: hand majority 118 -> 121 (ST 04-26 R1 6 -> 8), idscore +0.004
+            # (6/6 seeds), non-lateral -0.17 (SE 0.17; ST4's borderline sectional on 1 seed).
+            ahead_h = ahead
+            if os.environ.get("HKJC_RANK_HARD", "1") != "0":
+                ahead_h = (sj[None, :] > sj[:, None] + np.sqrt(CLUTTER * 2.0) * sd_s).sum(1)
             # horses whose TIGHT posterior is ahead of each detection (completes undetected ones)
             tight = np.sqrt(vs - sd_s**2) < 2.0
             post_ahead = ((ps[None, :] > sj[:, None] + RANK_EPS) & tight[None, :]).sum(1)
@@ -163,9 +173,9 @@ def assign_frames(
                 if num not in ok:
                     continue
                 col = ok.index(num)
-                C[ahead > r, col] += RANK_COST  # >= r+1 detections ahead: cannot be rank r+1
+                C[ahead_h > r, col] += RANK_COST  # >= r+1 detections ahead: cannot be rank r+1
                 if forbid_out is not None:
-                    for i in np.where(ahead > r)[0]:
+                    for i in np.where(ahead_h > r)[0]:
                         forbid_out.setdefault(int(js[i]), set()).add(int(num))
                 # TWO-SIDED where the rank is confident (detected ahead == posterior ahead): a
                 # detection of known rank q must not take the legend's rank-r horse, r != q. The

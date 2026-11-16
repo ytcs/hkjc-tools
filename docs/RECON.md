@@ -1395,6 +1395,28 @@ before building: a general monotone-progress rule, because field-wide pose slips
   on ST3 the fence line lies on the real fence inside the window (f753, d 483 m) and within about
   0.5 m of it outside (f478, d 701 m), where the mosaic never covered it.
 
+**E-step: hard legend-rank exclusions need a certain ahead-count (2026-11-16; baseline Z8, default;
+`HKJC_RANK_HARD=0` = the old 0.6 m).** Scored on the hand truth (8 races × 6 seeds), identify's
+tracklet labels are 68 % correct and the E-step's detection labels 77 %. The E-step overrides 69
+correct identify labels, mostly by leaving them unassigned. In the captured cost matrices the
+positional cost of the correct horse is small (0.3–9), and a legend term pushes it over CLUTTER.
+- On ST 04-26 R1 (t 40.02) two detections 0.9 m apart counted the second as "clearly" 4th
+  (`RANK_EPS` = 0.6 m, less than one detection sd). The legend's 3rd (#9) and 4th (#14) were then
+  HARD-excluded (+50 plus a forbid that travels with the fragment).
+- The negative-legend floor had the same defect earlier (0.6 m → 8 m).
+- The hard part now counts detections ahead by more than √CLUTTER × √2 × 0.8 m = 4.5 m: the E-step's
+  own 4σ, on the difference of two detections. The soft rank terms and the final-stretch attraction
+  keep 0.6 m.
+- Rule declared before the run (26 × 6, paired against Z7):
+  - hand majority 118 → 121 (ST 04-26 R1 6 → 8, HV 04-15 R1 16 → 17, HV 05-27 R9 21 → 22, ST3
+    11 → 10);
+  - ρ 0.971 → 0.974 (better on 6/6 seeds, just under its +0.005 benefit bar);
+  - non-lateral 201.50 → 201.33 (SE 0.17; ST4's borderline sectional, 0.249 → 0.257 on one seed);
+  - lateral 10, all five unchanged.
+- Still open from the same diagnosis: the blind near-line cost removes a correctly placed unread
+  back marker (HV 05-27 R9 #7 at d 49 m, positional cost 0.3 → 16.3). ST3 at t 34.98 has a
+  frame-wide 3.5–4.4 m along-track offset (positional costs 18–29).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

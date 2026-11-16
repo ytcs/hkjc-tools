@@ -586,3 +586,33 @@ def test_assoc_release_post_finish_frees_detections_of_a_finished_horse():
     assert forbid == {12: {7}, 13: {7}}
     out2, n2 = assoc.release_post_finish(out, t, s, D)
     assert n2 == 0 and (out2 == out).all()
+
+
+def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count(monkeypatch):
+    """ST 04-26 R1: the legend's 3rd and 4th horses are level (detections 0.9 m apart). Counting the
+    second detection as "clearly" 4th with a 0.6 m margin hard-excluded the legend's 3rd horse from
+    it; the hard part now needs 4 sigma (4.5 m) on the difference of two detections."""
+    from hkjc.recon import assoc, fusion
+
+    tg = np.arange(0.0, 2.01, 0.1)
+    s_at = {1: 100.0, 2: 98.8, 3: 96.0, 4: 95.1}  # metres run: #1 leads; #3 and #4 level-ish
+    lat_at = {1: 3.0, 2: 6.0, 3: 2.0, 4: 5.8}
+
+    def path(h, s0, l0):
+        z = np.zeros_like(tg)
+        return fusion.Path(h, tg, s0 + 16.0 * tg, l0 + z, 0.3 + z, 0.2 + z, z + 1)
+
+    paths = {h: path(h, s_at[h] - 16.0, lat_at[h]) for h in s_at}
+    # one frame at t = 1.0; detection rows sit exactly on the paths, but the legend has #4 3rd
+    # and #3 4th (a level pair whose order the legend sees differently)
+    det = [1, 2, 4, 3]
+    s = np.array([s_at[h] for h in det])
+    lat = np.array([lat_at[h] for h in det])
+    frames, t = np.zeros(4, int), np.ones(4)
+    legend = np.array([[0, 1, 2, 4, 3, 0, 0, 0, 0]])
+    monkeypatch.setenv("HKJC_RANK_HARD", "0")
+    old, _ = assoc.assign_frames(frames, t, s, lat, paths, legend)
+    monkeypatch.setenv("HKJC_RANK_HARD", "1")
+    new, _ = assoc.assign_frames(frames, t, s, lat, paths, legend)
+    assert old[2] != 4  # 0.6 m margin: #4 (legend 3rd) barred from its own det, 0.9 m behind #3's
+    assert new.tolist() == [1, 2, 4, 3]
