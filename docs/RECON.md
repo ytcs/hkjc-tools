@@ -1479,6 +1479,31 @@ positional cost of the correct horse is small (0.3–9), and a legend term pushe
   back marker (HV 05-27 R9 #7 at d 49 m, positional cost 0.3 → 16.3). ST3 at t 34.98 has a
   frame-wide 3.5–4.4 m along-track offset (positional costs 18–29).
 
+**Avatar-box mask re-tested on Z8 (2026-11-16): NOT adopted (fails its declared rule).**
+ST3 and ST 05-09 R1's frame-wide along-track offsets (a common shift of 2–12 m on 59 / 54
+frames, t 11–35) are camera-pose stalls. The raw field speed, measured from consecutive
+detections with no paths or labels, is 0 m/s for 6 ticks at ST3 t 26.4–26.9 and negative at
+29.6–30.2. The current pose has 47 / 29 stalled ticks; pod run Y's masked pose has 8 / 8 (render
+start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one of them.
+- Arm M: Y's pose on the 24 races whose frames equal; HV 04-22 R1/R9 keep the current pose.
+  Worldmap and rails were rebuilt with current code. A null rebuild on the old pose reproduces
+  the source files byte-for-byte, so M differs only by the pose. Detections are byte-identical.
+- Fresh blind labels on ST 05-09 R1 (t 26.6–33.8, 38 detections, colour groups, made before the
+  run): 13/38 → 37/38 (36–37 on every seed). Seed unanimity: ST3 49 → 88 %, ST 05-09 R1 86 → 99 %,
+  ST8 93 → 98 %. Tracklets span the whole race, and the time-local shift no longer fires.
+- Guards failed (26 × 6, paired): non-lateral −0.67 (SE 0.33), timing gates −0.50 (SE 0.22),
+  all five −0.67 (SE 0.21), idscore −0.001.
+  - HV 05-20 R2 sectional is systematically worse (+0.05 s on every seed, gate lost on 2):
+    #2, #5 and #8 are 0.6–1.0 s off at the first two boundaries, and unanimity falls 96 → 89 %,
+    though its pose has the same stall profile.
+  - ST 05-31 hand count 16 → 12 (unanimity 75 → 60 %); ST4 15 → 12.
+  - Straights' leader timing is worse, about −0.2 s from 400 m (ST 05-09 R1 0.11 → 0.20 s, still
+    passing), the same as recorded at pod run X. The marker-grid scale moves (ST3 17.8 → 19.2
+    px/m), so this is the straights' distance mapping, not identity.
+  - Run Y's losers (HV 04-15 R9, HV 05-20 R9, ST 06-07 R6) no longer lose.
+- Open: why a near-identical pose destabilises HV 05-20 R2 and ST 05-31, and the straights'
+  distance mapping under the mask. Then a new arm with a new declared rule.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
