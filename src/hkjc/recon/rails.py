@@ -110,11 +110,18 @@ def ridge_response(L, S, V, half_w: int = 2, ctx: int = 6, along: int = 15):
     return r
 
 
-def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float = 4.0):
+def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float = 4.0, seen=None):
     """Viterbi over stations: choose one offset per station maximising ridge response with a
     smoothness penalty on |delta offset| (world px). ``prior_hi[n]`` = the innermost horse offset —
     the rail must lie INSIDE it (offset > prior_hi + margin is required by caller via R masking).
-    Returns offset per station (NaN where no support)."""
+    Returns offset per station (NaN where no support).
+
+    ``seen`` (N, M) bool, HKJC_RAIL_UNSEEN=1 (under test): where the ridge window is not on the map,
+    the absence of a ridge is NOT evidence of no rail -> score 0 there instead of -1. WHY: on the
+    three 1000 m straights the mosaic covers the real rail only at d ~400-550 (a continuous ridge
+    ~110 px = 5.8 m inside the field edge); elsewhere the rail is off the map, every unseen offset
+    scored -1, and the DP left the real rail for grass-mowing texture ridges next to the field,
+    stepping the lateral reference by 2-5 m (ST3, ST 05-09 R1, ST8 at the same d)."""
     N, M = R.shape
     # HKJC_RAIL_SCORE=binary (DEFAULT since baseline Z4 together with HKJC_RAIL_NEAR=0.002, robust_offset,
     # smooth_rail gap weight 0.1 and fusion LOGDET; HKJC_RAIL_SCORE=raw = the old brightness score):
@@ -135,6 +142,8 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
         score = np.where(R >= min_r, 1.0, -1.0)
     else:
         score = np.where(R >= min_r, R, -1.0)
+    if seen is not None:
+        score = np.where(seen | (R >= min_r), score, 0.0)
     # HKJC_RAIL_NEAR (diagnostic): cost per px inside the field's inner edge -- the racing rail is the
     # FIRST rail inside the horses, not a brighter line further in (fixed rail, apron edge)
     near = float(os.environ.get("HKJC_RAIL_NEAR", 0.002))
@@ -736,7 +745,12 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     R = ridge_response(L, S, V)
     for n in range(len(Ps)):
         R[n, (offs < hin[n] - 30) | (offs > hin[n] + 200)] = 0
-    rail_off = dp_track(R, offs, hin, jump=2.0, lam=2.0, min_r=4.0)
+    seen = None
+    if os.environ.get("HKJC_RAIL_UNSEEN", "0") != "0":  # see dp_track
+        from scipy.ndimage import minimum_filter1d
+
+        seen = minimum_filter1d(V, 29, axis=1) > 0.5  # ridge_response's on-map window (2+12)*2+1
+    rail_off = dp_track(R, offs, hin, jump=2.0, lam=2.0, min_r=4.0, seen=seen)
     ok = ~np.isnan(rail_off)
     n_ = np.arange(len(Ps))
     ro = gaussian_filter1d(np.interp(n_, n_[ok], rail_off[ok]), 5)

@@ -353,7 +353,32 @@ def crossing_index(tr, lx):
     return uu[i] + (xx[i] - lx) / max(xx[i] - xx[i + 1], 1e-9) * (uu[i + 1] - uu[i])
 
 
+_GAPS_CACHE: dict = {}
+
+
 def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
+    """Memoised ``_finish_gaps`` (a pure function of line_x and the reads; the fuse stage calls it
+    ~17x per race on the same cached reads, 1.6 s of a 13.5 s race). Exact: returns deep copies."""
+    import copy
+    import hashlib
+
+    R = np.ascontiguousarray(np.asarray(sc["reads"]))
+    key = (
+        float(sc["line_x"]),
+        R.shape,
+        str(R.dtype),
+        hashlib.sha1(R.tobytes()).hexdigest(),
+        float(max_dx),
+        bool(with_sd),
+    )
+    if key not in _GAPS_CACHE:
+        if len(_GAPS_CACHE) > 64:
+            _GAPS_CACHE.clear()
+        _GAPS_CACHE[key] = _finish_gaps(sc, max_dx=max_dx, with_sd=with_sd)
+    return copy.deepcopy(_GAPS_CACHE[key])
+
+
+def _finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
     """Order + SPATIAL gaps at the finish (playback-rate independent).
 
     1. Horses whose cloth is seen crossing the line get a crossing index; consecutive crossers are
