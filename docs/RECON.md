@@ -1505,11 +1505,20 @@ start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one o
   but the leader's distance mapping agrees within 1–3 m and the tracker partition is unchanged.
   - On a shared clock (first crossing = official winning time), control's camera alignment is
     partly wrong: it names #11's tracklet #5 and #5's tracklet #3. The mask's alignment names five
-    tracklets, all within 0.06 s of the official times, but omits #2. The #2/#8/#4/#1 bunch crosses
-    about 0.12 s late as a group (beyond the 0.08 s acceptance, inferred), in control's label
+    tracklets (within 0.09 s of the official times) but omits #2. The #2/#8/#4/#1 bunch crosses
+    about 0.12 s late as a group, in control's label
     order, so control's final #2 is right. Pixels: both tracklets are pure from t 30 to 99. The
     t 71–79 swap is a real disagreement between the leaderboard's order and ours. Over the two
     tracklets the votes favour the wrong pairing 109 : 83, so only external evidence fixes it.
+  - `identity_match`'s own fit: control t_w 99.303 s (off the winner's tracklet at ~99.07, hence
+    the #11/#5 misnames); mask t_w 99.068 s, where #2's tracklet lands nearest #8's slot and fails
+    the 0.15 s separation. The bunch is late because near the line the render samples only every
+    0.4–0.6 s, and the last frame before the gap (t 99.86) puts all four horses ~1.7 m short.
+    Identify's crossing uses only that sample. Shared-clock scoring of control's camera names on
+    all 26 races finds suspect names only here (2 of 45).
+  - Leaderboard lag: vote consistency peaks with the leaderboard ~0.45 s behind the render
+    (22/26 races), but the gain is small (0.815 → 0.819), and a replay of identify (reproducing
+    the pipeline's labels on 603/611 tracklets) shows no hand-accuracy change at 0.3–0.45 s.
   - Across races, only 6 of 47 long wrong-vote runs show a silk change at the run (about 2–3
     expected by chance). The runs are ordering disagreements, not tracklet switches.
   - Without that name, identify gives #2 to #4's tracklet. The leaderboard votes are confused in
