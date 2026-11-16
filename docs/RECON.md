@@ -1501,8 +1501,20 @@ start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one o
     passing), the same as recorded at pod run X. The marker-grid scale moves (ST3 17.8 → 19.2
     px/m), so this is the straights' distance mapping, not identity.
   - Run Y's losers (HV 04-15 R9, HV 05-20 R9, ST 06-07 R6) no longer lose.
-- Open: why a near-identical pose destabilises HV 05-20 R2 and ST 05-31, and the straights'
-  distance mapping under the mask. Then a new arm with a new declared rule.
+- HV 05-20 R2 traced (seed 0). The poses differ locally, not by gauge: the current pose's steps
+  are ~5 % larger over t 12–20, plus a 146 px jump at render start. The leader's distance mapping
+  still agrees within 1–3 m. The tracker partition is unchanged.
+  - The finish camera's identity registration changes: C 1658–1725 → 1763–1972 px/s (prior about
+    2000). It names a different set of tracklets and never names #2's 867-detection tracklet,
+    which in control carried 40 camera votes for #2.
+  - Legend ranks alone then give #2 to the 743-detection tracklet (#4's in control). The E-step
+    splits the big tracklet between #4 and #5.
+  - This is the identity match's alignment fragility (`finishcam.identity_match`), triggered by
+    slightly different crossing times. It is not a wrong mask pose.
+- Open: the identity match's alignment fragility, ST 05-31 and ST4's hand regressions, and the
+  straights' distance mapping under the mask. Under the mask, ST3 is stable but wrong (10/22 on
+  all six seeds), so check whether its full-race tracklets are pure across the camera swing. Then
+  a new arm with a new declared rule.
 
 ## 4. Open / next
 
