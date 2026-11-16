@@ -675,6 +675,13 @@ class RaceRun:
             trs = tracking.stitch(tracking.track(times, -d, lat, fi, shift=tshift))
         trs.sort(key=lambda tk: -len(tk.t))
         members = [np.array(tk.det) for tk in trs]
+        if os.environ.get("HKJC_SPLIT_APP", "1") != "0" and self.p("silk.npz").exists():
+            # identity switches inside tracker tracklets (tracking.split_by_appearance; default on)
+            Fs = np.load(self.p("silk.npz"))["feat"][det_idx].astype(float)
+            n0 = len(members)
+            members = tracking.split_by_appearance(members, t, Fs)
+            members = sorted((m for m in members if len(m)), key=lambda m: -len(m))
+            self.log(f"   observe: appearance split {n0} -> {len(members)} tracklets")
         if os.environ.get("HKJC_SEAMS", "0") != "0":  # tracking.resolve_seams (NOT adopted)
             members = tracking.resolve_seams(members, rows[:, 0], d, lat)
             members.sort(key=lambda m: -len(m))

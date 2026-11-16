@@ -433,3 +433,20 @@ def test_identity_resolve_ties_names_tied_tracklets_by_appearance():
     sig = [render(proto[1]), render(proto[8]), render(proto[3])]
     out = identity.resolve_ties(members, frame_of_det, votes, labels, sig, proto)
     assert out.tolist() == [1, 8, 3]
+
+
+def test_tracking_split_by_appearance_cuts_identity_switches_only():
+    from hkjc.recon import tracking
+
+    rng = np.random.default_rng(2)
+    nb = 26
+    a, b = rng.dirichlet(np.ones(nb)), rng.dirichlet(np.ones(nb))
+
+    def dets(p, n):
+        return np.array([rng.multinomial(400, p) for _ in range(n)], float)
+
+    F = np.r_[dets(a, 120), dets(b, 120), dets(a, 200)]  # trk 0: horse A then B; trk 1: pure A
+    t = np.r_[np.arange(240) * 0.1, np.arange(200) * 0.1]
+    members = [np.arange(240), np.arange(240, 440)]
+    out = sorted(tracking.split_by_appearance(members, t, F), key=lambda m: m[0])
+    assert [len(m) for m in out] == [120, 120, 200]

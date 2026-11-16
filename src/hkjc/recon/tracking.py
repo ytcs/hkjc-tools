@@ -271,3 +271,50 @@ def resolve_seams(members, frame_of, d, lat):
             mem[ib] = np.setdiff1d(b, inside)
             mem[ib] = mem[ib][np.argsort(frame_of[mem[ib]], kind="stable")]
     return [m for m in mem if len(m)]
+
+
+SPLIT_TV = 0.30  # max-split silk distance above which a tracklet holds two horses (see below)
+
+
+def split_by_appearance(members, t, F, *, thr=SPLIT_TV, min_n=40):
+    """Split tracker tracklets at APPEARANCE change points (identity switches the motion tracker
+    cannot see, e.g. in the render's camera swings). Binary segmentation on the tracklet's per-
+    detection collapsed v2 silk signatures ``F`` (rows = detections): the split maximising the
+    total-variation distance between the left and right mean signatures (>= ``min_n`` silk-bearing
+    detections per side) is taken while that distance exceeds ``thr``; recursive.
+    MEASURED (26 turf races, legend votes evaluated on each side of the max split): tracklets whose two
+    sides both vote for their label (pure, 85): max-split distance <= 0.28 (p95 0.24) -> thr 0.30
+    splits none of them; it catches the switches between distinct silks (ST4 0419: trk 2 0.56, trk 6
+    0.40 = #3 until ~50 s, then #9 at the line; ST3 #4/#10 -> #3 0.70; ST7 #14 -> #5 0.68, #12 -> #14
+    0.68) but not those between similar silks (4 of 14 vote-confirmed switches). ADOPTED 2026-11-15
+    (26 races x 6 seeds vs Z2, rule declared before reading): non-lateral gates 200.0 = 200.0,
+    hand-truth majority 58 -> 62, unanimity 69.8 -> 74.1 %. HKJC_SPLIT_APP=0 disables.
+    Known limit: the silk tie-break has no "none of these" option, so an out-of-view horse's number
+    can still land on a lookalike (ST4 #3). Returns new members."""
+    from .assoc import _collapse
+
+    out = []
+    stack = [np.asarray(m, int) for m in members]
+    while stack:
+        m = stack.pop()
+        m = m[np.argsort(t[m], kind="stable")]
+        f = F[m]
+        ok = f.sum(1) > 0
+        if ok.sum() < 2 * min_n:
+            out.append(m)
+            continue
+        idx = np.flatnonzero(ok)
+        X = _collapse(f[ok] / f[ok].sum(1, keepdims=True))
+        c = np.cumsum(X, 0)
+        n = len(X)
+        best, bi = 0.0, None
+        for i in range(min_n, n - min_n + 1):
+            D = 0.5 * np.abs(c[i - 1] / i - (c[-1] - c[i - 1]) / (n - i)).sum()
+            if D > best:
+                best, bi = D, i
+        if bi is None or best <= thr:
+            out.append(m)
+            continue
+        cut = idx[bi]  # first silk-bearing detection of the right part
+        stack += [m[:cut], m[cut:]]
+    return out

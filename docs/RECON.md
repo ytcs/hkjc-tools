@@ -1080,6 +1080,34 @@ the line.
   - `_silk_ties` now logs a WARNING when `silk.npz` is missing (it would otherwise silently test the
     rails alone).
 
+
+**Baseline Z3 (`recon-baseline-Z3`, 2026-11-15): Z2 + appearance split of tracker tracklets (ADOPTED).**
+The motion tracker swaps identities in the render's camera swings (ST4: tracklet 6 is #3 until about
+50 s, then #9 at the line, by hand truth). `tracking.split_by_appearance` cuts a tracklet where its
+mean silk signature changes, using binary segmentation on the total-variation distance with at least
+40 silk-bearing detections per side.
+- Threshold 0.30: legend-pure tracklets (both sides vote for the label, 85 of them) reach at most
+  0.28. The "confident" tail at 0.37–0.70 turned out to be real switches whose two sides vote for
+  different horses.
+- It catches 4 of 14 vote-confirmed switches (those between distinct silks).
+- Declared rule against Z2 (26 races × 6 seeds):
+
+  | Metric | Z2 | Z3 | Rule |
+  |---|---|---|---|
+  | Non-lateral gates per seed | 200.0 | 200.0 | ≥ 200.0 ✓ |
+  | Lateral passes | 10 | 10 | ≥ 10 ✓ |
+  | Hand-truth majority | 58 | 62 | ≥ 55 ✓ |
+  | Cross-seed unanimity | 69.8% | 74.1% | reported |
+  | All five timing gates (races) | 22.83 | 22.50 | reported |
+
+  HV 05-27 R9's hand truth is 23–24 on every seed; ST 05-24 goes 9 → 16.
+- Known limit: the silk tie-break has no "none of these" option. ST4's #3, which tailed off and is
+  out of view, still lands on a lookalike tracklet (0.8 s behind the leader at 800 m against #3's
+  official 3.6 s).
+- A defaults-only run reproduces the ensemble's seed 0 byte-for-byte (ST 05-24).
+- Line-choice metric for the next step (segments where the innermost horses run more than 4 m off
+  the rail): Z2 15/347 (the ST 05-31 and ST7 bends, HV start areas), binary score 4/347.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
