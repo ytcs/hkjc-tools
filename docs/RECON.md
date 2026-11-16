@@ -1182,6 +1182,22 @@ association uses χ² + log det.
 - A defaults-only run reproduces the ensemble's seed 0 byte-for-byte (ST 05-24); `audit.json`
   passes rail blocking.
 
+
+**Yardsticks and a correction (2026-11-15).**
+- Gate null for Z4: seeds 6–11 against 0–5 on all 26 races give 200.50 vs 200.33 non-lateral gates
+  per seed. Per-seed totals run 199–202 (sd 0.79), so the 6-seed mean has sd ≈ 0.32 and differences
+  under ≈ 0.65 per seed are noise. Z3's adoption at exactly 200.0 and H2′'s rejection at 199.5 were
+  inside the noise.
+- Hand-truth majority on the null split: 68 and 68.
+- The whole-race identity score (`idscore`: official sectional crossing times of every horse at every
+  boundary, validation-only) is the larger identity yardstick. Z 0.929 / 89.7%, Z3 0.953 / 92.7%,
+  H2′ 0.956 / 92.2%, Z4 0.953 / 92.5% (seeds 6–11: 0.955 / 92.5%).
+- CORRECTION: an earlier reading of Z4 at 0.939 was contaminated. It was computed while the null run
+  wrote stale seed directories into the same ensemble directory (`ens.sh` copies the source root's old
+  `validation.json` first). The "log det blocks re-acquisition" diagnosis built on it was wrong, and
+  the "rank" association mode it motivated was removed.
+- Rule: never score a directory another run is writing into; new runs get their own tag.
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho

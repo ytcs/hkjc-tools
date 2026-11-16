@@ -36,7 +36,9 @@ class Obs:
     feed: str
     horse: int = 0  # 0 = anonymous tracklet
     tid: int = -1
-    forbid: frozenset = frozenset()  # horses this (anonymous) tracklet cannot be (hard legend evidence)
+    forbid: frozenset = (
+        frozenset()
+    )  # horses this (anonymous) tracklet cannot be (hard legend evidence)
 
 
 @dataclass
@@ -71,6 +73,75 @@ def _interp_rows(t, t0, n):
     w = np.clip(x - k, 0.0, 1.0)
     r = np.arange(len(x))
     return np.r_[r, r], np.r_[k, k + 1], np.r_[1 - w, w]
+
+
+def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd):
+    """The same MAP problem as ``smooth.solve``, assembled DIRECTLY as a banded normal matrix (lower
+    bandwidth 2: interpolation rows touch 2 adjacent nodes, the acceleration prior 3, the velocity
+    prior 2) and solved by banded Cholesky -- O(n), no sparse construction or LU. HKJC_BANDED=1.
+    Numerically equivalent to the sparse path to floating-point rounding (not bit-identical)."""
+    from scipy.linalg import cho_solve_banded, cholesky_banded
+
+    ab = np.zeros((3, n))
+    r = np.zeros(n)
+    any_obs = False
+    for o in obs:
+        val, sd = (o.s, o.sd_s) if which == "s" else (o.lat, o.sd_l)
+        if val is None:
+            continue
+        m = np.isfinite(val) & (o.t >= t0 - 1e-9) & (o.t <= t0 + (n - 1) * DT + 1e-9)
+        if not m.any():
+            continue
+        any_obs = True
+        x = (o.t[m] - t0) / DT
+        k = np.clip(np.floor(x).astype(int), 0, n - 2)
+        w = np.clip(x - k, 0.0, 1.0)
+        a, b, y = (1 - w) / sd, w / sd, val[m] / sd
+        np.add.at(ab[0], k, a * a)
+        np.add.at(ab[0], k + 1, b * b)
+        np.add.at(ab[1], k, a * b)
+        np.add.at(r, k, a * y)
+        np.add.at(r, k + 1, b * y)
+    if not any_obs:
+        return None, None
+    g2 = (1.0 / (np.asarray(a_sd, float) * DT * DT)) ** 2
+    i = np.arange(n - 2)
+    np.add.at(ab[0], i, g2)
+    np.add.at(ab[0], i + 1, 4 * g2)
+    np.add.at(ab[0], i + 2, g2)
+    np.add.at(ab[1], i, -2 * g2)
+    np.add.at(ab[1], i + 1, -2 * g2)
+    np.add.at(ab[2], i, g2)
+    if v_sd:
+        h2 = (1.0 / (v_sd * DT)) ** 2
+        j = np.arange(n - 1)
+        np.add.at(ab[0], j, h2)
+        np.add.at(ab[0], j + 1, h2)
+        np.add.at(ab[1], j, -h2)
+    ab[0] += 1e-9
+    pen = np.zeros(n)
+    tgt = np.zeros(n)
+    for _ in range(8):
+        abp = ab.copy()
+        abp[0] += pen
+        x = cho_solve_banded((cholesky_banded(abp, lower=True), True), r + pen * tgt)
+        if lb is None:
+            break
+        lo_v, hi_v = (x < lb - 1e-6) & (pen == 0), (x > ub + 1e-6) & (pen == 0)
+        if not (lo_v.any() or hi_v.any()):
+            break
+        pen[lo_v | hi_v] = 1e4 * float(ab[0].max())
+        tgt[lo_v] = lb
+        tgt[hi_v] = ub
+    sd = None
+    if want_sd:
+        c = cholesky_banded(ab, lower=True)
+        idx = np.unique(np.r_[np.arange(0, n, 10), n - 1])
+        e = np.zeros((n, len(idx)))
+        e[idx, np.arange(len(idx))] = 1.0
+        var = np.einsum("ij,ij->j", e, cho_solve_banded((c, True), e))
+        sd = np.sqrt(np.interp(np.arange(n), idx, var))
+    return x, sd
 
 
 def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True):
@@ -136,10 +207,26 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
             sd = np.sqrt(np.interp(np.arange(n), idx, var))
         return x, sd
 
-    s, sd_s = solve(blocks_s, rhs_s, a_s, None, None)
-    lat, sd_l = solve(
-        blocks_l, rhs_l, prior.a_sd_l, prior.l_min, prior.width - prior.l_min, v_sd=prior.vl_sd
-    )
+    import os
+
+    if os.environ.get("HKJC_BANDED", "0") != "0":  # banded Cholesky (see _smooth_banded)
+        s, sd_s = _solve_banded(obs, "s", t0, n, a_s, None, None, None, want_sd)
+        lat, sd_l = _solve_banded(
+            obs,
+            "lat",
+            t0,
+            n,
+            np.full(n - 2, prior.a_sd_l),
+            prior.l_min,
+            prior.width - prior.l_min,
+            prior.vl_sd,
+            want_sd,
+        )
+    else:
+        s, sd_s = solve(blocks_s, rhs_s, a_s, None, None)
+        lat, sd_l = solve(
+            blocks_l, rhs_l, prior.a_sd_l, prior.l_min, prior.width - prior.l_min, v_sd=prior.vl_sd
+        )
     cnt = np.zeros(n)
     for o in obs:
         k = np.round((o.t - t0) / DT).astype(int)
@@ -181,17 +268,6 @@ def LOGDET() -> bool:  # noqa: N802
     import os
 
     return os.environ.get("HKJC_ASSOC_LOGDET", "1") == "1"
-
-
-def LOGDET_RANK() -> bool:  # noqa: N802
-    """HKJC_ASSOC_LOGDET=rank: GATE anonymous tracklets on plausibility (chi^2 <= chi2_max) and choose
-    among the plausible candidates by the full likelihood (chi^2 + log det). With log det in the gate
-    too (=1) a horse whose path went vague (+5..10) can never re-acquire a fragment: whole-race identity
-    score (official sectionals, validation-only) fell 0.953 -> 0.939 (ST 05-09 R1 0.896 -> 0.765, ST7
-    0.953 -> 0.909, ST 05-24 0.981 -> 0.938) while the gates rose."""
-    import os
-
-    return os.environ.get("HKJC_ASSOC_LOGDET", "1") == "rank"
 
 
 def _overlaps(a: Obs, b_list: list) -> bool:
@@ -285,21 +361,12 @@ def fuse_race(
         anon = sorted(
             [o for o in obs if o.horse == 0 and o.tid not in assign], key=lambda o: -len(o.t)
         )
-        rank_mode = LOGDET_RANK()
         for o in anon:
             cand = [
                 h
                 for h, p in paths.items()
                 if h not in o.forbid and not _overlaps(o, [x for x in mine[h] if x.feed == o.feed])
             ]
-            if rank_mode:  # gate on plausibility, choose by likelihood
-                cand = [h for h in cand if chi2_against(o, paths[h], logdet=False) <= chi2_max]
-                sc = sorted(((chi2_against(o, paths[h], logdet=True), h) for h in cand), key=lambda x: x[0])
-                if sc and np.isfinite(sc[0][0]) and (len(sc) == 1 or sc[1][0] >= margin * sc[0][0]):
-                    assign[o.tid] = sc[0][1]
-                    mine[sc[0][1]].append(o)
-                    changed = True
-                continue
             sc = sorted(((chi2_against(o, paths[h]), h) for h in cand), key=lambda x: x[0])
             if not sc or not np.isfinite(sc[0][0]) or sc[0][0] > chi2_max:
                 continue
