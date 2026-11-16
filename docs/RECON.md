@@ -1503,9 +1503,15 @@ start and after the finish only). ST 05-09 R1 #3's "2-frame pose stall" is one o
   - Run Y's losers (HV 04-15 R9, HV 05-20 R9, ST 06-07 R6) no longer lose.
 - HV 05-20 R2: the poses differ locally (the current pose's steps are ~5 % larger over t 12–20),
   but the leader's distance mapping agrees within 1–3 m and the tracker partition is unchanged.
-  - The finish camera names #2's tracklet in control and not under the mask. Every tracklet it
-    names in either arm matches the official finish times (6 seeds); why it skips #2 under the
-    mask is not yet measured.
+  - On a shared clock (first crossing = official winning time), control's camera alignment is
+    partly wrong: it names #11's tracklet #5 and #5's tracklet #3. The mask's alignment names five
+    tracklets, all within 0.06 s of the official times, but omits #2. The #2/#8/#4/#1 bunch crosses
+    about 0.12 s late as a group (beyond the 0.08 s acceptance, inferred), in control's label
+    order, so control's final #2 is right. Pixels: both tracklets are pure from t 30 to 99. The
+    t 71–79 swap is a real disagreement between the leaderboard's order and ours. Over the two
+    tracklets the votes favour the wrong pairing 109 : 83, so only external evidence fixes it.
+  - Across races, only 6 of 47 long wrong-vote runs show a silk change at the run (about 2–3
+    expected by chance). The runs are ordering disagreements, not tracklet switches.
   - Without that name, identify gives #2 to #4's tracklet. The leaderboard votes are confused in
     CONTROL too: the true #2 tracklet gets #2 78 / #4 55, the true #4 tracklet #2 54 / #4 5. Only
     the camera's 40 votes rescue it. The vote counting in identify is under investigation.
