@@ -441,9 +441,13 @@ Gates failed on ≥ 5 of 6 seeds:
   ST bends −0.193, HV straights −0.118, ST straights −0.152): wide horses are reconstructed ahead,
   1.2–1.9 m at 10 m wide. Present on straights, so projection (rail normal skew or residual camera
   tilt), not bend geometry. It explains HV 05-20 R2 #2 (4–6 m wide, 0.7–1.5 m ahead of its legend place).
-- **Remaining glitches.** The E-step switches a horse between concurrently alive fragments
-  (ST 04-19 R4 #14 onto #12's, #6 onto #9's; ST 05-31 R1 #1/#6 share unlabelled fragments), and
-  no-detection stretches leave paths to the prior.
+- **Remaining glitches.** Most final-product glitch-seconds (relative speed > 3 m/s) where the
+  video-only path is smooth come from identity conflicts at an official crossing: a wrong E-step label
+  between boundaries pins the horse, the official time pulls it back (HV 05-20 R2 #6 took #12's
+  detections at t 47–48; ST 05-31 R1's #6 runs wide and unlabelled until the last 50 m). Genuinely
+  fading horses also exceed 3 m/s relative (HV 04-29 R9 #8, ST 05-03 R7 #11); relative acceleration
+  separates them (faders ≤ 1.25 m/s², conflicts ≥ 2.4 m/s² on five traced cases). Boundary-crossing
+  runs already agree with their official times in the final labels (1 of 783 off by > 0.3 s).
 - **Back-marker identity.** Back markers get only elimination evidence and a weak silk LLR: HV 05-20
   R2 #5/#12 are swapped (~1 s, every seed); ST 04-19 R4 #3 (tailed off, out of view) lands on a
   lookalike tracklet. Draw order agrees with early lateral order (median ρ 0.75), but a Gaussian draw
@@ -608,6 +612,7 @@ Final product
 - Final identity pass started from the official-only skeleton: hand 220 → 164 (no lateral detail; bunched field mislabelled).
 - Field-relative prior over the whole final race: share of held-out errors beyond 2 sd 0.628 → 0.694 (guard +5 points).
 - Field-curve centre without the stiffer width after the start: glitch-seconds 24.3 → 42.4, no held-out gain.
+- Official crossing times as hard label exclusions in the final product: no headroom; 1 of 783 boundary-crossing runs is > 0.3 s off its own horse (the errors sit between boundaries).
 - Leave-one-run-out demotion in the final product (a render run > 4σ and > 2 m from its horse's path refit without it, official crossings kept, made anonymous): one seed, glitch-seconds 24.3 → 36.4; demoted fragments re-associate to other horses and a tailed-off horse loses its only constraint.
 - Stiffer along-track prior in the final product (a_sd_s 1.2 → 0.72 m/s² after the start window; 26 races × 5 seeds, all interior boundaries held out): held-out median 0.0322 → 0.0318 s (bootstrap CI spans 0), faders at the last boundary 0.040 → 0.042 s, hand wrong 175 → 177; glitch-seconds 25.8 → 19.6. At 0.63, unperturbed seed, end of section 2 held out: 0.033 → 0.036 s.
 
