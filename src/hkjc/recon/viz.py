@@ -291,6 +291,8 @@ def sync_video(
 ):
     """Four replay feeds, time-synced on the race clock, beside the reconstructed positions on a track
     map drawn from the run's own measured rail. ``offsets`` = {feed: video seconds at race clock 0}
+    or [(race t, offset), ...] anchors interpolated linearly (the drone feed loses ~1.4-1.6 s between the
+    gate and the finish line: anchor it at both where the finish board is visible)
     (aerial: ``run.clock_f0() / 25``; full: ``full_offset(run)``; patrol/drone from the gate opening,
     see RECON; ``None`` = feed not published, drawn blank). Horses = official silk colour +
     saddlecloth number; a faint ring marks posterior sd 1.5-3 m, a hollow marker sd 3-10 m, and a
@@ -303,6 +305,13 @@ def sync_video(
     import polars as pl
 
     feeds = ["aerial", "full", "drone", "patrol"]
+
+    def off_at(f, t):  # a feed's offset: a constant, or [(race t, offset), ...] interpolated linearly
+        o = offsets[f]
+        if np.isscalar(o):
+            return float(o)
+        a = np.array(o, float)
+        return float(np.interp(t, a[:, 0], a[:, 1]))
     P = pl.read_parquet(run.p(paths_name))
     horses = sorted(P["horse_no"].unique().to_list())
     G = {h: P.filter(pl.col("horse_no") == h).sort("t") for h in horses}
@@ -376,7 +385,7 @@ def sync_video(
         st = c.streams.video[0]
         st.thread_type = "AUTO"
         conts[f] = (c, st)
-        tv = t0 + offsets[f]
+        tv = t0 + off_at(f, t0)
         c.seek(int(max(tv - 2.0, 0) / st.time_base), stream=st)
         its[f] = c.decode(st)
         nxt[f] = None
@@ -410,7 +419,7 @@ def sync_video(
         t = t0 + k / fps
         canvas = np.zeros((H, W, 3), np.uint8)
         for i, f in enumerate(feeds):
-            img = frame_at(f, t + offsets[f]) if f in feeds_ok else None
+            img = frame_at(f, t + off_at(f, t)) if f in feeds_ok else None
             x, y = (i % 2) * tile[0], (i // 2) * tile[1]
             if img is not None:
                 canvas[y : y + tile[1], x : x + tile[0]] = img
