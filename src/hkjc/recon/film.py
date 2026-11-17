@@ -72,30 +72,42 @@ def _detector():
 
 def scan(video, f_start, f_stop, *, step=2):
     """-> per sampled frame dict(f, diff, lines, lead): diff = thumbnail change vs the previous
-    sample (camera cuts), lead = (hoof_y, cx) of the lowest horse."""
-    import av
+    sample (camera cuts), lead = (hoof_y, cx) of the lowest horse. The detector runs only on frames
+    of sweeping line tracks (the only rows whose lead is read); other rows keep lead None."""
     import cv2
 
-    model, kw = _detector()
-    y0, y1, x0, x1 = FILM_BOX
     out, prev = [], None
+    for i, film in _film_frames(video, f_start, f_stop, step):
+        th = cv2.resize(cv2.cvtColor(film, cv2.COLOR_BGR2GRAY), (96, 54)).astype(np.float32)
+        diff = float(np.abs(th - prev).mean()) if prev is not None else 0.0
+        prev = th
+        out.append(dict(f=i, diff=diff, lines=paint_lines(film), lead=None))
+    need = {out[k]["f"]: k for tr in line_tracks(out) for k, _ln in tr}
+    if not need:
+        return out
+    model, kw = _detector()
+    for i, film in _film_frames(video, min(need), max(need), step, keep=need):
+        b = model.predict(film, conf=0.35, classes=[17], verbose=False, **kw)[0].boxes.xyxy.cpu().numpy()
+        j = int(np.argmax(b[:, 3])) if len(b) else -1
+        if j >= 0:
+            out[need[i]]["lead"] = (float(b[j, 3]), float((b[j, 0] + b[j, 2]) / 2))
+    return out
+
+
+def _film_frames(video, f_start, f_stop, step, keep=None):
+    """Yield (frame index, race-film crop) for every ``step``-th frame from ``f_start`` (only indices
+    in ``keep`` when given)."""
+    import av
+
+    y0, y1, x0, x1 = FILM_BOX
     with av.open(str(video)) as c:
         c.streams.video[0].thread_type = "AUTO"
         for i, fr in enumerate(c.decode(video=0)):
-            if i < f_start or (i - f_start) % step:
-                continue
             if i > f_stop:
                 break
-            film = fr.to_ndarray(format="bgr24")[y0:y1, x0:x1]
-            th = cv2.resize(cv2.cvtColor(film, cv2.COLOR_BGR2GRAY), (96, 54)).astype(np.float32)
-            diff = float(np.abs(th - prev).mean()) if prev is not None else 0.0
-            prev = th
-            r = model.predict(film, conf=0.35, classes=[17], verbose=False, **kw)[0]
-            b = r.boxes.xyxy.cpu().numpy()
-            j = int(np.argmax(b[:, 3])) if len(b) else -1
-            lead = (float(b[j, 3]), float((b[j, 0] + b[j, 2]) / 2)) if j >= 0 else None
-            out.append(dict(f=i, diff=diff, lines=paint_lines(film), lead=lead))
-    return out
+            if i < f_start or (i - f_start) % step or (keep is not None and i not in keep):
+                continue
+            yield i, fr.to_ndarray(format="bgr24")[y0:y1, x0:x1]
 
 
 def line_tracks(rows, *, max_gap=3, up_max=60.0, down_max=6.0):
