@@ -1117,7 +1117,7 @@ class RaceRun:
                     np.asarray(c)[ok],
                     D - np.asarray(bnd)[ok],
                     None,
-                    float(os.environ.get("HKJC_OFFICIAL_SD", 0.4)),  # under test (m)
+                    0.4,
                     1.0,
                     "official",
                     horse=int(h),
@@ -1265,17 +1265,16 @@ class RaceRun:
         bias = self._metric_bias(pv)
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
-        # HKJC_FINAL_EM=1 (opt-in, NOT ADOPTED 2026-11-16): the E-step re-run against the final paths
-        # with the official records in every fuse. Masked base, s0: final census 90.7 -> 87.3 % good,
-        # official residual > 0.25 s 5.3 -> 9.6 %, hand 220 -> 216 (ST 05-31 11 -> 7).
-        if os.environ.get("HKJC_FINAL_EM", "0") != "0":
-            # detections carry the same metric correction as the final render obs (FIRST version
-            # compared raw detections with bias-shifted paths: a few metres off everywhere)
-            start = pf
-            mode = os.environ.get("HKJC_FINAL_SKELETON", "0")  # under test
-            if mode != "0":  # the official-only skeleton (records + draw + physics prior)
-                sk, _a = self._fuse(offi, horses, prior, t_end=t_end)
-                start = sk if mode == "1" else self._skeleton_merge(pf, sk)
+        # FINAL identity pass (default; HKJC_FINAL_EM=0 = off): the E-step re-run with the official records
+        # in every fuse, detections carrying the final metric bias, starting from the detection paths except
+        # where a horse's path conflicts with its own official skeleton (> 4 combined sigma; flat at 3-5).
+        # 26 x 6 (masked base, rule 0151): glitch-seconds 56.4 -> 31.5 per seed (SE 1.0), final census
+        # 93.1 -> 97.3 %, hand +0.8, held-out boundary error unchanged (0.034 / 0.033 s), video-only
+        # byte-identical. REJECTED: raw detections vs bias-shifted paths (census 87.3 %); official sd 0.1 m
+        # (glitches 55.8 -> 85.4 s, s0); starting from the official-only skeleton (hand 220 -> 164).
+        if os.environ.get("HKJC_FINAL_EM", "1") != "0":
+            sk, _a = self._fuse(offi, horses, prior, t_end=t_end)
+            start = self._skeleton_merge(pf, sk)
             obs_e, _pe = self._em_associate(
                 start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
             )

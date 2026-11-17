@@ -1606,20 +1606,22 @@ information, including the official results; acceptance is judged on it. The vid
   R3 #6 0.07 m, HV 04-22 R9 #11 0.8 m: "never crosses"). Masked base, s0: video-only paths
   byte-identical on 26/26; final census 90.7 → 92.9 %, no-cross 0.9 → 0 %, official residual > 0.25 s
   5.3 → 4.0 %.
-- `HKJC_FINAL_EM` (opt-in; under test, rule 0151): the E-step re-run against the final paths with the
-  official records in every fuse.
-  - FIRST version compared RAW detections with bias-shifted paths (`_metric_corrected` shifts the
-    final render obs by the shared metric bias b(s), a few metres): final census 90.7 → 87.3 %,
-    residual > 0.25 s 5.3 → 9.6 %, hand 220 → 216 (s0). Fixed: detections carry the same bias.
-  - With the fix (s0): 92.9 → 94.7 %, hand 220 → 221, but ST4 #3 still rides other horses'
-    detections between its 800 m and 400 m boundaries (the E-step starts from paths they dragged).
-  - REJECTED: official sd 0.4 → 0.1 m (census 98.1 % by construction, glitch-seconds 55.8 → 85.4: paths
-    pinned at boundaries, wrong detections between); starting the E-step from the official-only skeleton
-    (`HKJC_FINAL_SKELETON=1`): glitches cleared but hand 220 → 164 (no lateral detail; the bunched field
-    is mislabelled).
-  - Candidate (`HKJC_FINAL_SKELETON=2`): start from the detection paths, replaced by the horse's own
-    official skeleton only where they conflict by > 4 combined sigma (`_skeleton_merge`). s0: census
-    97.8 %, glitch-seconds 51.1 → 27.8, hand 220 → 220. 26 x 6 run under rule 0151.
+- Final identity pass (default since 2026-11-16; `HKJC_FINAL_EM=0` = off): the E-step re-run with
+  the official records in every fuse, detections shifted by the same shared metric bias as the final
+  render obs, starting from the detection paths except where a horse's path conflicts with its own
+  official-only skeleton by > 4 combined sigma (`_skeleton_merge`).
+  - Rule 0151 (declared before the run), 26 × 6 on the masked base: glitch-seconds (implausible
+    relative motion, |Δgap| > 3 m/s over 1 s, mid-race, sd < 3 m) 56.4 → 31.5 per seed (SE 1.0;
+    seeds 1–5 −25.3); final census 93.1 → 97.3 %; hand +0.8 (SE 0.5); held-out boundary (one official
+    boundary withheld) median error 0.034 → 0.033 s, unchanged with race medians removed; video-only
+    byte-identical 156/156; excluded (vague) seconds fewer (150.7 → 138.8). Merge threshold flat at
+    z 3 / 4 / 5 (glitches 23.3 / 27.8 / 27.6, census 96.6 / 97.8 / 97.8 %).
+  - REJECTED: comparing raw detections with bias-shifted paths (census 87.3 %, hand −4); official
+    sd 0.4 → 0.1 m (glitches 55.8 → 85.4 s); starting from the official-only skeleton (hand 220 → 164:
+    no lateral detail, the bunched field is mislabelled).
+  - Remaining final-product glitches: the identity step switches a horse between concurrently alive
+    fragments (ST4 #14 onto #12's fragment, #6 onto #9's; ST 05-31 #1 / #6 share and hand off
+    unlabelled fragments). Not addressed.
 
 ## 4. Open / next
 
