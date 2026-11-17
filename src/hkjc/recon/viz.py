@@ -355,6 +355,15 @@ def sync_video(
         N = rf.Nout[j - 1] * (1 - w) + rf.Nout[j] * w
         return to_px(R + (lat * ppm - lat0) * N)[0], d, sd
 
+    # one field-view window per race (a per-frame window rescaled every horse at once: 8-11 jumps per race)
+    spreads = []
+    for tt in np.arange(min(g["t"][0] for g in G.values()), max(g["t"][-1] for g in G.values()), 0.5):
+        ds = [np.interp(tt, g["t"], g["d"]) for g in G.values()
+              if g["t"][0] <= tt <= g["t"][-1] and np.interp(tt, g["t"], g["sd_s"]) < 3.0]
+        ds = [x for x in ds if x > 0]
+        if len(ds) > 1:
+            spreads.append(max(ds) - min(ds))
+    win_race = max(30.0, 5.0 * np.ceil((np.percentile(spreads, 95) + 6.0) / 5.0)) if spreads else 40.0
     tmin = min(g["t"][0] for g in G.values())
     tmax = max(g["t"][-1] for g in G.values())
     t0 = tmin if t0 is None else t0
@@ -422,8 +431,7 @@ def sync_video(
         # straightened field view: x = metres behind the leader, y = lateral off the rail
         y0f, hf = Ho + 40, Hm - Ho - 70
         if cur_pos:
-            back = max(r[1] for r in (firm or cur_pos).values()) - lead
-            win = max(30.0, 5.0 * np.ceil((back + 6.0) / 5.0))
+            win = win_race
             xs = lambda gap: int(Wm - 30 - gap / win * (Wm - 60))  # noqa: E731
             ys = lambda lat: int(y0f + hf - lat / width_m * hf)  # noqa: E731
             cv2.rectangle(mp, (30, y0f), (Wm - 30, y0f + hf), (60, 140, 60), -1)
