@@ -30,7 +30,7 @@ def test_pose_graph_closes_a_loop():
         pose.Edge(K - 1 - j, i, rel(K - 1 - j, i), 3.0, "loop") for j in range(4) for i in range(4)
     ]
     pg0 = pose.PoseGraph((535, 945), G0, edges)
-    pg = pose.solve(pg0, iters=200)
+    pg = pose.solve_linear(pg0)
     loop = np.array([e.kind == "loop" for e in edges])
     assert pose.edge_residuals(pg0)[loop].mean() > 10 * pose.edge_residuals(pg)[loop].mean()
     err = lambda G: np.abs(G[:, :2, 2] - G_true[:, :2, 2]).mean()  # noqa: E731

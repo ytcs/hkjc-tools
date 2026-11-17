@@ -58,82 +58,12 @@ def chain(steps: list) -> np.ndarray:
     return G
 
 
-def solve(
-    pg: PoseGraph, *, fix: int = 0, iters: int = 30, huber: float = 3.0, rigid: bool = False
-) -> PoseGraph:
-    """Robust least-squares over all poses (frame ``fix`` held). Sparse Jacobian via scipy.
-
-    ``rigid`` pins log-scale to 0 (rotation + translation only). Measured: the render camera DOES
-    zoom slowly (a few %), and rigid fits ~5x worse on long-baseline edges -> similarity is default."""
-    from scipy.optimize import least_squares
-    from scipy.sparse import lil_matrix
-
-    K = len(pg.G)
-    X = pg.probes()
-    Xh = np.c_[X, np.ones(len(X))]
-    P0 = np.array([_m2p(g) for g in pg.G])
-    if rigid:
-        P0[:, 0] = 0.0
-    free = np.array([k for k in range(K) if k != fix])
-    pos = -np.ones(K, int)
-    pos[free] = np.arange(len(free))
-    E = pg.edges
-    # pre-transform probes through the edge: x in panel_i maps to S x in panel_j
-    SX = [(Xh @ e.S.T) for e in E]
-
-    npar = 3 if rigid else 4
-    cols = [1, 2, 3] if rigid else [0, 1, 2, 3]
-
-    def full(theta):
-        P = P0.copy()
-        P[np.ix_(free, cols)] = theta.reshape(-1, npar)
-        return P
-
-    Ii = np.array([e.i for e in E])
-    Jn = np.array([e.j for e in E])
-    Wt = np.array([e.w for e in E])[:, None, None]
-    SXa = np.stack(SX)  # (E,n,3)
-
-    def gmats(P):
-        s, th = np.exp(P[:, 0]), P[:, 1]
-        c, n = s * np.cos(th), s * np.sin(th)
-        G = np.zeros((len(P), 2, 3))
-        G[:, 0, 0], G[:, 0, 1], G[:, 0, 2] = c, -n, P[:, 2]
-        G[:, 1, 0], G[:, 1, 1], G[:, 1, 2] = n, c, P[:, 3]
-        return G
-
-    def res(theta):
-        G = gmats(full(theta))
-        a = np.einsum("eab,nb->ena", G[Ii], Xh)
-        b = np.einsum("eab,enb->ena", G[Jn], SXa)
-        return ((a - b) * Wt).ravel()
-
-    J = lil_matrix((len(E) * len(X) * 2, len(free) * npar), dtype=np.int8)
-    for n, e in enumerate(E):
-        rows = slice(n * len(X) * 2, (n + 1) * len(X) * 2)
-        for k in (e.i, e.j):
-            if pos[k] >= 0:
-                J[rows, pos[k] * npar : pos[k] * npar + npar] = 1
-    r = least_squares(
-        res,
-        P0[np.ix_(free, cols)].ravel(),
-        jac_sparsity=J,
-        loss="huber",
-        f_scale=huber,
-        max_nfev=iters,
-        x_scale="jac",
-        method="trf",
-    )
-    P = full(r.x)
-    return PoseGraph(pg.shape, np.stack([_p2m(p) for p in P]), pg.edges)
-
-
 def solve_linear(
     pg: PoseGraph, *, fix: int = 0, iters: int = 20, huber: float = 3.0, tol: float = 1e-4
 ) -> PoseGraph:
     """Robust pose-graph solve as IRLS on a LINEAR system (Huber on probe residuals measured in
     FRAME-j pixels, G_j^-1(G_i x) - S x, edge weights w — scale-invariant; NOT the world-px objective of
-    ``solve``, which a global solver satisfies by collapsing frame scales). A 2D similarity is
+    the nonlinear solve, which a global solver satisfies by collapsing frame scales). A 2D similarity is
     z -> A z + B with complex A, B, so every residual A_i x + B_i - A_j (S x) - B_j is linear in the
     unknowns (cf. complex-number planar pose-graph / similarity-synchronization formulations). One
     sparse solve per IRLS round (~ms) instead of a capped nonlinear trf (27 s on R08)."""
@@ -320,12 +250,10 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
             edges.append(Edge(i, j, Sm, loop_weight if kind == "loop" else 1.0, kind))
     pg = PoseGraph(shape, G0, edges)
     fix = K // 2
-    # default: linear IRLS (10 dev races: 5 pass every timing gate vs 3 with the capped trf solve, 33x
-    # faster); HKJC_POSE_SOLVER=trf restores the nonlinear solver
-    lin = os.environ.get("HKJC_POSE_SOLVER", "linear") != "trf"
-
+    # linear IRLS (replaced a capped nonlinear trf solve: 10 dev races, 5 pass every timing gate vs 3,
+    # 33x faster)
     def solve_(g):
-        return solve_linear(g, fix=fix) if lin else solve(g, iters=100, rigid=False, fix=fix)
+        return solve_linear(g, fix=fix)
 
     pg1 = solve_(pg)
     for _ in range(2):

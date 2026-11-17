@@ -345,10 +345,9 @@ def test_rails_inner_side_is_right_on_a_straight():
                                                  2.0, 80.0)[1]) for g in (1, -1)} == {1, -1}
 
 
-def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps(monkeypatch):
+def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps():
     from hkjc.recon import rails
 
-    monkeypatch.setenv("HKJC_RAIL_SMOOTH", "whittaker")
     rng = np.random.default_rng(0)
     a = np.linspace(0, 1.2, 3000)  # an arc of radius 2000 px (stations ~0.8 px apart)
     W = np.c_[2000 * np.cos(a), 2000 * np.sin(a)]
@@ -361,8 +360,6 @@ def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps(monkeypatch):
     err = np.hypot(*(Z - W).T)
     assert err[800:1700].max() < 4.0  # no bulge across the gap (weight 1e-4 overshot ~150 px)
     assert np.percentile(err, 99) < 4.0 and err[2000:2005].max() < 4.0
-    monkeypatch.setenv("HKJC_RAIL_SMOOTH", "off")
-    assert rails.smooth_rail(noisy, ok) is noisy
 
 
 def test_tracking_split_by_appearance_cuts_identity_switches_only():

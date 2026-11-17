@@ -9,7 +9,6 @@ The INNER side is the right of travel (HK racing is clockwise; see ``inner_side`
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -61,8 +60,8 @@ def inner_side(T: np.ndarray, handedness: str | None = None) -> int:
     seed; ST3 rho 0.91 -> 0.98; ST8 rho 0.92-0.95 -> 0.98-1.00 and behind-winner 0.055 -> 0.025 s,
     but its close #2/#12 finish flipped on 1 of 6 seeds). Turf racing is clockwise (working
     assumption): on every oval the measured sign is +1 anyway; it is kept as a physical check rather
-    than a hard-coded constant. HKJC_INNER=auto: the bare turning sign everywhere (diagnostic)."""
-    if os.environ.get("HKJC_INNER", "") == "auto" or not is_straight(T):
+    than a hard-coded constant."""
+    if not is_straight(T):
         return inner_sign(T)
     return -1 if (handedness or "").lower().startswith(("left", "anti")) else 1
 
@@ -115,23 +114,17 @@ def ridge_response(L, S, V, half_w: int = 2, ctx: int = 6, along: int = 15):
     return r
 
 
-def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float = 4.0, seen=None):
+RAIL_NEAR = 0.002  # DP cost per world px inside the field's inner edge
+
+
+def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float = 4.0):
     """Viterbi over stations: choose one offset per station maximising ridge response with a
     smoothness penalty on |delta offset| (world px). ``prior_hi[n]`` = the innermost horse offset —
     the rail must lie INSIDE it (offset > prior_hi + margin is required by caller via R masking).
-    Returns offset per station (NaN where no support).
-
-    ``seen`` (N, M) bool, HKJC_RAIL_UNSEEN=1 (under test): where the ridge window is not on the map,
-    the absence of a ridge is NOT evidence of no rail -> score 0 there instead of -1. WHY: on the
-    three 1000 m straights the mosaic covers the real rail only at d ~400-550 (a continuous ridge
-    ~110 px = 5.8 m inside the field edge); elsewhere the rail is off the map, every unseen offset
-    scored -1, and the DP left the real rail for grass-mowing texture ridges next to the field,
-    stepping the lateral reference by 2-5 m (ST3, ST 05-09 R1, ST8 at the same d). NOT adopted
-    (blocking: rail bridged off-map); straights use ``straight_datum`` since Z6."""
+    Returns offset per station (NaN where no support)."""
     N, M = R.shape
-    # HKJC_RAIL_SCORE=binary (DEFAULT since baseline Z4 together with HKJC_RAIL_NEAR=0.002, robust_offset,
-    # smooth_rail gap weight 0.1 and fusion LOGDET; HKJC_RAIL_SCORE=raw = the old brightness score):
-    # every credible ridge scores +1, so the Viterbi
+    # BINARY score (since baseline Z4, together with the near cost, robust_offset, smooth_rail gap
+    # weight 0.1 and fusion's logdet; replaced the raw brightness score): every credible ridge scores +1, so the Viterbi
     # rewards CONTINUITY, not brightness. MEASURED: the raw score abandoned the thin movable rail for
     # the brighter fixed rail / apron edge ~6.6 m inside, bridged by a straight diagonal across open
     # turf (ST 05-31 and ST7 chute junctions, HV 04-22 R1 bend exit), giving field-wide lateral
@@ -144,17 +137,10 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
     # (honest: the misplaced 10th horse is dropped), ST8 #2/#12 flips; HV 04-15 R1 lost its marker
     # grid (two marginal peaks); lateral 10/1 -> 10/3 (ST course-B races now measurable: 6.6 m vs
     # table 4.5 on both, correct rail in pixels).
-    if os.environ.get("HKJC_RAIL_SCORE", "binary") == "binary":
-        score = np.where(R >= min_r, 1.0, -1.0)
-    else:
-        score = np.where(R >= min_r, R, -1.0)
-    if seen is not None:
-        score = np.where(seen | (R >= min_r), score, 0.0)
-    # HKJC_RAIL_NEAR (diagnostic): cost per px inside the field's inner edge -- the racing rail is the
-    # FIRST rail inside the horses, not a brighter line further in (fixed rail, apron edge)
-    near = float(os.environ.get("HKJC_RAIL_NEAR", 0.002))
-    if near > 0:
-        score = score - near * np.clip(offs[None, :] - np.asarray(prior_hi)[:, None], 0, None)
+    score = np.where(R >= min_r, 1.0, -1.0)
+    # cost per px inside the field's inner edge -- the racing rail is the FIRST rail inside the
+    # horses, not a brighter line further in (fixed rail, apron edge)
+    score = score - RAIL_NEAR * np.clip(offs[None, :] - np.asarray(prior_hi)[:, None], 0, None)
     acc = score[0].copy()
     back = np.zeros((N, M), int)
     oi = np.arange(M)
@@ -528,10 +514,6 @@ def calibrate_distance_ticks(
     # dense knots over each run +- 50 m, kept inside the tick-covered range
     es = ev_s[order]
     extra = []
-    import os
-
-    if os.environ.get("HKJC_LOCAL_REFIT", "1") == "0":  # diagnostic
-        bad[:] = False
     edges = np.flatnonzero(np.diff(np.r_[0, bad.astype(int), 0]))
     for a0, a1 in zip(edges[::2], edges[1::2]):
         if a1 - a0 >= LOCAL_MIN_TICKS:
@@ -583,7 +565,7 @@ def robust_offset(h, *, wavelength=1000.0, huber=10.0, iters=8):
     inside the field dictate it. MEASURED (HV 05-20 R9, stations 4746-4897): a 107-station run at up
     to 247 px against ~30 px around it survived the 51-station median, bent the station scaffold, and
     folded every rail ridge into a V that the DP could not follow (all scorings dived toward the apron
-    path). Default since baseline Z4 (HKJC_HIN_ROBUST=0 disables)."""
+    path). Since baseline Z4 (replaced a 51-station median + Gaussian)."""
     from scipy import sparse
     from scipy.sparse.linalg import spsolve
 
@@ -602,7 +584,7 @@ def robust_offset(h, *, wavelength=1000.0, huber=10.0, iters=8):
 
 
 def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
-    """HKJC_RAIL_SMOOTH=whittaker (opt-in): the rail is a SMOOTH CURVE. Robust (Huber, IRLS)
+    """The rail is a SMOOTH CURVE. Robust (Huber, IRLS)
     support-weighted Whittaker smoother in world px with a THIRD-difference penalty (straights and
     constant-radius arcs cost nothing; cutoff ~``wavelength`` stations = 20 m at 2 px/station).
     Unsupported stations get no data weight, so gaps are bridged by the smooth curve instead of
@@ -611,9 +593,8 @@ def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
     over the final 150 m swung +-12 deg -> +-5 deg; the marker grid is found on all 26 races (HV 04-15
     R9 never had one). ADOPTED 2026-11-15 together with identity.resolve_ties (26 races x 6 seeds,
     rule declared before reading: non-lateral gates 198.0 -> 200.0 per seed, hand-truth majority
-    57 -> 58, lateral passes 10 = 10). Alone (no silk ties): 197.8, hand 53 (not adopted).
-    HKJC_RAIL_SMOOTH=off disables (diagnostic)."""
-    if os.environ.get("HKJC_RAIL_SMOOTH", "whittaker") != "whittaker" or len(W) < 10 or ok.sum() < 10:
+    57 -> 58, lateral passes 10 = 10). Alone (no silk ties): 197.8, hand 53 (not adopted)."""
+    if len(W) < 10 or ok.sum() < 10:
         return W
     from scipy import sparse
     from scipy.sparse.linalg import spsolve
@@ -621,7 +602,7 @@ def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
     n = len(W)
     D = sparse.diags([-1.0, 3.0, -3.0, 1.0], [0, 1, 2, 3], shape=(n - 3, n))
     P = (wavelength / (2 * np.pi)) ** 6 * (D.T @ D)
-    w0 = np.where(ok, 1.0, float(os.environ.get("HKJC_RAIL_GAPW", 0.1)))  # unsupported: weak evidence
+    w0 = np.where(ok, 1.0, 0.1)  # unsupported: weak evidence
     w, Z = w0.copy(), W.copy()
     for _ in range(iters):
         A = (sparse.diags(w) + P).tocsc()
@@ -722,7 +703,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
       C. sub-px refinement along the rail's own normals.
     Also returns each camera frame's station index (time-ordered -> disambiguates revisited ground).
     """
-    from scipy.ndimage import gaussian_filter1d, median_filter
+    from scipy.ndimage import gaussian_filter1d
     from .pose import centres
 
     C = centres(G, shape)
@@ -737,29 +718,20 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     straight = is_straight(T)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
-    if os.environ.get("HKJC_HIN_ROBUST", "1") != "0":  # see robust_offset
-        hs = robust_offset(hin)
-    else:
-        hs = gaussian_filter1d(median_filter(hin, 51, mode="nearest"), 40, mode="nearest")
+    hs = robust_offset(hin)
     Q = Ps + hs[:, None] * Nin
     Ps, T, _s = resample_path(Q, step=2.0, smooth=40.0)
     Nin = inner * right_normal(T)
     hin = inner_field(Ps, Nin, X)
-    if os.environ.get("HKJC_HIN_ROBUST", "1") != "0":
-        hin = robust_offset(hin)
+    hin = robust_offset(hin)
     offs = np.arange(-40, 261, 1.0)
     L, S, V = sample_profiles(img, cnt, to_px, Ps, Nin, offs)
     R = ridge_response(L, S, V)
     for n in range(len(Ps)):
         R[n, (offs < hin[n] - 30) | (offs > hin[n] + 200)] = 0
-    seen = None
-    if os.environ.get("HKJC_RAIL_UNSEEN", "0") != "0":  # see dp_track
-        from scipy.ndimage import minimum_filter1d
-
-        seen = minimum_filter1d(V, 29, axis=1) > 0.5  # ridge_response's on-map window (2+12)*2+1
-    rail_off = dp_track(R, offs, hin, jump=2.0, lam=2.0, min_r=4.0, seen=seen)
+    rail_off = dp_track(R, offs, hin, jump=2.0, lam=2.0, min_r=4.0)
     ok = ~np.isnan(rail_off)
-    if straight and os.environ.get("HKJC_STRAIGHT_DATUM", "1") != "0":
+    if straight:
         return straight_datum(Ps, Nin, hin, rail_off, inner, C)
     n_ = np.arange(len(Ps))
     ro = gaussian_filter1d(np.interp(n_, n_[ok], rail_off[ok]), 5)
@@ -784,7 +756,7 @@ def _station_of_frame(C, Ps):
 
 
 def straight_datum(Ps, Nin, hin, rail_off, inner, C):
-    """STRAIGHT COURSES (``is_straight``; DEFAULT, HKJC_STRAIGHT_DATUM=0 = the oval extraction): the rail
+    """STRAIGHT COURSES (``is_straight``): the rail
     polyline is the field's INNER-EDGE scaffold ``Ps + hin * Nin`` and the fence is a MEASURED per-race
     constant ``lat0_px`` (added to every lateral in observe).
 
@@ -798,7 +770,7 @@ def straight_datum(Ps, Nin, hin, rail_off, inner, C):
     the fence offset is taken where the fence is SEEN: the DP's longest contiguous supported run
     (texture support is scattered). Straight-course lateral is therefore pack-edge-relative plus one
     measured constant (pack/fence drift along the straight, up to ~1.8 m on ST8, is not modelled).
-    REJECTED: scoring unseen offsets 0 (HKJC_RAIL_UNSEEN: rail bridged off-map 1800-2800 stations,
+    REJECTED: scoring unseen offsets 0 (rail bridged off-map 1800-2800 stations,
     blocking audit + lost marker grids); a slope bound on the DP (step -> ramp); a whole-course
     coverage band for the DP (ST4's rail clears it by ~2 px); a Tukey straight line (the mosaic
     bends)."""

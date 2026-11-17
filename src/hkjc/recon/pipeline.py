@@ -94,7 +94,7 @@ def _feat_job(args):
     k, nfeat = args
     i, p = _CACHE.idx[k], _CACHE.panel(k)
     lt = video.legend_top(p)
-    m = register.world_mask_sel(p, video.hud_mask(p, lt))
+    m = register.world_mask(p, video.hud_mask(p, lt))
     if _DET is not None:  # HKJC_WORLD_MASK=yolo: also mask the avatar detector's boxes (+ shadows)
         m = register.mask_boxes(m, _DET.panel(p, lt))
     f = register.extract(p, m, nfeat)

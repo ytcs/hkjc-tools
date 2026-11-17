@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import os
 
 import numpy as np
 
@@ -33,39 +32,6 @@ def world_mask(panel, hud) -> np.ndarray:
     return ((hud > 0) & (blob == 0)).astype(np.uint8) * 255
 
 
-def world_mask_v2(panel, hud, *, blob_max=6000) -> np.ndarray:
-    """HUD-free pixels minus COMPACT NON-TURF blobs (avatars + shadows), dilated, as a 0/255 ORB mask.
-    Turf = the panel's dominant hue mode (per frame, so Happy Valley's yellower turf is not clipped) or
-    white (rail, markings); shadows = turf much darker than the local turf. Non-turf connected regions
-    smaller than ``blob_max`` px are masked; LARGER ones (stands, the all-weather track, paths: static
-    world structure) are kept.
-    MEASURED (pixels, ST 0419 R4 frames 1365-1373): the v1 blacklist (V < 45 or vivid hue) left
-    brown-bodied / pastel-silk avatars unmasked; the camera follows the field, so those avatars are
-    static in the image, and the step match locked onto them (111 inliers on horses): the camera
-    "stopped" for 3 ticks (image-centre step < 1 px vs 36), the field's world speed dropped to ~0 and
-    the tracker rotated identities. With this mask the steps there are (34-36, -11..-13) px."""
-    import cv2
-
-    hsv = cv2.cvtColor(panel, cv2.COLOR_BGR2HSV)
-    h, s_, v = (hsv[..., i].astype(np.int16) for i in range(3))
-    world = hud > 0
-    cand = world & (s_ >= 35) & (v >= 60)
-    hist = np.bincount(h[cand].ravel(), minlength=180) if cand.any() else np.zeros(180)
-    mode = int(np.argmax(np.convolve(hist, np.ones(7), "same")))
-    dh = np.minimum(np.abs(h - mode), 180 - np.abs(h - mode))
-    turf = (dh <= 15) & (s_ >= 30)
-    white = (s_ < 45) & (v > 165)
-    vloc = cv2.blur(v.astype(np.float32), (61, 61))
-    turf &= v >= 0.72 * vloc  # shadows: turf much darker than the local turf
-    non = (world & ~(turf | white)).astype(np.uint8)
-    non = cv2.morphologyEx(non, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-    n, lab, st, _c = cv2.connectedComponentsWithStats(non)
-    small = np.zeros(n, bool)
-    small[1:] = st[1:, cv2.CC_STAT_AREA] < blob_max
-    bad = cv2.dilate(small[lab].astype(np.uint8), np.ones((9, 9), np.uint8))
-    return (world & (bad == 0)).astype(np.uint8) * 255
-
-
 def mask_boxes(mask, dets, grow: float = 1.6) -> np.ndarray:
     """Zero ``mask`` inside each avatar box (cx, cy, w, h, ...) grown by ``grow`` (covers the shadow).
     MEASURED (pixels, ST 0419 R4 frames 1365-1373): the colour blacklist leaves brown-bodied /
@@ -84,44 +50,20 @@ def mask_boxes(mask, dets, grow: float = 1.6) -> np.ndarray:
     return m
 
 
-def world_mask_sel(panel, hud) -> np.ndarray:
-    """``world_mask`` (default; HKJC_WORLD_MASK=yolo: the features stage also masks the avatar boxes)
-    or ``world_mask_v2`` (env HKJC_WORLD_MASK=v2)."""
-    if os.environ.get("HKJC_WORLD_MASK", "v1") == "v2":
-        return world_mask_v2(panel, hud)
-    return world_mask(panel, hud)
-
-
 _ORB = {}
-
-
-def orb_scale() -> float:
-    """Feature-extraction scale (env HKJC_ORB_SCALE; 1.0 = full-res panel). Keypoints are always
-    returned in FULL-RES panel pixels; the RANSAC threshold scales with 1/scale.
-    REJECTED as default (10 dev races): scale 0.5 / 1500 features is 5x faster (features 72 -> 15 s,
-    pose 88 -> 18 s) but only 2 races pass every timing gate vs 5 at full res — the long-baseline and
-    loop-closure graph thins out (R08 d24 edges 212 -> 31, loops 171 -> 0; R02A sectional 0.18 ->
-    0.42 s). Scale 0.5 with 3000 features keeps R08 but saves only ~35 %."""
-
-    return float(os.environ.get("HKJC_ORB_SCALE", "1.0"))
 
 
 def extract(panel, mask, n: int = 3000) -> Feats:
 
     import cv2
 
-    sc = orb_scale()
-    if sc != 1.0:  # ~1/sc^2 fewer pixels; FAST/ORB on the downscaled panel
-        panel = cv2.resize(panel, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
-        mask = cv2.resize(mask, (panel.shape[1], panel.shape[0]), interpolation=cv2.INTER_NEAREST)
-        n = int(os.environ.get("HKJC_ORB_N", n))  # feature count (default unchanged)
     if n not in _ORB:
         _ORB[n] = cv2.ORB_create(nfeatures=n, fastThreshold=7)
     g = cv2.cvtColor(panel, cv2.COLOR_BGR2GRAY)
     kp, des = _ORB[n].detectAndCompute(g, mask)
     if des is None:
         return Feats(np.zeros((0, 2), np.float32), np.zeros((0, 32), np.uint8))
-    return Feats(np.float32([k.pt for k in kp]) / sc, des)
+    return Feats(np.float32([k.pt for k in kp]), des)
 
 
 def sim_matrix(s, th_rad, tx, ty) -> np.ndarray:
@@ -205,7 +147,7 @@ def match(
         A,
         B,
         method=cv2.RANSAC,
-        ransacReprojThreshold=thr / min(orb_scale(), 1.0),
+        ransacReprojThreshold=thr,
         maxIters=4000,
         confidence=0.999,
     )
@@ -216,6 +158,4 @@ def match(
     # a median refit snaps the step to whole pixels (speed-dependent bias that accumulates).
     S = umeyama(A[k], B[k])
     r = np.linalg.norm(A[k] @ S[:2, :2].T + S[:2, 2] - B[k], axis=1)
-    # residual in scale-normalised units (keypoints localise ~1/orb_scale coarser at reduced scale),
-    # so the callers' acceptance thresholds (median resid <= 1.3) keep their meaning
-    return Match(S, int(k.sum()), float(np.median(r)) * min(orb_scale(), 1.0))
+    return Match(S, int(k.sum()), float(np.median(r)))

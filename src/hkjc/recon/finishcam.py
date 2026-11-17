@@ -237,8 +237,7 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
     """Per number, its reads restricted to the dominant lateral (y) cluster (a misread of another
     horse's cloth sits at a different y), sorted by unique-frame index u. {num: (u, x, y) arrays}.
 
-    ONE CLOTH = ONE MOVING TRACK (DEFAULT since 2026-11-16; HKJC_FC_MOVE=0 / HKJC_FC_CONT=0 restore the
-    old rules for diagnosis):
+    ONE CLOTH = ONE MOVING TRACK (since 2026-11-16):
     - the dominant y-cluster is the one read at the most DISTINCT PLACES (45 px bins, the same-cloth
       tolerance), then the most reads. MEASURED (pixels): ST8's "#1" was a static RAIL POST read ~60x at
       x 1566 (it passed the ptp "must move" test only through 2 stray reads the running median later
@@ -257,13 +256,7 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
     R = np.asarray(sc["reads"])
     out = {}
 
-    import os
-
-    move = os.environ.get("HKJC_FC_MOVE", "1") != "0"
-
     def support(r, inc):
-        if not move:
-            return inc.sum()
         # distinct PLACES read (45 px = the same-cloth tolerance below), then reads: a static
         # scene feature read at one spot in 60 frames must not outvote a moving cloth
         return (len(np.unique(np.round(r[inc, 2] / 45.0))), inc.sum())
@@ -338,7 +331,6 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
     # 1/4/14 confusions put "#14" 1.4 s ahead of where it finished): two numbers whose tracks
     # coincide in (x, y) on shared frames (or on one track continued past its ends: see the
     # docstring) -> keep the one with more reads
-    cont = os.environ.get("HKJC_FC_CONT", "1") != "0"
     nums = sorted(out, key=lambda n: -len(out[n][0]))
     drop = set()
     for i, a in enumerate(nums):
@@ -355,8 +347,7 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
                 if len(j) and np.abs(xa[j] - x).min() < 45 and np.abs(ya[j] - y).min() < 30:
                     same += 1
                 elif (
-                    cont
-                    and not len(j)
+                    not len(j)
                     and ua[0] - 10 <= u <= ua[-1] + 10
                     and abs(_x_at(out[a], u) - x) < 45
                     and abs((ya[:4] if u < ua[0] else ya[-4:]).mean() - y) < 30
@@ -531,8 +522,8 @@ def read_numbers(sc) -> set:
     an earlier crosser or a frame shared with a referenced horse; a back-marker crossing after the
     last referenced cloth has left the frame gets neither. Example (ST 0509 R1): #8/#9 (16/22 reads,
     1.45/1.51 s back) had no gap, so the E-step's negative evidence treated them as unread and
-    "blind" (CLUTTER on every detection in the last 50 m). Used only with HKJC_FC_READS=reads
-    (opt-in, NOT assessed on ensembles): it did NOT fix that race's short #4 path (finish-n 7 -> 7);
+    "blind" (CLUTTER on every detection in the last 50 m). Used by the audit only (as the E-step's
+    read set it was never assessed on ensembles): it did NOT fix that race's short #4 path (finish-n 7 -> 7);
     the cause there was the straight-course rail side (rails.inner_side). Gapless read numbers on the 26 turf
     races: real runners 0.87-2.4 s back (ST3 #14, ST9 #8, ST 0531 #6), the ST4 winner #11, and ST7
     "#4" (a digit-drop of #14, removed here).

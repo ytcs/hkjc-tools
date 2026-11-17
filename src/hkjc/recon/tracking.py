@@ -147,7 +147,7 @@ def split_by_appearance(members, t, F, *, thr=SPLIT_TV, min_n=40):
     0.40 = #3 until ~50 s, then #9 at the line; ST3 #4/#10 -> #3 0.70; ST7 #14 -> #5 0.68, #12 -> #14
     0.68) but not those between similar silks (4 of 14 vote-confirmed switches). ADOPTED 2026-11-15
     (26 races x 6 seeds vs Z2, rule declared before reading): non-lateral gates 200.0 = 200.0,
-    hand-truth majority 58 -> 62, unanimity 69.8 -> 74.1 %. HKJC_SPLIT_APP=0 disables.
+    hand-truth majority 58 -> 62, unanimity 69.8 -> 74.1 %.
     Known limit: the silk tie-break has no "none of these" option, so an out-of-view horse's number
     can still land on a lookalike (ST4 #3). Returns new members."""
     from .assoc import _collapse
