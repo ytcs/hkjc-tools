@@ -36,7 +36,8 @@ Environment knobs: `HKJC_DEVICE=cuda` (GPU detection), `HKJC_NPROC` (worker proc
 
 ```
 src/hkjc/data/    HKJC interfaces: race_info (results+sectionals), replay videos, silks, track
-                  geometry, racecard, live odds/pools, form, trackwork, barrier trials, ...
+                  geometry. Other sources (racecards, live odds/pools, trackwork, barrier trials,
+                  dividends, form): fetch recipes in docs/HKJC_DATA.md, docs/HKJC_SPECS.md
 src/hkjc/recon/   race info + videos -> paths
     pipeline.py   RaceRun: cached stages frames -> features -> pose -> worldmap -> detect -> hud
                   -> rails -> observe -> finish -> identify -> fuse -> validate

@@ -91,18 +91,34 @@ faced** (opponent-strength-adjusted), not in absolute terms.
 - **`Dr` / `barrierDrawNumber`** — draw (gate). Low draws favoured at bend-heavy
   course-distances (see §1).
 - **`last6run`** — recent finishing-positions string.
-- **Runner `status` `Standby`** = reserve (excluded by the live parser); scratched
+- **Runner `status` `Standby`** = reserve (exclude it when building a card from GraphQL); scratched
   runners flagged via `changeHistories` / `scratched`.
 - **`Pla`** — finishing position; may carry an **incident code** instead of a number:
   `DISQ, DNF, FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR` (filtered
   out during cleaning — but the *fact* that a horse failed to complete is itself a
   signal; see THEORY § stochasticity).
-- **`FinishTime`** — `m.ss.ff` on horse pages, `m:ss.ff` on race pages; both parse to
-  seconds.
-- **`RunningPosition`** — sectional positions at each call; classified into a running
-  **style**: `FrontRunner` (avg of first two sectionals ≤3 and led early), `Closer`
-  (started ≥6, gained ≥1), else `Pacer`. `FavoriteRunningStyle` = mode of last 5.
+- **Time strings differ by page** (parse each with its own rule):
+
+  | Page | Field | Format | Unit of last part |
+  |---|---|---|---|
+  | results (`LocalResults.aspx`) | `FinishTime` | `m:ss.ff` | hundredths |
+  | horse page (`Horse.aspx`) | `FinishTime` | `m.ss.ff` | hundredths |
+  | racecard | `Best Time` | `m.ss.ff` / `ss.ff` | hundredths |
+  | barrier trials | batch `Time`, horse `Time` | `m.ss.ff` / `ss.ff` | hundredths |
+  | barrier trials | `Sectional Time` | `ss.ff ss.ff ss.ff` | hundredths |
+  | trackwork | gallop total `(…)` | `m.ss.f` / `ss.f` | **tenths** |
+  | trackwork | gallop splits | `ss.f` per furlong (201.168 m) | tenths |
+- **`RunningPosition`** — space-separated positions at each call (up to 4 read: start, 2nd, 3rd,
+  finish; finish falls back to the 3rd call if missing). Running **style**: `--` if no start
+  position; `FrontRunner` if mean(start, 2nd) ≤ 3 and start ≤ 3; `Closer` if start ≥ 6 and
+  start − finish ≥ 1; else `Pacer`. `FavoriteRunningStyle` = mode over the 5 most recent runs.
 - **`RaceId`** — synthesised as `{YYYYMMDD}{Venue}{RaceIndex}`.
+- **Beaten margins (`LBW`)** — lengths as `8-1/2L`, `8 1/2L`, `3/4L`, `8L`; named short margins
+  `NK`/`N` neck ≈ 0.3 L, `HD` head ≈ 0.2 L, `SH` short head ≈ 0.1 L, `DH` dead heat 0; blank or `-`
+  for the leader.
+- **Jockey allowance** — apprentice claim printed in the jockey cell as `NAME (-2)` (lbs).
+- **Horse ids** — brand `[A-Z]\d+` (e.g. `K400`) vs registration `HK_YYYY_<brand>`; which page
+  takes which is in HKJC_DATA §2.
 - **SpeedPro figures** (published shortly before a meeting; `null` until then):
   *energy required* (race-level pace demand), per-horse *SpeedPro energy* and *energy
   difference* (surplus vs requirement), *fitness rating*.
@@ -148,7 +164,7 @@ The `simulation.RaceSimulator` predicates map onto these: `wins`→WIN, `places(
 | **Treble** | `TBL` | winner of 3 nominated races | No (consolation) |
 | **Double Trio** | `DT` | the Trio in 2 nominated races | **Yes** |
 | **Triple Trio** | `TT` | the Trio in 3 nominated races | **Yes** (+ consolation) |
-| **Six Up** | `6UP`/`SixUP` | 1st or 2nd in each of 6 nominated races | **Yes** (+ Six Win Bonus) |
+| **Six Up** | `SixUP` (GraphQL) / `SIX UP` label on result pages | 1st or 2nd in each of 6 nominated races | **Yes** (+ Six Win Bonus) |
 
 Multi-race pools are **products of single-race distributions** (races are independent
 draws), so a Triple Trio probability is the product of three Trio probabilities — each
@@ -176,6 +192,7 @@ dividend_per_unit(combo) = net_pool × winning_share(combo) / stakes_on(combo)
   (Composite). A raging favourite can be capped at this floor.
 - **Unit bet / Flexi:** minimum HK$10 per bet; **Flexi Bet** allows a $1 unit (variable
   minimum ticket total) — buy partial units of a large multi-combination ticket.
+- **Declared dividends are quoted per HK$10 unit** on result pages (decimal odds = dividend / 10).
 - **Rebates:** loss-rebate promotions effectively reduce takeout (e.g. ≥HK$10,000 of
   losing QIN/QPL on one line has received a 12% rebate) — model as negative takeout on
   the rebated fraction.
@@ -197,9 +214,10 @@ Operator Reserve Deduction ≈ 0.5% of pool
   can *exceed* the money bet that day: the effective takeout on the **new** money is
   **negative** — a structural +EV window independent of any modelling edge. For a cover
   `S`: `effective_takeout = (1−net_fraction) − C/G`, +EV when carried-in `C/G > ~0.15`.
-  Implemented in `hkjc.betting.carryover`; live capture via `hkjc.data.live` exposes
-  `jpEsts.jackpot` (=C), `poolInvs.investment` (=G), `estimatedDividend`. Result pages
-  carry **no** carryover data — it must be captured live during the betting window.
+  The GraphQL `raceMeetings` op exposes `jpEsts.jackpot` (=C), `poolInvs.investment` (=G) and
+  `estimatedDividend`, joined on (pool, leg races) (HKJC_DATA §1.3); they are null until pools open.
+  Result pages show a jackpot dividend only when the pool was won and never the carried-in amount,
+  so C must be captured live during the betting window.
 
 > Strategy note: harvesting carryover is the **strategist agent's** domain (cover
 > optimisation, dilution/late-money haircuts, FDR on a handful of events/season). This

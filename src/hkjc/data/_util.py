@@ -1,36 +1,7 @@
 """Small parsing helpers shared by the HKJC readers (HTML tables, safe casts, date checks)."""
 import polars as pl
-from datetime import datetime as dt
 import bs4
 import re
-
-def _try_int(value: str) -> int:
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return 0
-
-def _try_float(value: str) -> float:
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return float('nan')
-
-
-def _validate_date(date_str: str) -> bool:
-    # validate date format
-    try:
-        dt.strptime(date_str, "%Y-%m-%d")
-    except Exception:
-        raise ValueError("Date must be in 'YYYY-MM-DD' format")
-    return True
-
-
-def _validate_venue_code(venue_code: str) -> bool:
-    if venue_code not in ['HV', 'ST']:
-        raise ValueError(
-            "Venue code must be 'HV' (Happy Valley) or 'ST' (Sha Tin)")
-    return True
 
 
 def _parse_html_table(table: bs4.element.Tag, skip_header=False) -> pl.DataFrame:

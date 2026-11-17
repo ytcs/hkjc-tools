@@ -10,18 +10,9 @@ from cachetools.func import ttl_cache
 from ._util import _parse_html_table
 
 HKJC_RACE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate={date}&Racecourse={venue_code}&RaceNo={race_number}"
-HKJC_HORSE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseNo={horse_no}"
 
 incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
              'UR', 'VOID', 'WR', 'WV', 'WV-A', 'WX', 'WX-A', 'WXNR']
-
-# Map the result page's dividend-pool labels to the pool codes used elsewhere.
-DIVIDEND_POOL_CODES = {
-    "WIN": "WIN", "PLACE": "PLA", "QUINELLA": "QIN", "QUINELLA PLACE": "QPL",
-    "FORECAST": "FCT", "TIERCE": "TCE", "TRIO": "TRI", "FIRST 4": "FF",
-    "QUARTET": "QTT", "DOUBLE": "DBL", "TREBLE": "TBL", "DOUBLE TRIO": "DT",
-    "TRIPLE TRIO": "TT", "SIX UP": "6UP",
-}
 
 REQUEST_TIMEOUT = 10
 
@@ -49,115 +40,6 @@ def _soupify_race_page(date: str, venue_code: str, race_number: int) -> Beautifu
     url = HKJC_RACE_URL_TEMPLATE.format(
         date=date, venue_code=venue_code, race_number=race_number)
     return _soupify(url)
-
-
-def _soupify_horse_page(horse_no: str) -> BeautifulSoup:
-    """Fetch and parse HKJC race results page and return BeautifulSoup object
-    """
-    url = HKJC_HORSE_URL_TEMPLATE.format(horse_no=horse_no)
-    return _soupify(url)
-
-
-def _classify_running_style(df: pl.DataFrame, running_pos_col="RunningPosition") -> pl.DataFrame:
-    """Classify running style based on RunningPosition column
-    """
-    if df.height == 0:
-        return df
-
-    # Split the RunningPosition column into separate columns and convert to integers
-    df = df.with_columns(
-        pl.col(running_pos_col)
-        .str.split_exact(" ", n=3)
-        .struct.rename_fields(["StartPosition", "Position2", "Position3", "FinishPosition"])
-        # Give an alias to the struct for easier selection
-        .alias("split_data").cast(pl.Int64, strict=False)
-    ).unnest("split_data")
-
-    df = df.with_columns(
-        pl.col('FinishPosition').fill_null(pl.col('Position3')))
-
-    df = df.with_columns([
-        (pl.col("StartPosition")-pl.col("FinishPosition")).alias("PositionChange"),
-        pl.mean_horizontal("StartPosition", "Position2").alias(
-            "AvgStartPosition"),
-    ]).with_columns(pl.when(pl.col("StartPosition").is_null()).then(pl.lit("--"))
-                    .when((pl.col("AvgStartPosition") <= 3) & (pl.col("StartPosition") <= 3)).then(pl.lit("FrontRunner"))
-                    .when((pl.col("PositionChange") >= 1) & (pl.col("StartPosition") >= 6)).then(pl.lit("Closer"))
-                    .otherwise(pl.lit("Pacer")).alias("RunningStyle"))
-
-    recent_style = df['RunningStyle'][:5].mode()[0]
-    df = df.with_columns(pl.lit(recent_style).alias("FavoriteRunningStyle"))
-
-    return df
-
-
-def _extract_horse_data(horse_no: str) -> pl.DataFrame:
-    """Extract horse info and history from horse page
-    """
-    soup = _soupify_horse_page(horse_no)
-    horse_name = soup.find('title').get_text().split('- Horses -')[0].strip()
-    table = soup.find('table', class_='bigborder')
-    horse_data = _parse_html_table(table).filter(
-        pl.col('Date') != '')  # Remove empty rows
-    if horse_data.height > 0:
-        horse_data = _classify_running_style(horse_data)
-        horse_data = horse_data.with_columns([
-            pl.lit(horse_no).alias('HorseNo'),
-            pl.lit(horse_name).alias('HorseName')
-        ])
-
-    return horse_data
-
-
-def _clean_horse_data(df: pl.DataFrame) -> pl.DataFrame:
-    """ Clean and convert horse data to suitable data types
-    """
-    if df.height == 0:
-        return df
-
-    df = df.with_columns(
-        pl.col('Pla').str.split(' ').list.first().alias('Pla')
-    ).filter(~pl.col('Pla').is_in(incidents))
-
-    df = df.with_columns([
-        pl.col('Pla').cast(pl.Int64, strict=False),
-        pl.col('ActWt').cast(pl.Int64, strict=False),
-        pl.col('DeclarHorseWt').cast(pl.Int64, strict=False),
-        pl.col('Dr').cast(pl.Int64, strict=False),
-        pl.col('Rtg').cast(pl.Int64, strict=False),
-        pl.col('Dist').cast(pl.Int64, strict=False),
-        pl.col('WinOdds').cast(pl.Float64, strict=False)
-    ])
-
-    df = (df.filter(~pl.col('FinishTime').str.starts_with('--'))
-          .with_columns(
-        (
-            pl.col("FinishTime").str.splitn(".", 2).struct.field("field_0").cast(pl.Int64) * 60 +
-            pl.col("FinishTime").str.splitn(
-                ".", 2).struct.field("field_1").cast(pl.Float64)
-        ).cast(pl.Float64).round(2).alias("FinishTime")
-    ))
-
-    df = df.with_columns(
-        pl.col('RCTrackCourse').str.split_exact(' / ', 2)
-        .struct.rename_fields(['Venue', 'Track', 'Course'])
-        .alias('RCTrackCourse')
-    ).unnest('RCTrackCourse')
-
-    df = df.with_columns(
-        pl.when(pl.col('Date').str.len_chars() <= 8)
-        .then(pl.col('Date').str.strptime(pl.Date, '%d/%m/%y', strict=False))
-        .otherwise(pl.col('Date').str.strptime(pl.Date, '%d/%m/%Y'))
-    ).with_columns(
-        pl.concat_str(pl.col('Date').dt.strftime('%Y%m%d'), pl.col(
-            'Venue'), pl.col('RaceIndex')).alias('RaceId')
-    ).drop("VideoReplay")
-    return df
-
-
-def get_horse_data(horse_no: str) -> pl.DataFrame:
-    df = _extract_horse_data(horse_no)
-    return _clean_horse_data(df)
 
 
 def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
@@ -233,64 +115,3 @@ def get_race_data(date: str, venue_code: str, race_number: int) -> pl.DataFrame:
     return _clean_race_data(df)
 
 
-def _parse_dividend_value(s: str):
-    s = s.replace(",", "").strip()
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
-def _parse_dividend_table(table) -> pl.DataFrame:
-    """Parse a result page's dividend table into tidy rows (pure; testable).
-
-    Pools that pay several combinations (PLACE, QUINELLA PLACE) use a row-spanned
-    pool cell, so continuation rows carry only (combination, dividend) — the pool
-    label is forward-filled.
-    """
-    rows = []
-    current_pool = None
-    for tr in table.find_all('tr'):
-        cells = [td.get_text(" ", strip=True) for td in tr.find_all(['td', 'th'])]
-        if len(cells) >= 3:
-            pool, combo, val = cells[0], cells[1], cells[2]
-            if pool.upper() in ('POOL', 'DIVIDEND') or combo.lower().startswith('winning'):
-                continue
-            current_pool = pool
-        elif len(cells) == 2 and current_pool is not None:
-            pool, combo, val = current_pool, cells[0], cells[1]
-        else:
-            continue
-        rows.append({
-            "pool_name": pool,
-            "pool": DIVIDEND_POOL_CODES.get(pool.upper(), pool.upper()),
-            "combination": combo,
-            "dividend": _parse_dividend_value(val),
-        })
-    df = pl.DataFrame(rows)
-    if df.height:
-        df = df.with_columns((pl.col("dividend") / 10.0).alias("decimal"))  # HK$ per $10 unit
-    return df
-
-
-def get_race_dividends(date: str, venue_code: str, race_number: int) -> pl.DataFrame:
-    """Scrape the declared dividends (payouts) for a finished race.
-
-    Returns tidy rows: ``pool_name``/``pool`` (code), ``combination`` (winning
-    selection string), ``dividend`` (HK$ per HK$10 unit) and ``decimal``
-    (= dividend / 10, the decimal payout). Covers WIN, PLACE, QUINELLA, QUINELLA
-    PLACE, FORECAST, TIERCE, TRIO, FIRST 4, QUARTET (and multi-race pools when
-    shown). This is the realized payout side for exotic backtests.
-    """
-    soup = _soupify_race_page(date, venue_code, race_number)
-    div = soup.find('div', class_='dividend_tab')
-    if div is None or div.find('table') is None:
-        raise AttributeError("no dividend table on page (non-race date or not yet declared)")
-    df = _parse_dividend_table(div.find('table'))
-    if df.height:
-        df = df.with_columns([
-            pl.lit(date).alias("date"),
-            pl.lit(venue_code).alias("venue"),
-            pl.lit(int(race_number)).alias("race_no"),
-        ])
-    return df

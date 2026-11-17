@@ -11,7 +11,11 @@ surface *is* the search space.
 > `requests.get()` returns full HTML (parse with BeautifulSoup), no browser needed, *if*
 > you use the right params. There is no public per-page JSON for racing data.
 
-Implementation status legend: ✅ wired in `hkjc.data` · 🟡 partial · ⬜ TODO.
+Implementation status legend: ✅ wired in `hkjc.data` · 🟡 partial · ⬜ not wired · 📜 parser
+removed 2026-11; the recipe below is complete enough to rebuild it (last code in git at `data-acquisition-last`).
+Of the §1–§3 sources, only the results table (`LocalResults.aspx`) and `displaysectionaltime` are
+wired today (both via `hkjc.data.race_info`); replay videos (§4), silks and track geometry stay
+wired in their own modules.
 
 ---
 
@@ -19,21 +23,30 @@ Implementation status legend: ✅ wired in `hkjc.data` · 🟡 partial · ⬜ TO
 
 ```
 POST https://info.cld.hkjc.com/graphql/base/
-Headers: Origin/Referer = https://bet.hkjc.com, Content-Type: application/json
+Origin: https://bet.hkjc.com
+Referer: https://bet.hkjc.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+body: {"operationName": ..., "variables": {...}, "query": "<exact text, §1.2>"}
 ```
+No auth, cookie or token. The old client used a 30 s timeout and raised on any non-200.
+The response is `{"data": {"raceMeetings": [...]}}`.
 
-Two operations (full query bodies in `hkjc.data.live`):
-- **`raceMeetings`** ✅ — the whole meeting: every race, runners, draws, ratings,
-  weights, jockey/trainer, gear, `last6run`, win odds, pool metadata.
-- **`racing`** ✅ — odds nodes for given `oddsTypes` and `raceNo`.
+Two operations (exact query texts in §1.2):
+- **`raceMeetings`** 📜: variables `{"date": "YYYY-MM-DD" | null, "venueCode": "HV" | "ST" | null}`.
+  Returns the whole meeting: every race, runners, draws, ratings, weights, jockey/trainer, gear,
+  `last6run`, win odds, pool metadata.
+- **`racing`** 📜: variables `{"date": "YYYY-MM-DD", "venueCode": "HV"|"ST", "raceNo": int,
+  "oddsTypes": ["WIN","PLA","QIN","QPL"]}`. Returns odds nodes per pool for one race.
 
-Passing `date=""`/`venueCode=""` (or `null`) returns the **current meeting** (the code
-prefers the first `HV`/`ST`); **always reconcile the returned `Date`/`Venue`** with what
+Passing `date=""`/`venueCode=""` (or `null`) returns the **current meeting** (pick the first
+`HV`/`ST` entry); **always reconcile the returned `Date`/`Venue`** with what
 you asked for — the server can hand back a different meeting.
 
 **Pool / odds types accepted:** `WIN, PLA, QIN, QPL, CWA, CWB, CWC, IWN, FCT, TCE, TRI,
 FF, QTT, DBL, TBL, DT, TT, SixUP`, plus `JKC` (jockey challenge), `TNC` (trainer
-challenge). The library parses `WIN, PLA, QIN, QPL` — **the rest are unextracted** ⬜.
+challenge). The removed parser read only `WIN, PLA, QIN, QPL` into arrays; the rest are unextracted ⬜.
 
 **Rich fields exposed but NOT yet extracted** (a roadmap):
 - `winOdds`, `finalPosition`, `deadHeat` — live result as it lands.
@@ -46,8 +59,8 @@ challenge). The library parses `WIN, PLA, QIN, QPL` — **the rest are unextract
 - `penetrometerReadings`, `hammerReadings` — turf firmness, but observed **empty** on upcoming
   AND recent-past meetings (only populated transiently raceday morning). **Unreliable — prefer
   the `weather` op's soil-moisture fields (§1.1) for firmness.**
-- `jpEsts` / jackpots and `estimatedDividend` per pool ✅ (via `live.live_jackpots`).
-- `totalInvestment`, per-pool `investment` — **pool sizes → liquidity signal** ✅.
+- `jpEsts` / jackpots and `estimatedDividend` per pool 📜 (join recipe in §1.3).
+- `totalInvestment`, per-pool `investment` — **pool sizes → liquidity signal** 📜.
 
 ### 1.1 `weather` operation — wind + soil moisture (NEW, the ENVIRONMENT feed) ⬜
 Same endpoint, `operationName: Weather`, `variables: null`, `Origin: https://racing.hkjc.com`.
@@ -63,6 +76,275 @@ Returns **both ST & HV**, `max-age=15`. Per racecourse:
   going/firmness proxy** far richer than the categorical going string (going-affinity was found
   noise-limited by soft-going *sparsity*; a continuous firmness covariate sidesteps that).
 
+### 1.2 Exact query texts (`raceMeetings`, `racing`)
+
+Send the `query` string byte-for-byte. The `weather` op is whitelisted by exact body (§1.1); whether
+these two are is untested, so do not reformat them. Each block below is the string **minus its
+leading newline**: the real string starts with `\n`. The `raceMeetings` string ends with `\n`, the
+`racing` string ends with `}` (no newline). Check with sha256 of the full string.
+
+`raceMeetings` (`"operationName": "raceMeetings"`; 3678 chars; sha256 `2fbb1cf9ea40c4eec1e74e5308920bb4545d2e74b765ebb2ef20273c0ccb121a`):
+
+```graphql
+    fragment raceFragment on Race {
+    id
+    no
+    status
+    raceName_en
+    raceName_ch
+    postTime
+    country_en
+    country_ch
+    distance
+    wageringFieldSize
+    go_en
+    go_ch
+    ratingType
+    raceTrack {
+        description_en
+        description_ch
+    }
+    raceCourse {
+        description_en
+        description_ch
+        displayCode
+    }
+    claCode
+    raceClass_en
+    raceClass_ch
+    judgeSigns {
+        value_en
+    }
+    }
+
+    fragment racingBlockFragment on RaceMeeting {
+    jpEsts: pmPools(
+        oddsTypes: [WIN, PLA, TCE, TRI, FF, QTT, DT, TT, SixUP]
+        filters: ["jackpot", "estimatedDividend"]
+    ) {
+        leg {
+        number
+        races
+        }
+        oddsType
+        jackpot
+        estimatedDividend
+        mergedPoolId
+    }
+    poolInvs: pmPools(
+        oddsTypes: [WIN, PLA, QIN, QPL, CWA, CWB, CWC, IWN, FCT, TCE, TRI, FF, QTT, DBL, TBL, DT, TT, SixUP]
+    ) {
+        id
+        leg {
+        races
+        }
+    }
+    penetrometerReadings(filters: ["first"]) {
+        reading
+        readingTime
+    }
+    hammerReadings(filters: ["first"]) {
+        reading
+        readingTime
+    }
+    changeHistories(filters: ["top3"]) {
+        type
+        time
+        raceNo
+        runnerNo
+        horseName_ch
+        horseName_en
+        jockeyName_ch
+        jockeyName_en
+        scratchHorseName_ch
+        scratchHorseName_en
+        handicapWeight
+        scrResvIndicator
+    }
+    }
+
+    query raceMeetings($date: String, $venueCode: String) {
+    timeOffset {
+        rc
+    }
+    activeMeetings: raceMeetings {
+        id
+        venueCode
+        date
+        status
+        races {
+        no
+        postTime
+        status
+        wageringFieldSize
+        }
+    }
+    raceMeetings(date: $date, venueCode: $venueCode) {
+        id
+        status
+        venueCode
+        date
+        totalNumberOfRace
+        currentNumberOfRace
+        dateOfWeek
+        meetingType
+        totalInvestment
+        country {
+        code
+        namech
+        nameen
+        seq
+        }
+        races {
+        ...raceFragment
+        runners {
+            id
+            no
+            standbyNo
+            status
+            name_ch
+            name_en
+            horse {
+            id
+            code
+            }
+            color
+            barrierDrawNumber
+            handicapWeight
+            currentWeight
+            currentRating
+            internationalRating
+            gearInfo
+            racingColorFileName
+            allowance
+            trainerPreference
+            last6run
+            saddleClothNo
+            trumpCard
+            priority
+            finalPosition
+            deadHeat
+            winOdds
+            jockey {
+            code
+            name_en
+            name_ch
+            }
+            trainer {
+            code
+            name_en
+            name_ch
+            }
+        }
+        }
+        obSt: pmPools(oddsTypes: [WIN, PLA]) {
+        leg {
+            races
+        }
+        oddsType
+        comingleStatus
+        }
+        poolInvs: pmPools(
+        oddsTypes: [WIN, PLA, QIN, QPL, CWA, CWB, CWC, IWN, FCT, TCE, TRI, FF, QTT, DBL, TBL, DT, TT, SixUP]
+        ) {
+        id
+        leg {
+            number
+            races
+        }
+        status
+        sellStatus
+        oddsType
+        investment
+        mergedPoolId
+        lastUpdateTime
+        }
+        ...racingBlockFragment
+        pmPools(oddsTypes: []) {
+        id
+        }
+        jkcInstNo: foPools(oddsTypes: [JKC], filters: ["top"]) {
+        instNo
+        }
+        tncInstNo: foPools(oddsTypes: [TNC], filters: ["top"]) {
+        instNo
+        }
+    }
+    }
+```
+
+`racing` (`"operationName": "racing"`; 889 chars; sha256 `6103150c8dcad13852d99ba224c89e0f0935e6ba0908087b06aa0edcff31a27f`):
+
+```graphql
+query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo: Int) {
+    raceMeetings(date: $date, venueCode: $venueCode) {
+        pmPools(oddsTypes: $oddsTypes, raceNo: $raceNo) {
+            id
+            status
+            sellStatus
+            oddsType
+            lastUpdateTime
+            guarantee
+            minTicketCost
+            name_en
+            name_ch
+            leg {
+                number
+                races
+            }
+            cWinSelections {
+                composite
+                name_ch
+                name_en
+                starters
+            }
+            oddsNodes {
+                combString
+                oddsValue
+                hotFavourite
+                oddsDropValue
+                bankerOdds {
+                    combString
+                    oddsValue
+                }
+            }
+        }
+    }
+}
+```
+
+**Rebuild notes (exact behaviour of the removed code, from a doc-only rebuild test).**
+- Endpoint: `POST https://info.cld.hkjc.com/graphql/base/` (the `/graphql` in the summary above is shorthand).
+  Headers `{"Origin": "https://bet.hkjc.com", "Referer": "https://bet.hkjc.com", "Content-Type": "application/json",
+  "Accept": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
+  Gecko) Chrome/141.0.0.0 Safari/537.36"}`,
+  timeout 30 s, body = `{"operationName"?, "variables": {...}, "query": "<text>"}` sent with `requests.post(json=...)`.
+- `date` is sent exactly as given (`YYYY-MM-DD`); `venueCode` `"ST"`/`"HV"`. Current meeting: send `null` for both
+  (`live_jackpots` mapped `""` -> null; `_fetch_live_races` sent `""` as is -- use null).
+- `oddsTypes` in the `racing` query is a list in the caller's order; the removed defaults were `["PLA"]` (single-pool
+  fetch) and `["WIN", "PLA", "QPL", "QIN"]` (`live_odds`).
+
+### 1.3 Extraction recipes (what the removed `live.py` did)
+
+- **Meeting choice.** `data.raceMeetings` is a list: take the first entry with `venueCode` in
+  `HV`/`ST`, else the first. Compare its `date`/`venueCode` with the request and continue with the
+  server's values (warn).
+- **Card** (`raceMeetings`): per race `no`, `raceName_en`, `raceClass_en`, `raceCourse.displayCode`, `distance`, `go_en`, `raceTrack.description_en`; per runner with
+  `status != "Standby"`: `no`, `name_en`, `barrierDrawNumber`, `currentRating`, `currentWeight`,
+  `handicapWeight`, `horse.code` (brand). The old code coerced unparseable ints to **0** (not
+  null): treat 0 rating/weight as missing.
+- **Odds** (`racing`): for each `raceMeetings[].pmPools[]` and each `oddsNodes[]`: `combString`,
+  `oddsValue` (float; unparseable -> NaN), pool `oddsType`, pool `lastUpdateTime`. `combString` is
+  the runner number for `WIN`/`PLA` and `"a,b"` for `QIN`/`QPL` (fill both `[a,b]` and `[b,a]`;
+  diagonal stays NaN). Array size = number of non-Standby runners in the race from `raceMeetings`;
+  index = runner number − 1. For a time series, poll uncached and dedupe on `lastUpdateTime` (server
+  clock), not on the polling clock (the old 30 s in-process cache would repeat snapshots).
+- **Jackpots / pool sizes** (`raceMeetings`): index `jpEsts[]` by `(oddsType, tuple(leg.races))`,
+  then for each `poolInvs[]` row output `pool`=`oddsType`, `leg`=`leg.number`,
+  `races`=comma-joined `leg.races`, `investment` (today's gross G), matching `jpEsts.jackpot`
+  (carried-in C), `jpEsts.estimatedDividend`, `mergedPoolId`. Jackpot pools: `DT`, `TT`, `SixUP`.
+  These values are **null until the meeting's pools open**; poll during the betting window and log.
+
 ## 2. Historical / info: server-rendered HTML (`racing.hkjc.com`)
 
 ### Param conventions (and the gotchas that bite)
@@ -72,6 +354,21 @@ Returns **both ST & HV**, `max-age=15`. Per racecourse:
   `Racecourse`**. Wrong format → empty "released shortly" page. *(This bit us; handled
   in `data.sectional`.)*
 - **`draw`:** `racedate` + `Racecourse`, no `RaceNo` (returns all races).
+- **`btresult`:** `Date=DD/MM/YYYY` (param named `Date`, capital D, day-first), no venue/race.
+- **`trackworkresult`:** `horseid=HK_YYYY_<brand>` (the long registration id).
+- **Legacy `.aspx` pages** (`racing.hkjc.com/racing/information/English/...`): results take
+  `RaceDate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`; the horse page takes `HorseNo=<id>` (presumably the
+  brand; not stated in the code).
+- **Horse ids:** the *brand* is `[A-Z]\d+` (e.g. `K400`), printed in name cells as `NAME (K400)`
+  (regex `\(([A-Z]\d+)\)`); the *registration* is `HK_YYYY_<brand>` (e.g. `HK_2023_J183`), found in
+  links as `horseid=...` (regex `horseid=(HK_\d{4}_([A-Z]\d+))`). Racecard "Brand No." is the brand.
+- **Other date shapes inside pages:** trackwork gallop entries `DD/MM` (no year, §2.2),
+  `trackworkresult` rows `DD/MM/YYYY`, horse-page form `Date` `dd/mm/yy` (or `dd/mm/YYYY`).
+- **Requests:** plain `GET`, no cookies. The old modern-route scrapers sent only
+  `User-Agent: Mozilla/5.0` and `Referer: https://racing.hkjc.com` (timeout 20 s); the legacy
+  `.aspx` fetches sent `Origin`/`Referer: https://racing.hkjc.com`, `Content-Type: text/plain`,
+  `Accept: */*` and the full Chrome UA of §1 (timeout 10 s). Pass `response.content` (bytes) to
+  BeautifulSoup `html.parser`; no explicit charset was needed. No header is a secret.
 - Three date formats coexist: ISO `YYYY-MM-DD` (GraphQL), slashed `YYYY/MM/DD` (most
   HTML), `DD/MM/YYYY` (sectional page **and** inside SpeedPro JSON). Easy to mix up.
 
@@ -79,17 +376,20 @@ Returns **both ST & HV**, `max-age=15`. Per racecourse:
 
 | Page | Route | Key data | Status |
 |---|---|---|---|
-| **Race Card** | `racecard?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | **27 cols**: ratings, **Rtg +/- (rating move)**, gear (`V-/B2/TT`), **Horse Wt + Wt+/- (body-weight delta)**, Best Time, **days-since-run**, WFA, season stakes, priority, owner/sire/dam, import cat | ⬜ **top add** |
-| **Comments on Running** | `corunning?racedate=...&RaceNo=...` | per-horse free-text trip line ("raced wide, stayed on final 200m…") | ⬜ **trip/trouble NLP — gold** |
+| **Race Card** | `racecard?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | **27 cols**: ratings, **Rtg +/- (rating move)**, gear (`V-/B2/TT`), **Horse Wt + Wt+/- (body-weight delta)**, Best Time, **days-since-run**, WFA, season stakes, priority, owner/sire/dam, import cat | 📜 §2.2 |
+| **Comments on Running** | `corunning?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | per-horse free-text stewards' trip line ("raced wide, stayed on final 200m…"); past races presumably served (the removed code was used for prior-run analysis; unverified) | 📜 §2.2 |
 | **Sectional Time** | `displaysectionaltime?racedate=D/M/Y&RaceNo=N` | per-horse section positions + split times (1st–6th Sec.) + race splits | ✅ `data.sectional` |
-| **Results** | `localresults?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | result table + **full exotic/jackpot dividends** + **incident table** + running positions | 🟡 (dividends partial) |
-| **Horse page** | `horse?horseid=HK_2023_J183` | record, location (Conghua/ST), import; tabs: Form, Rating/Wt/Placing, **Performance by Distance**, **Trackwork**, **Veterinary**, Movement, Pre-import, **Pedigree** + replay links | 🟡 (legacy `Horse.aspx` ✅) |
+| **Results** | `localresults?racedate=Y/M/D&Racecourse=ST&RaceNo=N`; wired via legacy `/racing/information/English/Racing/LocalResults.aspx?RaceDate=Y/M/D&Racecourse=ST&RaceNo=N` | result table + **full exotic/jackpot dividends** + **incident table** + running positions | ✅ results table · 📜 dividends §2.2 |
+| **Horse page** | `horse?horseid=HK_2023_J183`; legacy `/racing/information/English/Horse/Horse.aspx?HorseNo=<id>` (id presumably the brand, e.g. `J183`; the code does not say) | record, location (Conghua/ST), import; tabs: Form, Rating/Wt/Placing, **Performance by Distance**, **Trackwork**, **Veterinary**, Movement, Pre-import, **Pedigree** + replay links | 📜 legacy form table §2.2 |
+| **Trackwork archive** | `trackworkresult?horseid=HK_2023_J183` | one horse's **full dated work log over years** (SSR) — the only historical trackwork route | 📜 §2.2 |
 
 ### Per-runner "angle" pages (server-rendered, all ⬜ — the buried gold)
 > **Pre-race window caveat (important):** these pages are SSR-fetchable with plain `requests.get`,
 > but populated **only for the imminent upcoming meeting** — for *past* meetings they serve
 > "…available shortly", for *future* "No information". The "0 tables" you'd otherwise see is a
 > stale-date artifact, **not** JS-rendering. Scrape them in the pre-race window with the upcoming date.
+> **Exceptions:** `btresult` (barrier trials) and `trackworkresult` (per-horse trackwork archive)
+> serve past dates (the removed code fetched them); `corunning` presumably serves past races (unverified).
 - **`exceptionalfactors`** — per horse: `Out of Handicap, WFA, Gear, Tongue Tie, Bit Change
   From/To, Rtg, Dist, Days since Last Run, New Trainer, Date returned from Conghua`, **plus a
   `Trainer | Multi Entries` table** (which stable saddles 2+ runners — pair with `trainerPreference`).
@@ -97,12 +397,15 @@ Returns **both ST & HV**, `max-age=15`. Per racecourse:
 - **`veterinaryrecord`** (alt `overecord?horseid=…`) — per horse: dated `Date, Details (free
   text: "Lame right front…", "Throat surgery…"), Passed On` (cleared-to-race date). The **HEALTH
   cell** (§2.1) — recency of last issue + injury class via NLP.
-- **`localtrackwork`** — per horse, dated logs across `Barrier Trial / Gallop / Trotting /
-  Swimming / Equine Treadmill / Aqua Walker / Spelling`; **gallops carry split/total TIMES** and
-  **CONGHUA vs SHA TIN location** (training-base movement). Fitness-cycle (§2.1).
-- **`btresult?Date=DD/MM/YYYY`** (note `Date=`, day-first) — **barrier trials with batch
-  `Time`+`Sectional Time`** and per-horse `Draw, Gear, LBW, Running Position, Time, Result, Comment`
-  — direct fitness read **before a debut/return**, when form is silent; feeds `v_c`/`W′` priors.
+- **`localtrackwork?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`** 📜 — race-keyed: for every
+  runner, ~3 weeks of dated logs across `Barrier Trial / Gallop / Trotting / Swimming / Equine
+  Treadmill / Aqua Walker / Spelling`; **gallops carry split/total TIMES** and **CONGHUA vs SHA TIN
+  location** (training-base movement). Imminent meeting only; for history use `trackworkresult`
+  (§2.2). Fitness-cycle (§2.1).
+- **`btresult?Date=DD/MM/YYYY`** 📜 (note `Date=`, day-first) — **barrier trials with batch
+  `Time`+`Sectional Time`** and per-horse `Jockey, Trainer, Draw, Gear, LBW, Running Position, Time,
+  Result, Comment` — direct fitness read **before a debut/return**, when form is silent. Past dates
+  are served (recipe §2.2).
 - **`formline`** — groups today's runners by a **shared past race**; per rival: `Wt, Rtg, Draw,
   Jockey, Last Jockey, Placing, Time, Margin, Win Odds, Weight Carried +/-, Rating +/-`. **The
   pre-assembled OPPONENT-LINKAGE / collateral-form graph** — raw material for the competition axis (§2.6).
@@ -113,6 +416,118 @@ Returns **both ST & HV**, `max-age=15`. Per racecourse:
 - **`latestonhorse`** — late declared-starter changes / scratchings feed.
 - **`formline`**, **`jockeyfavourite`/`trainerfavourite`**, `jkcstat`,
   `jockeyprofile`/`trainerprofile` (some need extra params / partial JS).
+
+### 2.2 Page recipes (parsers removed 2026-11)
+**Racecard rebuild notes.** URL `https://racing.hkjc.com/en-us/local/information/racecard?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`
+(slashes literal, not percent-encoded; venue upper-case as given). Headers `{"User-Agent": "Mozilla/5.0",
+"Referer": "https://racing.hkjc.com"}`, timeout 20 s. Input dates `YYYY-MM-DD`, `YYYY/MM/DD` or `DD/MM/YYYY` (dashes
+-> slashes; a first part that is not 4 digits is day-first). `Best Time` `m.ss.ff` / `ss.ff` -> seconds (float, 2 dp;
+`-` -> null); integer columns strip `,` and `+`, `-`/`--` -> null; the output adds `date`, `venue`, `race_no` columns;
+unknown header cells are dropped (only the mapped columns are kept).
+
+
+URL templates exactly as the removed code built them (`{date}` formats: racecard, corunning,
+localtrackwork, LocalResults `YYYY/MM/DD`; btresult `DD/MM/YYYY`; `{venue}` `ST`/`HV`):
+
+```
+https://racing.hkjc.com/en-us/local/information/racecard?racedate={date}&Racecourse={venue}&RaceNo={race}
+https://racing.hkjc.com/en-us/local/information/corunning?racedate={date}&Racecourse={venue}&RaceNo={race}
+https://racing.hkjc.com/en-us/local/information/btresult?Date={date}
+https://racing.hkjc.com/en-us/local/information/localtrackwork?racedate={date}&Racecourse={venue}&RaceNo={race}
+https://racing.hkjc.com/en-us/local/information/trackworkresult?horseid={horseid}
+https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseNo={horse_no}
+https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate={date}&Racecourse={venue_code}&RaceNo={race_number}
+```
+
+All pages: `GET https://racing.hkjc.com/en-us/local/information/<route>?...`, plain `requests`, then
+BeautifulSoup. "cells" = `get_text(" ", strip=True)` over a row's `td`+`th`. An unpublished page
+gives no matching table -> return an empty frame. `raise_for_status()` on HTTP errors.
+
+**Race card** (`racecard?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`). Pages nest wrapper
+tables: parse every `<table>` whose text contains `Brand No.` and keep the one giving the most runner
+rows. Header row = first row whose cells contain both `Brand No.` and `Horse No.`; body rows must
+have exactly as many cells as the header and a digit `Horse No.` (skips reserves). Header -> field:
+`Horse No.`→runner, `Last 6 Runs`→last_6_runs, `Colour`→colour, `Horse`→horse, `Brand No.`→horse_id
+(brand), `Wt.`→carried_wt, `Jockey`→jockey, `Over Wt.`→over_wt, `Draw`→draw, `Trainer`→trainer,
+`Int'l Rtg.`→intl_rtg, `Rtg.`→rtg, `Rtg.+/-`→rtg_change, `Horse Wt. (Declaration)`→decl_horse_wt,
+`Wt.+/- (vs Declaration)`→wt_change, `Best Time`→best_time, `Age`→age, `WFA`→wfa, `Sex`→sex,
+`Season Stakes`→season_stakes, `Priority`→priority, `Days since Last Run`→days_since_last_run,
+`Gear`→gear, `Owner`→owner, `Sire`→sire, `Dam`→dam, `Import Cat.`→import_cat. Integer columns
+(runner, carried_wt, draw, intl_rtg, rtg, rtg_change, decl_horse_wt, wt_change, age,
+days_since_last_run, season_stakes): strip `,` and `+`; `""`, `-`, `--` → null. The jockey cell
+carries an apprentice allowance, `NAME (-2)`: regex `\(([-+]?\d+)\)` → `jockey_allowance` (default
+0), name = cell without it. `Best Time` is `m.ss.ff` or `ss.ff` (hundredths).
+
+**Comments on Running** (`corunning?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`). First table
+whose text contains `Comment` and `Horse`. Data rows: ≥ 6 cells and `cells[1]` all digits.
+`cells[1]` runner no., `cells[2]` `NAME (BRAND)`, `cells[4]` gear, `cells[5]` comment (`cells[0]`,
+`cells[3]` were not read; labels unrecorded). Trouble flag used (case-insensitive search), meant to
+separate interference from tactical lines like "held up":
+`no clear run|no clear (?:racing )?room|no clear passage|short of room|no room|denied (?:a )?(?:clear )?(?:run|passage)|blocked|checked|hampered|tightened|squeezed|crowded|bumped|interfered|carried (?:wide|out)|forced (?:wide|out)|trapped|in(?:to)? a pocket|behind a wall|had to steady|steadied(?! away| from the start)|had to switch|shuffled|awkwardly placed|lost ground|wide no cover|no luck`
+
+**Barrier trials** (`btresult?Date=DD/MM/YYYY`). Walk all `<table>`s in document order, carrying the
+current batch. A table **without** an `<a href>` containing `horseid` is a batch header; on its text
+apply `Batch\s*(\d+)\s*-\s*(.+?)\s*-\s*(\d+)m` (DOTALL; batch, course, distance m),
+`Going:\s*([A-Za-z /]+?)\s+Time:`, `Time:\s*([\d.:]+)` (batch winner's time) and
+`Sectional Time:\s*([\d.\s]+)` (3 space-separated splits). A table **with** horse links: each row
+with a `horseid` link and ≥ 10 cells is a runner: 0 `NAME (BRAND)`, 1 jockey, 2 trainer, 3 draw,
+4 gear, 5 LBW, 6 running position, 7 time, 8 result, 9 comment; long id from the link
+`horseid=(HK_\d{4}_[A-Z]\d+)`. Times `m.ss.ff`/`ss.ff` (hundredths; `m:ss.ff` tolerated). LBW →
+lengths: upper-case, NBSP → space; `""`/`-` → 0 (leader); `N` 0.3, `NK` 0.3, `HD` 0.2, `SH` 0.1,
+`DH` 0; else `^\s*(\d+)?[\s-]*(?:(\d+)/(\d+))?\s*L?\s*$` = whole + num/den (`8-1/2L`, `8 1/2L`,
+`3/4L`, `8L`); else null. Trials run mostly Mon/Tue/Thu/Fri, sometimes Wed/Sat, never Sun; other
+days give no tables. **Date list:** the page's first `<select>` lists trial dates as option values
+`DD/MM/YYYY` covering roughly the trailing 13 months; older dates must be probed. **Backfill used:**
+candidates = dropdown dates ∪ every Mon–Sat in range; 1 request/s, one retry after 2 s on a network
+error; dedupe on (date, batch, brand).
+
+**Trackwork, race-keyed** (`localtrackwork?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`,
+imminent meeting only). Tables containing a `horseid=(HK_\d{4}_([A-Z]\d+))` link; header = first
+row; the Gallop column is the header cell equal to `Gallop` (case-insensitive). Each runner row:
+long id and brand from the link, name = `cells[1]` cut at the first `\s+[A-Z]\s|\s+\d`. The Gallop
+cell holds consecutive entries `DD/MM: LOCATION SURFACE s1 s2 [s3…] (total) (rider) [companion]`,
+e.g. `04/06: SHA TIN AWT 33.0 30.0 25.9 (1.28.9) (H Y Yuen)`; match all with
+`(\d{2}/\d{2}):\s+([A-Z][A-Z ]+?)\s+([A-Za-z]+)\s+([\d.][\d.\s]*?)\s*\(([\d.]+)\)\s*\(([^)]*)\)`
+(location = upper-case words SHA TIN / CONGHUA; surface token AWT, TurG, AWTG, RGal, SmT, …;
+trailing mixed-case companion horse ignored). Splits are **per furlong** (201.168 m), one decimal;
+the bracketed total is `m.ss.f` or `ss.f` (**tenths**, unlike race times). Session year = race year,
+except a session month later than the race month belongs to the previous year (December work before
+a January race). Worked distance = n_splits × 201.168 m; mean velocity = distance / total (fallback:
+sum of splits). **Upcoming dates:** every `<option value>` matching `^\d{4}/\d{2}/\d{2}$` on this page.
+
+**Trackwork archive** (`trackworkresult?horseid=HK_YYYY_<brand>`, full history, one request per
+horse). Tables whose first row starts `Date, Type`; columns 0 date `DD/MM/YYYY`, 1 type
+(`Gallop`, Trotting, Swimming, Aqua Walker, Spelling, Barrier Trial), 2 racecourse/track
+(`Sha Tin AWT`, `Conghua TurG` → location + surface), 3 workouts `<splits> (total) (rider)` with no
+`DD/MM:` prefix: `([\d.][\d.\s]*?)\s*\(([\d.]+)\)\s*\(([^)]*)\)`. Only `Gallop` rows are timed.
+**Backfill used:** 1 request/s, one retry after 2 s; dedupe on (brand, session_date). Keep only
+sessions strictly before the race day when joining to races.
+
+**Horse page, legacy** (`https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseNo=<id>`;
+the code does not say which id; presumably the brand, as on the results page).
+Name = `<title>` text before `- Horses -`. Form table = `<table class="bigborder">`: headers from
+`<thead>` `td`s (else the first row), column names stripped of non-word characters; drop rows with
+empty `Date`. Used columns (cleaned names): `Pla` (first token; incident codes
+dropped), `RaceIndex`, `Date` (`dd/mm/yy`, or `dd/mm/YYYY` if longer than 8 chars), `RCTrackCourse`
+(`Venue / Track / Course`, split on ` / `), `Dist`, `Dr`, `Rtg`, `ActWt`, `DeclarHorseWt`,
+`WinOdds`, `FinishTime` (`m.ss.ff`; `--…` = no time), `RunningPosition` (space-separated calls),
+`VideoReplay` (ignored). `RaceId = {YYYYMMDD}{Venue}{RaceIndex}`.
+
+**Dividends** (same results page; wired URL
+`https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`).
+Table = `div.dividend_tab` → first `<table>`; absent = non-race date or not yet declared. Rows with
+≥ 3 cells are `(pool, combination, dividend)`; skip header rows (pool `POOL`/`DIVIDEND`, or
+combination starting `winning`). Rows with exactly 2 cells continue the previous pool (row-spanned
+cell: PLACE and QUINELLA PLACE pay several combinations). Dividend: strip `,`, parse float, else
+null. Dividends are **HK$ per HK$10 unit** (decimal odds = dividend / 10). Page
+labels → codes: WIN→WIN, PLACE→PLA, QUINELLA→QIN, QUINELLA PLACE→QPL, FORECAST→FCT, TIERCE→TCE,
+TRIO→TRI, FIRST 4→FF, QUARTET→QTT, DOUBLE→DBL, TREBLE→TBL, DOUBLE TRIO→DT, TRIPLE TRIO→TT,
+SIX UP→`6UP` (GraphQL calls it `SixUP`: normalise before matching — the removed jackpot scanner
+filtered on `SixUP` and so never kept Six Up). **Jackpot history:** a DT/TT/Six Up dividend appears
+on the pool's final leg **only when won**; carryover meetings are inferred by absence over cards that
+offered the pool; the carried-in amount is not on result pages (capture `jpEsts` live, §1.3). The
+scanner walked races 1–11 per (date, venue), treating a failure on race 1 as "no meeting", with a
+0.1 s pause between meetings.
 
 ## 3. SpeedPro — JSON (current meeting only)
 
@@ -183,9 +598,12 @@ DIFFERENT part of the causal program (journal 0073 — they are complementary, n
 | `replay-full` | **Race film (RF)** | real, SIDE-ON tracking | longitudinal GAPS → MARGINS / beaten-lengths (→ the W'/spread surface); a clock-adjacent speed/section readout (velocity cross-check); legend strip; legible finish numbers. Lateral weak (foreshortened). |
 | `replay-patrol` | **Patrol** | real, FIXED high mount, head-on early | **FIXED camera ⇒ CONSTANT homography** (no per-frame rail jitter); **head-on ⇒ lateral = horizontal image coordinate directly**; the stewards' INTERFERENCE camera (bump/carried-wide events cross-check the official running commentary). Cleanest LATERAL geometry. Limits: 720p, head-on occlusion, identity head-on (bridge from finish), straight-only coverage. |
 
-Also live: `replay-aerial-virtual`, `trackwork`. The official per-horse **running commentary / stewards'
-trip notes** (the external lateral ground-truth: "caught wide", "bumped", "shifted across") are in the
-**results page HTML** (`...results...`), NOT the (JS-only, empty) sectional page — cache them alongside.
+Also live: `replay-aerial-virtual`, `trackwork`.
+The official per-horse **running commentary / stewards' trip notes** (the external lateral
+ground-truth: "caught wide", "bumped", "shifted across") are in the **results page HTML**
+(`...results...`) and, as one free-text line per runner, on the **`corunning`** page (recipe §2.2).
+They are not on the sectional page, which is server-rendered (not JS-only) but only answers with
+`racedate=DD/MM/YYYY` (§2). Cache them alongside.
 Morning track-work clips: `…/twstarter/{YYYY}/{YYYYMMDD}/{RR}/novo/twstarter_…_2500kbps.mp4`
 (`{RR}` zero-padded). Pundit tips: `…/tipsindex/tips_index.asp?RaceNo={n}`.
 
@@ -202,11 +620,16 @@ are bonus signals. (Not a priority now — recorded for when CV path-extraction 
 ## 5. Scraping discipline (don't get rate-limited)
 
 - **Odds poll:** ~90 s interval with ~10 s jitter (odds barely move faster except near
-  the off). **Concurrency ≤ 3.** Inter-request delay **80–250 ms** random. **Timeout
-  ~10 s.** Send a real browser `User-Agent` + matching `Origin`/`Referer`
+  the off). **Concurrency ≤ 3.** Inter-request delay **80–250 ms** random. **Timeouts used:** 10 s legacy `.aspx`, 20 s
+  modern HTML routes, 30 s GraphQL. Send a real browser `User-Agent` + matching `Origin`/`Referer`
   (`bet.hkjc.com` for GraphQL, `racing.hkjc.com` for HTML/JSON).
-- Library TTL caches: live races 1000 s, live odds 30 s, HTML pages 3600 s, SpeedPro
-  300 s — tune rather than hammer.
+- TTL caches: the results page is cached 3600 s in process (`historical._soupify`). The removed
+  clients used live card 1000 s, live odds 30 s, SpeedPro 300 s — reuse those rather than hammer.
+- **Backfills** (barrier trials by date, trackwork archive by horse): ~1 request/s, one retry after
+  2 s on a network error, then skip and log. The removed code kept no disk cache for any page except
+  the race facts (`data_cache/race_official/`); everything else was in-process TTL only.
+- **Missing values:** the old GraphQL parser turned unparseable ints into 0 and floats into NaN;
+  HTML parsers mapped `""`, `-`, `--` to null. Prefer null everywhere.
 
 ## 6. Gotchas (learned the hard way)
 
@@ -227,7 +650,7 @@ are bonus signals. (Not a priority now — recorded for when CV path-extraction 
 ## 7. Mining priority (highest unrealised value first)
 
 1. **`weather` GraphQL op** (§1.1) — per-section **wind vectors** + **soil-moisture** firmness.
-   Fills the model's single weakest cell (ENVIRONMENT), same endpoint already wired, plain-HTTP.
+   Fills the model's single weakest cell (ENVIRONMENT), same endpoint as §1, plain-HTTP.
    Highest leverage, lowest integration cost.
 2. **`racecard`** — the 27-field pre-race card (ratings + **rating moves** + gear +
    **body-weight deltas** + days-since-run + pedigree). Biggest single fetch; feeds every model.

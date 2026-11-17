@@ -4,12 +4,11 @@
 - :mod:`~hkjc.data.video`       the four replay MP4 feeds (URLs + cached download)
 - :mod:`~hkjc.data.silks`       official racing-silk images
 - :mod:`~hkjc.data.tracks`      track geometry (venue x surface x course widths, bends)
-- :mod:`~hkjc.data.historical`  results pages, dividends, horse form
+- :mod:`~hkjc.data.historical`  official results page (placings, times, running positions)
 - :mod:`~hkjc.data.sectional`   per-horse sectional times + positions
-- :mod:`~hkjc.data.racecard`    pre-race racecard
-- :mod:`~hkjc.data.live`        live cards / odds / pools (GraphQL)
-- :mod:`~hkjc.data.corunning`, :mod:`~hkjc.data.trackwork`, :mod:`~hkjc.data.barrier_trials`,
-  :mod:`~hkjc.data.jackpot_history`
+
+Other HKJC sources (racecards, live odds/pools, trackwork, barrier trials, dividends, horse form): fetch recipes in
+docs/HKJC_DATA.md and docs/HKJC_SPECS.md.
 """
 from .race import RaceInfo, Runner, race_info
 from .tracks import TrackGeometry, track_for
