@@ -3,16 +3,16 @@
 Latent per horse: positions on a common race-clock grid t_k (``DT`` = 0.1 s)
     s_k  metres run along the racing rail (s = distance - d),   l_k  metres outward of the racing rail.
 Prior (physics): bounded acceleration — second differences ~ N(0, (a_sd*DT^2)^2), much stiffer
-laterally (horses drift sideways slowly) than longitudinally.
+laterally than longitudinally, plus a lateral-velocity prior.
 Likelihood: each observation (t, s?, l?) from feed f with its own noise sd; linear interpolation
-between grid nodes. Geometry: l is box-bounded to [l_min, width - l_min] (outside the racing
-rail, inside the outer rail).
-MAP = sparse bounded linear least squares (``scipy.optimize.lsq_linear``); posterior sd from the
-unconstrained normal equations (a sound local approximation when the bound is inactive).
+between grid nodes. Geometry: l is bounded to [l_min, width - l_min] (outside the racing rail,
+inside the outer rail).
+MAP: s and l solved separately as banded normal equations by banded Cholesky (O(n)); the l bounds
+are enforced by penalty terms pinning violating nodes. Posterior sd from the unpenalised normal
+matrix, computed at every 10th node and interpolated.
 
-Association: tracklets without an identity are scored against each horse's posterior path
-(chi^2 of their observations) and assigned by Hungarian under a no-time-overlap rule, then the
-paths are re-fused (``fuse_race``).
+Association (``fuse_race``): anonymous tracklets are assigned greedily by posterior chi^2 with a
+margin and a same-feed no-time-overlap rule, then the paths are re-fused.
 """
 
 from __future__ import annotations
@@ -50,16 +50,14 @@ class Prior:
     l_min: float = 0.3  # m: a horse centre is at least this far outside the racing rail
     width: float = 30.0  # m: racing rail -> outer rail
     vl_sd: float = 2.0  # lateral-velocity prior (m/s): sideways drift is slow
-    # FIELD-RELATIVE start prior (final product): before ref_until (s, race clock) a horse's acceleration is
-    # a_sd_rel about the FIELD's reference curve (ref_t, ref_s) instead of a_sd_start about zero: out of the
-    # gate every horse follows the common acceleration; 0.63 m/s^2 per node = the clean races' measured
-    # horse-specific acceleration (~0.2 m/s^2 averaged over 1 s, white-noise scaled to DT 0.1 s).
+    # FIELD-RELATIVE start prior (final product): before ref_until (s, race clock) acceleration has sd
+    # a_sd_rel about the field's reference curve (ref_t, ref_s); 0.63 m/s^2 per node = measured
+    # horse-specific acceleration (~0.2 m/s^2 over 1 s, white-noise scaled to DT).
     ref_t: np.ndarray | None = None
     ref_s: np.ndarray | None = None
     ref_until: float = -np.inf
     a_sd_rel: float = 0.63
-    # (no along-track velocity prior: it decelerated paths toward a stop across end-of-race data gaps;
-    #  the acceleration prior alone extrapolates at constant speed)
+    # no along-track velocity prior: the acceleration prior alone extrapolates at constant speed
 
 
 @dataclass
@@ -75,14 +73,10 @@ class Path:
 
 
 def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd, a_ref=None):
-    """The same MAP problem as ``smooth.solve``, assembled DIRECTLY as a banded normal matrix (lower
-    bandwidth 2: interpolation rows touch 2 adjacent nodes, the acceleration prior 3, the velocity
-    prior 2) and solved by banded Cholesky -- O(n), no sparse construction or LU. Replaced an exact
-    sparse LU solve as a DECLARED NON-EXACT speedup: paths agree with the sparse path to
-    ~1e-8 m (variances 1e-12); per call 0.33 s -> 0.012 s; 26 races (Z4, seed 0) in 151 s, ~2x faster
-    end to end; gates identical on 26/26, detection labels identical on 23/26 (the EM flips 0.1-3.2 %
-    of labels on HV 04-15 R9, HV 04-29 R3, HV 06-03 R3 -- its known sensitivity, well below the 1 %
-    detection-drop seed perturbation)."""
+    """One coordinate's MAP path on n nodes from t0: banded normal matrix (lower bandwidth 2:
+    interpolation rows touch 2 nodes, the acceleration prior 3, the velocity prior 2) solved by banded
+    Cholesky. Bounds [lb, ub] by iterative penalty pinning; sd (if ``want_sd``) at every 10th node,
+    interpolated. -> (x, sd) or (None, None) without observations."""
     from scipy.linalg import cho_solve_banded, cholesky_banded
 
     ab = np.zeros((3, n))
@@ -187,10 +181,8 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
 
 def chi2_against(o: Obs, path: Path, logdet: bool = True):
     """Mean chi^2 per observation of an anonymous tracklet against a horse's posterior path + the mean
-    log det ratio (``logdet``): the full Gaussian -2 log-likelihood vs a tight prediction, as the E-step
-    scores (assoc.assign_frames). chi^2 alone lets a VAGUE, extrapolated path accept anything (HV 05-27
-    R3, seeds 2-3: #9, last and unread, took an anonymous fragment at 99.3-101.3 s and "crossed"
-    1.4-2.0 s early)."""
+    log det ratio (``logdet``): the full Gaussian -2 log-likelihood, as the E-step scores
+    (assoc.assign_frames). The log-det term stops a vague, extrapolated path accepting anything."""
     m = (o.t >= path.t[0]) & (o.t <= path.t[-1])
     if m.sum() < 3:
         return np.inf
@@ -278,10 +270,7 @@ def fuse_race(
     runner-up by ``margin``x, and must not overlap in time with the horse's tracklets from the SAME
     feed), then everything is re-fused. Returns ({horse: Path}, assignment {tid: horse})."""
     ts = np.concatenate([o.t for o in obs])
-    # the grid ends at the LATEST observation. REJECTED (2026-11-16): prior-only nodes past the data so
-    # a horse crossing at the very end gets a crossing node (ST 05-09 R2 #10: its camera obs at 70.749,
-    # grid end 70.77, path 0.2 m short): the extrapolated tails feed the EM (E-step, finish seeds,
-    # anchors) -- labels changed on most races (up to 4-6 %), and a 2 s tail lost a crossing a 1 s one kept.
+    # the grid ends at the latest observation (no prior-only tail: it would feed the EM)
     lo, hi = (ts.min(), ts.max()) if t_range is None else t_range
     t_grid = np.arange(lo, hi + DT / 2, DT)
     assign = {o.tid: o.horse for o in obs if o.horse > 0}
@@ -405,19 +394,18 @@ def _anchor_resid(anchors, path):
 
 def _anchor_z(anchors, path, common=None):
     """Largest HORSE-SPECIFIC |z| of a horse's anchors: the field's median residual at the same
-    anchor (``common`` {(feed, s): m}) is subtracted, so a common-mode render bias (e.g. +0.4 s for
-    every horse at R08's first boundary) is not mistaken for a mislabelled tracklet."""
+    anchor (``common`` {(feed, s): m}) is subtracted, so a common-mode render bias is not mistaken for
+    a mislabelled tracklet."""
     common = common or {}
     z = [abs(r - common.get((f, s_), 0.0)) / sd for f, s_, r, sd in _anchor_resid(anchors, path)]
     return max(z) if z else 0.0
 
 
 def _anchor_conflicts(obs, assign, paths, prior, t_grid, *, z_max=4.0, max_drop=3):
-    """IDENTITY-OUTLIER rejection driven by independent feeds. A render tracklet with a wrong label
-    drags its horse's path away from that horse's finish-camera crossing (R08 #8: 0.32 s early; the
-    camera's own gap was right to 0.06 s). When an anchor disagrees at > z_max sigma, the numbered
-    render tracklet whose removal best restores it (and at least halves the conflict) is returned
-    for demotion to anonymous; association then re-places it by chi^2. -> set of tids."""
+    """Identity-outlier rejection driven by independent feeds: a mislabelled render tracklet drags its
+    horse's path away from that horse's finish-camera/official anchors. When an anchor disagrees at
+    > z_max sigma, the numbered render tracklet whose removal best restores it (and at least halves
+    the conflict) is returned for demotion to anonymous. -> set of tids."""
     bad = set()
     per = {}
     for h, p in paths.items():
@@ -441,7 +429,7 @@ def _anchor_conflicts(obs, assign, paths, prior, t_grid, *, z_max=4.0, max_drop=
                 if o.feed != "render" or o.horse == 0:
                     continue
                 if n_render - len(o.t) < 0.5 * n_render0:
-                    continue  # never strip a horse below half its render data (R03: 2 path-less)
+                    continue  # never strip a horse below half its render data
                 rest = [x for x in mine if x is not o]
                 s_, sd_s, lat, sd_l, cnt = smooth(rest, prior, t_grid)
                 if s_ is None:

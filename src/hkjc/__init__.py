@@ -1,7 +1,7 @@
 """hkjc — HKJC race reconstruction.
 
 Two packages:
-- :mod:`hkjc.data`   everything read/downloaded from HKJC (results, sectionals, cards, replays, silks)
+- :mod:`hkjc.data`   what the reconstruction reads from HKJC (race facts, replays, silks, track geometry)
 - :mod:`hkjc.recon`  race info + the four replay videos -> reconstructed per-horse paths
 
 Subpackages are imported on demand (``import hkjc.data``), never eagerly here.

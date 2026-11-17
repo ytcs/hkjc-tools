@@ -1,12 +1,12 @@
 """Bind world tracklets to saddlecloth numbers.
 
-Two independent evidence sources, fused per tracklet:
-  1. LEGEND ORDER — the render's legend strip lists the top-8 runners left->right in running order.
-     On frames where every runner is tracked, the tracklet at longitudinal rank r votes for the
-     legend's slot-r number. (A rank is only trusted when all tracklets AHEAD of it are present.)
-  2. SILK COLOUR — rotation-invariant hue histograms of the detections; once some tracklets are
-     confidently numbered, the rest are matched by silk distance under a no-time-overlap constraint
-     (one horse cannot be two tracklets at once).
+Evidence per tracklet:
+  1. LEGEND ORDER — the render's legend strip lists the top-8 runners left->right in running order;
+     on frames where every runner is tracked, the tracklet at longitudinal rank r votes for the
+     legend's slot-r number, and ranks beyond the legend vote for the unlisted set.
+  2. SILK — an optional per-tracklet silk log-likelihood ratio.
+``assign_global`` fuses them in one integer program under a no-time-overlap constraint (one horse
+cannot be two tracklets at once).
 """
 
 from __future__ import annotations
@@ -86,36 +86,27 @@ def assign_global(
     valid=None,
     max_rank=8,
 ):
-    """Number the tracklets by the GLOBAL maximum-likelihood assignment (replaced a greedy
-    longest-first pass with a margin, ``assign``, at baseline Z5), with the set-valued elimination
-    evidence and the silk LLR below. Paired 6-seed
-    ensembles on 26 races vs Z4b (rule declared before the run): non-lateral gates 200.33 = 200.33,
-    lateral 10 = 10, idscore rho 0.954 -> 0.966 (+0.013, better on 6/6 seeds), hand majority (8 races,
-    151 detections) 108 -> 113; audit legend rank 266 -> 214, finish-order inversions 13.8 -> 9.0.
+    """Number the tracklets by the global maximum-likelihood assignment, with the set-valued
+    elimination evidence and the silk LLR.
 
     Each legend vote names the tracklet's horse correctly with probability rho, otherwise one of
     the other N-1 numbers uniformly. Labelling tracklet t with ``num`` instead of leaving it
     unlabelled gains the log-likelihood ratio against a uniform label:
         G[t, num] = v_num log(rho N) + (V_t - v_num) log((1 - rho) N / (N - 1)),
-    which grows with the evidence (200 votes outweigh 2; ``assign`` normalised them to the same
-    scale). An integer program maximises sum G subject to: at most one number per tracklet, and a
-    number on at most one tracklet at any frame (interval-graph cliques). Labels with G <= 0 stay 0.
-    No greedy order and no margin. rho is re-estimated from the labelled tracklets (votes agreeing
-    with the label / all their votes) until the labels stop changing.
-    MEASURED (6-seed ensembles, V artifacts): ``assign`` turned legend-argmax labels that were
-    72-100 % unanimous across 1 %-detection-drop seeds into 38-99 %; its silk term changed nothing.
+    which grows with the evidence (200 votes outweigh 2). An integer program maximises sum G subject
+    to: at most one number per tracklet, and a number on at most one tracklet at any frame
+    (interval-graph cliques). Labels with G <= 0 stay 0. rho is re-estimated from the labelled
+    tracklets (votes agreeing with the label / all their votes) until the labels stop changing.
 
     SET-VALUED elimination evidence (``elim``/``n_elim`` from ``legend_votes(parts=True)``; then
     ``votes`` holds the slot votes only): a frame where tracklet t ranks beyond a fully read top-8
     says "t is one of the m = N - 8 unlisted numbers" (true with probability rho_e, re-estimated
     like rho): LLR log(rho_e N / m) for each number in the set, log((1 - rho_e) N / (N - m)) for
-    each listed one. WHY: fed as fractional votes (1/m each, the ``assign`` encoding) the uniform-
-    confusion model reads (m-1)/m of every elimination vote as evidence AGAINST each candidate, so
-    back-markers (no slot votes at all) can never be numbered -- the whole-horse losses of the first
-    global-assignment ensemble (ST4 #3/#6/#10/#12/#14, ST7 #3/#7/#9/#10, ST 05-31 #3/#7/#11 in s0); it
-    dropped them identically with the silk term switched off. ``extra``: finish-camera votes, added
-    as slot evidence but kept out of the rho estimate (40 agreeing votes per name pinned rho at its
-    0.99 bound on ST4). ``valid``: runner numbers (scratched numbers are not in the universe)."""
+    each listed one. (As fractional votes the uniform-confusion model would read most of each
+    elimination vote as evidence against every candidate, so back-markers could never be numbered.)
+    ``extra``: finish-camera votes, added as slot evidence but kept out of the rho estimate (their
+    many agreeing votes would pin rho at its bound). ``valid``: runner numbers (scratched numbers are
+    not in the universe)."""
     from scipy.optimize import Bounds, LinearConstraint, milp
 
     T = len(members)
@@ -157,9 +148,7 @@ def assign_global(
                 + E * np.log(rho_e * Nu / m_set)
                 + (ne - E) * np.log((1 - rho_e) * Nu / (Nu - m_set))
             )
-        # silk_llr: appearance evidence, only where the legend has spoken at all. The FIRST version
-        # (elimination fed as fractional votes) failed its rule: non-lateral 200.3 -> 197.5, hand 68 ->
-        # 60, idscore 0.954 -> 0.942 (whole back-markers unnumbered); see SET-VALUED above.
+        # silk_llr: appearance evidence, only where the legend has spoken at all
         if silk_llr is not None:
             spoken = tot + totx + (ne if sets else 0.0)
             G = G + np.where(spoken > 0, silk_llr[:, :N], 0.0)

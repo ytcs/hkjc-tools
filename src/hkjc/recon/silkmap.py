@@ -1,11 +1,9 @@
 """Learned OFFICIAL-silk -> RENDER-silk appearance map (collapsed v2 signature, ``assoc._collapse``).
 
-The aerial render draws silks on small top-down avatars, desaturated and lit differently from the
-official silk images, so official prototypes match render tracklets only moderately (top-1 33 %,
-pairwise 78 % on legend-confident tracklets). This ridge map (alpha 1, with intercept) was fitted on
-the 187 legend-confident tracklets (top vote >= 20 and >= 3x the runner-up; labels from the LEGEND,
-no official data) of the 26 development turf races (data_cache/ens_rawV/s0). Leave-one-race-out:
-top-1 47 %, pairwise 88 %. render_signature ~ [official_signature, 1] @ SILK_MAP.
+The render draws silks on small top-down avatars, desaturated and lit differently from the official
+silk images. This ridge map (alpha 1, with intercept) is fitted on legend-confident tracklets (top
+vote >= 20 and >= 3x the runner-up; labels from the render LEGEND, no official outcome data);
+leave-one-race-out top-1 47 % vs 33 % unmapped. render_signature ~ [official_signature, 1] @ SILK_MAP.
 """
 
 SILK_MAP = [
@@ -28,8 +26,8 @@ SILK_MAP = [
 
 # Tracklet-level silk LOG-LIKELIHOOD RATIO as a function of the total-variation distance between the
 # tracklet's mean render signature and the MAPPED official prototype: LLR(tv) = A + B * tv, clipped to
-# +-CLIP. Fitted (linear in 16 histogram bins) on 201 true / 2251 false pairs of legend-confident
-# tracklets (26 races, Z4 seed 0; labels from the legend): +2.3 nats at tv 0.1, 0 at tv 0.35, -3 beyond.
+# +-CLIP. Fitted on true/false pairs of legend-confident tracklets (labels from the legend): +2.3 nats
+# at tv 0.1, 0 at tv 0.35, -3 beyond.
 SILK_LLR_A = 2.24
 SILK_LLR_B = -6.37
 SILK_LLR_CLIP = 3.0

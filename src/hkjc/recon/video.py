@@ -104,7 +104,8 @@ def render_active(panel, *, relaxed: bool = False) -> bool:
           TRACK_LAP_MIN).
 
     The legend (1) flickers on during the dissolve, so (2)+(3) reject the blended frames it lets
-    through. numpy/cv2 lazy-imported.
+    through. ``relaxed`` (only after the strict test has passed in this replay) also accepts >= 5
+    legend boxes in a strip widened to 0.60 of the height.
     """
     import cv2
     import numpy as np
@@ -122,14 +123,9 @@ def render_active(panel, *, relaxed: bool = False) -> bool:
             1 for k in range(1, n) if st[k, cv2.CC_STAT_AREA] > 120 and st[k, cv2.CC_STAT_WIDTH] > 8
         )
 
-    # The legend's height varies by race layout: on ST 0419 R4 / 0426 R9 it sits at ~0.67 of the
-    # frame, so only the bottom 4-8 px of its boxes entered the 0.70-0.86 strip and the gate
-    # flickered OFF for whole stretches (ST9: 336 race frames, ~13 s; ST4: 84 -> every tracklet broke
-    # at 432 m out). Fallback (``relaxed``, only once the strict test has passed in this replay, so it
-    # fills holes INSIDE the render segment): >= 5 boxes in a strip widened to 0.60 (MEASURED: legend
-    # frames show 6-12 there, pre-race live frames <= 3). REJECTED: the widened strip with >= 1 box
-    # (admitted 11-65 pre-race live frames per race); the fallback before the first strict frame
-    # (admitted a dissolve-tail frame of HV 0527 R3, which flipped its result 5/5 -> 2/5; px/m unchanged).
+    # The legend height varies by race layout (~0.67 of the frame on some ST races), so the strict
+    # 0.70-0.86 strip can miss it; the relaxed 0.60 strip needs >= 5 boxes (legend frames show 6-12
+    # there, pre-race live frames <= 3) and only fills holes inside the render segment.
     strict = legend_boxes(0.70, 0.86) >= 1
     if not strict and not (relaxed and legend_boxes(0.60, 0.86) >= 5):
         return False
@@ -150,27 +146,15 @@ def grid_keep(idx) -> np.ndarray:
     that is already kept.
 
     The render updates at exactly 10 Hz in 25 fps video, so new ticks start at two fixed residues of
-    ``frame % 5`` for a whole replay. MEASURED on all 26 races: one phase fits 99.9-100 % of the
-    yielded frames, and the first 40 ticks already give the same residues as the whole race. The
-    residues come from a majority vote over the whole replay; nothing is dropped if the top two do
-    not hold >= 90 % of the frames or are not 2-3 frames apart (not a 10 Hz render).
+    ``frame % 5`` for a whole replay (found by majority vote; nothing is dropped if the top two hold
+    < 90 % of the frames or are not 2-3 frames apart, i.e. not a 10 Hz render).
 
     An off-grid frame is dropped only when the on-grid start of its tick (the latest on-grid frame
-    at or before it) was yielded too: then it is a re-encode of that tick. HV 04-22 R1/R9 have a
-    video keyframe every 100 frames, with codec noise 3.8 > tolerance 3.0, so 14 zero-motion
-    "ticks" per race came in. Any OTHER off-grid frame is kept: the first render frame, and the
-    first frame after a render-gate dropout, are the ONLY copy of a real tick (stamped 1-2 frames
-    late).
-    REJECTED: dropping every off-grid frame (pod run X). It removed the first frame after finish-zone
-    dropouts, so finish-short horses went 34 -> 39. ST 05-24 differs only by three dropped frames
-    (301, 2427, 2466): its winner flipped and the hand set fell 15 -> 10/19.
-    Filtering the de-dup stream AFTERWARDS is exact. A dropped keyframe stays the duplicate
-    reference for the next frame, so the next real tick is compared against the keyframe's codec
-    noise and passes as it did before.
-    REJECTED: ``skip_gap1`` (drop a frame 1 after the last one, keep the old reference). The frame
-    after the keyframe then differed from the stale reference by the keyframe's noise and entered as
-    a zero-motion tick, and the next real ticks were stamped 1 frame late: HV 04-22 index
-    399,401,403,405 instead of 399,402,404; stalls 14 -> 14 per race (pod run W)."""
+    at or before it) was yielded too: then it is a re-encode of that tick (e.g. a video keyframe
+    whose codec noise exceeds the de-dup tolerance). Any other off-grid frame is kept: the first
+    render frame and the first frame after a render-gate dropout are the only copy of a real tick
+    (stamped 1-2 frames late). Filtering the de-dup stream afterwards is exact: a dropped keyframe
+    stays the duplicate reference for the next frame."""
     idx = np.asarray(idx, dtype=np.int64)
     r = idx % 5
     n = len(r)
@@ -227,9 +211,9 @@ def iter_unique_render(
 
 # ----------------------------------------------------------------------------- frame cache
 class FrameCache:
-    """Unique render panels decoded ONCE (JPEG q92 in one binary file + offsets) — every later
-    stage reads this instead of re-decoding the 1080p MP4 (was 4 full decodes + render gating per
-    race). Also stores the left-panel race-clock crop per frame."""
+    """Unique render panels decoded once (JPEG q92 in frames.bin + offsets in frames_idx.npz) so later
+    stages never re-decode the 1080p MP4. Also stores the left-panel race-clock crop per frame
+    (frames_clock.npy)."""
 
     def __init__(self, root):
         from pathlib import Path

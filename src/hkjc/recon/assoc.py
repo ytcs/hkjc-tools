@@ -1,8 +1,7 @@
 """Detection-level association by EM against the continuous fused paths.
 
-Frames are not independent: every horse is one continuous trajectory. Instead of fixing identity on
-tracker fragments (a fragment carries one label for life; a swap or break poisons it), every
-DETECTION is re-assigned each iteration:
+Every horse is one continuous trajectory, so every DETECTION (not tracker fragment) is re-assigned
+each iteration:
 
   E-step  per frame, one joint assignment of all detections to all horses (Hungarian; at most one
           detection per horse, a "clutter" option per detection) with cost =
@@ -101,9 +100,8 @@ def assign_frames(
         pl = PL[fi, cols]
         vs = PVS[fi, cols] ** 2 + sd_s**2
         vl = PVL[fi, cols] ** 2 + sd_l**2
-        # full Gaussian -2 log-likelihood relative to a tight prediction: chi^2 + log det ratio. A
-        # horse whose path is VAGUE (out of view, extrapolated) must pay for it, or it steals any
-        # nearby detection (HV 0527 #9, tailed off 3.4 s behind: path ended 2.8 s early).
+        # full Gaussian -2 log-likelihood: chi^2 + log det ratio, so a vague (extrapolated) path pays
+        # for its width instead of stealing nearby detections
         C = (s[js][:, None] - ps) ** 2 / vs + (lat[js][:, None] - pl) ** 2 / vl
         C = C + np.log(vs * vl / (sd_s**2 * sd_l**2))[None, :]
         if near_line is not None:
@@ -121,13 +119,8 @@ def assign_frames(
         if leg is not None:
             sj = s[js]
             ahead = (sj[None, :] > sj[:, None] + RANK_EPS).sum(1)  # detections ahead (vectorised)
-            # HARD exclusions (RANK_COST + forbid_out) need a CERTAIN ahead-count: ahead by more than
-            # the E-step's 4 sigma on a difference of two detections (sqrt(CLUTTER * 2) * sd_s = 4.5 m).
-            # Since baseline Z8 (was: the 0.6 m RANK_EPS). MEASURED (ST 04-26 R1,
-            # t 40.02): two dets 0.9 m apart counted the second as "clearly" 4th and hard-excluded the
-            # legend's 3rd (#9, positional cost 1.6) and 4th (#14, 7.6) -- correct identify labels left
-            # unassigned. 26 x 6 vs Z7: hand majority 118 -> 121 (ST 04-26 R1 6 -> 8), idscore +0.004
-            # (6/6 seeds), non-lateral -0.17 (SE 0.17; ST4's borderline sectional on 1 seed).
+            # HARD exclusions (RANK_COST + forbid_out) need a certain ahead-count: ahead by more than
+            # 4 sigma on a difference of two detections (sqrt(CLUTTER * 2) * sd_s = 4.5 m)
             ahead_h = (sj[None, :] > sj[:, None] + np.sqrt(CLUTTER * 2.0) * sd_s).sum(1)
             # horses whose TIGHT posterior is ahead of each detection (completes undetected ones)
             tight = np.sqrt(vs - sd_s**2) < 2.0
@@ -141,15 +134,13 @@ def assign_frames(
                     for i in np.where(ahead_h > r)[0]:
                         forbid_out.setdefault(int(js[i]), set()).add(int(num))
                 # TWO-SIDED where the rank is confident (detected ahead == posterior ahead): a
-                # detection of known rank q must not take the legend's rank-r horse, r != q. The
-                # one-sided form never ATTRACTED, so tail labels drifted (HV 0527 '#9' in 5th).
+                # detection of known rank q must not take the legend's rank-r horse, r != q
                 conf = (ahead == post_ahead) & (ahead != r)
                 C[conf, col] += RANK_SOFT
             # NEGATIVE legend evidence: a fully read top-max_rank legend that does NOT list horse h
             # says h ranks below max_rank. A detection with at most ``ub`` horses possibly ahead
             # (every detection ahead + every undetected horse + 1 for a false positive) is surely
-            # inside the top max_rank, so it cannot be h. HV 0520 #8 (outside the legend until 88 s)
-            # held a detection ranked 2-3 of 8-9 detected for ~50 s -> 2 s early at 1200/800 m.
+            # inside the top max_rank, so it cannot be h.
             listed = {int(x) for x in leg[:max_rank] if x > 0}
             if len(listed) == max_rank:
                 nf = n_field or len(ok)
@@ -158,13 +149,8 @@ def assign_frames(
                 inside = ub < max_rank
                 # ... and h runs behind EVERY listed horse: a detection ahead of the rearmost TIGHT
                 # posterior among the listed horses cannot be h (a vague listed horse could only be
-                # further back, so the bound stays valid). The count bound alone left #8 on stray
-                # detections in frames with only ~7 of 12 horses detected. Margin FLOOR_EPS, not
-                # RANK_EPS: rail-projected s and the legend's ranking disagree by a few metres (HV
-                # 0603 R3: #10/#5, closing from 9th-10th, sat 2-5 m "ahead" of the legend's 8th and
-                # lost every detection with 0.6 m; cause not established — lateral offset, rail
-                # curvature or legend lag). Ensemble: 4, 8 and 16 m equivalent; rule off -> HV 0520
-                # sectional 0.147 -> 0.187 s.
+                # further back, so the bound stays valid). Margin FLOOR_EPS: rail-projected s and the
+                # legend's ranking disagree by a few metres.
                 lt = [c for c, h in enumerate(ok) if h in listed and tight[c]]
                 if lt:
                     inside |= s[js] > ps[lt].min() + FLOOR_EPS
@@ -177,14 +163,9 @@ def assign_frames(
                         for i in np.where(inside)[0]:
                             forbid_out.setdefault(int(js[i]), set()).update(out)
             # RANK ATTRACTION in the final stretch: a detection whose ahead-count equals a listed
-            # horse's legend rank costs that horse at most RANK_ATTR. MEASURED (26 turf races,
-            # in-sample): unread horses lose their detections near the line because their path is
-            # extrapolated at constant speed from the last own detection while the horse slows --
-            # their real detections sit 7-13 m BEHIND (not duplicates; 3.5-10 m from any assigned
-            # one) at chi^2 ~22 > CLUTTER, with sd ~1.3 m (overconfident). Final 100 m only: ST9
-            # rho 0.89 -> 1.00 on 6/6 seeds, ST4 sectional 0.476 -> 0.441, gates 202 -> 205.
-            # REJECTED: whole race (ST3 straight sectional 0.174 -> 0.266); only non-tight horses
-            # (sd >= 2: never fired for ST9 #5). Known bad: HV 0527 R9 #7 placed 0.88 s early.
+            # horse's legend rank costs that horse at most RANK_ATTR: an unread horse's path is
+            # extrapolated at constant speed while it slows, so its real detections sit 7-13 m behind
+            # at chi^2 > CLUTTER.
             if s_line is not None:
                 near = s[js] >= s_line - RANK_ATTR_M
                 for r, num in enumerate(leg[:max_rank]):
@@ -206,9 +187,8 @@ def assign_frames(
 
 def fragment_forbid(forbid, idx, frac=None):
     """Horses excluded for a tracklet fragment: those the HARD legend costs excluded on at least
-    ``frac`` of its detections (a conservative default against one frame's noise, e.g. a clutter
-    detection ahead inflating the rank count). MEASURED: indistinguishable from the union over its
-    detections on a 6-race perturbation ensemble (HV 0603 R3's lost #10/#5 were the floor margin)."""
+    ``frac`` of its detections (guards against one frame's noise, e.g. a clutter detection ahead
+    inflating the rank count)."""
     from collections import Counter
 
     frac = 0.5 if frac is None else frac
@@ -221,14 +201,6 @@ def release_post_finish(lab, t, s, s_line, forbid=None, *, sd_s=0.8):
     LATER than its first own detection past the line (s > s_line) that lie more than sqrt(CLUTTER) x
     sd_s (4 sigma = 3.2 m: the E-step's own unassigned threshold) before the line are set anonymous,
     and the horse is forbidden for them (``forbid`` {det: set}, which travels with the fragment).
-    MEASURED (ST 05-24 R1, Z6): two back-marker detections of an unnumbered tracklet (t 96.7 / 97.4, d
-    16.6 / 7.7) went to #7 after its own detections ended at d -7.3 (t 95.84); runs_to_obs merged them
-    into #7's single render run, the Gaussian smoother bent the path end 0.36 s late against its
-    finish-camera anchor (sd 0.19 m), the anchor check could not demote a horse's only render run,
-    and the late crossing dragged the camera clock fit (95.11 vs official 95.04) so the unanchored
-    #14 out-ran #1 (official short head). Census (Z6, 6 seeds): 4-6 such detections per seed in 2
-    races. A general monotone-progress rule was REJECTED before building: field-wide pose slips
-    (several horses reversing together, ST4 77.5 s, ST3 27 s) are not identity errors.
     -> (labels, number released)."""
     lab = lab.copy()
     margin = np.sqrt(CLUTTER) * sd_s
@@ -249,7 +221,7 @@ def release_post_finish(lab, t, s, s_line, forbid=None, *, sd_s=0.8):
     return lab, n
 
 
-RUN_MIN = 3  # detections; shorter runs are dropped (keeping them: rejected, see RECON)
+RUN_MIN = 3  # detections; shorter runs are dropped (singletons near the line drag the camera clock)
 
 
 def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, tid0=50_000):

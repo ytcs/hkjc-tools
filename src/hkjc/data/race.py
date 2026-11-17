@@ -1,6 +1,7 @@
 """One race's facts, bundled: meeting/course geometry, runners (number, brand id, draw) and the
-official outcome. Pre-race facts (distance, course, draw, silks) may feed a reconstruction; the
-official outcome (placings, times, sectionals, running positions) is VALIDATION-ONLY."""
+official outcome. Pre-race facts (distance, course, draw, silks) may feed any product; the official
+outcome (placings, times, sectionals, running positions) must not feed the video-only product (the
+final product may use it)."""
 
 from __future__ import annotations
 
@@ -33,8 +34,8 @@ class RaceInfo:
     going: str
     race_class: str
     runners: tuple
-    results: pl.DataFrame = field(repr=False, compare=False)  # official (validation only)
-    sectionals: pl.DataFrame = field(repr=False, compare=False)  # official (validation only)
+    results: pl.DataFrame = field(repr=False, compare=False)  # official outcome: never an input to the video-only product
+    sectionals: pl.DataFrame = field(repr=False, compare=False)  # official outcome (same contract)
 
     @property
     def key(self) -> str:

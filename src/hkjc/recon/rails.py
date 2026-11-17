@@ -1,10 +1,10 @@
 """Rails, track frame and distance metric on the static world map: racing rail -> (s, lateral) coordinates.
 
-Rails are extracted ONCE from the mosaic (horses averaged out), as 1-D ridge peaks on NORMAL
-PROFILES taken at stations along the smoothed camera path, linked across stations by dynamic
-programming. The racing (movable) rail is the line the field runs just OUTSIDE of: the innermost
-horses bound it from outside, so the rail = the strongest thin-bright ridge a short way inside them.
-The INNER side is the right of travel (HK racing is clockwise; see ``inner_side``).
+Rails are extracted once from the mosaic (horses averaged out) as ridge peaks on normal profiles at
+stations along the smoothed camera path, linked across stations by dynamic programming. The racing
+(movable) rail is the first thin bright ridge just inside the innermost horses. The inner side is the
+right of travel (HK turf racing is clockwise; see ``inner_side``). Map units are world px; d(s) converts
+to metres to go.
 """
 
 from __future__ import annotations
@@ -43,32 +43,17 @@ def inner_sign(T: np.ndarray) -> int:
 
 def inner_side(T: np.ndarray, handedness: str | None = None) -> int:
     """The racing rail's side of travel (+1 right / clockwise, -1 left / anti-clockwise).
-    1. The camera path TURNS decisively (|summed turning| >= a quarter turn): its measured sign --
-       physical, so clockwise and anti-clockwise races are both handled without a table. MEASURED (26
-       turf races): ovals |sum| 2.7-8.8 rad.
-    2. Otherwise (a STRAIGHT: the three Sha Tin 1000 m races |sum| < 0.2) the sign is noise and comes
-       from the race's ``handedness`` ("left" -> -1, else +1: on the HKJC straight stall 1 is on the
-       right of travel).
-    REJECTED: the bare turning sign on straights -- ST 0419 R3 and ST 0509 R1 flipped between two
-    runs of the same video (pose differing only by the avatar mask), ST8 was -1 in both. With -1 the
-    "rail" was the other band edge -- on ST 0509 R1 it traced the mosaic's warped coverage boundary
-    and dipped 15-25 m before the line, sliding the whole field ~3.5 m laterally, so association
-    scrambled (#4 ended on a back-marker, 3.4 m short) -- and the draw prior put stall 1 on the wrong
-    side (draw-vs-lateral rho +0.73 with +1, -0.21 with -1; on the +1 roots ST 05-09 R1 +0.5..+0.9
-    on 12/12 runs, ST8 +0.2..+0.7 on 11/12, ST3 ~0 where identity is weakest). 6-seed ensembles on
-    the 3 straights x 2 pose variants: all gates 285 -> 286 (ST 0509 R1 45 -> 48, rho 1.00 on every
-    seed; ST3 rho 0.91 -> 0.98; ST8 rho 0.92-0.95 -> 0.98-1.00 and behind-winner 0.055 -> 0.025 s,
-    but its close #2/#12 finish flipped on 1 of 6 seeds). Turf racing is clockwise (working
-    assumption): on every oval the measured sign is +1 anyway; it is kept as a physical check rather
-    than a hard-coded constant."""
+    On a turning course: the measured turning sign of the camera path (ovals turn 2.7-8.8 rad; every
+    oval measures +1). On a straight (``is_straight``) the turning sign is noise, so it comes from
+    ``handedness`` ("left"/"anti..." -> -1, else +1: on the HKJC straight stall 1 is right of travel)."""
     if not is_straight(T):
         return inner_sign(T)
     return -1 if (handedness or "").lower().startswith(("left", "anti")) else 1
 
 
 def is_straight(T: np.ndarray) -> bool:
-    """The camera path never turns decisively (|summed turning| < a quarter turn). MEASURED (26 turf
-    races): ovals 2.7-8.8 rad, the three Sha Tin 1000 m straights < 0.2 (see ``inner_side``)."""
+    """The camera path never turns decisively (|summed turning| < a quarter turn; ovals turn
+    2.7-8.8 rad, the Sha Tin 1000 m straights < 0.2)."""
     cross = T[:-1, 0] * T[1:, 1] - T[:-1, 1] * T[1:, 0]
     return abs(float(np.sum(np.arcsin(np.clip(cross, -1.0, 1.0))))) < np.pi / 2
 
@@ -99,8 +84,7 @@ def ridge_response(L, S, V, half_w: int = 2, ctx: int = 6, along: int = 15):
 
     core = uniform_filter1d(L, 2 * half_w + 1, axis=1)
     sm = uniform_filter1d(L, ctx, axis=1)
-    # a thin line is darker on BOTH sides: compare with the BRIGHTER side (the mean of the two sides
-    # passes bright->dark step edges, e.g. the turf/apron boundary that captured the R02A rail fit)
+    # a thin line is darker on BOTH sides: compare with the brighter side (the mean passes step edges)
     side = np.maximum(np.roll(sm, half_w + ctx, axis=1), np.roll(sm, -(half_w + ctx), axis=1))
     from scipy.ndimage import minimum_filter1d
 
@@ -123,20 +107,8 @@ def dp_track(R, offs, prior_hi, *, jump: float, lam: float = 0.4, min_r: float =
     the rail must lie INSIDE it (offset > prior_hi + margin is required by caller via R masking).
     Returns offset per station (NaN where no support)."""
     N, M = R.shape
-    # BINARY score (since baseline Z4, together with the near cost, robust_offset, smooth_rail gap
-    # weight 0.1 and fusion's logdet; replaced the raw brightness score): every credible ridge scores +1, so the Viterbi
-    # rewards CONTINUITY, not brightness. MEASURED: the raw score abandoned the thin movable rail for
-    # the brighter fixed rail / apron edge ~6.6 m inside, bridged by a straight diagonal across open
-    # turf (ST 05-31 and ST7 chute junctions, HV 04-22 R1 bend exit), giving field-wide lateral
-    # "slides" of 4-6 m/s; on the ST 05-31 bend the raw rail followed the FIXED rail for ~4700
-    # stations while the field ran outside the movable one (pixels, 2x). Binary follows the movable
-    # rail and fixed ST 04-26 R1's marker grid (FINISH was on the 50 m marker). 26 races x 6 seeds
-    # (rule declared before reading): hand-truth majority 57 -> 60 (null spread 3), per-seed mean
-    # 50.7 -> 59.3 (ST 05-24 19/19 on every seed); but non-lateral gates 198.0 -> 193.8 per seed:
-    # ST 04-26 R1 (0.05 s finish now #9 on 5/6 seeds, seeds 3-5 collapse), HV 05-27 R9 finish-n
-    # (honest: the misplaced 10th horse is dropped), ST8 #2/#12 flips; HV 04-15 R1 lost its marker
-    # grid (two marginal peaks); lateral 10/1 -> 10/3 (ST course-B races now measurable: 6.6 m vs
-    # table 4.5 on both, correct rail in pixels).
+    # binary score: the Viterbi rewards continuity, not brightness (a brightness score jumps to the
+    # brighter fixed rail / apron edge inside the movable rail)
     score = np.where(R >= min_r, 1.0, -1.0)
     # cost per px inside the field's inner edge -- the racing rail is the FIRST rail inside the
     # horses, not a brighter line further in (fixed rail, apron edge)
@@ -179,10 +151,9 @@ class RailFrame:
 
     @classmethod
     def from_points(cls, R, inner, win=121):
-        """Rail position AND normals from a local cubic fit over ``win`` stations (~12 m): real rails
-        are smooth over tens of metres; per-station ridge snaps wobble (R02A ~0.1 m rms at ~9 m
-        wavelength) and differentiating that wobble made the normals noisy (amplified at 5-10 m
-        offsets -> lateral/d noise for wide runners). REJECTED: Gaussian sigma=3 stations."""
+        """Rail position and normals from a local cubic fit over ``win`` stations (~12 m): rails are
+        smooth over tens of metres, and differentiating per-station ridge wobble makes noisy normals
+        (amplified into lateral/d noise for wide runners)."""
         from scipy.signal import savgol_filter
 
         if len(R) > win + 2:
@@ -300,12 +271,10 @@ def tick_events(fu, s_lead, odo):
 
 
 def fit_marker_grid_seeded(ss, resp, ev_s, ev_v, *, spacing_m=50.0, kmax=8, rel=0.08, win_m=60.0):
-    """Marker grid SEEDED by the odometer ticks (owner's prior: markers are exactly 50 m apart):
-    scale within +-rel of the ticks' zone scale (tick px/m 3-4 % above paint px/m: the HUD counts
-    FEWER metres than the paint), FINISH within +-win_m of the tick-predicted finish; peaks at low
-    thresholds, scored by response.
-    The unseeded fit locked onto a coverage-edge artefact as FINISH on HV 0429 and read the true
-    markers as map-scale drift. -> (ppm, sF, ks, ps) or None."""
+    """Marker grid seeded by the odometer ticks (markers are exactly 50 m apart): scale within +-rel
+    of the ticks' zone scale (tick px/m runs 3-4 % above paint px/m: the HUD counts fewer metres than
+    the paint), FINISH within +-win_m of the tick-predicted finish; low-threshold peaks scored by
+    response. -> (ppm, sF, ks, ps) or None."""
     from scipy.signal import find_peaks
 
     zone = (ev_v > 0) & (ev_v < 400)
@@ -327,7 +296,7 @@ def fit_marker_grid_seeded(ss, resp, ev_s, ev_v, *, spacing_m=50.0, kmax=8, rel=
             ok = (np.abs(k - kr) * step < tol) & (kr >= 0) & (kr <= kmax)
             if ok.sum() < 3 or len(np.unique(kr[ok])) < ok.sum():
                 continue
-            # prior: paint scale ~ tick-zone scale / 1.035 (MEASURED HUD/paint ratio), sd 3 %
+            # prior: paint scale ~ tick-zone scale / 1.035 (measured HUD/paint ratio), sd 3 %
             sc = w[ok].sum() + 0.2 * ok.sum() - 0.5 * ((ppm * 1.035 / ppm_t - 1) / 0.03) ** 2
             if best is None or sc > best[0]:
                 best = (sc, kr[ok].astype(int), pos[ok])
@@ -353,10 +322,8 @@ def time_local_shift(tf, d_lead, odo, *, res_m=None, min_ticks=None):
     odometer per frame. At each tick event (V+10 -> V) the residual r = d_lead - V (minus its median,
     i.e. the convention/lag offset); runs of >= ``min_ticks`` consecutive ticks with |r| > ``res_m``
     (+- one tick) get shift(t) = r interpolated in time, tapered to 0 over one tick at both ends.
-    MEASURED (pixels + ticks): on two of the three 1000 m straights the render camera swings 180 deg at
-    t ~ 28-32 s and the pose solve slips per frame: ST 0419 R3 r = -29 m at 30.2 s -> +26 m at 33.4 s
-    (after the d(s) refit), ST 0509 R1 -14 -> +16; ST 0607 R8 one tick at -10. Labelled detections fall to
-    0-6 % in that window. Every other race: no run of 3 ticks > 10 m. -> (shift per frame, n_windows)"""
+    Fires on the 1000 m straights, where the render camera swings 180 deg at t ~ 28-32 s and the pose
+    slips per frame (up to ~+-28 m). -> (shift per frame, n_windows)"""
     res_m = TIME_RES_M if res_m is None else res_m
     min_ticks = TIME_MIN_TICKS if min_ticks is None else min_ticks
     o = clean_odometer(odo)
@@ -423,17 +390,15 @@ def calibrate_distance_ticks(
 ):
     """Distance-to-go d(s) from odometer TICK events ALONE (in-video; no painted markers needed).
 
-    The display is a round-up readout: it ticks V+10 -> V as the leader REACHES V, so at a tick the
-    leader's true distance-to-go = V + c. The convention c is a property of the render software,
-    measured against the painted markers on two races (R08 -0.55 m, R03 +0.42 m) -> c = 0.
-    Model: a robust global line through the ticks (scale + finish position, replacing the marker
-    grid, which mis-assigned markers on some races: R02A/HVB) + a smooth cubic-spline correction B(s)
-    for slow map-scale drift (2nd-difference penalty: linear trends stay free).
-    ``ppm0``/``sF`` (marker estimates) are only an initial guess — unless ``pin_finish`` (True/False;
-    None = auto): the painted FINISH line is then the exact d=0 anchor. Auto pins only when the
-    marker grid is CONSISTENT with the ticks (marker-zone offset |c_m| < 3 m and ppm within 3%) — a
-    cross-feed check; a mis-assigned marker grid fails it and falls back to the ticks. Returns
-    (d_of_s, c, ppm_local, resid_at_ticks, (ppm_odo, sF_odo))."""
+    The display is a round-up readout: it ticks V+10 -> V as the leader reaches V, so at a tick the
+    leader's true distance-to-go = V + c (c: the render's convention, default 0).
+    Model: a robust global line through the ticks (scale + finish position) + a smooth cubic-spline
+    correction B(s) for slow map-scale drift (2nd-difference penalty: linear trends stay free).
+    ``ppm0``/``sF`` (marker estimates) are only an initial guess unless ``pin_finish`` (True/False;
+    None = auto): the painted FINISH line is then the exact d=0 anchor. Auto pins only when the marker
+    grid is consistent with the ticks (zone offset within 6 m after resolving whole-marker shifts,
+    scale within 8 %); a mis-assigned grid fails and falls back to the ticks. Returns
+    (d_of_s, c, ppm_local, resid_at_ticks, (ppm_odo, sF_odo, pinned, c_m, n_shift))."""
     from scipy.interpolate import BSpline
     from scipy.optimize import least_squares
 
@@ -450,10 +415,8 @@ def calibrate_distance_ticks(
     ev_s, ev_v = np.array(ev_s), np.array(ev_v)
     zone = (ev_v > 0) & (ev_v < 200)
     c_m = float(np.median((sF - ev_s[zone]) / ppm0 - ev_v[zone])) if zone.sum() >= 5 else np.inf
-    # The tick convention c is MEASURED per race on its own painted markers (in-video: HUD vs paint):
-    # Sha Tin c ~ -3.2 m (ST6 -3.2, ST7 -3.3), HV ~ 0 (R08 -1.4, R03 +0.4). The fixed c = 0 produced
-    # a constant +0.3 s at every boundary at ST (misread as a "render lag"). A marker grid shifted by
-    # n markers shows c_m ~ -50 n + c (ST8 -52.9, ST5 -153.6): resolve n, correct the finish.
+    # The tick convention c is measured per race on its own painted markers (Sha Tin ~ -3.2 m, HV ~ 0).
+    # A marker grid shifted by n markers shows c_m ~ -50 n + c: resolve n, correct the finish.
     n_shift = int(np.round(c_m / 50.0)) if np.isfinite(c_m) else 0
     c_res = c_m - 50.0 * n_shift
     grid_ok = have_markers and np.isfinite(c_m) and abs(c_res) < 6.0
@@ -461,8 +424,7 @@ def calibrate_distance_ticks(
     if pin_finish is None:
         pin_finish = bool(grid_ok) and abs(ppm_zone / ppm0 - 1) < 0.08
     if pin_finish:
-        # the measured convention is used ONLY with a fully consistent, pinned grid (AWT: the grid
-        # was unreliable and applying its offset unpinned made ST5/ST6-0401 worse)
+        # the measured convention is used only with a fully consistent, pinned grid
         sF = sF - n_shift * 50.0 * ppm0  # markers count UP against travel: s decreases with k
         c = c_res if grid_ok else c
     target = ev_v + c
@@ -471,13 +433,9 @@ def calibrate_distance_ticks(
         lambda p: (p[0] - ev_s) / p[1] - target, [sF, ppm0], loss="soft_l1", f_scale=huber
     )
     sF1, ppm1 = float(lin.x[0]), float(lin.x[1])
-    # scale check IN the marker zone (map scale drifts along the race, so the global tick ppm may
-    # legitimately differ from the local marker ppm: R02A 20.26 global vs 21.72 local, c_m +0.3 m)
-    # MEASURED: over the final 200 m the tick px/m is 2.7-4.3 % above the painted-marker px/m, i.e.
-    # the HUD counts FEWER metres than the markers (R08 4.3, R03 3.4, R02A 2.7 %; same span — marker ppm 0-200 m = full-grid ppm, so a
-    # span/map-zoom mismatch is RULED OUT), while the global tick scale and the zone offset agree
-    # (< 1.5 m). A property of the render's HUD. Mis-assigned grids are off by tens of metres or
-    # > 20 % in scale, so the offset is the discriminating test and the scale tolerance is 8 %.
+    # The pin test uses the marker-zone scale (map scale drifts along the race). The HUD's tick px/m
+    # runs 2.7-4.3 % above the paint's, while mis-assigned grids are off by tens of metres or > 20 %
+    # in scale: the offset is the discriminating test and the scale tolerance is 8 %.
     if pin_finish:
         sF1 = sF
     lo, hi = min(ev_s.min(), sF1) - 50, max(ev_s.max(), sF1) + 50
@@ -492,25 +450,18 @@ def calibrate_distance_ticks(
         return np.r_[(sF1 - ev_s) / ppm1 + Bv(ev_s) - target, pin, smooth * np.diff(coef, 2)]
 
     r = least_squares(res, np.zeros(nb), loss="huber", f_scale=huber)
-    # the BASE fit's derivative sets the local px/m for LATERAL offsets: the local refit below is an
-    # along-track slip (the leader stalls then jumps); letting its derivative rescale lateral put
-    # ST3's p99 lateral at 30 m (course width 30.5; base fit 19.4 m)
+    # the BASE fit's derivative sets the local px/m for LATERAL offsets: the local refit below models
+    # an along-track slip, which must not rescale lateral
     dB = BSpline(t, r.x, k, extrapolate=True).derivative()
     # LOCAL map distortion: where the smoothed tick residual stays > LOCAL_RES_M, refit with dense
-    # knots (LOCAL_KNOT_M) around it. MEASURED (26 turf races, in-sample): both 1000 m straights
-    # (ST 0419 R3, 0509 R1) show a 14-28 m distortion at ~410 m to go: on all three straights the
-    # render camera SWINGS 180 deg between t ~ 28 and 32 s, and on these two the pose solve takes a
-    # ~2.5 % scale step during the swing (0.963 -> 0.938, 1.003 -> 0.978; ST 0607 R8: 0.993 ->
-    # 0.992, no distortion). The leader "stalls" 40 m in 4 s, then jumps; the 150 m spline (huber:
-    # outliers) ignored it -> leader 1.66 s late at 400 m. Every other race: smoothed residual
-    # <= 6.9 m, so the refit never triggers there.
+    # knots (LOCAL_KNOT_M). Fires where the pose takes a scale step during the straights' 180 deg
+    # camera swing; the 150 m huber spline treats that 14-28 m distortion as outliers.
     from scipy.ndimage import median_filter
 
     order = np.argsort(ev_s)
     rt = res(r.x)[: len(ev_s)][order]
     bad = np.abs(median_filter(rt, 5, mode="nearest")) > LOCAL_RES_M
-    # contiguous runs of >= LOCAL_MIN_TICKS flagged ticks only (an isolated edge tick -- the race
-    # start, where the pose is weak -- sent dense knots into the sparse start: 170 m residuals),
+    # contiguous runs of >= LOCAL_MIN_TICKS flagged ticks only (an isolated start tick is pose noise);
     # dense knots over each run +- 50 m, kept inside the tick-covered range
     es = ev_s[order]
     extra = []
@@ -560,12 +511,9 @@ def inner_field(Ps, Nin, X, win=25, q=90):
 
 def robust_offset(h, *, wavelength=1000.0, huber=10.0, iters=8):
     """The field's INNER-EDGE offset per station, robustly smoothed (Huber IRLS Whittaker, second-
-    difference penalty, cutoff ~``wavelength`` stations = 100 m at 2 px/station). ``inner_field`` is
-    a 90th percentile over a +-25-station window, so where detections are sparse a few outliers far
-    inside the field dictate it. MEASURED (HV 05-20 R9, stations 4746-4897): a 107-station run at up
-    to 247 px against ~30 px around it survived the 51-station median, bent the station scaffold, and
-    folded every rail ridge into a V that the DP could not follow (all scorings dived toward the apron
-    path). Since baseline Z4 (replaced a 51-station median + Gaussian)."""
+    difference penalty, cutoff ~``wavelength`` stations = 100 m at 2 px/station). Robust because
+    ``inner_field`` is a 90th percentile over +-25 stations: where detections are sparse, a few
+    outliers far inside the field would bend the station scaffold and fold every rail ridge."""
     from scipy import sparse
     from scipy.sparse.linalg import spsolve
 
@@ -584,16 +532,10 @@ def robust_offset(h, *, wavelength=1000.0, huber=10.0, iters=8):
 
 
 def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
-    """The rail is a SMOOTH CURVE. Robust (Huber, IRLS)
-    support-weighted Whittaker smoother in world px with a THIRD-difference penalty (straights and
-    constant-radius arcs cost nothing; cutoff ~``wavelength`` stations = 20 m at 2 px/station).
-    Unsupported stations get no data weight, so gaps are bridged by the smooth curve instead of
-    linear segments. MEASURED (26 races, 4 m-chord kinks > 8 deg): e.g. ST 05-24 81 -> 0, ST3 52 -> 1,
-    ST 04-26 R9 145 -> 7; p95 distance to supported ridge points <= 8 px (0.4 m); ST8's rail heading
-    over the final 150 m swung +-12 deg -> +-5 deg; the marker grid is found on all 26 races (HV 04-15
-    R9 never had one). ADOPTED 2026-11-15 together with identity.resolve_ties (26 races x 6 seeds,
-    rule declared before reading: non-lateral gates 198.0 -> 200.0 per seed, hand-truth majority
-    57 -> 58, lateral passes 10 = 10). Alone (no silk ties): 197.8, hand 53 (not adopted)."""
+    """The rail is a smooth curve: robust (Huber IRLS) support-weighted Whittaker smoother in world px
+    with a THIRD-difference penalty (straights and constant-radius arcs cost nothing; cutoff
+    ~``wavelength`` stations = 20 m at 2 px/station). Unsupported stations get weight 0.1, so gaps are
+    bridged by the smooth curve; unsupported end runs continue along the last supported tangent."""
     if len(W) < 10 or ok.sum() < 10:
         return W
     from scipy import sparse
@@ -609,8 +551,7 @@ def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
         Z = np.c_[spsolve(A, w * W[:, 0]), spsolve(A, w * W[:, 1])]
         r = np.hypot(*(W - Z).T)
         w = w0 * np.where(r <= huber, 1.0, huber / np.maximum(r, 1e-9))
-    # unsupported END runs carry no data: continue straight along the last supported tangent (ST3
-    # binary: the rail beyond the finish curled back on itself, a 138 deg kink, at support 0.12)
+    # unsupported END runs carry no data (the smoother can curl them back on themselves)
     idx = np.flatnonzero(ok)
     lo, hi = int(idx[0]), int(idx[-1])
     k = min(20, (hi - lo) // 2)
@@ -627,18 +568,15 @@ def smooth_rail(W, ok, *, wavelength=200.0, huber=10.0, iters=6):
 
 def fill_world(W, ok):
     """Bridge unsupported rail stations in WORLD coordinates (linear in station index between the
-    supported neighbours). Interpolating the OFFSET instead puts a hump in the rail wherever the
-    station scaffold itself jogs (R08 home straight at 200 m: a ~1.5-2 m dip into the track that
-    bent the normals, so (d, lat) jumped and two adjacent horses' tracklets swapped). REJECTED:
-    offset-space interpolation."""
+    supported neighbours); interpolating the offset would hump wherever the station scaffold jogs."""
     if ok.all() or ok.sum() < 2:
         return W
     n_ = np.arange(len(W))
     lo, hi = n_[ok][0], n_[ok][-1]
-    gap = ~ok & (n_ > lo) & (n_ < hi)  # INTERIOR gaps only: np.interp clamps the array ends to a
+    gap = ~ok & (n_ > lo) & (n_ < hi)  # interior only: clamped ends would give zero tangents/NaN normals
     out = (
         W.copy()
-    )  # constant point -> zero tangents/NaN normals at the finish (HV 0429 markers lost)
+    )
     out[gap, 0] = np.interp(n_[gap], n_[ok], W[ok, 0])
     out[gap, 1] = np.interp(n_[gap], n_[ok], W[ok, 1])
     return out
@@ -647,10 +585,7 @@ def fill_world(W, ok):
 def despike_world(W, ok, *, win=241, thr=10.0, iters=4):
     """Robust smoothness check in WORLD px: rails are smooth, so supported points more than ``thr``
     px (~0.55 m) off a local QUADRATIC trend (Savitzky-Golay, ``win`` stations x 2 px ~ 26 m) are
-    false ridges (R08 home straight: a faint line ~1.7 m inside the track captured the Viterbi
-    path for ~40 stations). They are demoted to unsupported and bridged with ``fill_world``.
-    REJECTED: a Gaussian trend (mode='nearest' flattens curvature at the array ends -> demoted the
-    good rail at the finish, shifted the marker grid by one marker). -> (W, ok)."""
+    false ridges, demoted to unsupported and bridged with ``fill_world``. -> (W, ok)."""
     from scipy.signal import savgol_filter
 
     ok = ok.copy()
@@ -756,24 +691,12 @@ def _station_of_frame(C, Ps):
 
 
 def straight_datum(Ps, Nin, hin, rail_off, inner, C):
-    """STRAIGHT COURSES (``is_straight``): the rail
-    polyline is the field's INNER-EDGE scaffold ``Ps + hin * Nin`` and the fence is a MEASURED per-race
-    constant ``lat0_px`` (added to every lateral in observe).
-
-    WHY: on the three Sha Tin 1000 m straights the mosaic shows the real fence only at d ~400-550 (one
-    continuous ridge ~110 px = 5.8 m inside the field edge on ST3; 95 -> 120 px on ST 05-09 R1, where
-    the joining oval rail branches off separately; 60 -> 95 px on ST8). Elsewhere the fence is off
-    the map and the DP's "rail" was sparse unsupported grass texture next to the field (rel offset
-    ~0 px before the window, 25-60 px after): every lateral stepped 2-5 m at the window (lateral
-    slides, ST3's legend negatives and 25-45 % label coverage there). The field edge is smooth on the
-    map (detections run in straight parallel lines through the window), so it is a consistent datum;
-    the fence offset is taken where the fence is SEEN: the DP's longest contiguous supported run
-    (texture support is scattered). Straight-course lateral is therefore pack-edge-relative plus one
-    measured constant (pack/fence drift along the straight, up to ~1.8 m on ST8, is not modelled).
-    REJECTED: scoring unseen offsets 0 (rail bridged off-map 1800-2800 stations,
-    blocking audit + lost marker grids); a slope bound on the DP (step -> ramp); a whole-course
-    coverage band for the DP (ST4's rail clears it by ~2 px); a Tukey straight line (the mosaic
-    bends)."""
+    """STRAIGHT COURSES (``is_straight``): the rail polyline is the field's INNER-EDGE scaffold
+    ``Ps + hin * Nin`` and the fence is a measured per-race constant ``lat0_px`` (world px, added to
+    every lateral in observe): the median ridge-minus-edge offset over the DP's longest contiguous
+    supported run. The mosaic shows the real fence only over a short window (d ~400-550 on the Sha Tin
+    1000 m); elsewhere the DP follows grass texture. Straight-course lateral is therefore
+    pack-edge-relative plus one constant (pack/fence drift along the straight is not modelled)."""
     ok = ~np.isnan(rail_off)
     lat0, rng = 0.0, (np.nan, np.nan)
     idx = np.flatnonzero(ok)
@@ -797,12 +720,9 @@ def straight_datum(Ps, Nin, hin, rail_off, inner, C):
 
 def movable_rail_check(img, cnt, to_px, rail, inner, X, expected_m, *, ppm_lo=15.0, ppm_hi=24.0):
     """Is the extracted rail the FIXED inner rail instead of the movable racing rail? Course-table
-    prior (owner: HKJC geometry is known): the movable rail lies ``expected_m`` (A width - course
-    width; B ~3 m) OUTWARD of the fixed rail. The strongest ridge can be the fixed rail (HV 0527, B:
-    every lateral inflated ~3.5 m). Test: a supported ridge exists at that offset toward the field on
-    most stations AND the innermost horses still lie outside it. -> (shift_px or 0.0, support).
-    REJECTED: an exponential nearest-to-field preference in the DP (pulled the rail into the field
-    on the home straight)."""
+    prior: the movable rail lies ``expected_m`` (A width - course width) OUTWARD of the fixed rail.
+    Test: a supported ridge exists at that offset toward the field on most stations AND the innermost
+    horses still lie outside it. -> (shift_px or 0.0, support)."""
     from scipy.spatial import cKDTree
 
     if expected_m < 1.5 or len(X) < 50:
@@ -844,12 +764,8 @@ def fixed_rail_gap(img, cnt, to_px, rail, inner, ppm, expected_m, *, band_m=2.5,
     T = np.gradient(rail, axis=0)
     T /= np.linalg.norm(T, axis=1, keepdims=True)
     Nin = inner * right_normal(T)
-    # ``ridge_response`` compares each offset with its sides via np.roll, which WRAPS at the window
-    # ends. Sampling only the +-band made offsets near the band edge compare against the far end
-    # and fire. MEASURED (ST 06-07 R6): on pod run Y's map the artefact at 10.8-11.5 m won 3755
-    # stations against 232 at the real rail (9.73 m on a wide window), giving 11.27 m; V's map had
-    # the same artefact at 786 stations. So the profile is sampled on a PADDED window and the
-    # argmax is taken inside the band only.
+    # ``ridge_response`` uses np.roll, which WRAPS at the window ends: sample a PADDED window and take
+    # the argmax inside the band only, or band-edge offsets compare against the far end and fire.
     pad = 32
     offs_all = np.arange((expected_m - band_m) * ppm - pad, (expected_m + band_m) * ppm + pad, 1.0)
     L, S, V = sample_profiles(img, cnt, to_px, rail, Nin, offs_all)

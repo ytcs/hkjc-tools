@@ -1,9 +1,8 @@
 """Turf-texture registration: ORB features + RANSAC similarity.
 
-The render camera is near-nadir with no zoom, so world->image is a 2D similarity (rotation,
-translation, slow zoom). Measured on R08: similarity residual == homography residual
-(0.61 vs 0.63 px median) and per-step scale 1.000 +- 0.001. The turf/rail/marker texture is static
-world, the horses + screen overlays are masked (overlays) or rejected by RANSAC (horses).
+The render camera is near-nadir, so world->image is a 2D similarity (rotation, translation, slow
+zoom; a homography fits no better). Turf/rail/marker texture is static world; screen overlays and
+avatars are masked, residual horse features are rejected by RANSAC.
 """
 
 from __future__ import annotations
@@ -34,11 +33,8 @@ def world_mask(panel, hud) -> np.ndarray:
 
 def mask_boxes(mask, dets, grow: float = 1.6) -> np.ndarray:
     """Zero ``mask`` inside each avatar box (cx, cy, w, h, ...) grown by ``grow`` (covers the shadow).
-    MEASURED (pixels, ST 0419 R4 frames 1365-1373): the colour blacklist leaves brown-bodied /
-    pastel-silk avatars unmasked; the camera follows the field, so they are static in the image and
-    the step match locked onto them (camera "stopped" 3 ticks). The avatar detector finds them; a
-    colour WHITELIST (``world_mask_v2``) also fixed the stall but dropped small static world features
-    (posts, markers): HV 0429 R3 loop closures 335 -> 0."""
+    The colour mask misses brown-bodied / pastel-silk avatars, which the camera keeps static in the
+    image, so step matches lock onto them unless their boxes are masked."""
     m = mask.copy()
     H, W = m.shape[:2]
     for d in dets:
@@ -107,13 +103,7 @@ def match(
     min_inl: int = 30,
 ) -> Match | None:
     """Similarity a->b. With ``prior`` (3x3 a->b guess) candidate matches are restricted to those
-    whose prior-predicted position is within ``gate`` px — kills aliasing on repetitive turf.
-    Speed alternatives tried and REJECTED (R08, 2026-11-13): (1) projection-guided search (KD-tree
-    candidates within the gate, Hamming only for those): no gain — ~30 keypoints per 40 px gate at this
-    density, so ~47k candidate pairs cost as much as the brute-force kNN (~25 ms/pair); (2) XFeat
-    (2404.19174) learned features: CPU extraction 137 vs 34 ms/frame, matching not faster (16 ms), and
-    long-baseline (d=24) pairs fail on the repetitive mowing stripes (24 vs 90 inliers, transforms
-    ~680 px off). ORB + brute-force Hamming stays; a CUDA GPU (cv2.cuda / torch Hamming) is the lever."""
+    whose prior-predicted position is within ``gate`` px — kills aliasing on repetitive turf."""
     import cv2
 
     if len(a.pts) < 10 or len(b.pts) < 10:
@@ -154,8 +144,8 @@ def match(
     if M is None or inl.sum() < min_inl:
         return None
     k = inl.ravel() > 0
-    # least-squares refit on inliers (Umeyama). NOT LMEDS: FAST keypoints are integer-located, and
-    # a median refit snaps the step to whole pixels (speed-dependent bias that accumulates).
+    # least-squares refit on inliers (Umeyama): a median refit would snap integer FAST keypoints to
+    # whole-pixel steps (an accumulating speed-dependent bias)
     S = umeyama(A[k], B[k])
     r = np.linalg.norm(A[k] @ S[:2, :2].T + S[:2, 2] - B[k], axis=1)
     return Match(S, int(k.sum()), float(np.median(r)))

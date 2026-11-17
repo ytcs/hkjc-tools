@@ -1,33 +1,14 @@
-"""Race-course geometry — the physical substrate for agent-based race models.
+"""Race-course geometry per venue x surface x course setting (:func:`track_for`).
 
-The draw bias is *geometric*: on a turn an inner lane is a shorter path, so a low
-draw that holds the rail runs less ground. HKJC turf tracks also use a **movable
-running rail** — the race's ``Course`` (A, A+2, B, B+2, B+3, C, C+3) shifts the
-rail out to spread wear, changing the usable **width** (and slightly the
-home-straight length). So geometry is parameterised by *venue × surface × course*,
-not fixed per venue, and it is resolved from the race itself (:func:`track_for`).
+HKJC turf tracks use a movable running rail: the race's ``Course`` (A, A+2, B, B+2, B+3, C, C+3)
+shifts the rail out, changing the usable width (and slightly the home straight).
 
-Three structural regimes, all encoded here as :class:`TrackGeometry`:
+Coordinates: ``d`` = metres to the finish (a horse runs from d=distance down to 0); lateral = metres
+outward from the current inner rail.
 
-- **Happy Valley** (turf, 1,450 m, right-handed) — a tight, bend-dominated circuit;
-  the strongest draw bias in HK. Bend map from the sectional sampling points.
-- **Sha Tin turf** (1,900 m, right-handed) — a galloping oval with long straights,
-  so a *weaker* geometric draw bias than HV. Its 1,000 m sprint is run on a
-  separate **straight chute** with *no* bends — :data:`SHA_TIN_STRAIGHT` — so there
-  is no bend-geometry draw bias there at all (only going/watering effects).
-- **Sha Tin all-weather** (1,560 m, right-handed, fixed single rail) — dirt; one
-  configuration, uniform 22.8 m width.
-
-Coordinates: ``d`` = metres-from-finish (a horse runs from d=distance down to d=0).
-Lateral offset is metres outward from the (current) inner rail; on a bend, being
-``off`` metres wider adds ``off · turn_angle`` of arc — the ground-lost mechanism
-the traffic model integrates over the trip.
-
-Bend segments for Happy Valley come from the HKJC sectional sampling points and are
-firm; the Sha Tin oval / AWT bend partitions are reconstructed from the published
-circumference and home-straight (the segment *boundaries* are approximate, the
-straight-vs-turn split and total are not). Per-course widths and home straights are
-the official HKJC figures.
+Happy Valley bend segments come from the HKJC sectional sampling points; the Sha Tin oval/AWT bend
+boundaries are reconstructed from circumference + home straight (boundaries approximate, total
+straight-vs-turn split not). Per-course widths and home straights are official HKJC figures.
 """
 from __future__ import annotations
 
@@ -64,29 +45,25 @@ class TrackGeometry:
         return any(a <= dm < b for a, b in self.bend_segments)
 
     def bend_fraction(self, distance: float, step: float = 25.0) -> float:
-        """Fraction of a race of ``distance`` run on turns (the draw-bias exposure)."""
+        """Fraction of a race of ``distance`` run on turns."""
         pts = max(1, int(distance / step))
         ds = [distance * (i + 0.5) / pts for i in range(pts)]
         return sum(self.is_bend(d) for d in ds) / pts
 
 
 # ----------------------------------------------------------- physical scale constants
-# Race-agnostic physical sizes, in one place so margins, the CV reconstruction and the
-# draw anchor all share one source (no per-call magic numbers).
 THOROUGHBRED_LENGTH_M = 2.4    # nose-to-tail; the HKJC margin unit ("a length", ~8 ft)
 HORSE_LANE_WIDTH_M = 1.10      # effective lateral lane a galloping horse+jockey occupies
                               # (barrel ~0.5-0.6 m + leg spread/safety) = min centre-to-centre
 
-# Barrier-stall count per venue: the gate has this many uniformly-spaced stalls across the
-# full track width; a horse drawn ``d`` sits in stall ``d`` (scratchings leave gaps, so this
-# is the venue standard, NOT the field size). Used to map draw -> start lateral.
+# Uniformly spaced stalls across the full track width; draw d sits in stall d (scratchings leave
+# gaps, so this is the venue standard, not the field size). Maps draw -> start lateral.
 BARRIER_STALLS = {"HV": 14, "ST": 14}
 
 
 # --------------------------------------------------------------------------- venues
-# Happy Valley — turf, 1,450 m, right-handed, bend-dominated. Bend segments from the
-# sectional sampling points: home straight ~[0,300]; Sanatorium/Crescent/The Rock
-# bends ~[300,770]; back straight ~[770,920]; HKFC/Stable bends + top turn ~[920,1450].
+# Happy Valley turf. From the sectional sampling points: home straight ~[0,300]; Sanatorium/Crescent/
+# The Rock bends ~[300,770]; back straight ~[770,920]; HKFC/Stable bends + top turn ~[920,1450].
 HAPPY_VALLEY = TrackGeometry(
     name="Happy Valley",
     venue="HV",
@@ -101,11 +78,8 @@ HAPPY_VALLEY = TrackGeometry(
     bend_segments=((300.0, 770.0), (920.0, 1450.0)),
 )
 
-# Sha Tin turf — 1,900 m galloping oval, right-handed, 430 m home straight. Long
-# straights => a far weaker geometric draw bias than HV. Widths verified 2026-11-16 against the
-# official course diagram (racing.hkjc.com/en-us/local/page/racing-course; A+3 was missing). Bend boundaries are a
-# two-turn reconstruction from circumference + home straight (straights ~910 m total,
-# two ~495 m bends); widths/home-straight are official.
+# Sha Tin turf oval. Widths from the official course diagram (racing.hkjc.com/en-us/local/page/racing-course).
+# Bends: two-turn reconstruction from circumference + home straight (straights ~910 m, two ~495 m bends).
 SHA_TIN_TURF = TrackGeometry(
     name="Sha Tin (turf)",
     venue="ST",
@@ -120,10 +94,8 @@ SHA_TIN_TURF = TrackGeometry(
     bend_segments=((430.0, 925.0), (1405.0, 1900.0)),
 )
 
-# Sha Tin straight 1,000 m sprint chute — a separate course with NO bends, so no
-# bend-geometry draw bias (only the watering/going gradient across the track, which
-# this geometry deliberately does not model). circumference set to 1,000 so the
-# (empty) bend map tiles trivially.
+# Sha Tin 1,000 m straight chute: a separate course with no bends; circumference 1,000 so the empty
+# bend map tiles trivially.
 SHA_TIN_STRAIGHT = TrackGeometry(
     name="Sha Tin (1000m straight)",
     venue="ST",
@@ -134,8 +106,7 @@ SHA_TIN_STRAIGHT = TrackGeometry(
     bend_segments=(),
 )
 
-# Sha Tin all-weather (dirt) — 1,560 m, right-handed, 365 m home straight, fixed
-# single rail (uniform 22.8 m). Two-turn reconstruction as for the turf oval.
+# Sha Tin all-weather: fixed single rail (uniform 22.8 m); bends reconstructed as for the turf oval.
 SHA_TIN_AWT = TrackGeometry(
     name="Sha Tin (all-weather)",
     venue="ST",

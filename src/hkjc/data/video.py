@@ -6,7 +6,7 @@
     full    race film (RF): side-on tracking camera, burnt-in race clock + "NNNm TO FINISH"
     patrol  stewards' fixed high mount, head-on on the straights
 
-URL pattern (verified 2026-06/11): .../hdflash/replay-{feed}/{YYYY}/{YYYYMMDD}/{NN}/eng/
+URL pattern: .../hdflash/replay-{feed}/{YYYY}/{YYYYMMDD}/{NN}/eng/
 replay-{feed}_{YYYYMMDD}_{NN}_eng_{kbps}kbps.mp4
 """
 

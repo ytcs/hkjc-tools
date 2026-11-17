@@ -1,5 +1,5 @@
-"""Functions to fetch and process historical race and horse data from HKJC
-"""
+"""Official results page (LocalResults.aspx): race header, placings, finish times, running positions.
+Incident rows (DISQ, DNF, PU, ...) are dropped; FinishTime is converted from m:ss.ff to seconds."""
 from __future__ import annotations
 
 import requests
@@ -27,24 +27,21 @@ HTML_HEADERS = {
 
 @ttl_cache(maxsize=100, ttl=3600)
 def _soupify(url: str) -> BeautifulSoup:
-    """Fetch and parse a webpage and return BeautifulSoup object
-    """
+    """GET + parse a page (1 h in-process cache)."""
     response = requests.get(url, timeout=REQUEST_TIMEOUT, headers=HTML_HEADERS)
     response.raise_for_status()
     return BeautifulSoup(response.content, 'html.parser')
 
 
 def _soupify_race_page(date: str, venue_code: str, race_number: int) -> BeautifulSoup:
-    """Fetch and parse HKJC race results page and return BeautifulSoup object
-    """
+    """Parsed results page; ``date`` is YYYY/MM/DD."""
     url = HKJC_RACE_URL_TEMPLATE.format(
         date=date, venue_code=venue_code, race_number=race_number)
     return _soupify(url)
 
 
 def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
-    """ Clean and convert horse data to suitable data types
-    """
+    """Drop incident rows, cast numeric columns, FinishTime m:ss.ff -> s."""
     if df.height == 0:
         return df
 
@@ -77,7 +74,6 @@ def _extract_race_data(date: str, venue_code: str, race_number: int) -> pl.DataF
     table = soup.find('div', class_='race_tab').find('table')
     race_data = _parse_html_table(table)
 
-    # Extract the relevant race information
     race_id = race_data.columns[0].replace(f'RACE{race_number}', '')
     race_class = race_data.item(1, 0).split('-')[0].strip()
     race_dist = race_data.item(1, 0).split('-')[1].strip().rstrip('M')
@@ -95,7 +91,6 @@ def _extract_race_data(date: str, venue_code: str, race_number: int) -> pl.DataF
                  'Going': going,
                  'Course': course}
 
-    # Extract the results table
     table = soup.find('div', class_='performance').find('table')
     race_data = (_parse_html_table(table)
                  .with_columns([

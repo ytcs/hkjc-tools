@@ -1,30 +1,28 @@
 """Consistency AUDIT: label-free invariants of a reconstruction (no official data).
 
-Every failure found by eye in this project broke a one-line physical or evidential invariant. The
-audit computes them per race and returns violations with locations, so failures are found by
-measurement instead of by inspection, and a fix is verified on the whole vector:
+Each check is a one-line physical or evidential invariant, computed per race and returned with
+violation locations:
 
-RAIL (after ``rails``; BLOCKING -- an ensemble must not start on a rail that fails these)
+RAIL (after ``rails``; BLOCKING -- downstream runs must not start on a rail that fails these)
   rail_off_map     rail stations inside the observed span where the mosaic has no pixels (a rail
-                   cannot leave the image; ST 05-24's smoothed bulge ran ~150 px off the map)
+                   cannot leave the image)
   markers          painted-marker grid found (>= 3 markers)
   marker_spacing   max |gap between consecutive matched markers / (50 m x ppm) - 1| (arclength must
-                   match the paint; the ST 05-24 bulge added ~14 m between the 100 m and 50 m marks)
+                   match the paint)
   kinks            4 m chords turning > 8 deg (a rail is smooth; switch diagonals and jagged snaps)
 FIELD (after ``observe``)
   field_gap        100 m segments where the innermost horses (5th pct lateral) run > 4 m outside the
                    rail (the rail followed the wrong line: fixed rail, apron edge, band edge)
-                   -- fires BY CONSTRUCTION on straight courses since Z6 (lateral = field-edge datum +
-                   the measured fence offset, ~5.8 m on ST3 / ST 05-09 R1): descriptive only there
+                   -- fires by construction on straight courses (lateral = field-edge datum + the
+                   measured fence offset, ~5.8 m): descriptive only there
   lateral_slide    20 m bins where the whole field's median lateral velocity exceeds 0.8 m/s (a field
                    cannot slide sideways together: rail switches, scaffold folds)
 IDENTITY / FUSION (after ``fuse``)
   legend_negative  horse-seconds where a horse absent from a fully read top-8 legend runs > 8 m
-                   ahead of the rearmost tight listed horse (ST4 #3 on a lookalike tracklet)
+                   ahead of the rearmost tight listed horse
   legend_rank      horse-seconds where a listed horse's path rank differs from its legend rank by > 2
   ghost_crossing   horses whose path crosses the line TIGHTLY (sd < 1.5 m) although their own
-                   detections end > 3 s earlier and the finish camera did not read them (HV 05-27
-                   R3 #9 crossing on an anonymous fragment)
+                   detections end > 3 s earlier and the finish camera did not read them
   finish_order     clear finish-camera order pairs (gap > 150 px) the fused crossings invert
 Thresholds are first measured values; they are to be replaced by null-derived ones.
 """
@@ -39,8 +37,7 @@ FIELD_GAP_M = 4.0
 SLIDE_MS = 0.8
 SD_TIGHT = 1.5
 FLOOR_M = 8.0  # = assoc.FLOOR_EPS
-# contiguous off-map stations that block: accepted rails reach 44 (straight-course rails along the
-# coverage edge, ST3); the ST 05-24 smoother bulge was 699 -> 100 (~10 m, > 2x the clean maximum)
+# contiguous off-map stations that block (~10 m): accepted rails reach 44, a known bad bulge 699
 OFF_MAP_RUN = 100
 
 
@@ -211,7 +208,7 @@ def audit(run, stages=("rail", "field", "identity")) -> dict:
 
 
 def rail_blocking(res) -> list:
-    """Rail violations that must block an ensemble (BLOCKING list; empty = pass)."""
+    """Rail violations that must block downstream runs (BLOCKING list; empty = pass)."""
     bad = []
     runs = [b - a + 1 for a, b in res.get("rail_off_map_at", [])]
     if runs and max(runs) > OFF_MAP_RUN:

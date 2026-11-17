@@ -524,6 +524,8 @@ Rails and metric
 - Unseeded marker grid: took a coverage-edge artefact as FINISH (HV 04-29 R3).
 - Geometry-only metric (marker scale, no ticks): far worse on every race; the map scale drifts along the trip.
 - Fixed tick convention c = 0 at Sha Tin: a constant +0.3 s at every boundary.
+- Measured tick convention applied with an unpinned marker grid: ST 04-01 R5 and R6 got worse.
+- 51-station median + Gaussian for the inner-edge scaffold: a 107-station outlier run on HV 05-20 R9 (up to 247 px vs ~30 px) survived it, bent the scaffold and folded every rail ridge into a V the DP could not follow.
 - Dense knots wherever any tick is flagged: an isolated start tick gave 170 m residuals.
 - Local refit's derivative for lateral: ST 04-19 R3 p99 lateral 30 m vs 19.4 m.
 - Painted FINISH pin as the anchor when the film has ≥ 3 crossings: step in the last 50 m (+0.2 s late, then −0.16 s early).
@@ -618,6 +620,7 @@ Synchronisation and other evidence
 - Matching the shared finish-camera replay across feeds: it sits at a different edit position per feed.
 - Drone offset from formation matching: 1.47 s vs 2.46 s measured on HV 06-03 R8.
 - Drone camera fitted to the rails plus horse ICP for positions: the rails register, but along-track tilt is unobservable on straights and the ICP does not lock.
+- Free 8-DOF homography for the drone camera: collapsed onto degenerate solutions (every rail pixel snapped to one rail); replaced by a 7-DOF look-at pinhole.
 - TV-feed cloth reads as an identity yardstick: failed its declared criteria (HV 06-03 R3 order 62.5 %); the TV camera follows the leaders, so back markers are rarely read.
 - TV running-order bar: 8 fixed slots, a delayed copy of the render legend.
 - Post-gate patrol silk templates: top-1 0.61 vs 0.63 for in-race TV templates; the colour histogram is the ceiling.

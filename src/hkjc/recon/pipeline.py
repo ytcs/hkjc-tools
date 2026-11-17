@@ -1,19 +1,23 @@
 """Race reconstruction pipeline: race info + replay videos -> per-horse paths.
 
-``RaceRun(info).run()`` executes the stages below, each cached under ``data_cache/recon/<key>/`` and
-skipped when its outputs exist (``force=`` re-runs named stages). Stages:
+``RaceRun(info).run()`` executes ``STAGES`` in order, each cached under ``data_cache/recon/<key>/``
+and skipped when its ``OUTPUTS`` exist (``force=`` re-runs named stages). Stages:
 
-  features  AVV render: unique 10 Hz frames -> turf ORB features + consecutive steps
+  frames    AVV render: unique 10 Hz frames cached (pixels, frame index, clock)
+  features  turf ORB features + consecutive step matches
   pose      camera pose graph (sequential/long-baseline/loop edges) -> world poses
-  detect    avatar detections (self-supervised YOLO) + silk histograms
-  hud       race clock, odometer (distance-to-go), legend running order (recognition-only OCR)
   worldmap  mosaic of the registered frames (static world: turf, rails, painted markers)
+  detect    avatar detections (self-supervised YOLO) + silk histograms
+  silk      per-detection silk signatures + official silk prototypes
+  hud       race clock, odometer (distance-to-go), legend running order (recognition-only OCR)
   rails     racing rail on the map; marker grid -> px/m + finish anchor
+  film      race-film leader crossings of the painted markers -> the metric's constant offset
   observe   detections -> (d, lateral) metres (odometer-tick distance calibration) -> world tracklets
-  identify  tracklet -> saddlecloth number (legend order + elimination + silk)
   finish    RF/drone finish-line camera: saddlecloth OCR -> finish order + spatial gaps
-  fuse      Bayesian fusion of all feeds' proposals with physics/geometry priors -> paths.parquet
-  validate  official comparison (validation only)
+  identify  tracklet -> saddlecloth number (legend order + finish camera + elimination + silk)
+  fuse      Bayesian fusion with physics/geometry priors -> paths_video.parquet (video-only:
+            no official outcome data) + paths.parquet (final: adds the official records)
+  validate  gates on the video-only product vs the official record
 
 Memory: run under a hard cap (``scripts/capped.sh``) — the MP4s and feature caches are large.
 """
@@ -53,7 +57,7 @@ STAGES = (
     "pose",
     "worldmap",
     "detect",
-    "silk",  # v2 silk signatures + official prototypes (identify's silk evidence, appearance split)
+    "silk",  # silk signatures + official prototypes (identify's silk LLR, observe's appearance split)
     "hud",
     "rails",
     "film",  # race-film marker crossings -> the metric's constant offset
@@ -207,14 +211,14 @@ class RaceRun:
 
     def features(self, nfeat: int = 3000):
         """ORB features of every unique render frame + the sequential step matches. Per-frame work
-        is independent and OpenCV's RANSAC seeds its RNG per call, so a process pool gives results
-        IDENTICAL to the sequential loop (86 s -> a few s on 14 cores)."""
+        is independent and OpenCV's RANSAC seeds its RNG per call, so the process pool gives results
+        identical to a sequential loop."""
         import multiprocessing as mp
 
         cache = self.cache()
         global _CACHE, _FEATS_PAR
         _CACHE = cache
-        yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"  # the masked working base (pod run Y)
+        yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"  # the masked variant
         nw = _nproc()
         if yolo:  # one detector per worker; one accelerator context (as in ``detect``)
             accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
@@ -308,9 +312,8 @@ class RaceRun:
             if len(ry)
             else 0.0
         )
-        # Race-level switch: on turf the self-supervised YOLO is precise and complete, and adding
-        # background-subtraction blobs only adds duplicates/false positives (shattered R08 tracking);
-        # where YOLO is blind (AWT dirt: median ~1/frame) the map-difference detector takes over.
+        # race-level switch: on turf YOLO alone (background-subtraction blobs add duplicates and
+        # false positives); where YOLO is blind (AWT dirt: median ~1/frame) map-difference blobs join
         if yolo_med >= 0.6 * self.info.n:
             rows, hists, src = ry, np.array(hy), "yolo"
         else:
@@ -342,9 +345,10 @@ class RaceRun:
         )
 
     def silk(self):
-        """v2 silk signature of every detection (``detect.silk_feature``, from the aerial video's render
+        """Silk signature of every detection (``detect.silk_feature``, from the aerial video's render
         panel) + the OFFICIAL silk prototype of every runner (``detect.silk_prototype``; pre-race
-        input). Used only by the detection-level E-step (``assoc.assign_frames``)."""
+        input). Read by identify's silk LLR (``_silk_llr``, also in the fuse-stage EM identity pass)
+        and observe's appearance split (``tracking.split_by_appearance``)."""
         import av
 
         from ..data.silks import silk_path
@@ -398,7 +402,7 @@ class RaceRun:
     def _final_pass_map(self, P, out, rf, span):
         """Mosaic of only the frames whose rail station lies in the last ``span`` world px of the
         trip (the final pass over the finish area), cropped to those frames' bounds (memory: a
-        full-extent float mosaic OOM'd R03 under a 3 GB cap). -> (img, cnt, to_px)."""
+        full-extent float mosaic exceeds a 3 GB cap). -> (img, cnt, to_px)."""
         from . import worldmap
 
         G = P["G"]
@@ -438,14 +442,13 @@ class RaceRun:
         # HUD gate: the detector fires on disclaimer glyphs; inside that band only confident boxes
         keep &= ~((rows[:, 2] < video.DISCLAIMER_ROWS) & (rows[:, 5] < 0.45))
         # static-overlay gate: a "detection" recurring at the same PANEL position in many frames is
-        # glyph furniture (e.g. the disclaimer word "phones" in R02A, which got numbered as a horse);
-        # horses move through the panel
+        # glyph furniture (e.g. the disclaimer word "phones")
         q = np.round(rows[:, 1:3] / 8.0).astype(int)
         key = q[:, 0] * 10_000 + q[:, 1]
         uk, inv, cnt = np.unique(key, return_inverse=True, return_counts=True)
         nfr = max(1, len(np.unique(rows[:, 0])))
-        # (only inside the HUD band: the render camera FOLLOWS the field, so real horses also sit
-        #  near-static in the panel for long stretches)
+        # only inside the HUD band: the render camera follows the field, so real horses also sit
+        # near-static in the panel for long stretches
         keep &= ~((cnt[inv] >= 0.04 * nfr) & (rows[:, 2] < video.DISCLAIMER_ROWS + 20))
         rows, hist = rows[keep], D["hist"][keep]
         self._wd_idx = np.where(keep)[0]  # dets.npz row index of each kept detection (silk lookup)
@@ -487,8 +490,8 @@ class RaceRun:
         np.savez(self.p("rail.npz"), frame_idx=P["idx"], **out)
         rf = rails.RailFrame.from_points(out["rail"], int(out["inner"]))
         # painted markers are drawn only near the END of the race: profile them on a FINAL-PASS
-        # mosaic (frames whose time-ordered rail station lies in the last 9000 px). On trips that
-        # pass the finish area twice (HV 2200) the all-frames mean faded them below detection.
+        # mosaic (rail station in the last 9000 px); on trips passing the finish area twice (HV 2200)
+        # an all-frames mean fades them below detection
         mimg, mcnt, mto_px = self._final_pass_map(P, out, rf, 9000.0)
         ss, resp = rails.marker_profile(mimg, mcnt, mto_px, rf, rf.s[-1] - 9000, rf.s[-1])
         del mimg, mcnt
@@ -543,7 +546,7 @@ class RaceRun:
 
     def observe(self):
         rows, X, hist, _P = self.world_dets()
-        seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness ensembles
+        seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness perturbation
         if seed:  # drop 1 % of detections (seeded) -> spread of the downstream gate metrics
             keep = np.random.default_rng(int(seed)).random(len(rows)) >= 0.01
             rows, X, hist = rows[keep], X[keep], hist[keep]
@@ -556,10 +559,8 @@ class RaceRun:
         s_px, lat_px = rf.project(X, s_hint=hint, window=1200.0)
         ppm, sF = float(m["ppm"]), float(m["sF"])
         fu = np.unique(rows[:, 0])
-        # leader position per frame. A front detection > 8 m clear of the next is a false positive
-        # ONLY if that gap is not persistent: a genuinely clear leader keeps its margin frame after
-        # frame (R02A: the winner was 13 m clear near the line; dropping it made the odometer ticks
-        # lag 15 m and the finish came out 1.06 s early). REJECTED: the per-frame 8 m cut alone.
+        # leader position per frame: a front detection > 8 m clear of the next is a false positive
+        # only if that gap is not persistent (a genuinely clear leader keeps its margin)
         from scipy.ndimage import median_filter
 
         s0 = np.empty(len(fu))
@@ -584,19 +585,10 @@ class RaceRun:
                 ppm, sF, ks_seed, _ps = seeded
                 have_markers = True
                 self.log(f"   observe: tick-seeded marker grid k={ks_seed.tolist()} ppm {ppm:.3f}")
-        # Journals 0137/0139: the race film's REAL painted markers
-        # fix the metric's constant -- odometer ticks as the metric to the line (unpinned, no
-        # convention offset), shifted so the render leader meets the film's marker crossings. MEASURED: the render-paint
-        # pin + paint-derived convention put the leader +0.2 s late over 400-100 m and -0.16 s early
-        # at the line (a step in the last 50 m); on the ticks the film shows one flat offset per
-        # race. Leader/sectional gains are robust (6-seed ensembles: ST9 timing 2 -> 4/5, sectional
-        # 0.455 -> 0.232 s; ST1 sectional 0.36 -> 0.25 s), BUT it consistently loses 2-5 horses'
-        # paths on ST4/ST1 without the finish SEEDS (those horses hung on orphan-chain matching,
-        # which flips with the changed line speed: the pin stretched the last 50 m, 17.0 vs 15.2
-        # m/s). With seeds (26 races): timing gates 117 -> 120, leader mean 0.213 -> 0.166 s,
-        # sectional 0.243 -> 0.197 s; remaining losses are structural (ST3 tail horses cross at
-        # the render's end, ST4's ill-posed finish anchor) plus a 0.01 s photo finish (ST 05-24).
-        # Fallback (< FILM_MIN crossings): the render-paint pin.
+        # the race film's REAL painted markers fix the metric's constant: odometer ticks are the
+        # metric to the line (unpinned, no convention offset), shifted so the render leader meets the
+        # film's marker crossings (one flat offset per race). Fallback (< FILM_MIN crossings, or none
+        # matched by the render leader): the render-paint pin.
         fz = self.p("film.npz")
         film_t = {}
         if fz.exists():
@@ -642,7 +634,7 @@ class RaceRun:
         if "lat0_px" not in z.files:
             Tr = np.gradient(z["rail"], axis=0)
             Tr /= np.linalg.norm(Tr, axis=1, keepdims=True) + 1e-12
-            if rails.is_straight(Tr):  # a stale rail.npz would silently run the old straight rail
+            if rails.is_straight(Tr):  # stale-cache guard: a straight course needs lat0_px
                 raise RuntimeError(
                     "rail.npz of a straight course has no lat0_px (pre-Z6 cache): re-run the rails stage"
                 )
@@ -775,7 +767,7 @@ class RaceRun:
         """({tracklet index: number}, label-free fit) from the finish camera (1D registration of the
         tracklets' line-crossing times to the camera's gaps; tracklets ending < 30 m short are
         extrapolated). A pure function of tracks.npz + finish.npz: called with no arguments it is
-        CACHED on their mtimes (the fuse stage's EM loop called it ~12x per race, ~3 s; exact)."""
+        CACHED on their mtimes (the fuse stage's EM loop calls it repeatedly)."""
         import copy
 
         if T is not None:
@@ -806,9 +798,9 @@ class RaceRun:
                 continue
             o = np.argsort(T["t"][m])
             t, d = T["t"][m][o], T["d"][m][o]
-            # a crossing must be bracketed by samples < 0.3 s apart: the render can skip ~1 s near
-            # the line (R02A: crossings quantized at the first frame after the gap); otherwise
-            # extrapolate from the last pre-line sample (< 30 m short) at its own speed
+            # a crossing must be bracketed by samples < 0.3 s apart (the render can skip ~1 s near
+            # the line); otherwise extrapolate from the last pre-line sample (< 30 m short) at its
+            # own speed
             pre = np.where(d > 0)[0]
             if not len(pre):
                 continue
@@ -840,7 +832,7 @@ class RaceRun:
             stop_s=t_fin + 70.0,
             n_field=max(14, self.info.n),
             # white-cloth reader only at Sha Tin (side-on camera, white cloths); on HV's overhead
-            # camera it only added false reads (HV0527: a "#7" at 0.5 s, real #7 2.36 s behind)
+            # camera it adds false reads
             white=self.info.venue != "HV",
         )
         order, gaps, ustar = finishcam.finish_gaps(sc)
@@ -874,11 +866,8 @@ class RaceRun:
             return []
         from .validate import crossing
 
-        # Only OBSERVED crossings anchor the clock: a path whose labelled tracklets ended early is
-        # extrapolated by fusion at its last speed with a growing sd (ST4 0419: 8 horses' tracklets
-        # ended at 432 m to go; their paths "crossed" 4.5-5.3 s early at sd ~24 m and dragged the
-        # anchor to C = 800 px/s and the clock 2.2 s early; their 20 m/s extrapolated speeds also
-        # inflated the C prior 47 %). REJECTED: crossing() without the sd check.
+        # only OBSERVED crossings anchor the clock: a path whose labelled tracklets ended early is
+        # extrapolated by fusion with a growing sd and would drag C, the clock and the C prior
         sd_ok = self.ANCHOR_SD
 
         def cross_or_extrap(p):
@@ -906,8 +895,8 @@ class RaceRun:
             c_prior = v_line * ppm_fc
         cal = finishcam.anchor(gaps, t_cross, c_prior=c_prior, c_prior_rel=0.30)
         # label-free sanity check: the anchor fits the clock to LABELLED render paths, so wrong
-        # labels drag it (R02A: C 3741-4000 vs ~1750, clock 0.5-1.2 s late). Registration of the
-        # anonymous tracklet crossings to the gaps needs no labels (biased ~0.15 s early, MEASURED).
+        # labels drag it; registering the anonymous tracklet crossings to the gaps needs no labels
+        # (measured bias ~0.15 s early)
         _m, fit = self._finish_identity()
         reg_ok = fit is not None and not fit["edge"] and fit["n_close"] >= 0.5 * self.info.n
         src = "anchor"
@@ -927,10 +916,9 @@ class RaceRun:
         D = self.info.distance
 
         def sd_t(h):
-            # method-derived, CONDITIONAL on the fitted clock t_w: fusion treats each horse's obs
-            # as independent, so the clock error shared by all horses (t_w is itself fitted to the
-            # render arrivals) must not be added per horse — it would bury the precise relative
-            # order/gaps (R08: rho 0.93 -> 0.55 with the marginal sd). Scale term + gap spread.
+            # CONDITIONAL on the fitted clock t_w: fusion treats each horse's obs as independent,
+            # so the clock error shared by all horses must not be added per horse (it would bury
+            # the precise relative order/gaps). Scale term + gap spread.
             var_inv_c = 1.0 / np.linalg.inv(cov)[1, 1]  # var(1/C | t_w)
             return float(np.sqrt(gaps[h] ** 2 * var_inv_c + (gsd.get(h, 15.0) / C) ** 2))
 
@@ -955,7 +943,7 @@ class RaceRun:
         ]
 
     def observations(self, lab=None) -> list:
-        """All feeds' proposals as fusion.Obs. (Render now; drone/RF/patrol join here.)"""
+        """Render-tracklet proposals as fusion.Obs (horse = identify label, 0 = anonymous)."""
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
         lab = np.load(self.p("labels.npz"))["labels"] if lab is None else lab
         D = self.info.distance
@@ -980,17 +968,16 @@ class RaceRun:
             )
         return out
 
-    # Gate geometry MEASURED on the drone's top-down start frame (HV 2026-06-03 R8): stall labels at a
-    # constant 40.2 px pitch; racing rail -> outer rail = 855 px = 22.5 m (C) at the gate's depth
-    # -> 38.0 px/m: stall pitch 1.06 m; stall-1 centre 2.5 m off the racing rail (stall 1 abuts it).
+    # gate geometry from the drone's top-down start frame (HV 06-03 R8): 40.2 px stall pitch at
+    # 38.0 px/m (racing -> outer rail 855 px = 22.5 m on course C); stall 1 abuts the racing rail
     STALL_PITCH = 1.06  # m between stall centres
     STALL1_LAT = 2.5  # m: stall-1 centre off the racing rail
     DRAW_SD = 0.4  # m
 
     def official_observations(self) -> list:
-        """HIGH-CERTAINTY records (owner directive): the gate draw fixes every runner's lateral at t=0
-        (standing start, s=0), and the official per-runner sectional times fix its crossing times at
-        the section boundaries (d = 400 k)."""
+        """FINAL-product observations (official outcome data): the gate draw fixes every runner's
+        lateral at t=0 (standing start, s=0), and the official per-runner sectional times fix its
+        crossing times at the section boundaries (d = 400 k)."""
         from .validate import _cum_official
 
         D = self.info.distance
@@ -1102,7 +1089,7 @@ class RaceRun:
         v[:, :k] += v2[:, :k]
         nmax = max(r.no for r in self.info.runners)
         valid = {r.no for r in self.info.runners}
-        if "rank" not in L.files:  # a cached labels.npz from the old identify (assign) path
+        if "rank" not in L.files:  # stale-cache guard: labels.npz without set-valued votes
             raise RuntimeError(
                 "labels.npz has no set-valued legend votes (written before baseline Z5): "
                 "re-run the identify stage"
@@ -1135,8 +1122,8 @@ class RaceRun:
         return lab
 
     def fuse(self):
-        """Two posteriors: VIDEO-ONLY (what the gates validate against the official record) and the
-        FINAL product, which adds the high-certainty official records (draw + sectional times)."""
+        """Two posteriors: VIDEO-ONLY (no official outcome data; what the gates validate) and the
+        FINAL product, which adds the official records (draw + sectional times)."""
         obs = self.observations()
         prior = fusion.Prior(width=self.info.width)
         horses = [r.no for r in self.info.runners]
@@ -1147,18 +1134,17 @@ class RaceRun:
             pv, assign = self._fuse(obs, horses, prior)
         obs, pv = self._em_associate(pv, horses, prior)
         self._write_paths(pv, "paths_video.parquet")
-        # FINAL product: may use all information, including the official records (owner ruling
-        # 2026-11-16). Its grid runs past the last official finish: ending at the last observation
-        # left the slowest finisher a few cm short of the line (HV 06-03 R3 #6: 0.07 m at the last node).
+        # FINAL product (may use official outcome data): its grid runs past the last official
+        # finish, else the slowest finisher ends a few cm short of the line
         offi = self.official_observations()
         t_end = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
         t_end = None if t_end is None else t_end + 0.5
         bias = self._metric_bias(pv)
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
-        # the gate -> first render frame stretch has no video evidence: a field-relative start prior about
-        # the field's median curve (a horse first seen late was extrapolated backwards out of the gate at
-        # its later speed: ST 05-31 #6 26 m out at 2 s vs 8-15 m for the field)
+        # the gate -> first render frame stretch has no video evidence: a field-relative start prior
+        # about the field's median curve (else a horse first seen late is extrapolated back out of the
+        # gate at its later speed)
         if pf:
             P0 = next(iter(pf.values()))
             if all(len(p.t) == len(P0.t) for p in pf.values()):
@@ -1168,13 +1154,9 @@ class RaceRun:
                     ref_until=t_v0 + 1.0,
                 )
                 pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
-        # FINAL identity pass: the E-step re-run with the official records
-        # in every fuse, detections carrying the final metric bias, starting from the detection paths except
-        # where a horse's path conflicts with its own official skeleton (> 4 combined sigma; flat at 3-5).
-        # 26 x 6 (masked base, rule 0151): glitch-seconds 56.4 -> 31.5 per seed (SE 1.0), final census
-        # 93.1 -> 97.3 %, hand +0.8, held-out boundary error unchanged (0.034 / 0.033 s), video-only
-        # byte-identical. REJECTED: raw detections vs bias-shifted paths (census 87.3 %); official sd 0.1 m
-        # (glitches 55.8 -> 85.4 s, s0); starting from the official-only skeleton (hand 220 -> 164).
+        # FINAL identity pass: the E-step re-run with the official records in every fuse, detections
+        # carrying the final metric bias, starting from the detection paths except where a horse's
+        # path conflicts with its own official skeleton (> 4 combined sigma); video-only unaffected
         sk, _a = self._fuse(offi, horses, prior, t_end=t_end)
         start = self._skeleton_merge(pf, sk)
         obs_e, _pe = self._em_associate(
@@ -1191,10 +1173,9 @@ class RaceRun:
 
     def _metric_corrected(self, obs, paths, bias=None):
         """FINAL product only: the render's distance metric has a smooth SHARED error b(s) (all
-        horses cross a boundary early/late together: R08 +0.27 s at the first boundary, HV0527
-        +0.17 s at 400 m), and many render observations treated as independent outvote the single
-        high-certainty official time (final residual ~5x its stated sd). b at each official boundary
-        = median over horses of (crossing delay x speed); interpolated along s; render s shifted."""
+        horses cross a boundary early/late together), and many render observations treated as
+        independent would outvote the single official time. b at each official boundary = median
+        over horses of (crossing delay x speed), interpolated along s; render s shifted by b."""
         bias = self._metric_bias(paths) if bias is None else bias
         if bias is None:
             return obs
@@ -1266,10 +1247,8 @@ class RaceRun:
     def _finish_seeds(self, paths, prior) -> dict:
         """E-step-only SEED paths for horses the finish camera READ but that have no fused path.
 
-        MEASURED (26 turf races, in-sample census): 10 horses were read at the line (up to 45 reads),
-        crossed while the render was still running, finished 5th-12th -- and got NO path: they had no
-        labelled tracklet, and a finish observation alone cannot make one (no lateral, one instant),
-        so the detection-level E-step never considered them. The seed is the camera's crossing
+        A finish observation alone cannot make a path (no lateral, one instant), so without a seed
+        the detection-level E-step never considers such a horse. The seed is the camera's crossing
         (t_w + gap/C, sd as in finish_observations) moving at the field's line speed, sd growing by
         SEED_V_SD per second away from the line, lateral = mid-course +- half the width; it lives
         only inside assign_frames, and whatever detection runs it wins become ordinary render obs."""
@@ -1337,8 +1316,7 @@ class RaceRun:
         obs = []
         # finish camera NEGATIVE evidence: with recall r (fraction of the field it read), a horse
         # that IS at the line goes unread with probability ~(1 - r), so detections in the last 15 m
-        # cost -2 log(1 - r) for unread horses (ST7: unread #3 took a wide leader's detections and
-        # "won", 1.93 s back; ST5: unread #13, last). A fixed 75 %-recall cutoff missed ST5 (71 %).
+        # cost -2 log(1 - r) for unread horses
         near = None
         if self.p("finish.npz").exists():
             zf = np.load(self.p("finish.npz"))
@@ -1347,12 +1325,10 @@ class RaceRun:
             if read and r >= 0.5:
                 cost = float(-2.0 * np.log(1.0 - r))
                 near = [(self.info.distance - 15.0, {h: cost for h in horses if h not in read})]
-                # NO identity evidence near the line (unread by the camera AND absent from the legend
-                # top 8 in the last 8 s before the line): final-stretch detections are not this horse's to take —
-                # it extrapolates with honest uncertainty instead of "finishing" on another horse's
-                # detections (ST7 #4, HV0415 #2 crossed with the leaders, 1.2-2.2 s early)
-                # window: the 8 s before the first horse reaches the line (a horse shown in the top 8
-                # earlier in the straight, then fading, has no identity evidence AT the line)
+                # BLIND horses (unread by the camera AND absent from the legend top 8 in the 8 s
+                # before the first horse reaches the line) have no identity evidence at the line:
+                # final-50 m detections cost them CLUTTER, so they extrapolate with honest
+                # uncertainty instead of "finishing" on another horse's detections
                 crossings = [
                     p.t[np.argmax(self.info.distance - p.s <= 0)]
                     for p in paths.values()
@@ -1392,7 +1368,7 @@ class RaceRun:
                     if len(j) >= 3:
                         j = j[np.argsort(t[j])]
                         # the E-step's hard legend exclusions travel with the anonymous fragment,
-                        # or fusion's chi^2 / orphan association hands it back (HV 0520 #8)
+                        # or fusion's chi^2 / orphan association hands it back
                         no = assoc.fragment_forbid(forbid, j)
                         obs.append(
                             fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
@@ -1411,25 +1387,23 @@ class RaceRun:
             return paths, lab, obs, forbid
 
         paths, lab, obs, forbid = em_pass(paths, None, "")
-        # SEED pass, CONFINED to finish-read horses still path-less after the unseeded EM (seeding
-        # from it0 also fired for horses the EM places anyway and changed races with no such horse:
-        # ST4 sectional 0.409 -> 0.467 on common pairs). Races without a target are unchanged.
+        # SEED pass, CONFINED to finish-read horses still path-less after the unseeded EM; races
+        # without a target are unchanged
         targets = set(self._finish_seeds(paths, prior))
         if targets:
             paths, lab, obs, forbid = em_pass(paths, targets, " (seed)")
-        # SHADOW paths: two horses cannot occupy one position. A horse whose own detections are
-        # missing can lock onto a neighbour's (R03: unread #9 rode #7's detections through the line,
-        # 0.8 s early -> wrong winner). Pairs within 0.8 m along / 0.5 m laterally for >= 0.5 s (both
-        # tight): the render obs of the weaker-evidence horse (no finish-camera reading, else fewer
-        # obs) in that window are dropped and the paths re-fused.
+        # SHADOW paths: two horses cannot occupy one position; a horse whose own detections are
+        # missing can lock onto a neighbour's. Pairs within 0.8 m along / 0.5 m laterally for >= 0.5 s
+        # (both tight): the render obs of the weaker-evidence horse (no finish-camera reading, else
+        # fewer obs) in that window are dropped and the paths re-fused.
         cam = set()
         if self.p("finish.npz").exists():
             zf = np.load(self.p("finish.npz"))
             cam = self._fc_read(zf)
         drop = np.zeros(len(t), bool)
         hs = sorted(paths)
-        # only the finish-critical window (last 3 s before the first horse reaches the line): a
-        # mid-race rule released 1323 detections of a real horse on HV0429 (coverage 94 -> 90 %)
+        # only the finish-critical window (last 3 s before the first horse reaches the line); a
+        # mid-race window releases real horses' detections
         t_fin = min(
             (
                 p.t[np.argmax(self.info.distance - p.s <= 0)]

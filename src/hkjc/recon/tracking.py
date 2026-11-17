@@ -132,7 +132,7 @@ def stitch(tracks, *, max_gap=6.0, sig_s=1.5, sig_l=0.6, gate=3.0, min_len=3):
         T = out
 
 
-SPLIT_TV = 0.30  # max-split silk distance above which a tracklet holds two horses (see below)
+SPLIT_TV = 0.30  # max-split silk distance above which a tracklet holds two horses (pure ones <= 0.28)
 
 
 def split_by_appearance(members, t, F, *, thr=SPLIT_TV, min_n=40):
@@ -140,16 +140,8 @@ def split_by_appearance(members, t, F, *, thr=SPLIT_TV, min_n=40):
     cannot see, e.g. in the render's camera swings). Binary segmentation on the tracklet's per-
     detection collapsed v2 silk signatures ``F`` (rows = detections): the split maximising the
     total-variation distance between the left and right mean signatures (>= ``min_n`` silk-bearing
-    detections per side) is taken while that distance exceeds ``thr``; recursive.
-    MEASURED (26 turf races, legend votes evaluated on each side of the max split): tracklets whose two
-    sides both vote for their label (pure, 85): max-split distance <= 0.28 (p95 0.24) -> thr 0.30
-    splits none of them; it catches the switches between distinct silks (ST4 0419: trk 2 0.56, trk 6
-    0.40 = #3 until ~50 s, then #9 at the line; ST3 #4/#10 -> #3 0.70; ST7 #14 -> #5 0.68, #12 -> #14
-    0.68) but not those between similar silks (4 of 14 vote-confirmed switches). ADOPTED 2026-11-15
-    (26 races x 6 seeds vs Z2, rule declared before reading): non-lateral gates 200.0 = 200.0,
-    hand-truth majority 58 -> 62, unanimity 69.8 -> 74.1 %.
-    Known limit: the silk tie-break has no "none of these" option, so an out-of-view horse's number
-    can still land on a lookalike (ST4 #3). Returns new members."""
+    detections per side) is taken while that distance exceeds ``thr``; recursive. Catches switches
+    between distinct silks, not between similar ones. Returns new members."""
     from .assoc import _collapse
 
     out = []

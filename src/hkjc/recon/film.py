@@ -4,26 +4,18 @@ the REAL painted distance markers.
 The aerial replay is a split screen: the live race film on the left (with the broadcast race clock,
 the same time base as ours) and the AVV render on the right, on the same frames. In the final
 straight the film is a front-on camera that sees each painted marker (400m/300m/200m/150m/100m/50m)
-as a long near-horizontal paint stripe sweeping UP the image as the camera moves. MEASURED (Sha Tin
-2026-04-19 R4, pixels checked): at t = 63.00 s (film clock 1:03.00) the leader's hooves are on the
-300m line, at 69.00 s on the 200m line.
+as a long near-horizontal paint stripe sweeping UP the image as the camera moves.
 
 Per sampled frame (final ~26 s): paint = brighter + less saturated than the local grass; all long
 near-horizontal Hough segments; horses from the COCO detector; the leader = the box lowest in the
 image (closest to the front-on camera). Lines are TRACKED across frames and a track counts as a
-marker only if it sweeps up the image (>= SWEEP_PX): REJECTED single-frame "longest line" — a STATIC
-paint/edge stripe at the bottom of the film (ST4: 104 of 351 frames) and the running rail of the
-side-on camera after the camera change both won it. A camera CUT (thumbnail difference > CUT_DIFF)
-ends every track — but on ST4 the change to the side-on camera is a pan/dissolve (max diff 15) and it
-never fires; the sweep test is what rejects the side-on views, where "lowest box" is not the leader.
-Crossing = the leader's hooves passing the line. Which marker: the render HUD odometer at that
-frame, at the marker or up to 40 m behind it (the render lags reality); then speed consistency
-between successive markers.
+marker only if it sweeps up the image (>= SWEEP_PX): static stripes and the side-on camera's
+running rail do not sweep. A camera CUT (thumbnail difference > CUT_DIFF) ends every track; a
+pan/dissolve to the side-on camera does not fire it, so the sweep test is what rejects side-on
+views, where "lowest box" is not the leader. Crossing = the leader's hooves passing the line.
+Which marker: the render HUD odometer at that frame, at the marker or up to 40 m behind it (the
+render lags reality); then speed consistency between successive markers.
 
-MEASURED (this detector, pixels checked on ST4): 400 m crossings vs official -0.12 (ST4), -0.08
-(ST9), -0.05 s (ST1 0426); ST4 300/200/150/100 m at 63.06/68.89/71.79/74.67 s. Constant-speed
-extrapolation from the last two markers to the line is BIASED EARLY (ST4 80.43 vs official 81.04,
--0.61 s: the clear leader eased; ST9 -0.46, ST3 -0.49, ST1 -0.28) — a bound, not an observation.
 These are REAL-VIDEO observations (no official data)."""
 
 from __future__ import annotations
@@ -137,11 +129,8 @@ STRAIGHT_MARGIN = 20.0  # m: a marker counts only this far inside the home strai
 
 def crossings_from_rows(rows, odo_at, f0, fps=25.0, max_marker=None):
     """Leader crossings on sweeping marker tracks -> {marker_m: race-clock s}. ``max_marker``: only
-    markers <= this (m) are accepted -- the front-on camera sees the stripes in the HOME STRAIGHT.
-    MEASURED (26 turf races, in-sample): Happy Valley's 400 m marker lies on the bend (straight
-    310-338 m) and its "crossings" were -0.32/+0.10/+0.68 s vs official; HV course A's 300 m (12 m
-    inside a 312 m straight) gave a +2.32 s mismatch. Sha Tin's 400 m (30 m inside 430 m) matched
-    official within +-0.12 s on 7 dev races."""
+    markers <= this (m) are accepted -- the front-on camera sees the stripes in the HOME STRAIGHT
+    only (Happy Valley's 400 m marker lies on the bend)."""
     got = {}
     mks = MARKERS if max_marker is None else MARKERS[MARKERS <= max_marker]
     for tr in line_tracks(rows):
@@ -202,8 +191,8 @@ def _speed_consistent(got, vmin=12.0, vmax=22.0):
 
 def leader_finish(film_t, *, vmin=12.0, vmax=22.0):
     """Extrapolate the film leader to the line from the last two markers (constant speed) ->
-    (t_line, speed) or None. BIASED EARLY (leaders slow in the last 100 m): MEASURED -0.28..-0.61 s
-    on 4 Sha Tin races, so use it only as a physical bound."""
+    (t_line, speed) or None. BIASED EARLY (leaders slow in the last 100 m, ~0.3-0.6 s), so use it
+    only as a physical bound."""
     mk = sorted(film_t)
     if len(mk) < 2:
         return None
@@ -227,11 +216,8 @@ def anchor_offset(t, d_lead, film_t, *, win=1.0):
     constant, e.g. the odometer ticks with no convention offset); ``film_t`` = {marker_m: race-clock
     s}. Per marker: delta_k = v_k * (t_render(marker) - t_film), v_k = the leader's local speed over
     +-``win`` s. -> (median delta in m, per-marker deltas) or (None, []) with < FILM_MIN crossings.
-    d_true = d - delta. MEASURED on 15 turf races (recon_v3 artifacts, journal 0137): with the ticks
-    unpinned, recon - film is one flat offset per race through the straight (+2.4..+11 m, spread
-    <= 3 m on most races) and it continues through the line; the render-paint pin made it a step in
-    the last 50 m (leader +0.2 s late at 400-100 m, -0.16 s early at the line). Used by
-    the pipeline (see RaceRun.observe)."""
+    d_true = d - delta. With the ticks unpinned, recon - film is one flat offset per race through
+    the straight and the line, so a single constant suffices. Used by RaceRun.observe."""
     t, d_lead = np.asarray(t, float), np.minimum.accumulate(np.asarray(d_lead, float))
     out = []
     for mk, tf in film_t.items():

@@ -2,8 +2,8 @@
 edit timeline, race_t = video_t - offset from RF's burnt-in clock).
 
 Registration to the world map uses a PHYSICAL pinhole camera (7 DOF: centre C, look-at ground point
-P, heading psi fixing roll, focal f) — not a free 8-DOF homography, which collapsed onto degenerate
-solutions (every rail pixel snapped to one rail). Residuals are bidirectional and truncated:
+P, heading psi fixing roll, focal f); a free 8-DOF homography collapses onto degenerate fits (every
+rail pixel snapped to one rail). Residuals are bidirectional and truncated:
   map->image  sampled world rails (racing rail, outer = racing + course width, fixed inner rail)
               projected into the frame must land on thin-white rail pixels;
   image->map  drone rail pixels must land on a projected rail;

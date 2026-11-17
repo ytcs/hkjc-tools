@@ -1,5 +1,5 @@
 """Burnt-in text on the replays, read with RECOGNITION-ONLY OCR (RapidOCR, no text detection) on
-fixed-position crops: ~25x faster than det+rec and more accurate on these boxes (det split "850M"
+fixed-position crops: faster than det+rec and more accurate on these boxes (det splits "850M"
 into fragments).
 
 AVV render (1080p): left-panel race clock, the odometer box ("850M" = leader's distance-to-go,
@@ -59,8 +59,7 @@ def rec_only(crop, scale: int = 3) -> tuple[str, float]:
 
 
 def rec_batch(crops, scale: int = 3) -> list[tuple[str, float]]:
-    """Recognition-only OCR of many crops in ONE batched call (the finish-camera reader OCR'd ~20
-    cloth candidates per frame one by one: ~12 s/frame under load)."""
+    """Recognition-only OCR of many crops in ONE batched call."""
     import cv2
 
     if not crops:
@@ -167,7 +166,7 @@ def read_render_hud_cached(
     cached left-panel crops, the odometer + legend from the panel.
     Two passes (speed, results identical): the re-read rules depend on PIXELS only, so pass 1 picks
     the crops to read, pass 2 OCRs them in large batches (all crops of one kind share one size, so
-    batch padding is identical) — 2557 single calls took ~90 s on R08."""
+    batch padding is identical)."""
     x0, _x1, y0, _y1 = cache.box
     oy0, oy1, ox0, ox1 = AVV_ODO
     clock_crops, odo_crops, leg_crops = [], [], []

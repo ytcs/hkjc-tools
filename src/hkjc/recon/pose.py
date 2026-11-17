@@ -61,12 +61,10 @@ def chain(steps: list) -> np.ndarray:
 def solve_linear(
     pg: PoseGraph, *, fix: int = 0, iters: int = 20, huber: float = 3.0, tol: float = 1e-4
 ) -> PoseGraph:
-    """Robust pose-graph solve as IRLS on a LINEAR system (Huber on probe residuals measured in
-    FRAME-j pixels, G_j^-1(G_i x) - S x, edge weights w — scale-invariant; NOT the world-px objective of
-    the nonlinear solve, which a global solver satisfies by collapsing frame scales). A 2D similarity is
-    z -> A z + B with complex A, B, so every residual A_i x + B_i - A_j (S x) - B_j is linear in the
-    unknowns (cf. complex-number planar pose-graph / similarity-synchronization formulations). One
-    sparse solve per IRLS round (~ms) instead of a capped nonlinear trf (27 s on R08)."""
+    """Robust pose-graph solve as IRLS on a LINEAR system: Huber on probe residuals in FRAME-j
+    pixels, G_j^-1(G_i x) - S x, edge weights w. Frame-j px is scale-invariant; a world-px objective
+    is minimised by collapsing frame scales. A 2D similarity is z -> A z + B with complex A, B, so every
+    residual A_i x + B_i - A_j (S x) - B_j is linear in the unknowns; one sparse solve per round."""
     from scipy.sparse import bmat, coo_matrix, diags
     from scipy.sparse.linalg import spsolve
 
@@ -102,9 +100,7 @@ def solve_linear(
     lam = 1e-4
     w_rob = np.ones(nE * nP)
     u = None
-    # residual / A_j = G_j^-1(G_i x) - S x: the residual in FRAME-j pixels, SCALE-INVARIANT. In world
-    # px the objective rewards shrinking every frame toward zero scale (a global solver found that
-    # collapse: R03/R02A frames at scale 0); A_j is taken from the previous round (fixed point).
+    # residual / A_j = G_j^-1(G_i x) - S x (frame-j px); A_j is taken from the previous round
     Aj_prev = np.abs(pg.G[Jn, 0, 0] + 1j * pg.G[Jn, 1, 0])
     for _ in range(iters):
         wr = np.repeat(W / np.maximum(Aj_prev, 1e-6), nP) * np.sqrt(w_rob)
@@ -112,12 +108,9 @@ def solve_linear(
         # complex normal equations -> real 2x system
         N = (Mw.conj().T @ Mw).tocsc()
         b = Mw.conj().T @ (rhs0 * wr)
-        # weak prior to the initial (chained) poses: frames with no surviving edge to the fixed
-        # frame's component keep their chain value (as the nonlinear solver leaves them) instead of
-        # collapsing to zero; negligible wherever there is data (lam^2 vs ~probe count x weight^2)
-        # prior strength RELATIVE to each variable kind's data strength (A rows carry probe coords
-        # ~500 px -> diag ~1e6; B rows ~1e1): an absolute lam was negligible and weakly connected
-        # blocks (R02A's 280 dissolve-region frames, joined only by w=0.05 interp edges) collapsed
+        # weak prior to the chained poses, so frames disconnected from the fixed frame keep their
+        # chain value instead of collapsing; scaled per variable kind (A rows carry probe coords
+        # ~500 px -> diag ~1e6, B rows ~1e1), negligible wherever there is data
         dg = N.diagonal().real
         isA = np.r_[np.arange(2 * K)[free] < K]
         pri = np.where(
@@ -250,8 +243,6 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
             edges.append(Edge(i, j, Sm, loop_weight if kind == "loop" else 1.0, kind))
     pg = PoseGraph(shape, G0, edges)
     fix = K // 2
-    # linear IRLS (replaced a capped nonlinear trf solve: 10 dev races, 5 pass every timing gate vs 3,
-    # 33x faster)
     def solve_(g):
         return solve_linear(g, fix=fix)
 

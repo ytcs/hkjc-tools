@@ -1,4 +1,4 @@
-"""Avatar detection on the AVV render (self-supervised YOLO, journal 0132) + per-detection silk colour.
+"""Avatar detection on the AVV render (self-supervised YOLO) + per-detection silk colour.
 
 The detector was trained on the RIGHT HALF of the 1080p frame cropped above the legend strip, so it
 is fed exactly that; box centres are returned in render-PANEL coords (``PanelBox``) so they compose
@@ -47,9 +47,8 @@ OV_IMGSZ = (544, 960)  # the render panel (945x535) letterboxed: a FIXED input f
 
 
 def _openvino_model() -> str:
-    """OpenVINO export of the avatar detector (created once from the .pt weights). MEASURED on R08
-    (100 frames, Arc iGPU of a Core Ultra 5 225U): 23 ms/frame vs 134 ms CPU ONNX; 2449 vs 2451
-    detections, box centres within 0.11 px median / 0.48 px p99."""
+    """OpenVINO export of the avatar detector (created once from the .pt weights); box centres agree
+    with the CPU ONNX path within 0.5 px."""
     out = "models/avv_avatar_yolo11n_openvino_model"
     if not os.path.exists(out):
         from ultralytics import YOLO
@@ -69,7 +68,7 @@ class AvatarDetector:
 
     def panel(self, panel, legend_row: int) -> np.ndarray:
         """Detect on the render PANEL (945x535; ~2x fewer pixels than the letterboxed half frame).
-        -> (N, 6) [cx, cy, w, h, conf, 0] in panel px; legend icon band rejected."""
+        -> (N, 6) [cx, cy, w, h, conf, 0] in panel px; legend icon band dropped."""
         dev = os.environ.get("HKJC_DEVICE", "cpu")
         ov = dev.startswith("intel:")
         r = self.model.predict(
@@ -92,9 +91,8 @@ class AvatarDetector:
 
     def __call__(self, full_img, box, legend_row: int) -> np.ndarray:
         """-> (N, 6) [cx, cy, w, h, conf, 0] in PANEL px. ``legend_row`` is panel-relative."""
-        # Full panel: horses are visible in the turf strip BELOW the legend (the old above-legend crop
-        # dropped them on bends); detections inside the legend ICON band itself are rejected (the
-        # detector fires on the silk icons).
+        # Full panel: horses are visible in the turf strip below the legend; detections inside the
+        # legend icon band are dropped (the detector fires on the silk icons).
         half_x = full_img.shape[1] // 2
         band = full_img[:, half_x:]
         r = self.model.predict(band, conf=CONF, iou=IOU, imgsz=self.imgsz, verbose=False)[0]
@@ -159,11 +157,9 @@ def _silk_bins(hsv, dark_w):
 
 
 def silk_feature(panel, det) -> np.ndarray:
-    """v2 silk signature of a render avatar (for the E-step appearance term): pastel/vivid hue bins +
-    white + (down-weighted) dark, EXCLUDING turf and horse-brown pixels. MEASURED (hand-labelled crops,
-    pixels): the v1 ``silk_hist`` was dominated by the brown horse body (hue bin 1 held 13-39 % of every
-    histogram) and counted pastel silks (light blue) as white -> self-vs-nearest-other 53 % (26 races,
-    ~chance); v2: 0.48 -> 0.67 (HV0527-9), 0.46 -> 0.73 (HV0603-3), 0.50 -> 0.61 (ST4) on EM labels."""
+    """v2 silk signature of a render avatar: pastel/vivid hue bins + white + (down-weighted) dark,
+    excluding turf and horse-brown pixels (in ``silk_hist`` the brown body dominated and pastel silks
+    counted as white, leaving self-vs-other matching at chance)."""
     import cv2
 
     cx, cy, w, h = det[:4]
@@ -179,9 +175,7 @@ def silk_feature(panel, det) -> np.ndarray:
 
 
 def silk_prototype(gif_path) -> np.ndarray:
-    """The same signature from the OFFICIAL silk image (pre-race input; alpha-masked GIF). MEASURED
-    (79 hand-labelled near-line crops, 4 races): the correct colour group is in its top 3 for 63/79;
-    where the EM label was wrong (19 cases) the official silk preferred the right group 19/19."""
+    """The same signature from the official silk image (a pre-race input; alpha-masked GIF)."""
     import cv2
     from PIL import Image
 
@@ -225,9 +219,8 @@ def bgsub_blobs(panel, back, valid, *, thr=60, min_a=40, max_a=1500, merge_px=16
         out.append([x + xs.mean(), y + ys.mean(), len(xs), V[0, 1], V[1, 1], 4 * np.sqrt(w[1])])
     # one avatar can split into fragments (silk vs body colour vs shadow gap). Union blobs whose
     # centres are < merge_px apart, OR close ALONG the frame's dominant body axis (doubled-angle mean
-    # of the blobs' major axes; horses run parallel) but tight ACROSS it: AWT had two detections per
-    # avatar ~25 px apart head-to-tail (17/frame for 14 runners). Isotropic radius alone REJECTED
-    # (too small for head-to-tail splits; a larger one merges horses running abreast).
+    # of the blobs' major axes; horses run parallel) but tight ACROSS it: head-to-tail fragments sit
+    # ~25 px apart, while horses abreast must not merge.
     ax = np.array([0.0, 0.0])
     L = 0.0
     if out:

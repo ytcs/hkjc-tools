@@ -1,15 +1,9 @@
-"""Sectional split times + running positions per horse (trajectory Tier-1).
+"""Official sectional times + running positions per horse (one row per horse per section).
 
-The "Sectional Time & Position" page is **server-rendered** — but only with the
-right params: ``racedate`` as **DD/MM/YYYY** and ``RaceNo`` (no ``Racecourse``;
-the date selects the meeting). The wrong format yields an empty "released shortly"
-page. This turns each horse's run from one number (finish time) into a dense
-per-section velocity profile — the foundation for the energetics model (see
-docs/docs/HKJC_DATA.md).
-
-Output is tidy and keyed to join our canonical (date, race_no, runner) keys.
-Per-section parsing extracts the running **position** and **section time** from
-each cell; margins/sub-splits are left for a later refinement.
+The "Sectional Time & Position" page is server-rendered only with ``racedate`` as DD/MM/YYYY and
+``RaceNo`` (no ``Racecourse``; the date selects the meeting); any other date format yields an empty
+"released shortly" page. Each cell gives the running position and section time; margins and
+sub-splits are not parsed.
 """
 from __future__ import annotations
 
@@ -79,10 +73,9 @@ def _parse_sectional_table(table) -> list[dict]:
 def get_sectional_times(date: str, race_no: int) -> pl.DataFrame:
     """Per-horse, per-section running position + section time for one race.
 
-    ``date`` may be ``YYYY-MM-DD`` / ``YYYY/MM/DD`` / ``DD/MM/YYYY``. Returns a tidy
-    long frame (one row per horse per section) with ``date/race_no/runner`` keys,
-    ``horse_id``, ``finish_order``, ``total_time``, ``section``, ``position`` and
-    ``section_time``. Empty if sectionals aren't published for that race.
+    ``date`` may be ``YYYY-MM-DD`` / ``YYYY/MM/DD`` / ``DD/MM/YYYY``. Columns: ``date/race_no/runner``,
+    ``horse_id``, ``finish_order``, ``total_time``, ``section``, ``position``, ``section_time`` (s).
+    Empty if sectionals aren't published for that race.
     """
     dd = _to_ddmmyyyy(date)
     resp = requests.get(SECTIONAL_URL.format(date=dd, race=race_no), headers=_HEADERS, timeout=20)

@@ -34,23 +34,20 @@ def line_x(img):
     return x if white[x] > 0.6 else None
 
 
-RING_MIN = 0.40  # white fraction of the ring around a digit (0.55 lost small far-side cloths: ST7's
-#                  winner #8 read on 2 frames only; the OCR confidence filters the extra candidates)
+RING_MIN = 0.40  # white fraction of the ring around a digit; higher loses small far-side cloths
 
 
 def _white_cloths(img, y_min):
     """Candidate boxes of DARK DIGITS ON WHITE saddlecloths (Sha Tin side-on finish camera; HV's
     overhead camera shows yellow digits on dark cloth): dark components of digit size whose
-    surrounding ring is mostly white, grouped side by side for two-digit numbers. Segmenting the
-    whole white cloth was REJECTED: it merges with jockeys' white breeches and grey horses."""
+    surrounding ring is mostly white, grouped side by side for two-digit numbers (the whole white
+    cloth is not segmented: it merges with white breeches and grey horses)."""
     import cv2
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     s, v = hsv[..., 1].astype(int), hsv[..., 2].astype(int)
     white = (s < 70) & (v > 175)
-    # digits = dark strokes INSIDE the closed white cloth (closing fills the digit holes). A fixed
-    # v < 100 cut fragments motion-blurred strokes; a black-hat also lights up whole dark horse
-    # bodies on green turf (ST7 wide shot) and merges them with the digits — both REJECTED.
+    # digits = dark strokes INSIDE the closed white cloth (closing fills the digit holes)
     wc = cv2.morphologyEx(white.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
     dark = (wc.astype(bool) & ~white & (v < 150)).astype(np.uint8)
     dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
@@ -129,8 +126,7 @@ def horse_scale(frames_imgs, line_x):
         return None
     dev = os.environ.get("HKJC_DEVICE", "cpu")
     if dev.startswith("intel:") and frames_imgs and frames_imgs[0].shape[:2] == (540, 960):
-        # Intel iGPU via OpenVINO (fixed 544x960 input for the half-res 960x540 frames): YOLOv8x
-        # at ~2.4 s/frame on the CPU was 75 s of the R08 finish scan
+        # Intel iGPU via OpenVINO (fixed 544x960 input for the half-res 960x540 frames)
         ov_dir = COCO_WEIGHTS.replace(".pt", "_544x960_openvino_model")
         if not os.path.exists(ov_dir):
             p = YOLO(COCO_WEIGHTS).export(format="openvino", imgsz=[544, 960], verbose=False)
@@ -221,8 +217,7 @@ def _reads_key(sc):
 
 
 def tracks(sc, *, min_reads=4, y_tol=40.0):
-    """Memoised ``_tracks`` (a pure function of the reads; called ~12x per fuse on the same reads).
-    Exact: returns deep copies."""
+    """Memoised ``_tracks`` (a pure function of the reads). Exact: returns deep copies."""
     import copy
 
     key = (_reads_key(sc), float(min_reads), float(y_tol))
@@ -237,22 +232,13 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
     """Per number, its reads restricted to the dominant lateral (y) cluster (a misread of another
     horse's cloth sits at a different y), sorted by unique-frame index u. {num: (u, x, y) arrays}.
 
-    ONE CLOTH = ONE MOVING TRACK (since 2026-11-16):
+    One cloth = one moving track:
     - the dominant y-cluster is the one read at the most DISTINCT PLACES (45 px bins, the same-cloth
-      tolerance), then the most reads. MEASURED (pixels): ST8's "#1" was a static RAIL POST read ~60x at
-      x 1566 (it passed the ptp "must move" test only through 2 stray reads the running median later
-      removed) and outvoted the real #1 cloth (35 reads, x 1532 -> 293, conf 0.99); ST9's "#7" was a
-      tie (8 v 8 reads, first index won) between "7" read on #5's checked jockey silk (static) and the
-      real #7 cloth. REJECTED: the ptp test after the running median -- it drops genuine SHORT tracks
-      (ST4's winner #11 spans 95 px, ST9 #8 94 px over 4-7 unique frames).
+      tolerance), then the most reads: a static rail post or a digit on a checked silk, read many
+      times at one spot, must not outvote a moving cloth.
     - the coincidence rule (two numbers on one cloth) also counts reads on the other track CONTINUED
-      past its ends (linear, +-10 unique frames -- the digit-drop window). MEASURED (pixels): HV 04-15 R1's
-      "#1" was the "7" cloth read as "1" on the 4 unique frames BEFORE the "7" track starts (x on #7's
-      line extrapolated back to 2 px); the shared-frame test saw 1 shared frame and kept a phantom #1
-      9th (the real #1 finished ~4th, render silks) -> 2 finish-order inversions on every seed.
-    26 races: finish tracks change on 4 (all pixel-verified), 23 races' paths byte-identical; 6-seed
-    ensemble: every gate / idscore / hand-truth yardstick identical (paired Delta 0); finish-order audit
-    s0 8 -> 4 (interpolated crossings)."""
+      past its ends (linear, +-10 unique frames, the digit-drop window): a misread often sits just
+      before the true number's track starts."""
     R = np.asarray(sc["reads"])
     out = {}
 
@@ -272,14 +258,7 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
         o = np.argsort(r[:, 0], kind="stable")
         uu, xx, yy = r[o, 0], r[o, 2], r[o, 3]
         # drop isolated misreads (e.g. a half-occluded "11" read as "1"): far from a running median.
-        # Known cost: SPARSE reads of a moving cloth look isolated (ST 0419 R4's winner #11, read at u
-        # 25/27/56 then 69-86 in the slow-motion post camera, loses the reads near the line -> no gap).
-        # NOT ADOPTED (flips untraced): a robust line x(u) instead (+ a motion-rate test for short
-        # slow-motion tracks, which admits ST4's runner-up #10): restores #11 and #10 (ST4 rho 1.00,
-        # paths complete) but 26 races: timing gates 126 -> 123 -- ST4 sectional 0.173 -> 0.288 (untraced),
-        # ST 0509 R1 rho 0.87 (its #8/#9 reads are GENUINE, pixels; their gaps place them wrongly), ST1's
-        # winner flip is a near dead heat (#13 / unread #9 official 0.05 s apart; noise). Motion-rate
-        # alone: 126 -> 124.
+        # Known cost: SPARSE reads of a moving cloth look isolated and can lose the reads near the line.
         med = np.array([np.median(xx[max(0, i - 3) : i + 4]) for i in range(len(xx))])
         k = np.abs(xx - med) < 80
         return (uu[k], xx[k], yy[k]) if k.sum() >= min_reads else None
@@ -291,9 +270,7 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
             out[num] = tr
     # DIGIT-DROP pre-pass: reads of a SHORTER number lying on a longer number's track ("1" on the "11"
     # cloth) are that longer number's, minus a digit -- remove them and rebuild the shorter track from
-    # what is left. MEASURED (pixels, ST 0419 R4): "1" pooled the winner #11's cloth ("11" read as "1")
-    # with the real #1; its dominant y-cluster became #11's cloth, the coincidence rule below kept
-    # "1" (more reads) and DROPPED the winner #11 from the finish order.
+    # what is left (else the coincidence rule below can keep "1" and drop the real #11)
     for lng in sorted(list(out), key=lambda n: -len(str(n))):
         if lng not in out:
             continue
@@ -303,8 +280,7 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
                 continue
             r = raw[sh]
             # the long number's RAW reads (its y-cluster), robust LINE x(u): the running-median filter
-            # trims sparse early reads (ST4 "11": u 25-86 read, track u 69-74), and the misread "1"s
-            # sat exactly in the trimmed part
+            # trims sparse early reads, where the misread short numbers tend to sit
             rl = raw[lng]
             rl = rl[np.abs(rl[:, 3] - np.median(yl)) < 30]
             if len(rl) < 3:
@@ -327,10 +303,9 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
                     out.pop(sh, None)
                 else:
                     out[sh] = tr
-    # a MISREAD is the same physical cloth read under a second number (Sha Tin side-on camera:
-    # 1/4/14 confusions put "#14" 1.4 s ahead of where it finished): two numbers whose tracks
-    # coincide in (x, y) on shared frames (or on one track continued past its ends: see the
-    # docstring) -> keep the one with more reads
+    # a MISREAD is the same physical cloth read under a second number (e.g. 1/4/14 confusions on the
+    # Sha Tin side-on camera): two numbers whose tracks coincide in (x, y) on shared frames (or on one
+    # track continued past its ends: see the docstring) -> keep the one with more reads
     nums = sorted(out, key=lambda n: -len(out[n][0]))
     drop = set()
     for i, a in enumerate(nums):
@@ -388,8 +363,7 @@ _GAPS_CACHE: dict = {}
 
 
 def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
-    """Memoised ``_finish_gaps`` (a pure function of line_x and the reads; the fuse stage calls it
-    ~17x per race on the same cached reads, 1.6 s of a 13.5 s race). Exact: returns deep copies."""
+    """Memoised ``_finish_gaps`` (a pure function of line_x and the reads). Exact: returns deep copies."""
     import copy
 
     key = (float(sc["line_x"]), _reads_key(sc), float(max_dx), bool(with_sd))
@@ -428,11 +402,9 @@ def _finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
                     break
         return ch
 
-    # Start the chain at the crosser that links the MOST crossers (ties: the earliest). A first
-    # crosser whose cloth has left the frame before the next horse crosses (a wide winning margin
-    # in the slow-motion post camera) links nobody, and starting there wiped every other gap.
-    # MEASURED (ST 0419 R4 with the winner #11's crossing injected): 1 gap instead of 8. On all 26
-    # turf races the first crosser already links the most, so this is a no-op there.
+    # Start the chain at the crosser that links the MOST crossers (ties: the earliest): a first
+    # crosser whose cloth has left the frame before the next horse crosses (a wide winning margin)
+    # links nobody, and starting there would wipe every other gap.
     chains = [_chain(crossers[s:]) for s in range(len(crossers))]
     chain = max(chains, key=len)
     est = {n: ([chain[n]] if n in chain else []) for n in T}
@@ -448,15 +420,13 @@ def _finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
                     if abs(dx) < max_dx:
                         est[h].append(gr + dx)
     # horses seen CROSSING the line (chain members) are direct measurements: keep them with a single
-    # estimate. Requiring >= 2 dropped the first crosser (its own gap is defined, not estimated) and
-    # re-zeroed every other gap on the next horse (ST8: winner #12 seen crossing, order came out
-    # [2, 7, 1]). Non-crossers still need >= 2 shared-frame estimates.
+    # estimate (the first crosser's gap is defined, not estimated). Non-crossers need >= 2
+    # shared-frame estimates.
     gaps = {n: float(np.median(v)) for n, v in est.items() if len(v) >= 2 or (n in chain and v)}
-    # DIGIT-DROP misreads: "14" read as "4" when the "1" is missed (ST7: "#4" at 0.17 s next to #14 at
-    # 0.19 s; real #4 finished 2.12 s back). Drop a number whose digits are contained in another read
-    # number when its reads COINCIDE physically with that number's (same cloth: within 45/30 px on
-    # >= 2 shared frames, and >= half of the shared frames) and it has fewer reads. Gap proximity alone
-    # REJECTED: it dropped ST8's real winner #2 next to #12 (a close finish; their reads ~240 px apart).
+    # DIGIT-DROP misreads: "14" read as "4" when the "1" is missed. Drop a number whose digits are
+    # contained in another read number when its reads COINCIDE physically with that number's (same
+    # cloth: within 45/30 px on >= 2 shared frames, and >= half of the shared frames) and it has fewer
+    # reads; gap proximity alone would drop a real close finisher.
     R = np.asarray(sc["reads"])
     nreads = {n: len(T[n][0]) for n in T}
     for n in list(gaps):
@@ -483,13 +453,11 @@ def _digit_drop(n, m, R, T, nreads) -> bool:
     if m == n or str(n) not in str(m) or nreads.get(n, 0) >= nreads.get(m, 0):
         return False
     rn = R[R[:, 4] == n]
-    # compare against m's TRACK interpolated to each n-read's frame: one cloth yields ONE read
-    # per frame ("3" OR "13"), so same-frame coincidence never fired, and the horse moves
-    # ~60 px per unique frame. MEASURED (pixels, ST 0419 R4): 9 of 10 "3" reads sit on the
-    # "13" cloth (one at conf 0.99); kept, "#3" (tailed off, 7.5 s back) took #13's crossing
-    # -> placed 6.2 s early (behind-winner gate failure).
+    # also compare against m's TRACK interpolated to each n-read's frame: one cloth yields ONE read
+    # per frame ("3" OR "13"), so same-frame coincidence can miss it; the horse moves ~60 px per
+    # unique frame
     rm = R[R[:, 4] == m]
-    sh0 = sa0 = 0  # same-frame coincidence (the original test: ST7's "4" next to "14")
+    sh0 = sa0 = 0  # same-frame coincidence
     for r in rn:
         k = np.where(np.abs(rm[:, 0] - r[0]) <= 1)[0]
         if len(k):
@@ -497,9 +465,8 @@ def _digit_drop(n, m, R, T, nreads) -> bool:
             sa0 += bool(
                 (np.abs(rm[k, 2] - r[2]).min() < 45) and (np.abs(rm[k, 3] - r[3]).min() < 30)
             )
-    # ... and only when MOST of n's reads sit on m's cloth: the tests count shared frames
-    # only, so 3 dropped-digit "2" reads on the "12" cloth deleted the REAL #2 (37 reads,
-    # crossing after #12 had left; pixels: a different silk) on HV 0603 R3 and HV 0415 R1.
+    # ... and only when MOST of n's reads sit on m's cloth: a few dropped-digit "2" reads on the "12"
+    # cloth must not delete a real, well-read #2
     if sa0 >= 2 and sa0 >= 0.5 * sh0 and sa0 >= 0.5 * len(rn):
         return True
     if m not in T:
@@ -520,16 +487,7 @@ def read_numbers(sc) -> set:
     """Numbers the finish camera READ (a cloth track, minus digit-drop misreads of another read
     number) -- whether or not finish_gaps could give them a gap. A gap needs a crossing chained to
     an earlier crosser or a frame shared with a referenced horse; a back-marker crossing after the
-    last referenced cloth has left the frame gets neither. Example (ST 0509 R1): #8/#9 (16/22 reads,
-    1.45/1.51 s back) had no gap, so the E-step's negative evidence treated them as unread and
-    "blind" (CLUTTER on every detection in the last 50 m). Used by the audit only (as the E-step's
-    read set it was never assessed on ensembles): it did NOT fix that race's short #4 path (finish-n 7 -> 7);
-    the cause there was the straight-course rail side (rails.inner_side). Gapless read numbers on the 26 turf
-    races: real runners 0.87-2.4 s back (ST3 #14, ST9 #8, ST 0531 #6), the ST4 winner #11, and ST7
-    "#4" (a digit-drop of #14, removed here).
-    REJECTED for giving such horses a gap: integrating the cloth speed (px per unique frame) over
-    frames between crossings -- the post camera pans with the leaders (their cloths sit still in
-    frame), so the integral saturates (ST 0509 R1 #1/#6/#7, ST7 eight horses at one value)."""
+    last referenced cloth has left the frame gets neither. Used by the audit only."""
     T = tracks(sc)
     R = np.asarray(sc["reads"])
     nreads = {n: len(T[n][0]) for n in T}
@@ -562,9 +520,8 @@ def anchor(gaps, t_cross, *, c_bounds=(800.0, 4000.0), c_prior=None, c_prior_rel
     the clock origin and the px->s scale — so horses without any other-feed path (back-markers)
     still get a finish time. Returns (t_w, C, n, cov) or None; cov = 2x2 covariance of (t_w, 1/C)
     from the Gauss-Newton normal matrix, residual scale estimated robustly (never below t_sd).
-    (Before 2026-11-13 c_prior was accepted but NOT used: C drifted to 2395 vs prior 1942 on R08.)
-    c_prior_rel = 0.30: the COCO-box horse ruler is MEASURED 15-25 % high on HV; at 10 % the prior
-    dragged C up and compressed the tail-of-field gaps (R02A #9 -1.35 s, #11 -0.68 s)."""
+    c_prior_rel = 0.30: the COCO-box horse ruler reads 15-25 % high on HV; a tighter prior drags C
+    up and compresses the tail-of-field gaps."""
     from scipy.optimize import least_squares
 
     nums = [n for n in gaps if np.isfinite(gaps[n]) and np.isfinite(t_cross.get(n, np.nan))]
@@ -602,11 +559,11 @@ def identity_match(
     ``gaps`` {num: px behind the first finisher}. Scans the px/s scale C (c_prior +- c_rel, or
     1200..2600 px/s) and the clock t_w, scores the Hungarian assignment with residuals capped at
     0.3 s, then accepts a pair only if its residual < ``tol`` and every other horse's predicted time
-    is ``margin`` x farther AND >= ``sep`` s away (well-separated finishers only: on a packed finish
-    — R08, neighbours 0.01-0.1 s apart — the relative form alone renamed legend-#2 as #10). The camera fixes ORDER and GAPS exactly at the line; it
-    names the tracklets that reach it (R02A: the 13 m clear winner was never numbered by the legend
-    votes). -> ({key: num}, fit) with fit = label-free clock/scale {t_w, C, edge, n_close, n} (MEASURED
-    on 4 HV races: C within ~15 %, t_w 0.10-0.24 s EARLY — the render leads near the line) or None."""
+    is ``margin`` x farther AND >= ``sep`` s away (well-separated finishers only: on a packed finish,
+    neighbours 0.01-0.1 s apart, the relative form alone mislabels). The camera fixes ORDER and GAPS
+    exactly at the line and names the tracklets that reach it, including clear leaders the legend
+    votes never number. -> ({key: num}, fit) with fit = label-free clock/scale {t_w, C, edge,
+    n_close, n} (t_w typically 0.1-0.25 s EARLY: the render leads near the line) or None."""
     from scipy.optimize import linear_sum_assignment
 
     keys = [k for k in t_cross if np.isfinite(t_cross[k])]
@@ -654,10 +611,9 @@ def eliminate(fit, labelled_keys, used_nums, *, tol=0.12, sep=0.15):
     """ELIMINATION at the line: tracklets that reach the line WITHOUT a label are matched only to
     numbers that have NO line-reaching tracklet (``used_nums``), under the race-wide label-free
     registration (``fit`` from identity_match: t_w, C, tc, gaps). Back-markers never appear in the
-    top-8 legend, so the legend cannot name them (R08: three whole-race tracklets unnamed, #1/#5
-    path-less). A pair is accepted if its residual < ``tol`` and forbidding it raises the optimal
-    assignment cost by >= ``sep`` s (assignment-level ambiguity; a pairwise neighbour test REJECTED:
-    #1/#5 predicted 0.16 s apart blocked an unambiguous joint match). -> {key: num}."""
+    top-8 legend, so the legend cannot name them. A pair is accepted if its residual < ``tol`` and
+    forbidding it raises the optimal assignment cost by >= ``sep`` s (assignment-level ambiguity).
+    -> {key: num}."""
     from scipy.optimize import linear_sum_assignment
 
     keys = [k for k in fit["tc"] if k not in labelled_keys]

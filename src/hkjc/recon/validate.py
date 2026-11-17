@@ -1,4 +1,6 @@
-"""Validation against the OFFICIAL outcome (validation only — never a reconstruction input).
+"""Validation against the OFFICIAL outcome. The gates score the VIDEO-ONLY product
+(``paths_video.parquet``, which never uses official outcome data); the FINAL product (``paths.parquet``)
+includes the official records and is only checked for how closely it honours them.
 
 Fixed acceptance gates (set before looking at numbers; never loosened):
   leader_timing_mae   <= 0.25 s   leader crossing time at each sectional boundary vs official

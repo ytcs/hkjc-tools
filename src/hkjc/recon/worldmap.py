@@ -1,9 +1,8 @@
 """World map of the AVV course: mosaic the de-duplicated render frames through their poses.
 
-Averaging hundreds of registered frames erases the moving horses and leaves the STATIC world
-(turf, rails, painted markers) — rails are then extracted ONCE on a static image instead of per
-frame. ``Mosaic`` accumulates incrementally so a single decode pass can fill several maps
-(e.g. per-pass maps that test drift vs a genuine fixed/movable rail pair).
+Averaging hundreds of registered frames erases the moving horses and leaves the static world
+(turf, rails, painted markers), so rails are extracted once on a static image. ``Mosaic``
+accumulates incrementally, so one decode pass can fill several maps.
 """
 
 from __future__ import annotations

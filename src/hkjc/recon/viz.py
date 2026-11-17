@@ -7,7 +7,7 @@
                            with the raw panel (misregistration shows as doubled rails/markers)
   straightened(run)        the map straightened along the rail stations (s -> x, inward -> y) with
                            the fitted rail and all horse points, in rows
-  paths_plot(run)          fused paths: lateral vs distance-to-go, and gap-behind-leader vs time
+  paths_plot(run)          fused paths: d(t), lateral(t) and lateral vs d (posterior sd < 1.5 m)
   sync_video(run, out, offsets)  the four replay feeds time-synced on the race clock beside the
                            reconstruction (course overview from the measured rail + a straightened
                            field view: metres behind the leader x lateral off the rail)
@@ -54,7 +54,7 @@ def reproject(run, want):
         img = p.copy()
         st = z["st_of_frame"][k]
         sel = slice(max(0, st - 500), min(len(rf.R), st + 500))
-        # straight courses (Z6): the polyline is the field-edge DATUM; the racing rail drawn (and the
+        # straight courses: the polyline is the field-edge DATUM; the racing rail drawn (and the
         # lateral reference) is the fence measured lat0_px inside it (rails.straight_datum)
         lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
         if lat0:
@@ -364,7 +364,7 @@ def sync_video(
         N = rf.Nout[j - 1] * (1 - w) + rf.Nout[j] * w
         return to_px(R + (lat * ppm - lat0) * N)[0], d, sd
 
-    # one field-view window per race (a per-frame window rescaled every horse at once: 8-11 jumps per race)
+    # one field-view window per race (a per-frame window would rescale every horse at once)
     spreads = []
     for tt in np.arange(min(g["t"][0] for g in G.values()), max(g["t"][-1] for g in G.values()), 0.5):
         ds = [np.interp(tt, g["t"], g["d"]) for g in G.values()
