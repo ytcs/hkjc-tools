@@ -1125,9 +1125,10 @@ class RaceRun:
 
     ANCHOR_CHECK = True  # env HKJC_ANCHOR_CHECK=0 disables (on/off sweeps)
 
-    def _fuse(self, obs, horses, prior, tail=0.0):
+    def _fuse(self, obs, horses, prior, tail=0.0, t_end=None):
         """Render-fused posterior, then + finish camera. ``tail`` (s): the LAST fusion's grid runs
-        that far past the data (prior-only nodes; used once, after the EM -- see fuse)."""
+        that far past the data (prior-only nodes; used once, after the EM -- see fuse). ``t_end``: the
+        grid runs at least to this time (the FINAL product: past the last official finish)."""
         import os
 
         ac = self.ANCHOR_CHECK and os.environ.get("HKJC_ANCHOR_CHECK", "1") != "0"
@@ -1135,9 +1136,9 @@ class RaceRun:
         paths, assign = fusion.fuse_race(obs, horses, prior, anchor_check=ac, stats=st)
         fin = self.finish_observations(paths)  # second pass: + finish camera
         tr = None
-        if tail > 0:
+        if tail > 0 or t_end is not None:
             ts = np.concatenate([o.t for o in obs + fin])
-            tr = (float(ts.min()), float(ts.max()) + tail)
+            tr = (float(ts.min()), max(float(ts.max()) + tail, float(t_end or -np.inf)))
         if fin or tr is not None:
             paths, assign = fusion.fuse_race(
                 obs + fin, horses, prior, anchor_check=ac, stats=st, t_range=tr
@@ -1252,8 +1253,20 @@ class RaceRun:
         if tail > 0:  # once, after the EM: nothing downstream of the E-step sees the tail
             pv, _a = self._fuse(obs, horses, prior, tail=tail)
         self._write_paths(pv, "paths_video.parquet")
+        # FINAL product: may use all information, including the official records (owner ruling
+        # 2026-11-16). Its grid runs past the last official finish: ending at the last observation
+        # left the slowest finisher a few cm short of the line (HV 06-03 R3 #6: 0.07 m at the last node).
+        offi = self.official_observations()
+        t_end = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
+        t_end = None if t_end is None or os.environ.get("HKJC_FINAL_GRID", "1") == "0" else t_end + 0.5
         obs_f = self._metric_corrected(obs, pv)
-        pf, _a = self._fuse(obs_f + self.official_observations(), horses, prior)
+        pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
+        # HKJC_FINAL_EM=1 (opt-in, NOT ADOPTED 2026-11-16): the E-step re-run against the final paths
+        # with the official records in every fuse. Masked base, s0: final census 90.7 -> 87.3 % good,
+        # official residual > 0.25 s 5.3 -> 9.6 %, hand 220 -> 216 (ST 05-31 11 -> 7).
+        if os.environ.get("HKJC_FINAL_EM", "0") != "0":
+            obs_e, _pe = self._em_associate(pf, horses, prior, extra=offi, out_name="det_labels_final.npz")
+            pf, _a = self._fuse(self._metric_corrected(obs_e, pv) + offi, horses, prior, t_end=t_end)
         self._write_paths(pf, "paths.parquet")
         n_anon = sum(1 for o in obs if o.horse == 0)
         n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
@@ -1398,7 +1411,7 @@ class RaceRun:
                 out.add(h)
         return out
 
-    def _em_associate(self, paths, horses, prior):
+    def _em_associate(self, paths, horses, prior, extra=None, out_name="det_labels.npz"):
         """Detection-level EM (``assoc``): every detection re-assigned per frame against the
         continuous fused paths (+ one-sided legend rank constraint), paths re-fused; the tracker's
         fragments are only the initialisation. Unassigned detections stay anonymous (grouped by
@@ -1514,7 +1527,7 @@ class RaceRun:
                         obs.append(
                             fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
                         )
-                paths, _a = self._fuse(obs, horses, prior)
+                paths, _a = self._fuse(obs + (extra or []), horses, prior)
                 changed = np.nan if prev is None else float((lab != prev).mean())
                 self.log(
                     f"   em-assoc{tag} it{it}: {np.mean(lab > 0):.0%} of detections assigned, "
@@ -1589,9 +1602,9 @@ class RaceRun:
                     obs.append(
                         fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
                     )
-            paths, _a = self._fuse(obs, horses, prior)
+            paths, _a = self._fuse(obs + (extra or []), horses, prior)
             self.log(f"   em-assoc: shadow paths -> {int(drop.sum())} detections released")
-        np.savez(self.p("det_labels.npz"), labels=lab)  # per-detection EM identity (viz, audit)
+        np.savez(self.p(out_name), labels=lab)  # per-detection EM identity (viz, audit)
         return obs, paths
 
     def paths(self):

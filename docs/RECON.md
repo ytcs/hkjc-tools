@@ -1590,6 +1590,25 @@ HV 06-03 R8 (judged good by eye) scores 100 %; with the raw (not common-mode-rem
   dropping them silently; sd does not flag confident errors (ST4 #3 sits on wrong detections at
   sd 0.17 m on seed 1).
 
+**Owner ruling and the final product (2026-11-16).** The FINAL product (`paths.parquet`) may use all
+information, including the official results; acceptance is judged on it. The video-only posterior
+(`paths_video.parquet`) and its gates stay official-free as the independent check.
+- Final-product census (same definition, raw residual vs the official records, which are now
+  inputs: it detects conflict only, a swap of two horses with similar times passes). Z8 90.2 %, mask
+  91.0 % of horse-runs good (6 seeds). Mask: ST3 70 → 100 %, ST 05-09 R1 90 → 100 %; ST 05-24 95 → 88,
+  ST4 76 → 71, ST 05-31 90 → 87, ST 05-17 92 → 88, HV 05-27 R3 79 → 75, HV 05-20 R2 68 → 65 %.
+- DECISION (owner delegated to the advisor): the avatar mask is the working base (`src_M`,
+  `ens_mask`). Rule 0149 stays FAILED; the video-only gate loss (−0.67 non-lateral per seed) is the
+  new base's reported failure, and the six ovals above are the worklist. Default/tag only after a
+  from-scratch run on current code with the mask on (the transplanted poses are from pod run Y).
+- Final grid past the last official finish (default; `HKJC_FINAL_GRID=0` = old). The final fuse's
+  grid ended at the last observation, leaving the slowest finisher a few cm short of the line (HV 06-03
+  R3 #6 0.07 m, HV 04-22 R9 #11 0.8 m: "never crosses"). Masked base, s0: video-only paths
+  byte-identical on 26/26; final census 90.7 → 92.9 %, no-cross 0.9 → 0 %, official residual > 0.25 s
+  5.3 → 4.0 %.
+- NOT ADOPTED: `HKJC_FINAL_EM` (the E-step re-run against the final paths, official records in every
+  fuse): final census 90.7 → 87.3 %, residual > 0.25 s 5.3 → 9.6 %, hand 220 → 216 (s0).
+
 ## 4. Open / next
 
 - **Robustness yardstick** — judge changes on perturbation ensembles, not single runs (ST9's rho
