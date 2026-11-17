@@ -1606,8 +1606,20 @@ information, including the official results; acceptance is judged on it. The vid
   R3 #6 0.07 m, HV 04-22 R9 #11 0.8 m: "never crosses"). Masked base, s0: video-only paths
   byte-identical on 26/26; final census 90.7 → 92.9 %, no-cross 0.9 → 0 %, official residual > 0.25 s
   5.3 → 4.0 %.
-- NOT ADOPTED: `HKJC_FINAL_EM` (the E-step re-run against the final paths, official records in every
-  fuse): final census 90.7 → 87.3 %, residual > 0.25 s 5.3 → 9.6 %, hand 220 → 216 (s0).
+- `HKJC_FINAL_EM` (opt-in; under test, rule 0151): the E-step re-run against the final paths with the
+  official records in every fuse.
+  - FIRST version compared RAW detections with bias-shifted paths (`_metric_corrected` shifts the
+    final render obs by the shared metric bias b(s), a few metres): final census 90.7 → 87.3 %,
+    residual > 0.25 s 5.3 → 9.6 %, hand 220 → 216 (s0). Fixed: detections carry the same bias.
+  - With the fix (s0): 92.9 → 94.7 %, hand 220 → 221, but ST4 #3 still rides other horses'
+    detections between its 800 m and 400 m boundaries (the E-step starts from paths they dragged).
+  - REJECTED: official sd 0.4 → 0.1 m (census 98.1 % by construction, glitch-seconds 55.8 → 85.4: paths
+    pinned at boundaries, wrong detections between); starting the E-step from the official-only skeleton
+    (`HKJC_FINAL_SKELETON=1`): glitches cleared but hand 220 → 164 (no lateral detail; the bunched field
+    is mislabelled).
+  - Candidate (`HKJC_FINAL_SKELETON=2`): start from the detection paths, replaced by the horse's own
+    official skeleton only where they conflict by > 4 combined sigma (`_skeleton_merge`). s0: census
+    97.8 %, glitch-seconds 51.1 → 27.8, hand 220 → 220. 26 x 6 run under rule 0151.
 
 ## 4. Open / next
 

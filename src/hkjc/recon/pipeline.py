@@ -1107,14 +1107,17 @@ class RaceRun:
                 )
             )
         bnd, cum = _cum_official(self.info)
+        hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: withhold boundary index j (held-out check)
         for h, c in cum.items():
             ok = np.isfinite(c)
+            if hold is not None:
+                ok = ok & (np.arange(len(c)) != int(hold))
             out.append(
                 fusion.Obs(
                     np.asarray(c)[ok],
                     D - np.asarray(bnd)[ok],
                     None,
-                    0.4,
+                    float(os.environ.get("HKJC_OFFICIAL_SD", 0.4)),  # under test (m)
                     1.0,
                     "official",
                     horse=int(h),
@@ -1259,14 +1262,24 @@ class RaceRun:
         offi = self.official_observations()
         t_end = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
         t_end = None if t_end is None or os.environ.get("HKJC_FINAL_GRID", "1") == "0" else t_end + 0.5
-        obs_f = self._metric_corrected(obs, pv)
+        bias = self._metric_bias(pv)
+        obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
         # HKJC_FINAL_EM=1 (opt-in, NOT ADOPTED 2026-11-16): the E-step re-run against the final paths
         # with the official records in every fuse. Masked base, s0: final census 90.7 -> 87.3 % good,
         # official residual > 0.25 s 5.3 -> 9.6 %, hand 220 -> 216 (ST 05-31 11 -> 7).
         if os.environ.get("HKJC_FINAL_EM", "0") != "0":
-            obs_e, _pe = self._em_associate(pf, horses, prior, extra=offi, out_name="det_labels_final.npz")
-            pf, _a = self._fuse(self._metric_corrected(obs_e, pv) + offi, horses, prior, t_end=t_end)
+            # detections carry the same metric correction as the final render obs (FIRST version
+            # compared raw detections with bias-shifted paths: a few metres off everywhere)
+            start = pf
+            mode = os.environ.get("HKJC_FINAL_SKELETON", "0")  # under test
+            if mode != "0":  # the official-only skeleton (records + draw + physics prior)
+                sk, _a = self._fuse(offi, horses, prior, t_end=t_end)
+                start = sk if mode == "1" else self._skeleton_merge(pf, sk)
+            obs_e, _pe = self._em_associate(
+                start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
+            )
+            pf, _a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
         self._write_paths(pf, "paths.parquet")
         n_anon = sum(1 for o in obs if o.horse == 0)
         n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
@@ -1275,12 +1288,50 @@ class RaceRun:
             f"anonymous tracklets associated {n_ass}/{n_anon}"
         )
 
-    def _metric_corrected(self, obs, paths):
+    def _metric_corrected(self, obs, paths, bias=None):
         """FINAL product only: the render's distance metric has a smooth SHARED error b(s) (all
         horses cross a boundary early/late together: R08 +0.27 s at the first boundary, HV0527
         +0.17 s at 400 m), and many render observations treated as independent outvote the single
         high-certainty official time (final residual ~5x its stated sd). b at each official boundary
         = median over horses of (crossing delay x speed); interpolated along s; render s shifted."""
+        bias = self._metric_bias(paths) if bias is None else bias
+        if bias is None:
+            return obs
+        sb, b = bias
+        out = []
+        for ob in obs:
+            if ob.feed == "render" and ob.s is not None:
+                ob = replace(ob, s=ob.s + np.interp(ob.s, sb, b))
+            out.append(ob)
+        return out
+
+    @staticmethod
+    def _skeleton_merge(paths, skeleton, z_max=4.0):
+        """Per horse: the detection-based path, except where it conflicts with the horse's own
+        official skeleton by > z_max combined sigma -- there the skeleton (vague between boundaries)
+        replaces it, so detections that dragged the path onto another horse are not re-taken."""
+        out = {}
+        for h, p in paths.items():
+            k = skeleton.get(h)
+            if k is None:
+                out[h] = p
+                continue
+            ks = np.interp(p.t, k.t, k.s)
+            ksd = np.interp(p.t, k.t, k.sd_s)
+            bad = np.abs(p.s - ks) > z_max * np.hypot(p.sd_s, ksd)
+            if not bad.any():
+                out[h] = p
+                continue
+            out[h] = replace(
+                p,
+                s=np.where(bad, ks, p.s),
+                sd_s=np.where(bad, ksd, p.sd_s),
+                sd_l=np.where(bad, np.maximum(p.sd_l, np.interp(p.t, k.t, k.sd_l)), p.sd_l),
+            )
+        return out
+
+    def _metric_bias(self, paths):
+        """(s at the official boundaries, shared render metric bias b there, m) or None."""
         from .validate import _cum_official, crossing
 
         bnd, cum = _cum_official(self.info)
@@ -1300,17 +1351,12 @@ class RaceRun:
             bs.append((D - bd, float(np.median(r)) if len(r) >= 3 else np.nan))
         bs = [(sb, b) for sb, b in bs if np.isfinite(b)]
         if not bs:
-            return obs
+            return None
         sb, b = np.array(bs).T
         o = np.argsort(sb)
         sb, b = sb[o], b[o]
         self.log(f"   fuse: render metric bias at boundaries (m): {np.round(b, 2).tolist()}")
-        out = []
-        for ob in obs:
-            if ob.feed == "render" and ob.s is not None:
-                ob = replace(ob, s=ob.s + np.interp(ob.s, sb, b))
-            out.append(ob)
-        return out
+        return sb, b
 
     EM_ITERS = 8
     SEED_BACK = 3.0  # s before its finish-camera crossing that a path-less horse is seeded
@@ -1411,7 +1457,9 @@ class RaceRun:
                 out.add(h)
         return out
 
-    def _em_associate(self, paths, horses, prior, extra=None, out_name="det_labels.npz"):
+    def _em_associate(
+        self, paths, horses, prior, extra=None, out_name="det_labels.npz", s_bias=None
+    ):
         """Detection-level EM (``assoc``): every detection re-assigned per frame against the
         continuous fused paths (+ one-sided legend rank constraint), paths re-fused; the tracker's
         fragments are only the initialisation. Unassigned detections stay anonymous (grouped by
@@ -1429,6 +1477,8 @@ class RaceRun:
                 {int(h): p for h, p in zip(zs["proto_no"], zs["proto"])},
             )
         s_run = self.info.distance - T["d"]
+        if s_bias is not None:  # final product: the shared render metric bias (see _metric_corrected)
+            s_run = s_run + np.interp(s_run, *s_bias)
         frag = np.full(len(t), -1)
         for k, m in enumerate(T["members"]):
             frag[np.asarray(m, int)] = k
