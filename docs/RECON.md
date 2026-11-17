@@ -443,8 +443,8 @@ Gates failed on ≥ 5 of 6 seeds:
   tilt), not bend geometry. It explains HV 05-20 R2 #2 (4–6 m wide, 0.7–1.5 m ahead of its legend place).
 - **Remaining glitches.** Most final-product glitch-seconds (relative speed > 3 m/s) where the
   video-only path is smooth come from identity conflicts at an official crossing: a wrong E-step label
-  between boundaries pins the horse, the official time pulls it back (HV 05-20 R2 #6 took #12's
-  detections at t 47–48; ST 05-31 R1's #6 runs wide and unlabelled until the last 50 m). Genuinely
+  between boundaries pins the horse, the official time pulls it back (HV 05-20 R2: one tracker fragment that runs the whole race and crosses the boundaries at #2's
+  official times is labelled 2, 5, 6, 2, 5, 4, 2 along its length; ST 05-31 R1's #6 runs wide and unlabelled until the last 50 m). Genuinely
   fading horses also exceed 3 m/s relative (HV 04-29 R9 #8, ST 05-03 R7 #11); relative acceleration
   separates them (faders ≤ 1.25 m/s², conflicts ≥ 2.4 m/s² on five traced cases). Boundary-crossing
   runs already agree with their official times in the final labels (1 of 783 off by > 0.3 s).
