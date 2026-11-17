@@ -1265,6 +1265,18 @@ class RaceRun:
         bias = self._metric_bias(pv)
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
+        # the gate -> first render frame stretch has no video evidence: a field-relative start prior about
+        # the field's median curve (a horse first seen late was extrapolated backwards out of the gate at
+        # its later speed: ST 05-31 #6 26 m out at 2 s vs 8-15 m for the field)
+        if pf and os.environ.get("HKJC_START_REL", "1") != "0":
+            P0 = next(iter(pf.values()))
+            if all(len(p.t) == len(P0.t) for p in pf.values()):
+                t_v0 = min(float(p.t[0]) for p in pv.values()) if pv else 0.0
+                prior = replace(
+                    prior, ref_t=P0.t, ref_s=np.median([p.s for p in pf.values()], axis=0),
+                    ref_until=t_v0 + 1.0,
+                )
+                pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
         # FINAL identity pass (default; HKJC_FINAL_EM=0 = off): the E-step re-run with the official records
         # in every fuse, detections carrying the final metric bias, starting from the detection paths except
         # where a horse's path conflicts with its own official skeleton (> 4 combined sigma; flat at 3-5).

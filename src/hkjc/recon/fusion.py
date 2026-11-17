@@ -50,6 +50,14 @@ class Prior:
     l_min: float = 0.3  # m: a horse centre is at least this far outside the racing rail
     width: float = 30.0  # m: racing rail -> outer rail
     vl_sd: float = 2.0  # lateral-velocity prior (m/s): sideways drift is slow
+    # FIELD-RELATIVE start prior (final product): before ref_until (s, race clock) a horse's acceleration is
+    # a_sd_rel about the FIELD's reference curve (ref_t, ref_s) instead of a_sd_start about zero: out of the
+    # gate every horse follows the common acceleration; 0.63 m/s^2 per node = the clean races' measured
+    # horse-specific acceleration (~0.2 m/s^2 averaged over 1 s, white-noise scaled to DT 0.1 s).
+    ref_t: np.ndarray | None = None
+    ref_s: np.ndarray | None = None
+    ref_until: float = -np.inf
+    a_sd_rel: float = 0.63
     # (no along-track velocity prior: it decelerated paths toward a stop across end-of-race data gaps;
     #  the acceleration prior alone extrapolates at constant speed)
 
@@ -75,7 +83,7 @@ def _interp_rows(t, t0, n):
     return np.r_[r, r], np.r_[k, k + 1], np.r_[1 - w, w]
 
 
-def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd):
+def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd, a_ref=None):
     """The same MAP problem as ``smooth.solve``, assembled DIRECTLY as a banded normal matrix (lower
     bandwidth 2: interpolation rows touch 2 adjacent nodes, the acceleration prior 3, the velocity
     prior 2) and solved by banded Cholesky -- O(n), no sparse construction or LU. DEFAULT
@@ -116,6 +124,11 @@ def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd):
     np.add.at(ab[1], i, -2 * g2)
     np.add.at(ab[1], i + 1, -2 * g2)
     np.add.at(ab[2], i, g2)
+    if a_ref is not None:  # acceleration prior centred on a_ref (m/s^2) instead of 0
+        ar = g2 * np.asarray(a_ref, float) * DT * DT
+        np.add.at(r, i, ar)
+        np.add.at(r, i + 1, -2 * ar)
+        np.add.at(r, i + 2, ar)
     if v_sd:
         h2 = (1.0 / (v_sd * DT)) ** 2
         j = np.arange(n - 1)
@@ -213,8 +226,15 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
 
     import os
 
+    a_ref = None
+    if prior.ref_s is not None and t_grid[0] < prior.ref_until:
+        tm = t_grid[1:-1]
+        rel = tm < prior.ref_until
+        rs = np.interp(t_grid, prior.ref_t, prior.ref_s)
+        a_ref = np.where(rel, (rs[:-2] - 2 * rs[1:-1] + rs[2:]) / (DT * DT), 0.0)
+        a_s = np.where(rel, prior.a_sd_rel, a_s)
     if os.environ.get("HKJC_BANDED", "1") != "0":  # banded Cholesky (see _smooth_banded)
-        s, sd_s = _solve_banded(obs, "s", t0, n, a_s, None, None, None, want_sd)
+        s, sd_s = _solve_banded(obs, "s", t0, n, a_s, None, None, None, want_sd, a_ref=a_ref)
         lat, sd_l = _solve_banded(
             obs,
             "lat",
@@ -227,6 +247,8 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
             want_sd,
         )
     else:
+        if a_ref is not None:
+            raise ValueError("the field-relative start prior needs the banded solver")
         s, sd_s = solve(blocks_s, rhs_s, a_s, None, None)
         lat, sd_l = solve(
             blocks_l, rhs_l, prior.a_sd_l, prior.l_min, prior.width - prior.l_min, v_sd=prior.vl_sd
