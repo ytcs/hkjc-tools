@@ -457,7 +457,8 @@ def sync_video(
         cv2.putText(mp, f"{run.info.key}  t = {t:6.2f} s", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         if lead is not None:
             cv2.putText(mp, f"leader {max(lead, 0):5.0f} m to go", (Wm - 230, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        cv2.putText(mp, "reconstruction, video only", (Wm - 230, Ho + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+        prod = "reconstruction, video only" if "video" in paths_name else "final product (+ official records)"
+        cv2.putText(mp, prod, (Wm - 8 - cv2.getTextSize(prod, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)[0][0], Ho + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
         canvas[:, 2 * tile[0] :] = mp
         enc.stdin.write(canvas.tobytes())
     enc.stdin.close()
