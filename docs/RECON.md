@@ -628,7 +628,7 @@ Synchronisation and other evidence
 - TV running-order bar: 8 fixed slots, a delayed copy of the render legend.
 - Post-gate patrol silk templates: top-1 0.61 vs 0.63 for in-race TV templates; the colour histogram is the ceiling.
 - Identity-free per-frame registration of drone horse detections to the render detections as an acceptance test: the same median residual gate (1.2 m) passes 23 % of fields from other races and 48 % of the same field 8 s later.
-- Drone horse tracks (linked to render tracklets where the render frame is complete) in place of interpolation across render gaps: simulated 10 s dropouts on 25 races, drone 0.92 m vs interpolation 0.64 m median (extrapolation 1.85 m); coverage collapses on the worst render races (HV 05-20 R9 0 %), where complete frames are rare.
+- Drone horse tracks in place of interpolation across render gaps, for position accuracy when the horse's identity across the gap is given (linked to render tracklets where the render frame is complete): simulated 10 s dropouts on 25 races, drone 0.92 m vs interpolation 0.64 m median (extrapolation 1.85 m); coverage collapses on the worst render races (HV 05-20 R9 0 %), where complete frames are rare.
 
 The off-switches of adopted rules (negative evidence, blind cost, shadow release, anchor check,
 detection EM, paint-pin override, fragment-forbid fraction, rail smoother, local refit) were removed.
