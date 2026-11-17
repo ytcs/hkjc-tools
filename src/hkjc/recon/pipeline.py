@@ -47,31 +47,16 @@ from ..data import RaceInfo, download_replay, replay_path
 FPS = 25.0
 
 
-def silk_ties_enabled() -> bool:
-    """Appearance tie-break for tie-vote tracklets (identity.resolve_ties; default on)."""
-    return os.environ.get("HKJC_SILK_TIES", "1") != "0"
-
-
-def track_app_enabled() -> bool:
-    """Appearance-aware tracking (HKJC_TRACK_APP=1; needs the silk stage)."""
-    return os.environ.get("HKJC_TRACK_APP", "0") != "0"
-
-
-def film_enabled() -> bool:
-    """The race-film metric anchor: ON by default, HKJC_FILM=0 disables (``RaceRun.observe``)."""
-    return os.environ.get("HKJC_FILM", "1") != "0"
-
-
 STAGES = (
     "frames",
     "features",
     "pose",
     "worldmap",
     "detect",
-    "silk",  # v2 silk signatures + official prototypes (identify's tie-break; E-step if HKJC_SILK_W > 0)
+    "silk",  # v2 silk signatures + official prototypes (identify's silk evidence, appearance split)
     "hud",
     "rails",
-    "film",  # race-film marker crossings -> the metric's constant offset (HKJC_FILM=0: skipped)
+    "film",  # race-film marker crossings -> the metric's constant offset
     "observe",
     "finish",  # independent of the render; before identify (finish-camera identity votes)
     "identify",
@@ -163,12 +148,6 @@ class RaceRun:
         import multiprocessing as mp
 
         todo = [st for st in stages if st not in self.done_set() or st in force]
-        if not film_enabled():  # HKJC_FILM=0 (see observe)
-            todo = [st for st in todo if st != "film"]
-        if not (
-            float(os.environ.get("HKJC_SILK_W", 0)) > 0 or track_app_enabled() or silk_ties_enabled()
-        ):
-            todo = [st for st in todo if st != "silk"]
         bg = {}
 
         launched = set()
@@ -235,7 +214,7 @@ class RaceRun:
         cache = self.cache()
         global _CACHE, _FEATS_PAR
         _CACHE = cache
-        yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"  # off by default (not adopted: run Y)
+        yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"  # the masked working base (pod run Y)
         nw = _nproc()
         if yolo:  # one detector per worker; one accelerator context (as in ``detect``)
             accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
@@ -605,8 +584,7 @@ class RaceRun:
                 ppm, sF, ks_seed, _ps = seeded
                 have_markers = True
                 self.log(f"   observe: tick-seeded marker grid k={ks_seed.tolist()} ppm {ppm:.3f}")
-        pin_env = os.environ.get("HKJC_PIN")  # diagnostic override: "1" force pin, "0" never
-        # DEFAULT (HKJC_FILM=0 disables; journals 0137/0139): the race film's REAL painted markers
+        # Journals 0137/0139: the race film's REAL painted markers
         # fix the metric's constant -- odometer ticks as the metric to the line (unpinned, no
         # convention offset), shifted so the render leader meets the film's marker crossings. MEASURED: the render-paint
         # pin + paint-derived convention put the leader +0.2 s late over 400-100 m and -0.16 s early
@@ -621,10 +599,10 @@ class RaceRun:
         # Fallback (< FILM_MIN crossings): the render-paint pin.
         fz = self.p("film.npz")
         film_t = {}
-        if fz.exists() and film_enabled():
+        if fz.exists():
             zf = np.load(fz)
             film_t = dict(zip(zf["markers"].tolist(), zf["t"].tolist()))
-        use_film = len(film_t) >= film.FILM_MIN and pin_env is None
+        use_film = len(film_t) >= film.FILM_MIN
         d_of_s, c, ppm_loc, resid, (ppm_odo, sF_odo, pinned, c_m, nsh) = (
             rails.calibrate_distance_ticks(
                 fu,
@@ -632,7 +610,7 @@ class RaceRun:
                 odo,
                 ppm,
                 sF,
-                pin_finish=False if use_film else (None if pin_env is None else pin_env == "1"),
+                pin_finish=False if use_film else None,
                 have_markers=have_markers,
             )
         )
@@ -653,26 +631,21 @@ class RaceRun:
                 )
         d = d_of_s(s_px) - delta
         # time-local pose slips (render camera swing on the straights): per-frame along-track shift
-        if os.environ.get("HKJC_TIME_SHIFT", "1") != "0":
-            tf_u = (fu - self.clock_f0()) / FPS
-            shift_u, n_win = rails.time_local_shift(tf_u, d_of_s(s_lead) - delta, odo)
-            if n_win:
-                d = d - shift_u[np.searchsorted(fu, rows[:, 0])]
-                self.log(
-                    f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m"
-                )
+        tf_u = (fu - self.clock_f0()) / FPS
+        shift_u, n_win = rails.time_local_shift(tf_u, d_of_s(s_lead) - delta, odo)
+        if n_win:
+            d = d - shift_u[np.searchsorted(fu, rows[:, 0])]
+            self.log(f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m")
         # straight courses: the rail polyline is the field-edge datum; lat0_px = the fence's measured
-        # offset inside it (rails.straight_datum). HKJC_STRAIGHT_LAT0=0: datum only (diagnostic)
+        # offset inside it (rails.straight_datum)
         lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
-        if "lat0_px" not in z.files and os.environ.get("HKJC_STRAIGHT_DATUM", "1") != "0":
+        if "lat0_px" not in z.files:
             Tr = np.gradient(z["rail"], axis=0)
             Tr /= np.linalg.norm(Tr, axis=1, keepdims=True) + 1e-12
             if rails.is_straight(Tr):  # a stale rail.npz would silently run the old straight rail
                 raise RuntimeError(
                     "rail.npz of a straight course has no lat0_px (pre-Z6 cache): re-run the rails stage"
                 )
-        if os.environ.get("HKJC_STRAIGHT_LAT0", "1") == "0":
-            lat0 = 0.0
         lat = (lat_px + lat0) / ppm_loc(s_px)
         g = lat > -1.0  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]
@@ -681,28 +654,15 @@ class RaceRun:
         frames = np.unique(rows[:, 0])
         fi = np.searchsorted(frames, rows[:, 0])
         times = (frames - self.clock_f0()) / FPS
-        tshift = os.environ.get("HKJC_TRACK_SHIFT", "0") != "0"
-        if track_app_enabled():  # appearance-aware tracking (render-domain silk continuity)
-            zs = np.load(self.p("silk.npz"))
-            F = zs["feat"][det_idx].astype(float)
-            F = F / np.maximum(F.sum(1, keepdims=True), 1e-9)
-            p1 = tracking.track(times, -d, lat, fi, shift=tshift)
-            llr = tracking.calibrate_llr(p1, F, t, fi, -d, lat)
-            trs = tracking.stitch(tracking.track(times, -d, lat, fi, shift=tshift, F=F, llr=llr))
-        else:
-            trs = tracking.stitch(tracking.track(times, -d, lat, fi, shift=tshift))
+        trs = tracking.stitch(tracking.track(times, -d, lat, fi))
         trs.sort(key=lambda tk: -len(tk.t))
         members = [np.array(tk.det) for tk in trs]
-        if os.environ.get("HKJC_SPLIT_APP", "1") != "0" and self.p("silk.npz").exists():
-            # identity switches inside tracker tracklets (tracking.split_by_appearance; default on)
+        if self.p("silk.npz").exists():  # identity switches inside tracker tracklets
             Fs = np.load(self.p("silk.npz"))["feat"][det_idx].astype(float)
             n0 = len(members)
             members = tracking.split_by_appearance(members, t, Fs)
             members = sorted((m for m in members if len(m)), key=lambda m: -len(m))
             self.log(f"   observe: appearance split {n0} -> {len(members)} tracklets")
-        if os.environ.get("HKJC_SEAMS", "0") != "0":  # tracking.resolve_seams (NOT adopted)
-            members = tracking.resolve_seams(members, rows[:, 0], d, lat)
-            members.sort(key=lambda m: -len(m))
         np.savez(
             self.p("tracks.npz"),
             rows=rows,
@@ -741,24 +701,19 @@ class RaceRun:
             if num <= nmax:
                 votes[k, num] += self.FINISH_VOTES
                 fvotes[k, num] += self.FINISH_VOTES
-        glb = os.environ.get("HKJC_ID_GLOBAL", "1") != "0"
-        if glb:  # joint ML assignment: set-valued legend evidence + silk evidence
-            lab = identity.assign_global(
-                mem,
-                T["rows"][:, 0],
-                rank,
-                nmax,
-                silk_llr=self._silk_llr(mem, T, nmax),
-                elim=elim,
-                n_elim=elim_n,
-                extra=fvotes,
-                valid=valid,
-            )
-            lab = np.array([x if x in valid else 0 for x in lab])
-        else:
-            lab, _sig, _proto = identity.assign(mem, T["rows"][:, 0], votes, T["hist"], nmax)
-            lab = np.array([x if x in valid else 0 for x in lab])
-            lab = self._silk_ties(mem, T, votes, lab)
+        # joint ML assignment: set-valued legend evidence + silk evidence
+        lab = identity.assign_global(
+            mem,
+            T["rows"][:, 0],
+            rank,
+            nmax,
+            silk_llr=self._silk_llr(mem, T, nmax),
+            elim=elim,
+            n_elim=elim_n,
+            extra=fvotes,
+            valid=valid,
+        )
+        lab = np.array([x if x in valid else 0 for x in lab])
         n_elim, el_ok = 0, []
         if _fit is not None:  # ELIMINATION at the line: leftover tracklets vs leftover numbers
             at_line = {k for k in _fit["tc"] if lab[k]}
@@ -777,7 +732,7 @@ class RaceRun:
                 fixed[k] = num
         for k in el_ok:
             fixed[k] = lab[k]
-        extra = dict(rank=rank, elim=elim, n_elim=elim_n, fvotes=fvotes) if glb else {}
+        extra = dict(rank=rank, elim=elim, n_elim=elim_n, fvotes=fvotes)
         np.savez(self.p("labels.npz"), labels=lab, votes=votes, fixed=fixed, **extra)
         self.log(
             f"   identify: finish-camera named {len(fin)} + {n_elim} by elimination; "
@@ -815,28 +770,6 @@ class RaceRun:
                     tv = 0.5 * np.abs(q - sig).sum()
                     out[k, h - 1] = np.clip(SILK_LLR_A + SILK_LLR_B * tv, -SILK_LLR_CLIP, SILK_LLR_CLIP)
         return out
-
-    def _silk_ties(self, mem, T, votes, lab):
-        """identity.resolve_ties with the race's silk signatures (default on; HKJC_SILK_TIES=0
-        disables; needs silk.npz from the ``silk`` stage)."""
-        if not silk_ties_enabled():
-            return lab
-        if not self.p("silk.npz").exists():  # loud: without it this silently tests rails alone
-            self.log("   identify: WARNING silk.npz missing -> silk tie-break SKIPPED (run the silk stage)")
-            return lab
-        from .assoc import _collapse
-
-        zs = np.load(self.p("silk.npz"))
-        F = zs["feat"][T["det_idx"]].astype(float)
-        sig = []
-        for m in mem:
-            f = F[m]
-            f = f[f.sum(1) > 0]
-            sig.append(_collapse((f / f.sum(1, keepdims=True)).mean(0)) if len(f) >= 10 else None)
-        proto = {int(h): _collapse(p) for h, p in zip(zs["proto_no"], zs["proto"])}
-        valid = {r.no for r in self.info.runners}
-        out = identity.resolve_ties(mem, T["rows"][:, 0], votes, lab, sig, proto)
-        return np.array([x if x in valid else 0 for x in out])
 
     def _finish_identity(self, T=None, mem=None):
         """({tracklet index: number}, label-free fit) from the finish camera (1D registration of the
@@ -891,7 +824,7 @@ class RaceRun:
             vs.append(v)
         ppm_fc = float(z["ppm"]) if "ppm" in z.files else np.nan
         c_prior = (
-            float(np.median(vs)) * ppm_fc * finishcam.ruler_cal("reg") if vs and np.isfinite(ppm_fc) else None
+            float(np.median(vs)) * ppm_fc if vs and np.isfinite(ppm_fc) else None
         )
         m, fit = finishcam.identity_match(tc, gaps, c_prior=c_prior)
         if fit is not None:
@@ -970,13 +903,8 @@ class RaceRun:
                 v.append(np.median(np.gradient(p.s[k], p.t[k])))
         v_line = float(np.median(v)) if v else 16.5  # m/s at the line (time sd -> metres)
         if np.isfinite(ppm_fc) and v:
-            c_prior = v_line * ppm_fc * finishcam.ruler_cal("anchor")
-        # HKJC_ANCHOR_REL (diagnostic, NOT adopted): a tighter prior sd. With HKJC_FC_CAL=anchor and
-        # 0.12 it stops the EM feedback lock (ST 04-26 R1 binary rails: anchor C pinned at 4000 on
-        # seeds 3-5, true ~1685) but on 26 races x 6 seeds misses the declared gate rule by 0.67 per
-        # seed (raw rails 197.33, binary 197.33 vs 198.0); binary + prior: hand majority 61 vs 57.
-        rel = float(os.environ.get("HKJC_ANCHOR_REL", 0.30))
-        cal = finishcam.anchor(gaps, t_cross, c_prior=c_prior, c_prior_rel=rel)
+            c_prior = v_line * ppm_fc
+        cal = finishcam.anchor(gaps, t_cross, c_prior=c_prior, c_prior_rel=0.30)
         # label-free sanity check: the anchor fits the clock to LABELLED render paths, so wrong
         # labels drag it (R02A: C 3741-4000 vs ~1750, clock 0.5-1.2 s late). Registration of the
         # anonymous tracklet crossings to the gaps needs no labels (biased ~0.15 s early, MEASURED).
@@ -1007,34 +935,9 @@ class RaceRun:
             return float(np.sqrt(gaps[h] ** 2 * var_inv_c + (gsd.get(h, 15.0) / C) ** 2))
 
         sds = {h: sd_t(h) for h in order if np.isfinite(gaps.get(h, np.nan))}
-        # DISABLED by default (2026-11-14): the clean frozen run showed it inflating the WINNER of HV
-        # 0429 (9 reads, crossed before the replay segment starts; its render path was the wrong one)
-        # -> no valid crossing -> wrong winner, while the misread it was built for (ST6 "#14") now has
-        # 22 reads after the white-cloth recall fix and is no longer affected.
-        # cross-feed robustness for WEAK camera tracks: a number read on < 10 frames that also
-        # disagrees with the render-fused crossing by > 0.3 s is likely a digit misread (ST6 "#14":
-        # 6 reads, 1.4 s early); inflate its sd to the disagreement. Blanket inflation (any
-        # disagreement) was REJECTED: on HV the camera is the right one (R03 winner lost).
-        n_reads = {
-            int(k): len(v[0])
-            for k, v in finishcam.tracks(dict(line_x=float(z["line_x"]), reads=z["reads"])).items()
-        }
-        n_infl = 0
-        for h in sds:
-            tc = t_cross.get(h, np.nan)
-            if (
-                os.environ.get("HKJC_WEAK_INFLATE", "0") == "1"  # opt-in: see the note above
-                and np.isfinite(tc)
-                and n_reads.get(h, 0) < 10
-                and n_used >= 5  # ST8: 3-horse anchor
-            ):
-                dis = abs(t_w + gaps[h] / C - tc)
-                if dis > 0.3:
-                    sds[h] = max(sds[h], dis)
-                    n_infl += 1
         self.log(
             f"   finish: C={C:.0f} px/s (physical prior {c_prior or float('nan'):.0f}), first "
-            f"finisher #{order[0]} at t={t_w:.2f}s ({src}, {n_used} horses; {n_infl} inflated); "
+            f"finisher #{order[0]} at t={t_w:.2f}s ({src}, {n_used} horses); "
             f"sd {min(sds.values()):.3f}..{max(sds.values()):.3f} s"
         )
         return [
@@ -1126,22 +1029,19 @@ class RaceRun:
             )
         return out
 
-    ANCHOR_CHECK = True  # env HKJC_ANCHOR_CHECK=0 disables (on/off sweeps)
+    ANCHOR_CHECK = True
 
-    def _fuse(self, obs, horses, prior, tail=0.0, t_end=None):
-        """Render-fused posterior, then + finish camera. ``tail`` (s): the LAST fusion's grid runs
-        that far past the data (prior-only nodes; used once, after the EM -- see fuse). ``t_end``: the
-        grid runs at least to this time (the FINAL product: past the last official finish)."""
-        import os
-
-        ac = self.ANCHOR_CHECK and os.environ.get("HKJC_ANCHOR_CHECK", "1") != "0"
+    def _fuse(self, obs, horses, prior, t_end=None):
+        """Render-fused posterior, then + finish camera. ``t_end``: the grid runs at least to this
+        time (the FINAL product: past the last official finish)."""
+        ac = self.ANCHOR_CHECK
         st = {}
         paths, assign = fusion.fuse_race(obs, horses, prior, anchor_check=ac, stats=st)
         fin = self.finish_observations(paths)  # second pass: + finish camera
         tr = None
-        if tail > 0 or t_end is not None:
+        if t_end is not None:
             ts = np.concatenate([o.t for o in obs + fin])
-            tr = (float(ts.min()), max(float(ts.max()) + tail, float(t_end or -np.inf)))
+            tr = (float(ts.min()), max(float(ts.max()), t_end))
         if fin or tr is not None:
             paths, assign = fusion.fuse_race(
                 obs + fin, horses, prior, anchor_check=ac, stats=st, t_range=tr
@@ -1202,30 +1102,25 @@ class RaceRun:
         v[:, :k] += v2[:, :k]
         nmax = max(r.no for r in self.info.runners)
         valid = {r.no for r in self.info.runners}
-        if os.environ.get("HKJC_ID_GLOBAL", "1") != "0":
-            if "rank" not in L.files:  # a cached labels.npz from the old identify (assign) path
-                raise RuntimeError(
-                    "labels.npz has no set-valued legend votes (written by identify with "
-                    "HKJC_ID_GLOBAL=0 or before baseline Z5): re-run the identify stage"
-                )
-            r1 = L["rank"].copy()
-            r1[:, :k] += v2[:, :k]
-            lab = identity.assign_global(
-                mem,
-                T["rows"][:, 0],
-                r1,
-                nmax,
-                silk_llr=self._silk_llr(mem, T, nmax),
-                elim=L["elim"],
-                n_elim=L["n_elim"],
-                extra=L["fvotes"],
-                valid=valid,
+        if "rank" not in L.files:  # a cached labels.npz from the old identify (assign) path
+            raise RuntimeError(
+                "labels.npz has no set-valued legend votes (written before baseline Z5): "
+                "re-run the identify stage"
             )
-            lab = np.array([x if x in valid else 0 for x in lab])
-        else:
-            lab, _s, _p = identity.assign(mem, T["rows"][:, 0], v, T["hist"], nmax)
-            lab = np.array([x if x in valid else 0 for x in lab])
-            lab = self._silk_ties(mem, T, v, lab)
+        r1 = L["rank"].copy()
+        r1[:, :k] += v2[:, :k]
+        lab = identity.assign_global(
+            mem,
+            T["rows"][:, 0],
+            r1,
+            nmax,
+            silk_llr=self._silk_llr(mem, T, nmax),
+            elim=L["elim"],
+            n_elim=L["n_elim"],
+            extra=L["fvotes"],
+            valid=valid,
+        )
+        lab = np.array([x if x in valid else 0 for x in lab])
         fixed = L["fixed"] if "fixed" in L.files else np.zeros(len(mem), int)
         for k in np.where(fixed > 0)[0]:  # finish-camera names win over time-overlapping rivals
             for u in np.where(lab == fixed[k])[0]:
@@ -1250,25 +1145,21 @@ class RaceRun:
         if lab2 is not None:
             obs = self.observations(lab2)
             pv, assign = self._fuse(obs, horses, prior)
-        if os.environ.get("HKJC_EM_ASSOC", "1") != "0":
-            obs, pv = self._em_associate(pv, horses, prior)
-        tail = float(os.environ.get("HKJC_FINAL_TAIL", 0.0))  # under test (seconds)
-        if tail > 0:  # once, after the EM: nothing downstream of the E-step sees the tail
-            pv, _a = self._fuse(obs, horses, prior, tail=tail)
+        obs, pv = self._em_associate(pv, horses, prior)
         self._write_paths(pv, "paths_video.parquet")
         # FINAL product: may use all information, including the official records (owner ruling
         # 2026-11-16). Its grid runs past the last official finish: ending at the last observation
         # left the slowest finisher a few cm short of the line (HV 06-03 R3 #6: 0.07 m at the last node).
         offi = self.official_observations()
         t_end = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
-        t_end = None if t_end is None or os.environ.get("HKJC_FINAL_GRID", "1") == "0" else t_end + 0.5
+        t_end = None if t_end is None else t_end + 0.5
         bias = self._metric_bias(pv)
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
         # the gate -> first render frame stretch has no video evidence: a field-relative start prior about
         # the field's median curve (a horse first seen late was extrapolated backwards out of the gate at
         # its later speed: ST 05-31 #6 26 m out at 2 s vs 8-15 m for the field)
-        if pf and os.environ.get("HKJC_START_REL", "1") != "0":
+        if pf:
             P0 = next(iter(pf.values()))
             if all(len(p.t) == len(P0.t) for p in pf.values()):
                 t_v0 = min(float(p.t[0]) for p in pv.values()) if pv else 0.0
@@ -1277,20 +1168,19 @@ class RaceRun:
                     ref_until=t_v0 + 1.0,
                 )
                 pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
-        # FINAL identity pass (default; HKJC_FINAL_EM=0 = off): the E-step re-run with the official records
+        # FINAL identity pass: the E-step re-run with the official records
         # in every fuse, detections carrying the final metric bias, starting from the detection paths except
         # where a horse's path conflicts with its own official skeleton (> 4 combined sigma; flat at 3-5).
         # 26 x 6 (masked base, rule 0151): glitch-seconds 56.4 -> 31.5 per seed (SE 1.0), final census
         # 93.1 -> 97.3 %, hand +0.8, held-out boundary error unchanged (0.034 / 0.033 s), video-only
         # byte-identical. REJECTED: raw detections vs bias-shifted paths (census 87.3 %); official sd 0.1 m
         # (glitches 55.8 -> 85.4 s, s0); starting from the official-only skeleton (hand 220 -> 164).
-        if os.environ.get("HKJC_FINAL_EM", "1") != "0":
-            sk, _a = self._fuse(offi, horses, prior, t_end=t_end)
-            start = self._skeleton_merge(pf, sk)
-            obs_e, _pe = self._em_associate(
-                start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
-            )
-            pf, _a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
+        sk, _a = self._fuse(offi, horses, prior, t_end=t_end)
+        start = self._skeleton_merge(pf, sk)
+        obs_e, _pe = self._em_associate(
+            start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
+        )
+        pf, _a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
         self._write_paths(pf, "paths.parquet")
         n_anon = sum(1 for o in obs if o.horse == 0)
         n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
@@ -1422,51 +1312,9 @@ class RaceRun:
 
     @staticmethod
     def _fc_read(zf) -> set:
-        """Horses the finish camera read (negative evidence / shadow-path tie-break). Default: the
-        horses with a GAP; HKJC_FC_READS=reads: every read cloth (finishcam.read_numbers -- a
-        back-marker crossing after the referenced cloths left the frame has reads but no gap)."""
+        """Horses the finish camera read (negative evidence / shadow-path tie-break): those with a GAP."""
         sc = dict(line_x=float(zf["line_x"]), reads=zf["reads"])
-        if os.environ.get("HKJC_FC_READS", "gaps") == "reads":
-            return finishcam.read_numbers(sc)
         return {int(k) for k in finishcam.finish_gaps(sc)[1]}
-
-    def _fc_covered(self, paths, horses, read) -> set:
-        """Unread horses whose camera NON-READ is evidence: those predicted to cross while the camera
-        covered the line (predicted crossing <= the camera's latest crossing time). Predicted
-        crossing: the posterior's own crossing, else end-speed extrapolation; a horse without a path
-        counts as covered (no prediction to exempt it). MEASURED (Z8): every back marker barred in the
-        last 50 m by the blind cost was predicted to cross 0.1-2.0 s AFTER the camera's last crossing
-        (ST7, ST 05-09 R2, ST 05-24, HV 05-27 R9) while its detections were rendered there.
-        OPT-IN HKJC_FC_COVER=1, NOT ADOPTED (2026-11-16, 26 x 6 vs Z8): non-lateral -1.83 per seed (SE
-        0.40), all-five -1.17. A VAGUE late prediction is no evidence either: ST7 #11 (last, 5.4 s back,
-        own detections ending 200 m out) and ST4 #9 were exempted by end-speed extrapolation, took other
-        horses' near-line detections and crossed 3.66 / 0.81 s early -- the blind rule's original case.
-        With HKJC_FINAL_TAIL=3 as well: finish-n gained on ST7 / ST 05-09 R2 / ST 05-24, all-five -1.33
-        (SE 0.21); the final tail also changed fusion's orphan decisions (its "covered" share depends on
-        the grid length: HV 05-20 R9 #9 moved 1.8 m), so it was not a clean post-EM extension."""
-        D = self.info.distance
-        fin = self.finish_observations(paths)
-        if not fin:
-            return set(horses)
-        t_last = max(float(o.t[0]) for o in fin)
-        out = set()
-        for h in horses:
-            if h in read:
-                continue
-            p = paths.get(h)
-            if p is None or len(p.t) < 12:
-                out.add(h)
-                continue
-            d = D - p.s
-            k = np.flatnonzero(d <= 0)
-            if len(k):
-                tc = float(p.t[k[0]])
-            else:
-                v = (p.s[-1] - p.s[-11]) / (p.t[-1] - p.t[-11])
-                tc = float(p.t[-1] + d[-1] / v) if v > 0 else np.inf
-            if tc <= t_last:
-                out.add(h)
-        return out
 
     def _em_associate(
         self, paths, horses, prior, extra=None, out_name="det_labels.npz", s_bias=None
@@ -1480,13 +1328,6 @@ class RaceRun:
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
         leg = np.load(self.p("legend.npz"))["rows"]
         fr, t, lat = T["rows"][:, 0], T["t"], T["lat"]
-        silk = None  # appearance term: per-detection v2 silk signature vs official silk prototypes
-        if self.p("silk.npz").exists() and "det_idx" in T.files:
-            zs = np.load(self.p("silk.npz"))
-            silk = (
-                zs["feat"][T["det_idx"]],
-                {int(h): p for h, p in zip(zs["proto_no"], zs["proto"])},
-            )
         s_run = self.info.distance - T["d"]
         if s_bias is not None:  # final product: the shared render metric bias (see _metric_corrected)
             s_run = s_run + np.interp(s_run, *s_bias)
@@ -1503,7 +1344,7 @@ class RaceRun:
             zf = np.load(self.p("finish.npz"))
             read = self._fc_read(zf)
             r = min(len(read) / max(self.info.n, 1), 0.95)
-            if read and r >= 0.5 and os.environ.get("HKJC_NEGEV", "1") != "0":
+            if read and r >= 0.5:
                 cost = float(-2.0 * np.log(1.0 - r))
                 near = [(self.info.distance - 15.0, {h: cost for h in horses if h not in read})]
                 # NO identity evidence near the line (unread by the camera AND absent from the legend
@@ -1521,40 +1362,17 @@ class RaceRun:
                 late_frames = {int(f) for f, tt in zip(fr, t) if t_fin - 8.0 <= tt <= t_fin + 1.0}
                 shown = {int(x) for r_ in leg if int(r_[0]) in late_frames for x in r_[1:9] if x}
                 blind = [h for h in horses if h not in read and h not in shown]
-                if os.environ.get("HKJC_FC_COVER", "0") != "0":  # under test: see _fc_covered
-                    cov = self._fc_covered(paths, horses, read)
-                    near = [(s_, {h: c for h, c in pen.items() if h in cov}) for s_, pen in near]
-                    blind = [h for h in blind if h in cov]
-                if blind and os.environ.get("HKJC_BLIND", "1") != "0":
+                if blind:
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
-        # HKJC_BLIND_CARRY=1 (opt-in, NOT ADOPTED 2026-11-16): the blind horse's CLUTTER near the line is
-        # waived on its OWN tracker fragment's continuation (identify labelled the fragment as it AND
-        # this pass assigned the fragment's pre-zone detections to it; see assoc.assign_frames). Safe
-        # (s0, 26 races): exempted exactly the 9 predicted (horse, fragment) pairs at every iteration,
-        # 17 untouched races byte-identical, ST7 #11 / ST4 #9's stolen fragments (no identify label)
-        # still barred; precision on hand-labelled zone detections 309/327. But NO gate benefit: the
-        # target back markers are video-limited (ST7, ST 05-09 R2 short of the line at video end; HV
-        # 05-27 R9 #7 unrendered for its last 16 m, sd 1.78 > 1.5 at the line) and ST 05-24 #4's last
-        # detection is dropped by runs_to_obs (an EM 2-cycle). With HKJC_RUN_MIN=1 as well: ST 05-24
-        # timing 5/5 -> 3/5 (sparse near-line singletons bend paths: #14 +1.02 s) -- the Z7 failure.
-        carry = None
-        if os.environ.get("HKJC_BLIND_CARRY", "0") != "0":
-            Lid = np.load(self.p("labels.npz"))["labels"]
-            idl = np.zeros(len(t), int)
-            for k, m in enumerate(T["members"]):
-                idl[np.asarray(m, int)] = Lid[k]
-            carry = (frag, idl)
-
         def em_pass(paths, targets, tag):
             """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""
             prev = lab = obs = None
             forbid = {}
-            for it in range(int(os.environ.get("HKJC_EM_ITERS", self.EM_ITERS))):  # env: diagnostic
+            for it in range(self.EM_ITERS):
                 forbid = {}
                 seeds = {}
                 if targets:
                     seeds = {h: p for h, p in self._finish_seeds(paths, prior).items() if h in targets}
-                exempt = {}
                 lab, _chi = assoc.assign_frames(
                     fr,
                     t,
@@ -1566,17 +1384,8 @@ class RaceRun:
                     n_field=len(horses),
                     forbid_out=forbid,
                     s_line=self.info.distance,
-                    silk=silk,
-                    carry=carry,
-                    exempt_out=exempt,
                 )
-                if exempt:
-                    self.log(f"   em-assoc{tag} it{it}: blind carry exempt {dict(sorted(exempt.items()))}")
-                n_pf = 0
-                if os.environ.get("HKJC_POSTFIN", "1") != "0":  # see assoc.release_post_finish
-                    lab, n_pf = assoc.release_post_finish(
-                        lab, t, s_run, self.info.distance, forbid
-                    )
+                lab, n_pf = assoc.release_post_finish(lab, t, s_run, self.info.distance, forbid)
                 obs = assoc.runs_to_obs(lab, t, s_run, lat)
                 for k in np.unique(frag[(lab == 0) & (frag >= 0)]):
                     j = np.where((frag == k) & (lab == 0))[0]
@@ -1605,10 +1414,9 @@ class RaceRun:
         # SEED pass, CONFINED to finish-read horses still path-less after the unseeded EM (seeding
         # from it0 also fired for horses the EM places anyway and changed races with no such horse:
         # ST4 sectional 0.409 -> 0.467 on common pairs). Races without a target are unchanged.
-        if os.environ.get("HKJC_SEED", "1") != "0":
-            targets = set(self._finish_seeds(paths, prior))
-            if targets:
-                paths, lab, obs, forbid = em_pass(paths, targets, " (seed)")
+        targets = set(self._finish_seeds(paths, prior))
+        if targets:
+            paths, lab, obs, forbid = em_pass(paths, targets, " (seed)")
         # SHADOW paths: two horses cannot occupy one position. A horse whose own detections are
         # missing can lock onto a neighbour's (R03: unread #9 rode #7's detections through the line,
         # 0.8 s early -> wrong winner). Pairs within 0.8 m along / 0.5 m laterally for >= 0.5 s (both
@@ -1652,7 +1460,7 @@ class RaceRun:
                 else:
                     loser = ha if na < nb else hb
                 drop |= (lab == loser) & win
-        if drop.any() and os.environ.get("HKJC_SHADOW", "1") != "0":
+        if drop.any():
             lab = np.where(drop, 0, lab)
             obs = assoc.runs_to_obs(lab, t, s_run, lat)
             for k in np.unique(frag[(lab == 0) & (frag >= 0) & ~drop]):

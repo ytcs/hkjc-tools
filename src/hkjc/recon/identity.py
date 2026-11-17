@@ -71,52 +71,6 @@ def time_overlap(a_frames, b_frames) -> bool:
     return not (a_frames.max() < b_frames.min() or b_frames.max() < a_frames.min())
 
 
-def assign(
-    members, frame_of_det, votes, hists, n_field, *, w_silk=4.0, margin=np.log(2.0), min_len=3
-):
-    """Number each tracklet by likelihood: log P(num | votes) + w_silk * (-TV(silk, proto[num])).
-    Longest tracklets first; a number may not be used by two time-overlapping tracklets; a tracklet
-    is labelled only if its best number beats the runner-up by ``margin``. Prototypes are learned
-    from labelled tracklets (an official-silk-image prior was tried and REJECTED: top-1 1/8 — the
-    top-down avatar vs jersey-image domain gap).
-    Returns (labels, tracklet signatures, learned prototypes)."""
-    T = len(members)
-    lab = np.zeros(T, int)
-    frames = [np.asarray(frame_of_det[np.asarray(m, int)]) for m in members]
-    sig = np.array([hists[np.asarray(m, int)].mean(0) for m in members])
-    nums = np.arange(1, n_field + 1)
-    for _round in range(3):
-        proto = {}
-        for num in nums:
-            u = np.where(lab == num)[0]
-            if len(u):
-                w = np.array([len(members[k]) for k in u], float)
-                proto[num] = (sig[u] * w[:, None]).sum(0) / w.sum()
-        changed = False
-        for t in np.argsort([-len(m) for m in members]):
-            if lab[t] or len(members[t]) < min_len:
-                continue
-            tot = votes[t, 1:].sum()
-            sc = {}
-            for num in nums:
-                if any(time_overlap(frames[t], frames[u]) for u in np.where(lab == num)[0]):
-                    continue
-                lp = np.log((votes[t, num] + 0.5) / (tot + 0.5 * n_field))
-                p = proto.get(num)
-                if p is not None:
-                    lp += w_silk * -(0.5 * np.abs(sig[t] - p).sum())
-                sc[num] = lp
-            if not sc:
-                continue
-            ranked = sorted(sc.items(), key=lambda kv: -kv[1])
-            if len(ranked) == 1 or ranked[0][1] - ranked[1][1] >= margin:
-                lab[t] = ranked[0][0]
-                changed = True
-        if not changed:
-            break
-    return lab, sig, proto
-
-
 def assign_global(
     members,
     frame_of_det,
@@ -132,9 +86,9 @@ def assign_global(
     valid=None,
     max_rank=8,
 ):
-    """Number the tracklets by the GLOBAL maximum-likelihood assignment (replaces ``assign``'s greedy
-    longest-first pass with a margin). DEFAULT since baseline Z5 (HKJC_ID_GLOBAL=0 restores ``assign``
-    + ``resolve_ties``), with the set-valued elimination evidence and the silk LLR below. Paired 6-seed
+    """Number the tracklets by the GLOBAL maximum-likelihood assignment (replaced a greedy
+    longest-first pass with a margin, ``assign``, at baseline Z5), with the set-valued elimination
+    evidence and the silk LLR below. Paired 6-seed
     ensembles on 26 races vs Z4b (rule declared before the run): non-lateral gates 200.33 = 200.33,
     lateral 10 = 10, idscore rho 0.954 -> 0.966 (+0.013, better on 6/6 seeds), hand majority (8 races,
     151 detections) 108 -> 113; audit legend rank 266 -> 214, finish-order inversions 13.8 -> 9.0.
@@ -158,7 +112,7 @@ def assign_global(
     each listed one. WHY: fed as fractional votes (1/m each, the ``assign`` encoding) the uniform-
     confusion model reads (m-1)/m of every elimination vote as evidence AGAINST each candidate, so
     back-markers (no slot votes at all) can never be numbered -- the whole-horse losses of the first
-    HKJC_ID_GLOBAL ensemble (ST4 #3/#6/#10/#12/#14, ST7 #3/#7/#9/#10, ST 05-31 #3/#7/#11 in s0); it
+    global-assignment ensemble (ST4 #3/#6/#10/#12/#14, ST7 #3/#7/#9/#10, ST 05-31 #3/#7/#11 in s0); it
     dropped them identically with the silk term switched off. ``extra``: finish-camera votes, added
     as slot evidence but kept out of the rho estimate (40 agreeing votes per name pinned rho at its
     0.99 bound on ST4). ``valid``: runner numbers (scratched numbers are not in the universe)."""
@@ -293,59 +247,3 @@ def legend_votes_completed(
     return votes if votes is not None else np.zeros((len(members), nmax + 1))
 
 
-def resolve_ties(members, frame_of_det, votes, labels, sig, proto, *, min_len=50, min_sig=10):
-    """APPEARANCE tie-break for tracklets the legend votes cannot separate. Back-markers never in the
-    legend's top 8 only collect elimination votes, tied exactly across every unlisted number, so
-    ``assign`` (margin) leaves them unnumbered and the EM decides their identities by luck. Each group
-    of unnumbered tracklets sharing the same exact tie set gets its numbers by a Hungarian assignment
-    on the total-variation distance between the tracklet's mean render-silk signature and the mapped
-    official silk prototype (``silkmap.SILK_MAP``), over the tie numbers no time-overlapping tracklet
-    already holds. ``sig[k]``: collapsed mean signature of tracklet k or None; ``proto``: {num:
-    collapsed official signature}. MEASURED: hand truth (4 races) 9/10 tie-tracklet detections right
-    (chance 3.5); REJECTED: a DRAW tie-break (early lateral order vs draw): 5/15, = the EM's own 5/15.
-    ADOPTED 2026-11-15 with rails.smooth_rail (see there); on the old rails alone it was not adopted
-    (non-lateral gates 197.7 per seed, hand 48). Returns new labels."""
-    from scipy.optimize import linear_sum_assignment
-
-    from .silkmap import SILK_MAP
-
-    B = np.asarray(SILK_MAP)
-    lab = np.asarray(labels).copy()
-    frames = [np.asarray(frame_of_det[np.asarray(m, int)]) for m in members]
-
-    def mapped(p):
-        q = np.clip(np.r_[p, 1.0] @ B, 1e-9, None)
-        return q / q.sum()
-
-    groups = {}
-    for k, m in enumerate(members):
-        if lab[k] or len(m) < min_len or sig[k] is None:
-            continue
-        v = votes[k, 1:]
-        mx = v.max()
-        if mx <= 0:
-            continue
-        S = tuple(int(n + 1) for n in np.flatnonzero(v >= mx - 1e-6))
-        if len(S) >= 2:
-            groups.setdefault(S, []).append(k)
-    for S, g in groups.items():
-        free = [
-            n
-            for n in S
-            if n in proto
-            and not any(time_overlap(frames[k], frames[u]) for k in g for u in np.flatnonzero(lab == n))
-        ]
-        if len(free) < 1:
-            continue
-        C = np.array([[0.5 * np.abs(mapped(proto[n]) - sig[k]).sum() for n in free] for k in g])
-        r, c = linear_sum_assignment(C)
-        taken = {}
-        for a, b in zip(r, c):
-            k, n = g[a], free[b]
-            # two tracklets of one group may be the same horse at different times: never give one
-            # number to two time-overlapping tracklets
-            if any(time_overlap(frames[k], frames[u]) for u in taken.get(n, [])):
-                continue
-            lab[k] = n
-            taken.setdefault(n, []).append(k)
-    return lab

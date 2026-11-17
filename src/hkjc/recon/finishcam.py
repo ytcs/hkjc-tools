@@ -116,28 +116,6 @@ def cloth_reads(img, *, y_min=150, n_field=14, x_center=None, x_half=700, white=
 
 HORSE_LEN_M = 2.6  # nose-to-tail of a galloping thoroughbred at full stretch (+-8%): the ruler
 COCO_WEIGHTS = "models/coco_yolov8x.pt"
-# The COCO box of a galloping horse is wider than nose-to-tail (extended legs), so the ruler reads
-# px/m HIGH and the physical prior on the camera scale C (speed at the line x ruler) is too large.
-# Uncorrected, the registration's +-25 % window sat on the biased prior: 7/26 races (pod run Y) were
-# pinned at its lower edge, and HV 05-20 R9 locked onto an aliased C = 1.25 x prior (no tracklet
-# named, the winner on the wrong tracklet).
-# MEASURED clean registrations (not at an edge, >= 80 % of tracklets within tol) have fitted C /
-# prior from 0.73 (several HV races) to 1.12 (HV 05-13 R1), median 0.83. Re-estimating the median
-# converges to 0.82, but a +-25 % window centred there pins HV 05-13 R1's clean 1.12 fit. The
-# constant therefore centres the window on the geometric middle of the clean range: 0.90 gives
-# 0.68-1.13. Edges on Y 7 -> 1 and on V 1, and HV 05-20 R9 is clean at 1.04.
-# REJECTED: 0.88 (the first median, over edge-excluded fits only, biased high) and 0.82 (the median
-# fixed point; pins the clean high fits). Applied where the prior is formed (HKJC_FC_CAL=1).
-RULER_CAL = 0.90
-
-
-def ruler_cal(where: str = "") -> float:
-    """RULER_CAL if HKJC_FC_CAL is "1" (both priors) or names ``where`` ("reg": the registration's
-    window, "anchor": the anchor's soft prior), else 1.0."""
-    import os
-
-    v = os.environ.get("HKJC_FC_CAL", "0")
-    return RULER_CAL if v == "1" or (where and v == where) else 1.0
 
 
 def horse_scale(frames_imgs, line_x):

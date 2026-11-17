@@ -17,7 +17,6 @@ The fragments from the tracker are only the initialisation.
 
 from __future__ import annotations
 
-import os
 
 import numpy as np
 
@@ -25,21 +24,6 @@ CLUTTER = 16.0  # chi^2 cost of leaving a detection unassigned (4 sigma)
 RANK_EPS = 0.6  # m: a detection is "clearly ahead" if > RANK_EPS m closer to the finish
 RANK_COST = 50.0
 RANK_SOFT = 9.0  # 3 sigma: confident-rank mismatch with the legend
-# OFF by default (HKJC_SILK_W > 0 enables): per-detection silk in the E-step is CHAOTIC. Hand-set
-# (79 crops, 4 races) label accuracy: none 53/79; w=20 split bins 58; w=10 51; w=40 55; collapsed
-# w=20 56, w=40 57; feasible-relative 50. Gates unchanged on 26 races (205 -> 205). ST4 9 -> 15/16 and
-# ST 0524 13 -> 18/19 improve, ST 0531 12 -> 7-9 and HV 0527 R9 19 -> 16-18 get worse. Next: silk at
-# the TRACKLET level (aggregated, official prototypes) in identify.
-SILK_W = 0.0  # cost per unit of total-variation distance (relative to the frame's best candidate)
-SILK_CAP = 6.0  # bounded: arbitrates between positional candidates, never overrides a tight path
-
-
-def SILK_W_ENV() -> float:  # noqa: N802
-    """SILK_W, or the diagnostic override HKJC_SILK_W (<= 0 disables the appearance term: NaN)."""
-    v = float(os.environ.get("HKJC_SILK_W", SILK_W))
-    return v if v > 0 else float("nan")
-
-
 def _collapse(a):
     """v2 silk signature -> hue (pastel + vivid) + white + dark."""
     nh = (a.shape[-1] - 2) // 2
@@ -79,25 +63,15 @@ def assign_frames(
     n_field=None,
     forbid_out=None,
     s_line=None,
-    silk=None,
-    carry=None,
-    exempt_out=None,
 ):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
     ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
     before the line) pay the extra cost for those horses — the finish camera's NEGATIVE evidence: a
     horse it never read (while reading most of the field) is unlikely to be crossing with the field.
     ``n_field`` = runners in the race (for the negative legend evidence; default: horses with paths).
-    ``silk`` = (F, proto): per-detection v2 silk signatures (rows aligned with ``t``) and {horse:
-    official-silk signature}: a bounded APPEARANCE cost, relative to the best candidate in the frame.
     ``s_line`` = race distance (metres run at the line): enables the final-stretch rank attraction.
     ``forbid_out`` (dict, optional) receives {detection index: set of horses} excluded by the HARD
     legend costs, so later stages (fusion's anonymous association) cannot hand them back.
-    ``carry`` = (fragment, identify label) per detection: a HARD near-line cost (the blind horse's
-    CLUTTER) is waived for horse h on a detection whose tracker fragment identify labelled h AND whose
-    detections before the zone THIS pass assigned to h by majority -- identity carried into the zone
-    by the tracker's continuity (see the pipeline's HKJC_BLIND_CARRY). ``exempt_out`` (dict) receives
-    {(horse, fragment): detections exempted}.
     Returns per-detection horse number (0 = clutter/unassigned) and per-detection chi^2."""
     from scipy.optimize import linear_sum_assignment
 
@@ -111,18 +85,6 @@ def assign_frames(
     # path state at every frame's time, interpolated per horse in one vectorised call (np.interp is
     # pointwise, so the values equal the per-frame scalar calls exactly)
     tf = t[order[bounds[:-1]]]
-    s_zone = None
-    if carry is not None and near_line is not None:
-        hard = [
-            sf
-            for sf, pen in (near_line if isinstance(near_line, list) else [near_line])
-            if any(v >= CLUTTER for v in pen.values())
-        ]
-        if hard:
-            s_zone = min(hard)
-            c_frag, c_id = carry
-            pre_n: dict = {}  # fragment -> its pre-zone detections assigned so far (this pass)
-            pre_h: dict = {}  # (fragment, horse) -> of those, assigned to horse
     if hs:
         inr = np.array([(paths[h].t[0] <= tf) & (tf <= paths[h].t[-1]) for h in hs]).T
         PS = np.array([np.interp(tf, paths[h].t, paths[h].s) for h in hs]).T
@@ -144,23 +106,6 @@ def assign_frames(
         # nearby detection (HV 0527 #9, tailed off 3.4 s behind: path ended 2.8 s early).
         C = (s[js][:, None] - ps) ** 2 / vs + (lat[js][:, None] - pl) ** 2 / vl
         C = C + np.log(vs * vl / (sd_s**2 * sd_l**2))[None, :]
-        if silk is not None and np.isfinite(SILK_W_ENV()):
-            F, proto = silk
-            Fj = F[js]
-            have = [c for c, h in enumerate(ok) if h in proto]
-            valid = Fj.sum(1) > 0  # an empty signature (all pixels excluded) is no evidence
-            if have and valid.any():
-                P = np.array([proto[ok[c]] for c in have])
-                # match on hue + white + dark with pastel/vivid COLLAPSED: the render desaturates and
-                # lights silks (a yellow-green silk lands in the pastel bins, the official GIF in the
-                # vivid ones). MEASURED (79 hand-labelled crops): correct group in the official-silk
-                # top 3: 63/79 split -> 73/79 collapsed; the split broke ST 0531 in the pipeline.
-                tvd = 0.5 * np.abs(_collapse(Fj)[:, None, :] - _collapse(P)[None, :, :]).sum(-1)
-                rel = tvd - tvd.min(axis=1, keepdims=True)
-                # REJECTED: relative to the best POSITIONALLY PLAUSIBLE candidate (hand set 50/79)
-                add = np.minimum(SILK_W_ENV() * rel, SILK_CAP)
-                add[~valid] = 0.0
-                C[:, have] += add
         if near_line is not None:
             for s_from, pen in near_line if isinstance(near_line, list) else [near_line]:
                 nl = s[js] >= s_from
@@ -168,17 +113,6 @@ def assign_frames(
                     for col, h in enumerate(ok):
                         if h in pen:
                             hit = nl
-                            if pen[h] >= CLUTTER and s_zone is not None:
-                                fj = c_frag[js]
-                                ex = nl & (c_id[js] == h) & (fj >= 0)
-                                for i in np.where(ex)[0]:
-                                    f = int(fj[i])
-                                    n_pre = pre_n.get(f, 0)
-                                    if not (n_pre and pre_h.get((f, h), 0) > 0.5 * n_pre):
-                                        ex[i] = False
-                                    elif exempt_out is not None:
-                                        exempt_out[(int(h), f)] = exempt_out.get((int(h), f), 0) + 1
-                                hit = nl & ~ex
                             C[hit, col] += pen[h]
                             if forbid_out is not None and pen[h] >= CLUTTER:  # hard (blind horses)
                                 for i in np.where(hit)[0]:
@@ -189,14 +123,12 @@ def assign_frames(
             ahead = (sj[None, :] > sj[:, None] + RANK_EPS).sum(1)  # detections ahead (vectorised)
             # HARD exclusions (RANK_COST + forbid_out) need a CERTAIN ahead-count: ahead by more than
             # the E-step's 4 sigma on a difference of two detections (sqrt(CLUTTER * 2) * sd_s = 4.5 m).
-            # DEFAULT since baseline Z8 (HKJC_RANK_HARD=0: the 0.6 m RANK_EPS). MEASURED (ST 04-26 R1,
+            # Since baseline Z8 (was: the 0.6 m RANK_EPS). MEASURED (ST 04-26 R1,
             # t 40.02): two dets 0.9 m apart counted the second as "clearly" 4th and hard-excluded the
             # legend's 3rd (#9, positional cost 1.6) and 4th (#14, 7.6) -- correct identify labels left
             # unassigned. 26 x 6 vs Z7: hand majority 118 -> 121 (ST 04-26 R1 6 -> 8), idscore +0.004
             # (6/6 seeds), non-lateral -0.17 (SE 0.17; ST4's borderline sectional on 1 seed).
-            ahead_h = ahead
-            if os.environ.get("HKJC_RANK_HARD", "1") != "0":
-                ahead_h = (sj[None, :] > sj[:, None] + np.sqrt(CLUTTER * 2.0) * sd_s).sum(1)
+            ahead_h = (sj[None, :] > sj[:, None] + np.sqrt(CLUTTER * 2.0) * sd_s).sum(1)
             # horses whose TIGHT posterior is ahead of each detection (completes undetected ones)
             tight = np.sqrt(vs - sd_s**2) < 2.0
             post_ahead = ((ps[None, :] > sj[:, None] + RANK_EPS) & tight[None, :]).sum(1)
@@ -221,14 +153,7 @@ def assign_frames(
             listed = {int(x) for x in leg[:max_rank] if x > 0}
             if len(listed) == max_rank:
                 nf = n_field or len(ok)
-                # HKJC_COUNT_HARD=1 (opt-in, NOT ADOPTED 2026-11-16): count dets within 4 sigma BEHIND as
-                # possibly ahead -- flips 35 % of "inside" claims; 26 x 6 vs Z8: non-lateral -0.17 (SE
-                # 0.31), idscore -0.004 on 6/6 seeds, no benefit. The strict count earns its hard claims.
-                if os.environ.get("HKJC_COUNT_HARD", "0") != "0":
-                    m4 = np.sqrt(CLUTTER * 2.0) * sd_s
-                    ahead_c = (sj[None, :] > sj[:, None] - m4).sum(1) - 1  # minus itself
-                else:
-                    ahead_c = (sj[None, :] > sj[:, None]).sum(1)
+                ahead_c = (sj[None, :] > sj[:, None]).sum(1)
                 ub = ahead_c + max(0, nf - len(js)) + 1
                 inside = ub < max_rank
                 # ... and h runs behind EVERY listed horse: a detection ahead of the rearmost TIGHT
@@ -241,9 +166,8 @@ def assign_frames(
                 # curvature or legend lag). Ensemble: 4, 8 and 16 m equivalent; rule off -> HV 0520
                 # sectional 0.147 -> 0.187 s.
                 lt = [c for c, h in enumerate(ok) if h in listed and tight[c]]
-                feps = float(os.environ.get("HKJC_FLOOR_EPS", FLOOR_EPS))  # diagnostic ("inf": off)
-                if lt and np.isfinite(feps):
-                    inside |= s[js] > ps[lt].min() + feps
+                if lt:
+                    inside |= s[js] > ps[lt].min() + FLOOR_EPS
                 if inside.any():
                     for col, h in enumerate(ok):
                         if h not in listed:
@@ -261,14 +185,13 @@ def assign_frames(
             # rho 0.89 -> 1.00 on 6/6 seeds, ST4 sectional 0.476 -> 0.441, gates 202 -> 205.
             # REJECTED: whole race (ST3 straight sectional 0.174 -> 0.266); only non-tight horses
             # (sd >= 2: never fired for ST9 #5). Known bad: HV 0527 R9 #7 placed 0.88 s early.
-            attr = float(os.environ.get("HKJC_RANK_ATTR", RANK_ATTR))  # diagnostic ("inf": off)
-            if np.isfinite(attr) and s_line is not None:
-                near = s[js] >= s_line - float(os.environ.get("HKJC_RANK_ATTR_M", RANK_ATTR_M))
+            if s_line is not None:
+                near = s[js] >= s_line - RANK_ATTR_M
                 for r, num in enumerate(leg[:max_rank]):
                     if num in ok:
                         col = ok.index(num)
                         cells = (ahead == r) & near
-                        C[cells, col] = np.minimum(C[cells, col], attr)
+                        C[cells, col] = np.minimum(C[cells, col], RANK_ATTR)
         n, m = C.shape
         M = np.full((n, m + n), 1e6)
         M[:, :m] = C
@@ -278,13 +201,6 @@ def assign_frames(
             if k < m and C[i, k] < CLUTTER:
                 lab[js[i]] = ok[k]
                 chi[js[i]] = C[i, k]
-        if s_zone is not None:  # running pre-zone label counts per fragment (causal: time order)
-            for j in js:
-                f = int(c_frag[j])
-                if f >= 0 and s[j] < s_zone:
-                    pre_n[f] = pre_n.get(f, 0) + 1
-                    if lab[j]:
-                        pre_h[(f, int(lab[j]))] = pre_h.get((f, int(lab[j])), 0) + 1
     return lab, chi
 
 
@@ -295,7 +211,7 @@ def fragment_forbid(forbid, idx, frac=None):
     detections on a 6-race perturbation ensemble (HV 0603 R3's lost #10/#5 were the floor margin)."""
     from collections import Counter
 
-    frac = float(os.environ.get("HKJC_FORBID_FRAC", 0.5)) if frac is None else frac  # diagnostic
+    frac = 0.5 if frac is None else frac
     c = Counter(h for i in idx for h in forbid.get(int(i), ()))
     return frozenset(h for h, k in c.items() if k >= frac * len(idx))
 
@@ -333,22 +249,13 @@ def release_post_finish(lab, t, s, s_line, forbid=None, *, sd_s=0.8):
     return lab, n
 
 
-def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, tid0=50_000):
-    """Per-horse observation runs (split at gaps > ``gap`` s) as fusion.Obs. Runs shorter than
-    HKJC_RUN_MIN detections (default 3, from baseline G, no recorded rationale) are DROPPED -- while
-    the same detections left anonymous form one Obs (>= 3, no gap split), so assigning a detection to
-    its horse can give fusion LESS than leaving it unowned. MEASURED (Z8, s0): 103 assigned
-    detections dropped over 22 races, mostly at or past the line (they pin the crossing). ST 05-24 #4
-    (with HKJC_BLIND_CARRY): its last detection (t 98.76, d -9.4, 1.36 s after the previous) became a
-    1-detection run and was dropped; the grid shrank to 97.40, the detection fell out of range, went
-    anonymous, the grid grew back -- an EM 2-cycle (exempt 4/2/4/2)."""
-    from .fusion import Obs
+RUN_MIN = 3  # detections; shorter runs are dropped (keeping them: rejected, see RECON)
 
-    # HKJC_RUN_MIN=1 (opt-in, NOT ADOPTED 2026-11-16; with HKJC_BLIND_CARRY, s0 vs Z8): ST 05-24 timing
-    # 5/5 -> 3/5 (rho 1.00 -> 0.86; #14 +1.02 s, #1/#6 +0.3 s: sparse singletons near the line bend
-    # paths and drag the camera clock, the Z7 failure), behind-winner worse on ST3/ST4/ST7; HV 05-27 R9
-    # finish-n 3 -> 2. Changed 3 races predicted identical (short runs in intermediate EM iterations).
-    min_len = int(os.environ.get("HKJC_RUN_MIN", 3))
+
+def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, tid0=50_000):
+    """Per-horse observation runs (split at gaps > ``gap`` s) as fusion.Obs; runs shorter than
+    RUN_MIN detections are dropped."""
+    from .fusion import Obs
 
     out = []
     tid = tid0
@@ -357,7 +264,7 @@ def runs_to_obs(lab, t, s, lat, *, feed="render", sd_s=0.8, sd_l=0.35, gap=1.0, 
         k = k[np.argsort(t[k])]
         cut = np.r_[0, np.where(np.diff(t[k]) > gap)[0] + 1, len(k)]
         for a, b in zip(cut[:-1], cut[1:]):
-            if b - a < min_len:
+            if b - a < RUN_MIN:
                 continue
             kk = k[a:b]
             out.append(Obs(t[kk], s[kk], lat[kk], sd_s, sd_l, feed, horse=int(h), tid=tid))

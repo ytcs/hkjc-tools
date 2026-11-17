@@ -74,20 +74,11 @@ class Path:
     feeds: dict = field(default_factory=dict)
 
 
-def _interp_rows(t, t0, n):
-    """Linear-interpolation weights of times t onto grid nodes t0 + k*DT -> (rows, cols, vals)."""
-    x = (np.asarray(t) - t0) / DT
-    k = np.clip(np.floor(x).astype(int), 0, n - 2)
-    w = np.clip(x - k, 0.0, 1.0)
-    r = np.arange(len(x))
-    return np.r_[r, r], np.r_[k, k + 1], np.r_[1 - w, w]
-
-
 def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd, a_ref=None):
     """The same MAP problem as ``smooth.solve``, assembled DIRECTLY as a banded normal matrix (lower
     bandwidth 2: interpolation rows touch 2 adjacent nodes, the acceleration prior 3, the velocity
-    prior 2) and solved by banded Cholesky -- O(n), no sparse construction or LU. DEFAULT
-    (HKJC_BANDED=0 = the sparse path). DECLARED NON-EXACT speedup: paths agree with the sparse path to
+    prior 2) and solved by banded Cholesky -- O(n), no sparse construction or LU. Replaced an exact
+    sparse LU solve as a DECLARED NON-EXACT speedup: paths agree with the sparse path to
     ~1e-8 m (variances 1e-12); per call 0.33 s -> 0.012 s; 26 races (Z4, seed 0) in 151 s, ~2x faster
     end to end; gates identical on 26/26, detection labels identical on 23/26 (the EM flips 0.1-3.2 %
     of labels on HV 04-15 R9, HV 04-29 R3, HV 06-03 R3 -- its known sensitivity, well below the 1 %
@@ -163,69 +154,10 @@ def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd, a_ref=None):
 
 def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True):
     """Fuse a list of ``Obs`` (all assumed to be the same horse) into one MAP path on ``t_grid``."""
-    from scipy.sparse import coo_matrix, diags, vstack
-
     n = len(t_grid)
     t0 = t_grid[0]
-    blocks_s, rhs_s, blocks_l, rhs_l = [], [], [], []
-    for o in obs:
-        for val, sd, blocks, rhs in (
-            (o.s, o.sd_s, blocks_s, rhs_s),
-            (o.lat, o.sd_l, blocks_l, rhs_l),
-        ):
-            if val is None:
-                continue
-            m = np.isfinite(val) & (o.t >= t_grid[0]) & (o.t <= t_grid[-1])
-            if not m.any():
-                continue
-            r, c, v = _interp_rows(o.t[m], t0, n)
-            blocks.append(coo_matrix((v / sd, (r, c)), shape=(m.sum(), n)))
-            rhs.append(val[m] / sd)
-    D2 = diags([1.0, -2.0, 1.0], [0, 1, 2], shape=(n - 2, n))
     # time-dependent longitudinal accel sd: the standing start accelerates ~5-8 m/s^2
     a_s = np.where(t_grid[1:-1] < prior.t_start, prior.a_sd_start, prior.a_sd_s)
-    D1 = diags([-1.0, 1.0], [0, 1], shape=(n - 1, n))
-
-    def solve(blocks, rhs, a_sd, lb, ub, v_sd=None):
-        """Exact sparse MAP (normal equations, LU). Box bounds by an active set: violating nodes are
-        pinned to their bound with a stiff penalty and the system re-solved (bounds are rarely
-        active, so this converges in 1-3 rounds). Iterative LS solvers do NOT converge here — the
-        acceleration prior makes the system stiff (rejected: lsq_linear/lsmr, 1.5 m error)."""
-        from scipy.sparse.linalg import splu
-
-        if not blocks:
-            return None, None
-        a_sd = np.broadcast_to(np.asarray(a_sd, float), (n - 2,))
-        reg = [diags(1.0 / (a_sd * DT * DT)) @ D2] + ([D1 / (v_sd * DT)] if v_sd else [])
-        A = vstack(blocks + reg).tocsr()
-        b = np.r_[np.concatenate(rhs), np.zeros(sum(m.shape[0] for m in reg))]
-        N0 = (A.T @ A).tocsc() + 1e-9 * diags(np.ones(n))
-        r0 = A.T @ b
-        pen = np.zeros(n)
-        tgt = np.zeros(n)
-        for _ in range(8):
-            lu = splu((N0 + diags(pen)).tocsc())
-            x = lu.solve(r0 + pen * tgt)
-            if lb is None:
-                break
-            lo_v, hi_v = (x < lb - 1e-6) & (pen == 0), (x > ub + 1e-6) & (pen == 0)
-            if not (lo_v.any() or hi_v.any()):
-                break
-            pen[lo_v | hi_v] = 1e4 * float(N0.diagonal().max())  # stiff vs the prior itself
-            tgt[lo_v] = lb
-            tgt[hi_v] = ub
-        sd = None
-        if want_sd:
-            lu = splu(N0)  # posterior of the unconstrained problem
-            idx = np.unique(np.r_[np.arange(0, n, 10), n - 1])
-            e = np.zeros((n, len(idx)))
-            e[idx, np.arange(len(idx))] = 1.0
-            var = np.einsum("ij,ij->j", e, lu.solve(e))
-            sd = np.sqrt(np.interp(np.arange(n), idx, var))
-        return x, sd
-
-    import os
-
     a_ref = None
     if prior.ref_s is not None and t_grid[0] < prior.ref_until:
         tm = t_grid[1:-1]
@@ -233,26 +165,18 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
         rs = np.interp(t_grid, prior.ref_t, prior.ref_s)
         a_ref = np.where(rel, (rs[:-2] - 2 * rs[1:-1] + rs[2:]) / (DT * DT), 0.0)
         a_s = np.where(rel, prior.a_sd_rel, a_s)
-    if os.environ.get("HKJC_BANDED", "1") != "0":  # banded Cholesky (see _smooth_banded)
-        s, sd_s = _solve_banded(obs, "s", t0, n, a_s, None, None, None, want_sd, a_ref=a_ref)
-        lat, sd_l = _solve_banded(
-            obs,
-            "lat",
-            t0,
-            n,
-            np.full(n - 2, prior.a_sd_l),
-            prior.l_min,
-            prior.width - prior.l_min,
-            prior.vl_sd,
-            want_sd,
-        )
-    else:
-        if a_ref is not None:
-            raise ValueError("the field-relative start prior needs the banded solver")
-        s, sd_s = solve(blocks_s, rhs_s, a_s, None, None)
-        lat, sd_l = solve(
-            blocks_l, rhs_l, prior.a_sd_l, prior.l_min, prior.width - prior.l_min, v_sd=prior.vl_sd
-        )
+    s, sd_s = _solve_banded(obs, "s", t0, n, a_s, None, None, None, want_sd, a_ref=a_ref)
+    lat, sd_l = _solve_banded(
+        obs,
+        "lat",
+        t0,
+        n,
+        np.full(n - 2, prior.a_sd_l),
+        prior.l_min,
+        prior.width - prior.l_min,
+        prior.vl_sd,
+        want_sd,
+    )
     cnt = np.zeros(n)
     for o in obs:
         k = np.round((o.t - t0) / DT).astype(int)
@@ -261,11 +185,12 @@ def smooth(obs: list, prior: Prior, t_grid: np.ndarray, *, want_sd: bool = True)
     return s, sd_s, lat, sd_l, cnt
 
 
-def chi2_against(o: Obs, path: Path, logdet: bool | None = None):
-    """Mean chi^2 per observation of an anonymous tracklet against a horse's posterior path
-    (+ the mean log det ratio when ``logdet``; default: ``LOGDET()``)."""
-    if logdet is None:
-        logdet = LOGDET()
+def chi2_against(o: Obs, path: Path, logdet: bool = True):
+    """Mean chi^2 per observation of an anonymous tracklet against a horse's posterior path + the mean
+    log det ratio (``logdet``): the full Gaussian -2 log-likelihood vs a tight prediction, as the E-step
+    scores (assoc.assign_frames). chi^2 alone lets a VAGUE, extrapolated path accept anything (HV 05-27
+    R3, seeds 2-3: #9, last and unread, took an anonymous fragment at 99.3-101.3 s and "crossed"
+    1.4-2.0 s early)."""
     m = (o.t >= path.t[0]) & (o.t <= path.t[-1])
     if m.sum() < 3:
         return np.inf
@@ -283,17 +208,6 @@ def chi2_against(o: Obs, path: Path, logdet: bool | None = None):
         if logdet:
             r += np.nanmean(np.log(vl / o.sd_l**2))
     return float(r)
-
-
-def LOGDET() -> bool:  # noqa: N802
-    """Default since baseline Z4 (HKJC_ASSOC_LOGDET=0 disables): score anonymous tracklets by the full Gaussian -2 log-likelihood
-    (chi^2 + log det ratio vs a tight prediction), as the E-step does (assoc.assign_frames). chi^2
-    alone lets a VAGUE, extrapolated path accept anything. MEASURED (HV 05-27 R3, H2' rails, seeds 2
-    and 3): #9 (last, 3.36 s back, unread; own detections end at 90.2 s) took an anonymous fragment at
-    99.3-101.3 s and "crossed" 1.4-2.0 s early with sd 0.56 m (behind-winner gate failures)."""
-    import os
-
-    return os.environ.get("HKJC_ASSOC_LOGDET", "1") == "1"
 
 
 def _overlaps(a: Obs, b_list: list) -> bool:

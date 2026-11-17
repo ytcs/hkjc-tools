@@ -184,34 +184,6 @@ def test_em_assign_rank_attraction_final_stretch():
     assert lab[1] == 0  # 575 m out: no attraction, chi^2 too large -> clutter
 
 
-def test_em_assign_silk_arbitrates_between_close_candidates(monkeypatch):
-    """Two horses side by side, positionally interchangeable: the official-silk signature decides
-    (bounded), and an empty detection signature is no evidence. (The term is off by default.)"""
-    from hkjc.recon import assoc
-
-    monkeypatch.setenv("HKJC_SILK_W", "20")
-
-    tg = np.arange(0, 10.01, 0.1)
-
-    def path(h, lat):
-        return fusion.Path(h, tg, 15.0 * tg, np.full_like(tg, lat), np.full_like(tg, 0.3),
-                           np.full_like(tg, 0.3), np.ones_like(tg))
-
-    paths = {1: path(1, 2.0), 2: path(2, 2.2)}
-    t = np.full(2, 5.0)
-    s = np.full(2, 75.0)
-    lat = np.array([2.2, 2.0])  # positions slightly favour the SWAPPED assignment
-    red, blue = np.zeros(26), np.zeros(26)
-    red[12], blue[12 + 8] = 1.0, 1.0  # vivid hue bins
-    F = np.array([red, blue])  # detection 0 wears red, detection 1 blue
-    proto = {1: red, 2: blue}
-    leg = np.zeros((0, 9), int)
-    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, silk=(F, proto))
-    assert list(lab) == [1, 2]
-    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, silk=(np.zeros((2, 26)), proto))
-    assert list(lab) == [2, 1]  # no silk evidence: position decides
-
-
 def test_time_local_shift_recovers_per_frame_slip():
     """A 4-s per-frame pose slip (leader 25 m 'behind' the odometer) is returned as a shift inside the
     window and zero elsewhere; small tick noise alone triggers nothing."""
@@ -373,23 +345,6 @@ def test_rails_inner_side_is_right_on_a_straight():
                                                  2.0, 80.0)[1]) for g in (1, -1)} == {1, -1}
 
 
-def test_tracking_resolve_seams_merges_handover_duplicates_only():
-    from hkjc.recon import tracking
-
-    fr = np.r_[np.arange(0, 50), np.arange(45, 100), np.arange(20, 40)]  # A, B (seam 45-49), C
-    d = np.r_[np.linspace(500, 400, 50), np.linspace(410, 300, 55), np.linspace(460, 420, 20)]
-    lat = np.r_[np.full(50, 3.0), np.full(55, 3.1), np.full(20, 6.0)]
-    d[50:55] = d[45:50] + 0.3  # B's head boxes coincide with A's tail (one horse, two boxes)
-    A, B, C = np.arange(0, 50), np.arange(50, 105), np.arange(105, 125)
-    out = tracking.resolve_seams([B, A, C], fr, d, lat)
-    spans = sorted((fr[m].min(), fr[m].max(), len(m)) for m in out)
-    assert (0, 44, 45) in spans and (45, 99, 55) in spans  # the longer (B) keeps the seam frames
-    assert (20, 39, 20) in spans  # C (3 m to the side: a different horse) untouched
-    d[50:55] += 2.0  # 2.3 m apart: two horses -> a real conflict, left alone
-    out = tracking.resolve_seams([B, A, C], fr, d, lat)
-    assert sorted(len(m) for m in out) == [20, 50, 55]
-
-
 def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps(monkeypatch):
     from hkjc.recon import rails
 
@@ -408,31 +363,6 @@ def test_rails_smooth_rail_bridges_gaps_smoothly_and_resists_snaps(monkeypatch):
     assert np.percentile(err, 99) < 4.0 and err[2000:2005].max() < 4.0
     monkeypatch.setenv("HKJC_RAIL_SMOOTH", "off")
     assert rails.smooth_rail(noisy, ok) is noisy
-
-def test_identity_resolve_ties_names_tied_tracklets_by_appearance():
-    from hkjc.recon import identity
-    from hkjc.recon.silkmap import SILK_MAP
-
-    B = np.asarray(SILK_MAP)
-    nb = B.shape[1]
-    rng = np.random.default_rng(1)
-    proto = {n: rng.dirichlet(np.ones(nb)) for n in (1, 3, 8)}
-
-    def render(p):
-        q = np.clip(np.r_[p, 1.0] @ B, 1e-9, None)
-        return q / q.sum()
-
-    frames = np.arange(300)
-    members = [np.arange(0, 100), np.arange(100, 200), np.arange(200, 300)]
-    frame_of_det = np.r_[frames[:100], frames[:100], frames[:100]]  # three horses, same frames
-    votes = np.zeros((3, 9))
-    votes[0, 1] = 50.0  # tracklet 0: clearly #1
-    votes[1, [3, 8]] = 20.0  # tracklets 1, 2: tied {3, 8} (never in the legend's top 8)
-    votes[2, [3, 8]] = 20.0
-    labels = np.array([1, 0, 0])
-    sig = [render(proto[1]), render(proto[8]), render(proto[3])]
-    out = identity.resolve_ties(members, frame_of_det, votes, labels, sig, proto)
-    assert out.tolist() == [1, 8, 3]
 
 
 def test_tracking_split_by_appearance_cuts_identity_switches_only():
@@ -462,7 +392,7 @@ def test_rails_robust_offset_ignores_a_long_outlier_run():
     assert np.abs(z[3000:3110] - 30 - 5 * np.sin(np.arange(3000, 3110) / 900.0)).max() < 6.0
 
 
-def test_fusion_chi2_logdet_makes_vague_paths_pay(monkeypatch):
+def test_fusion_chi2_logdet_makes_vague_paths_pay():
     from hkjc.recon import fusion
 
     t = np.linspace(0, 2, 21)
@@ -471,9 +401,7 @@ def test_fusion_chi2_logdet_makes_vague_paths_pay(monkeypatch):
         return fusion.Path(1, t, 100 + 16 * t, np.full_like(t, 3.0), np.full_like(t, sd),
                            np.full_like(t, sd), np.ones_like(t))
     tight, vague = path(1.5), path(9.0)
-    monkeypatch.setenv("HKJC_ASSOC_LOGDET", "0")
-    assert fusion.chi2_against(o, vague) < fusion.chi2_against(o, tight)  # chi^2 alone: vague wins
-    monkeypatch.setenv("HKJC_ASSOC_LOGDET", "1")
+    assert fusion.chi2_against(o, vague, logdet=False) < fusion.chi2_against(o, tight, logdet=False)
     assert fusion.chi2_against(o, vague) > fusion.chi2_against(o, tight)  # it pays for vagueness
 
 
@@ -588,7 +516,7 @@ def test_assoc_release_post_finish_frees_detections_of_a_finished_horse():
     assert n2 == 0 and (out2 == out).all()
 
 
-def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count(monkeypatch):
+def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count():
     """ST 04-26 R1: the legend's 3rd and 4th horses are level (detections 0.9 m apart). Counting the
     second detection as "clearly" 4th with a 0.6 m margin hard-excluded the legend's 3rd horse from
     it; the hard part now needs 4 sigma (4.5 m) on the difference of two detections."""
@@ -610,39 +538,7 @@ def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count(monkeypatch):
     lat = np.array([lat_at[h] for h in det])
     frames, t = np.zeros(4, int), np.ones(4)
     legend = np.array([[0, 1, 2, 4, 3, 0, 0, 0, 0]])
-    monkeypatch.setenv("HKJC_RANK_HARD", "0")
-    old, _ = assoc.assign_frames(frames, t, s, lat, paths, legend)
-    monkeypatch.setenv("HKJC_RANK_HARD", "1")
     new, _ = assoc.assign_frames(frames, t, s, lat, paths, legend)
-    assert old[2] != 4  # 0.6 m margin: #4 (legend 3rd) barred from its own det, 0.9 m behind #3's
     assert new.tolist() == [1, 2, 4, 3]
 
 
-def test_assoc_blind_carry_waives_the_hard_near_line_cost_only_for_carried_identity():
-    """A blind horse's own tracker fragment entering the near-line zone keeps its identity when identify
-    labelled the fragment as that horse AND this pass assigned its pre-zone detections to it. A fragment
-    without pre-zone detections, or one identify labelled otherwise, stays barred."""
-    from hkjc.recon import assoc, fusion
-
-    tg = np.arange(0, 10.01, 0.1)
-    paths = {7: fusion.Path(7, tg, 10.0 * tg, np.full_like(tg, 3.0), np.full_like(tg, 0.3),
-                            np.full_like(tg, 0.3), np.ones_like(tg))}
-    t = np.arange(1.0, 9.01, 0.5)  # one detection per frame on #7's path: s 10 -> 90
-    s, lat, frames = 10.0 * t, np.full(len(t), 3.0), np.arange(len(t))
-    leg = np.zeros((0, 9), int)
-    near = [(60.0, {7: assoc.CLUTTER})]  # zone: s >= 60 (the last 30 m of a 90 m "race")
-    zone = s >= 60.0
-    frag = np.zeros(len(t), int)
-    ex = {}
-    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near,
-                                 carry=(frag, np.full(len(t), 7)), exempt_out=ex)
-    assert (lab == 7).all() and ex == {(7, 0): int(zone.sum())}
-    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near,
-                                 carry=(frag, np.full(len(t), 9)))  # identify says another horse
-    assert (lab[zone] == 0).all() and (lab[~zone] == 7).all()
-    frag2 = np.where(zone, 1, 0)  # the zone detections are a NEW fragment (no pre-zone part)
-    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near,
-                                 carry=(frag2, np.full(len(t), 7)))
-    assert (lab[zone] == 0).all()
-    lab, _ = assoc.assign_frames(frames, t, s, lat, paths, leg, near_line=near)  # off: unchanged rule
-    assert (lab[zone] == 0).all()
