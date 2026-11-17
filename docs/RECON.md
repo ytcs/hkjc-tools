@@ -612,6 +612,7 @@ Final product
 - Final identity pass started from the official-only skeleton: hand 220 → 164 (no lateral detail; bunched field mislabelled).
 - Field-relative prior over the whole final race: share of held-out errors beyond 2 sd 0.628 → 0.694 (guard +5 points).
 - Field-curve centre without the stiffer width after the start: glitch-seconds 24.3 → 42.4, no held-out gain.
+- Keeping the detection path's lateral sd where the final pass falls back to the official skeleton: 26 races × 5 seeds, jerk-seconds +0.7 per seed (one seed 6.8 → 15.6), hand wrong 175 → 180, held-out error on the 24 changed horse-boundaries 0.52 → 0.80 s.
 - Official crossing times as hard label exclusions in the final product: no headroom; 1 of 783 boundary-crossing runs is > 0.3 s off its own horse (the errors sit between boundaries).
 - Leave-one-run-out demotion in the final product (a render run > 4σ and > 2 m from its horse's path refit without it, official crossings kept, made anonymous): one seed, glitch-seconds 24.3 → 36.4; demoted fragments re-associate to other horses and a tailed-off horse loses its only constraint.
 - Stiffer along-track prior in the final product (a_sd_s 1.2 → 0.72 m/s² after the start window; 26 races × 5 seeds, all interior boundaries held out): held-out median 0.0322 → 0.0318 s (bootstrap CI spans 0), faders at the last boundary 0.040 → 0.042 s, hand wrong 175 → 177; glitch-seconds 25.8 → 19.6. At 0.63, unperturbed seed, end of section 2 held out: 0.033 → 0.036 s.
