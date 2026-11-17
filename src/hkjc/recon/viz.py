@@ -373,6 +373,12 @@ def sync_video(
         if len(ds) > 1:
             spreads.append(max(ds) - min(ds))
     win_race = max(30.0, 5.0 * np.ceil((np.percentile(spreads, 95) + 6.0) / 5.0)) if spreads else 40.0
+    # equal metres per pixel on both axes (the field's shape as seen from above); the lateral extent
+    # covers the field's spread off the rail for the race
+    lats = np.concatenate([g["lat"][g["sd_s"] < 3.0] for g in G.values()])
+    lat_race = max(10.0, 5.0 * np.ceil((np.percentile(lats, 99) + 2.0) / 5.0)) if len(lats) else width_m
+    pxpm = min((Wm - 60) / win_race, (Hm - Ho - 70) / lat_race)
+    win_race = (Wm - 60) / pxpm
     tmin = min(g["t"][0] for g in G.values())
     tmax = max(g["t"][-1] for g in G.values())
     t0 = tmin if t0 is None else t0
@@ -441,14 +447,17 @@ def sync_video(
         y0f, hf = Ho + 40, Hm - Ho - 70
         if cur_pos:
             win = win_race
-            xs = lambda gap: int(Wm - 30 - gap / win * (Wm - 60))  # noqa: E731
-            ys = lambda lat: int(y0f + hf - lat / width_m * hf)  # noqa: E731
+            xs = lambda gap: int(Wm - 30 - gap * pxpm)  # noqa: E731
+            ys = lambda lat: int(y0f + hf - min(lat, hf / pxpm) * pxpm)  # noqa: E731
             cv2.rectangle(mp, (30, y0f), (Wm - 30, y0f + hf), (60, 140, 60), -1)
             cv2.line(mp, (30, y0f + hf), (Wm - 30, y0f + hf), (255, 255, 255), 2)
             for gm in np.arange(0, win + 0.1, 5.0):
                 cv2.line(mp, (xs(gm), y0f + hf), (xs(gm), y0f + hf + 6), (200, 200, 200), 1)
                 if gm % 10 == 0:
                     cv2.putText(mp, f"{gm:.0f}", (xs(gm) - 8, y0f + hf + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+            for lm in np.arange(5.0, hf / pxpm, 5.0):  # lateral ticks: metres off the rail
+                cv2.line(mp, (24, ys(lm)), (30, ys(lm)), (200, 200, 200), 1)
+                cv2.putText(mp, f"{lm:.0f}", (4, ys(lm) + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
             unplaced = sorted(set(col) - set(cur_pos))
             for h, (p, d, sd) in sorted(cur_pos.items(), key=lambda x: -x[1][1]):
                 if sd > 10.0 or not (-2.0 <= d - lead <= win + 2.0):
@@ -467,7 +476,7 @@ def sync_video(
                 tw = cv2.getTextSize(str(h), cv2.FONT_HERSHEY_SIMPLEX, 0.45, 2)[0][0]
                 cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
                 cv2.putText(mp, str(h), (c[0] - tw // 2, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(mp, "metres behind leader  (rail at bottom)", (30, y0f - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (230, 230, 230), 1)
+            cv2.putText(mp, "m behind leader / off rail (equal scale)", (30, y0f - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (230, 230, 230), 1)
             if unplaced:  # no firm position in this window: listed, never silently dropped
                 txt = "not placed: " + " ".join(f"#{h}" for h in sorted(unplaced))
                 cv2.putText(mp, txt, (36, y0f + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
