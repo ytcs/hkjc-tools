@@ -403,18 +403,18 @@ and frame grid failed their own adoption rule on the video-only gates against th
 they are the code because the pixels are right: mid-race pose stalls 48 → 2, ST 04-19 R4's wholesale
 identity rotation gone, ST 05-09 R1 blind labels 13/38 → 37/38, seed unanimity ST 04-19 R3 49 → 88 %.
 
-**Final product** (26 × 6): census 97.4 % of horse-runs good (93.1 % without the final identity pass);
-glitch-seconds 25.6 per seed (56.4 without the final identity pass; the start prior removes every
+**Final product** (26 × 6): census 97.4 % of horse-runs good, glitch-seconds 25.6 per seed (without the
+final identity pass, measured on the previous base: 93.1 %, 56.4; the start prior removes every
 implausible pre-render race); held-out boundary median error 0.032 s (all interior boundaries, seeds
-1–5); hand truth on the final labels (seeds 1–5) 1095 correct, 175 wrong, 51 blank of 1321; video-only
+1–5, previous base, whose outputs differ only on HV 04-22 R1/R9); hand truth on the final labels (seeds 1–5) 1095 correct, 175 wrong, 51 blank of 1321; video-only
 paths byte-identical with and without the final chain.
 
 ### Persistent failures
 
 Gates failed on ≥ 5 of 6 seeds:
 
-- HV 04-22 R9 leader and sectional: a common-mode scale error, +0.45 s late at 800 m, +0.39 s at
-  400 m, −0.20 s at the line (median of 12 horses); the film window is too short to measure the slope.
+- HV 04-22 R9 leader and sectional: a common-mode scale error, +0.44 s late at 800 m, +0.37 s at
+  400 m, −0.17 s at the line (median of 12 horses); the film window is too short to measure the slope.
 - ST 04-19 R4 sectional (0.28 s on 5/6 seeds): #3, tailed off and out of view, sits on a lookalike
   tracklet (worst boundary error 4.55 s); #5, #12 and #14 reach 0.5–0.8 s. Its finish camera is a
   slow-motion post camera: the winner #11 is read only sparsely and #10's "1" is hidden by the boot at

@@ -37,7 +37,8 @@ Detector weights are expected in `models/` (`avv_avatar_yolo11n.onnx`/`.pt`, the
 render-avatar detector; `coco_yolov8x.pt` from Ultralytics). They are not distributed in git.
 Environment knobs: `HKJC_DEVICE=cuda` (GPU detection), `HKJC_NPROC` (worker processes),
 `HKJC_OCR_THREADS` (OCR threads per process). Detector boxes, and so camera poses, depend slightly on
-the device (CPU vs CUDA moves final paths by ≤ 0.2 m); the reference baseline is a CUDA run.
+the device (CPU vs CUDA on HV 06-03 R8 moves final paths by ≤ 0.18 m); the reference baseline is a
+CUDA run.
 
 ## Layout
 
