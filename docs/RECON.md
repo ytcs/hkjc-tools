@@ -446,10 +446,6 @@ Gates failed on ≥ 5 of 6 seeds:
   ST bends −0.193, HV straights −0.118, ST straights −0.152): wide horses are reconstructed ahead,
   1.2–1.9 m at 10 m wide. Present on straights, so projection (rail normal skew or residual camera
   tilt), not bend geometry. It explains HV 05-20 R2 #2 (4–6 m wide, 0.7–1.5 m ahead of its legend place).
-- **Stiffer final-product prior (next arm).** Along-track acceleration sd 1.2 → 0.63 m/s² after the
-  start window, about zero (width only). On one seed: glitch-seconds 24.3 → 13.1, census 99.1 %,
-  held-out median 0.033 → 0.023 s, share beyond 2 sd 0.628 → 0.544, hand 221 → 218. Needs a declared
-  26 × 6 rule with a hand tripwire, and the 0.63 basis re-derived on fragments.
 - **Remaining glitches.** The E-step switches a horse between concurrently alive fragments
   (ST 04-19 R4 #14 onto #12's, #6 onto #9's; ST 05-31 R1 #1/#6 share unlabelled fragments), and
   no-detection stretches leave paths to the prior.
@@ -617,6 +613,7 @@ Final product
 - Final identity pass started from the official-only skeleton: hand 220 → 164 (no lateral detail; bunched field mislabelled).
 - Field-relative prior over the whole final race: share of held-out errors beyond 2 sd 0.628 → 0.694 (guard +5 points).
 - Field-curve centre without the stiffer width after the start: glitch-seconds 24.3 → 42.4, no held-out gain.
+- Stiffer along-track prior in the final product (a_sd_s 1.2 → 0.72 m/s² after the start window; 26 races × 5 seeds, all interior boundaries held out): held-out median 0.0322 → 0.0318 s (bootstrap CI spans 0), faders at the last boundary 0.040 → 0.042 s, hand wrong 175 → 177; glitch-seconds 25.8 → 19.6. The one-seed gain (0.033 → 0.023 s) did not replicate.
 
 Synchronisation and other evidence
 - Frame-difference threshold or change point for gate opening: cameras pan after the start (ST 04-26 R9 drone fired at 0.04 s).
