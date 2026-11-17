@@ -64,7 +64,8 @@ STAGES = (
     "observe",
     "finish",  # independent of the render; before identify (finish-camera identity votes)
     "identify",
-    "fuse",
+    "fuse_video",
+    "fuse_final",
     "validate",
 )
 OUTPUTS = {
@@ -80,7 +81,8 @@ OUTPUTS = {
     "observe": ["tracks.npz"],
     "identify": ["labels.npz"],
     "finish": ["finish.npz"],
-    "fuse": ["paths.parquet", "paths_video.parquet"],
+    "fuse_video": ["paths_video.parquet", "fuse_video.pkl"],
+    "fuse_final": ["paths.parquet"],
     "validate": ["validation.json"],
 }
 
@@ -1121,9 +1123,11 @@ class RaceRun:
         )
         return lab
 
-    def fuse(self):
-        """Two posteriors: VIDEO-ONLY (no official outcome data; what the gates validate) and the
-        FINAL product, which adds the official records (draw + sectional times)."""
+    def fuse_video(self):
+        """VIDEO-ONLY posterior (no official outcome data; what the gates validate). Persists its
+        observations and paths (fuse_video.pkl) for ``fuse_final``."""
+        import pickle
+
         obs = self.observations()
         prior = fusion.Prior(width=self.info.width)
         horses = [r.no for r in self.info.runners]
@@ -1134,8 +1138,24 @@ class RaceRun:
             pv, assign = self._fuse(obs, horses, prior)
         obs, pv = self._em_associate(pv, horses, prior)
         self._write_paths(pv, "paths_video.parquet")
-        # FINAL product (may use official outcome data): its grid runs past the last official
-        # finish, else the slowest finisher ends a few cm short of the line
+        with open(self.p("fuse_video.pkl"), "wb") as f:
+            pickle.dump((obs, pv), f, protocol=pickle.HIGHEST_PROTOCOL)
+        n_anon = sum(1 for o in obs if o.horse == 0)
+        n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
+        self.log(
+            f"   fuse_video: {len(pv)}/{len(horses)} horses; anonymous tracklets associated {n_ass}/{n_anon}"
+        )
+
+    def fuse_final(self):
+        """FINAL product: the video-only observations + the official records (draw + sectional
+        times), with the shared metric bias, a field-relative start prior and a final identity pass.
+        Its grid runs past the last official finish (else the slowest finisher ends a few cm short)."""
+        import pickle
+
+        with open(self.p("fuse_video.pkl"), "rb") as f:
+            obs, pv = pickle.load(f)
+        prior = fusion.Prior(width=self.info.width)
+        horses = [r.no for r in self.info.runners]
         offi = self.official_observations()
         t_end = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
         t_end = None if t_end is None else t_end + 0.5
@@ -1164,12 +1184,7 @@ class RaceRun:
         )
         pf, _a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
         self._write_paths(pf, "paths.parquet")
-        n_anon = sum(1 for o in obs if o.horse == 0)
-        n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
-        self.log(
-            f"   fuse: video-only {len(pv)}/{len(horses)} horses, final {len(pf)}/{len(horses)}; "
-            f"anonymous tracklets associated {n_ass}/{n_anon}"
-        )
+        self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
 
     def _metric_corrected(self, obs, paths, bias=None):
         """FINAL product only: the render's distance metric has a smooth SHARED error b(s) (all

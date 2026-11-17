@@ -30,7 +30,7 @@ paths = run.paths()                             # final product: horse_no, t, s,
 ```
 
 ```bash
-uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse,validate] [--stages ...]
+uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse_final,validate] [--stages ...]
 ```
 
 Detector weights are expected in `models/` (`avv_avatar_yolo11n.onnx`/`.pt`, the self-trained

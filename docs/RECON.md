@@ -211,9 +211,12 @@ per tracklet and per frame; gain ≤ 0 stays unlabelled. Against the greedy labe
 by elimination (`finishcam.eliminate`) to numbers with no line-reaching tracklet. Camera and
 elimination names are hard constraints downstream.
 
-### fuse
+### fuse_video, fuse_final
 
-#### Video-only posterior
+#### Video-only posterior (`fuse_video`)
+
+`fuse_video` writes `paths_video.parquet` and persists its observations and paths
+(`fuse_video.pkl`); `fuse_final` reads them, so final-product changes re-run only `fuse_final`.
 
 **Model** (`fusion.smooth`). Per horse, s and lat on a 0.1 s grid with second-difference priors:
 along-track acceleration sd 6 m/s² for t < 6 s, 1.2 m/s² after; lateral 0.25 m/s² plus a 2 m/s
@@ -274,7 +277,7 @@ seed path (camera crossing, field line speed, sd growing 1 m/s away from the lin
 again. Shadow release: two tight paths within 0.8 m along and 0.5 m lateral for ≥ 0.5 s in the last
 3 s lose the weaker horse's detections there (the unread one, else fewer detections).
 
-#### Final product
+#### Final product (`fuse_final`)
 
 The final product reuses the video-only detections and adds the official records:
 1. `RaceRun.official_observations`: the draw fixes lateral at t = 0 (stall 1 at 2.5 m, pitch 1.06 m,
