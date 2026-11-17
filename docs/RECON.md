@@ -1626,7 +1626,9 @@ information, including the official results; acceptance is judged on it. The vid
   is 0.63 m/s² per node (the clean races' measured horse-specific acceleration) about the field's
   median curve from the first final fusion. s0, 26 races: ST 05-31 pre-render deviation from the field
   30.4 → 12.2 m; final census 97.8 = 97.8 %, glitch-seconds 27.8 → 24.3, hand 220 → 221, video-only
-  byte-identical.
+  byte-identical. Rule 0154 (declared before the 26 × 6 run, paired against the arm without it):
+  glitch-seconds −5.9 per seed (SE 2.0), hand +0.67 (SE 0.33), census +0.001 (SE 0.002), video-only
+  identical 156/156, races with implausible pre-render motion 7–8 → 0 on every seed. Passed.
   - Remaining final-product glitches: the identity step switches a horse between concurrently alive
     fragments (ST4 #14 onto #12's fragment, #6 onto #9's; ST 05-31 #1 / #6 share and hand off
     unlabelled fragments). Not addressed.
