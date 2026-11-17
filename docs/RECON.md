@@ -58,17 +58,18 @@ widened to 0.60 also pass: on ST 04-19 R4 and ST 04-26 R9 the legend sits higher
 dropped up to 13 s of race. The render updates at 10 Hz in 25 fps video; a frame within mean |diff|
 3.0 of the last kept frame is a duplicate. Panels are cached as JPEG with their video index as
 timestamp. `video.grid_keep` drops off-grid re-encodes of a kept tick (HV 04-22 R1/R9 have a
-keyframe every 100 frames that enters as a zero-motion tick); it runs only with `HKJC_FRAME_GRID=1`.
+keyframe every 100 frames that enters as a zero-motion tick).
 
 ### features
 
-ORB (3000 features) on a world mask: HUD removed, dark (V < 45) and vivid blobs dilated. With
-`HKJC_WORLD_MASK=yolo` the avatar boxes, grown 1.6×, are masked too: the colour mask misses brown
+ORB (3000 features) on a world mask: HUD removed, dark (V < 45) and vivid blobs dilated, and the
+avatar detector's boxes, grown 1.6×, masked: the colour mask misses brown
 and pastel avatars, which are static in the image because the camera follows the field, and step
 matches locked onto them (ST 04-19 R4: camera "stopped" for 3 ticks, identities rotated). Over 26 races
 the box mask cuts mid-race pose stalls 48 → 30, and with the frame grid 48 → 2 (the rest were HV 04-22
-keyframes). Masked poses need the CUDA detector: the OpenVINO detector's boxes differ (ST 04-19 R4
-9122 vs 9129) and change the ORB steps on 603/705 frames. Steps between frames ≤ 6 video frames apart
+keyframes). Poses depend on the detector's device: the OpenVINO detector's boxes differ (ST 04-19 R4
+9122 vs 9129) and change the ORB steps on 603/705 frames; CPU vs CUDA on HV 06-03 R8 moves the final
+paths by ≤ 0.18 m (median 0.01 m). The reference roots are CUDA runs. Steps between frames ≤ 6 video frames apart
 are RANSAC similarities (1.5 px) refitted by least squares (Umeyama): the camera is near-nadir with no
 tilt and a slow zoom.
 
@@ -392,29 +393,23 @@ held-out test (11 races, earlier frozen code, run once) passed all five timing g
 11/11 winners; those races are in the development set, so a further held-out claim needs another
 set of races sealed by a metadata-only rule.
 
-### Three configurations
+### Baseline (tag `recon-baseline-Z9`)
 
-**Code default** (unmasked poses, no frame grid). Video-only, 26 × 6: non-lateral gates 201.33 per
-seed, lateral 10 passes, identity score ρ 0.974, hand majority 121/151, video-only census 81.4 % of
-horse-runs good.
+From-scratch CUDA run of all 26 races on the current code (pose stalls mid-race: 2, both HV 04-15 at the
+render start). Video-only, 26 × 6: non-lateral gates 200.67 per seed (200–202), timing gates 126.67, all
+five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a, finish-short 28–29 horses per seed. The box mask
+and frame grid failed their own adoption rule on the video-only gates against the unmasked poses
+(non-lateral 201.33 → 200.67 per seed, SE 0.33; timing −0.50; all five −0.67), reported as a failure;
+they are the code because the pixels are right: mid-race pose stalls 48 → 2, ST 04-19 R4's wholesale
+identity rotation gone, ST 05-09 R1 blind labels 13/38 → 37/38, seed unanimity ST 04-19 R3 49 → 88 %.
 
-**Masked working base** (`HKJC_WORLD_MASK=yolo HKJC_FRAME_GRID=1`). Its poses come from one from-scratch
-CUDA run with the avatar mask on earlier code (24 races; HV 04-22 R1/R9 keep the unmasked pose), with
-worldmap and rails rebuilt on current code. All experiments start here. It failed its own adoption
-rule on the video-only gates (non-lateral −0.67 per seed, SE 0.33; timing −0.50; all five −0.67),
-reported as a failure; it is the base because the pixels are right (mid-race pose stalls 48 → 2, ST 04-19 R4's
-wholesale identity rotation gone; ST 05-09 R1 blind labels 13/38 → 37/38; seed unanimity ST 04-19 R3
-49 → 88 %). It becomes the default only after a from-scratch run on current code reproduces it.
-Reference ensemble recomputed from its cached `validation.json` (26 × 6): non-lateral gates 200.67
-per seed (200–202), timing gates 126.67, all five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a,
-finish-short 28–29 horses per seed, final-product residual vs official median 0.025 s.
+**Final product** (26 × 6): census 97.4 % of horse-runs good (93.1 % without the final identity pass);
+glitch-seconds 25.6 per seed (56.4 without the final identity pass; the start prior removes every
+implausible pre-render race); held-out boundary median error 0.032 s (all interior boundaries, seeds
+1–5); hand truth on the final labels (seeds 1–5) 1095 correct, 175 wrong, 51 blank of 1321; video-only
+paths byte-identical with and without the final chain.
 
-**Final product on the masked base** (26 × 6): census 97.3 % (93.1 % without the final identity
-pass); glitch-seconds 31.5 per seed (56.4 without), and the start prior removes 5.9 more (SE 2.0) and
-every implausible pre-render race (7–8 → 0); held-out boundary median error 0.033 s on one seed
-(0.035 s with race medians removed); video-only paths byte-identical 156/156 with and without the final chain.
-
-### Persistent failures on the working base
+### Persistent failures
 
 Gates failed on ≥ 5 of 6 seeds:
 
@@ -458,12 +453,12 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Scratched runners.** `identity.legend_votes` receives the highest saddlecloth number as `n_field`
   instead of the runner count; with a scratching its complete-field condition cannot hold. None of the
   26 races has a scratching; fixing it changes behaviour and needs its own check.
-- **Masked-base worklist.** HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
+- **Worklist.** HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
-- **Unmasked pose stalls on uniform texture** (ST 05-09 R1, 2 frames at t ≈ 33.8 s) and hard tracklet
-  exclusivity at a few-frame end overlap drop a 230-detection tracklet's number.
+- **Hard tracklet exclusivity** at a few-frame end overlap drops a 230-detection tracklet's number
+  (ST 05-09 R1).
 - **Orphan elimination** in fusion hands a leftover chain to the last missing horse; with ST 04-19
   R4's #10 read it gives tailed-off #3 a mid-field chain. Turning it off is gate-neutral on single runs
   but costs 8 races a path; not ensemble-tested.

@@ -100,9 +100,8 @@ def _feat_job(args):
     k, nfeat = args
     i, p = _CACHE.idx[k], _CACHE.panel(k)
     lt = video.legend_top(p)
-    m = register.world_mask(p, video.hud_mask(p, lt))
-    if _DET is not None:  # HKJC_WORLD_MASK=yolo: also mask the avatar detector's boxes (+ shadows)
-        m = register.mask_boxes(m, _DET.panel(p, lt))
+    # the avatar detector's boxes (+ shadows) are masked too: the colour mask misses brown horses
+    m = register.mask_boxes(register.world_mask(p, video.hud_mask(p, lt)), _DET.panel(p, lt))
     f = register.extract(p, m, nfeat)
     return int(i), lt, f, p.shape[:2]
 
@@ -220,12 +219,10 @@ class RaceRun:
         cache = self.cache()
         global _CACHE, _FEATS_PAR
         _CACHE = cache
-        yolo = os.environ.get("HKJC_WORLD_MASK", "v1") == "yolo"  # the masked variant
-        nw = _nproc()
-        if yolo:  # one detector per worker; one accelerator context (as in ``detect``)
-            accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
-            nw = 1 if accel else min(nw, 4)
-        with mp.get_context("fork").Pool(nw, initializer=_det_init if yolo else None) as pool:
+        # one avatar detector per worker; one accelerator context (as in ``detect``)
+        accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
+        nw = 1 if accel else min(_nproc(), 4)
+        with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
             res = pool.map(_feat_job, [(k, nfeat) for k in range(len(cache))], chunksize=8)
         # a NEW pool: workers fork the parent's state, so the features must exist before forking
         _FEATS_PAR = [r[2] for r in res]
