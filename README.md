@@ -48,7 +48,8 @@ src/hkjc/data/    HKJC interfaces: race_info (results+sectionals), replay videos
                   dividends, form): fetch recipes in docs/HKJC_DATA.md, docs/HKJC_SPECS.md
 src/hkjc/recon/   race info + videos -> paths
     pipeline.py   RaceRun: cached stages frames -> features -> pose -> worldmap -> detect -> silk
-                  -> hud -> rails -> film -> observe -> finish -> identify -> fuse -> validate
+                  -> hud -> rails -> film -> observe -> finish -> identify -> fuse_video -> fuse_final
+                  -> validate
     video.py      frame access, AVV render gating / 10 Hz de-dup / HUD masks
     register.py   turf ORB features, RANSAC similarity + least-squares refit
     pose.py       camera pose graph (sequential, long-baseline, loop closures)
