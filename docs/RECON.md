@@ -472,7 +472,8 @@ Gates failed on ≥ 5 of 6 seeds:
   is untested (too few independent tracks). On up to 11 of 26 tracks (seed 0) two observed paths
   sit on one drone horse while the render tracklet's labels alternate between the two horses and the
   drone shows one horse throughout (76 of 78 label changes), often the legend's 7th/8th horse and an
-  unlisted one; cause not established. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
+  unlisted one. The soft legend-rank term switches at about half of those label changes; widening its
+  margin removes much of the alternation but not the contradictions (§7); cause not established. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
   runs that place #10 in the pack and in none of the 3 that place it wide.
 - **Scratched runners.** `identity.legend_votes` receives the highest saddlecloth number as `n_field`
   instead of the runner count; with a scratching its complete-field condition cannot hold. None of the
@@ -661,6 +662,7 @@ Synchronisation and other evidence
 - The same corrections kept only where the drone track confirms the horse (track purity ≥ 0.9 on control labels, majority = the assigned horse; optionally a learned drone jockey embedding): every gate and guard holds and held-out drone agreement improves (0.565 → 0.510), but official boundary timing shows no gain where the corrections act (25 distinct horse-boundaries, seed-mean median 0.090 → 0.092 s; 5 improved and 6 worsened by > 0.02 s; HV 05-27 R9 #10 0.02 → 0.16 s in every seed).
 - Drone configuration check as a predictor of official boundary-timing error (not tested as a configuration check; a path horse in drone view with no drone point within 2.5 m, one-to-one, in ≥ 50 % of frames within ±1 s of its boundary crossing): AUC 0.630 for official relative boundary error > 0.3 s (0.65 required; 792 horse-boundaries, 19 bad, precision 0.12 against a 0.024 base). Errors at boundaries are rare where the drone sees the field, so the test has little power, and it cannot see configuration errors between markers.
 - Identity by elimination for persistent drone contradictions (a drone horse with no path horse within 5 m for ≥ 4 frames takes the one in-view path horse left over with no video observation): under the current labels, the candidate is determined in ≥ 80 % of frames on 5 of 26 persistent tracks (13 required; seed 0, video-only). In most frames the leftover horse has observations and its nearest drone point within 5 m is held by another observed horse: the conflict is in the video observations themselves, which elimination cannot settle.
+- Soft legend-rank margin 0.6 → 1.13 m (the sd of a difference of two detections; hard part unchanged), against label alternation on one render track: full EM on the 8 affected races (seed 0), persistent drone contradictions video-only 17 → 17 and final 18 → 19, elimination-determined tracks 1 → 2 and 4 → 2, no gate change.
 
 The off-switches of adopted rules (negative evidence, blind cost, shadow release, anchor check,
 detection EM, paint-pin override, fragment-forbid fraction, rail smoother, local refit) were removed.
