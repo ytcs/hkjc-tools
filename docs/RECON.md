@@ -463,6 +463,18 @@ Gates failed on ≥ 5 of 6 seeds:
   term was overconfident (it broke HV 05-13 R1 and ST 06-07 R6); a heavy-tailed form with per-race
   parameters is untested. The blind near-line cost also removes correctly placed unread back markers
   (HV 05-27 R9 #7 at d 49 m).
+- **Drone configuration contradictions.** A drone horse with no path horse within 5 m for ≥ 4
+  consecutive drone frames (drone points mapped through the frame's render detections; the final
+  product compared after removing its per-frame metric shift): 25 drone tracks in 14 races video-only
+  and 27 in 15 races final, counting tracks present in ≥ 4 of 6 seeds; 19 tracks in every seed of both
+  products. By eye on 30 single frames, two labellers agreed on a real configuration error in 16
+  (rear or wide horses without a path, two paths on one horse, order reversed); the 4-frame filter
+  is untested (too few independent tracks). Most such tracks have two observed paths on one drone
+  horse, and there the render tracklet's labels alternate between the two horses while the drone
+  shows one horse throughout (76 of 78 label changes), often the legend's 7th/8th horse and an
+  unlisted one; neither a missing render detection nor a rank change across the legend boundary
+  accounts for most of them. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
+  runs that place #10 in the pack and in none of the 3 that place it wide.
 - **Scratched runners.** `identity.legend_votes` receives the highest saddlecloth number as `n_field`
   instead of the runner count; with a scratching its complete-field condition cannot hold. None of the
   26 races has a scratching; fixing it changes behaviour and needs its own check.
