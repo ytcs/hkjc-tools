@@ -465,9 +465,9 @@ Gates failed on ≥ 5 of 6 seeds:
   12.3 %). A blind silk read by a second reader (avatar crop and official silks only) agreed with the hand sets on 35 of 36
   controls and on 28 of 36 detections that are wrong on ≥ 3 of 5 seeds (20 of 21 outside ST 04-19 R3 and ST 04-26 R1); both
   are silk reads, so this shows the reading repeats, not independent truth. The pipeline's own tracklet silk ranks a hand
-  candidate first on 30 of 36 and 21 of 36, but in `identify.assign_global` legend votes add per frame and silk once per
-  tracklet (±3): the wrong label's vote margin has median 46 votes. As a flag, silk does not separate wrong from right
-  tracklets well enough: at the margin flagging 5 % of 571 right ones it flags 60 of 128 wrong ones (AUC 0.87). A better
+  candidate first on 30 of 36 and 21 of 36 (seed 1), but in `identify.assign_global` legend votes add per frame and silk once per
+  tracklet (±3): on the 84 wrong instances already wrong in identify the label's vote margin has median 46 votes. As a flag, silk does not separate wrong from right
+  tracklets well enough: at the margin flagging 5 % of 571 right seed-tracklets it flags 60 of 128 wrong ones (AUC 0.87). A better
   silk likelihood is the open lever.
 - **Drone configuration contradictions.** A drone horse with no path horse within 5 m for ≥ 4
   consecutive drone frames (drone points mapped through the frame's render detections; the final
@@ -484,7 +484,7 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Scratched runners.** `identity.legend_votes` receives the highest saddlecloth number as `n_field`
   instead of the runner count; with a scratching its complete-field condition cannot hold. None of the
   26 races has a scratching; fixing it changes behaviour and needs its own check.
-- **Worklist.** Disclaimer-text boxes survive the static-overlay gate in HV 05-20 R2 (44 kept, max 30 per 8 px cell vs the 4 % bar of 35: the glyph boxes jitter across cells); they sit in 12 of its 134 whole-field legend-vote frames and > 4.5 m ahead of a real detection in 35 of 881 E-step frames, where the hard rank cost has no false-positive allowance. HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
+- **Worklist.** Disclaimer-text boxes survive the static-overlay gate in HV 05-20 R2 (seed 0: 44 kept in the band, max 30 in one 8 px cell vs the 4 % bar of 35); they sit in 12 of its 134 whole-field legend-vote frames and > 4.5 m ahead of a real detection in 35 of 881 E-step frames, where the hard rank cost has no false-positive allowance. HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
