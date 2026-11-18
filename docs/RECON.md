@@ -635,6 +635,7 @@ Synchronisation and other evidence
 - TV running-order bar as an extra ranking source: it repeats the aerial legend about 2 s late, in 1.2 s pages (runner sets match 0.98–1.00 after the shift; 3 races read), and is removed before the finish.
 - Drone silk colour histograms from a fixed jockey region ahead of the detector box (course direction from the registration): top-1 0.112 and top-3 0.344 on the same 465 units (render 0.41 / 0.68); the rectangle mixes jockey, turf, neighbours and the horse's neck.
 - Fusion grid extended to cover the latest observation (one extra sample): removes grid-end shorts (0–3 fewer per seed) but flips `winner_ok` in ST 04-26 R1 (seeds 0 and 3; the control's winning margin is 4 ms), because the extra sample moves EM decisions.
+- Identity-free drone corrections (unmatched drone points assigned to horses without their own render detection by least displacement, injected after the EM): held-out drone agreement improves in every seed (unexplained 0.565 → 0.503), but 7 gate flips — a tailed-off horse outside the drone view (ST 04-19 R4 #3) took a spare drone point in the pack and got a confident, 5.9 s early finish.
 
 The off-switches of adopted rules (negative evidence, blind cost, shadow release, anchor check,
 detection EM, paint-pin override, fragment-forbid fraction, rail smoother, local refit) were removed.
