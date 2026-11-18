@@ -453,8 +453,10 @@ Gates failed on ≥ 5 of 6 seeds:
   separates them (faders ≤ 1.25 m/s², conflicts ≥ 2.4 m/s² on five traced cases). Boundary-crossing
   runs already agree with their official times in the final labels (1 of 783 off by > 0.3 s).
 - **Back-marker identity.** Back markers get only elimination evidence and a weak silk LLR: HV 05-20
-  R2 #5/#12 are swapped (~1 s, every seed); ST 04-19 R4 #3 (tailed off, out of view) lands on a
-  lookalike tracklet. These two cases give 30 of the 56 video-only boundary errors over 10 m (26 × 6). Draw order agrees with early lateral order (median ρ 0.75), but a Gaussian draw
+  R2 #5/#12 are swapped at 400 m (~1 s, every seed), and at 1200 and 800 m its back group (#2, #5, #6, #8,
+  #12) crosses 0.3–1.4 s early on every seed (video-only): at 1200 m the avatar the legend lists sixth
+  (#2) carries label 5, so the labels rotate through the group; ST 04-19 R4 #3 (tailed off, out of view) lands on a
+  lookalike tracklet. Draw order agrees with early lateral order (median ρ 0.75), but a Gaussian draw
   term was overconfident (it broke HV 05-13 R1 and ST 06-07 R6); a heavy-tailed form with per-race
   parameters is untested. The blind near-line cost also removes correctly placed unread back markers
   (HV 05-27 R9 #7 at d 49 m).
@@ -639,7 +641,7 @@ Synchronisation and other evidence
 - Matching the shared finish-camera replay across feeds: it sits at a different edit position per feed.
 - Drone offset from formation matching: 1.47 s vs 2.46 s measured on HV 06-03 R8.
 - Drone camera fitted to the rails plus horse ICP for positions: the rails register, but along-track tilt is unobservable on straights and the ICP does not lock.
-- Lateral projection correction (rail-normal skew or camera tilt): painted cross-track markings map square through pose and rail on 6 home straights; the slope of video-only boundary error against lateral offset (−0.159 m per m pooled, race-bootstrap SE 0.118) comes from 56 gross identity errors (13 horses), and with race-clustered intervals every robust per-stratum slope contains 0 (finish line −0.005 HV, +0.007 ST; ST bends negative in 5 of 9 races).
+- Lateral projection correction (rail-normal skew or camera tilt): painted cross-track markings map square through pose and rail on 6 home straights; the slope of video-only boundary error against lateral offset (−0.159 m per m pooled, race-bootstrap SE 0.118) comes from 56 errors over 10 m on 13 horses (44 in HV 05-20 R2 and ST 04-19 R4, races with recorded identity errors; 12 untraced), and with race-clustered intervals every robust per-stratum slope contains 0 (finish line −0.005 HV, +0.007 ST; ST bends negative in 5 of 9 races).
 - Free 8-DOF homography for the drone camera: collapsed onto degenerate solutions (every rail pixel snapped to one rail); replaced by a 7-DOF look-at pinhole.
 - TV-feed cloth reads as an identity yardstick: failed its declared criteria (HV 06-03 R3 order 62.5 %); the TV camera follows the leaders, so back markers are rarely read.
 - TV running-order bar: 8 fixed slots, a delayed copy of the render legend.
