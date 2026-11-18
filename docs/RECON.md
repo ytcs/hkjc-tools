@@ -454,7 +454,7 @@ Gates failed on ≥ 5 of 6 seeds:
   runs already agree with their official times in the final labels (1 of 783 off by > 0.3 s).
 - **Back-marker identity.** Back markers get only elimination evidence and a weak silk LLR: HV 05-20
   R2 #5/#12 are swapped at 400 m (~1 s, every seed), and at 1200 and 800 m #2, #5 and #12 cross 0.6–1.4 s early on every seed
-  (video-only; #6 and #8 likewise where they have a crossing); in one seed-0 frame at 1200 m the avatar the
+  (video-only; #6 and #8 0.3–1.0 s where they have a crossing); in one seed-0 frame at 1200 m the avatar the
   legend lists sixth (#2) carries label 5; ST 04-19 R4 #3 (tailed off, out of view) lands on a
   lookalike tracklet. Draw order agrees with early lateral order (median ρ 0.75), but a Gaussian draw
   term was overconfident (it broke HV 05-13 R1 and ST 06-07 R6); a heavy-tailed form with per-race
