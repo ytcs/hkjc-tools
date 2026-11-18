@@ -445,11 +445,6 @@ Gates failed on ≥ 5 of 6 seeds:
   5–15 observations lie within ±0.5 s, the median error is still 0.55 m: an error floor that more
   detections do not reduce, so a systematic term, not only correlated detections. Candidates:
   effective sample size per run, or empirical inflation from held-out boundaries, under their own rule.
-- **Lateral projection bias.** Video-only boundary errors (common mode removed, 6 seeds, n = 5141)
-  against lateral offset from the field median have slopes −0.118 to −0.193 m per m (HV bends −0.177,
-  ST bends −0.193, HV straights −0.118, ST straights −0.152): wide horses are reconstructed ahead,
-  1.2–1.9 m at 10 m wide. Present on straights, so projection (rail normal skew or residual camera
-  tilt), not bend geometry. It explains HV 05-20 R2 #2 (4–6 m wide, 0.7–1.5 m ahead of its legend place).
 - **Remaining glitches.** Most final-product glitch-seconds (relative speed > 3 m/s) where the
   video-only path is smooth come from identity conflicts at an official crossing: a wrong E-step label
   between boundaries pins the horse, the official time pulls it back (HV 05-20 R2: one tracker fragment that runs the whole race and crosses the boundaries at #2's
@@ -459,7 +454,7 @@ Gates failed on ≥ 5 of 6 seeds:
   runs already agree with their official times in the final labels (1 of 783 off by > 0.3 s).
 - **Back-marker identity.** Back markers get only elimination evidence and a weak silk LLR: HV 05-20
   R2 #5/#12 are swapped (~1 s, every seed); ST 04-19 R4 #3 (tailed off, out of view) lands on a
-  lookalike tracklet. Draw order agrees with early lateral order (median ρ 0.75), but a Gaussian draw
+  lookalike tracklet. These two cases give 30 of the 56 video-only boundary errors over 10 m (26 × 6). Draw order agrees with early lateral order (median ρ 0.75), but a Gaussian draw
   term was overconfident (it broke HV 05-13 R1 and ST 06-07 R6); a heavy-tailed form with per-race
   parameters is untested. The blind near-line cost also removes correctly placed unread back markers
   (HV 05-27 R9 #7 at d 49 m).
@@ -478,7 +473,7 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Scratched runners.** `identity.legend_votes` receives the highest saddlecloth number as `n_field`
   instead of the runner count; with a scratching its complete-field condition cannot hold. None of the
   26 races has a scratching; fixing it changes behaviour and needs its own check.
-- **Worklist.** HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
+- **Worklist.** HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
@@ -644,6 +639,7 @@ Synchronisation and other evidence
 - Matching the shared finish-camera replay across feeds: it sits at a different edit position per feed.
 - Drone offset from formation matching: 1.47 s vs 2.46 s measured on HV 06-03 R8.
 - Drone camera fitted to the rails plus horse ICP for positions: the rails register, but along-track tilt is unobservable on straights and the ICP does not lock.
+- Lateral projection correction (rail-normal skew or camera tilt): painted cross-track markings map square through pose and rail on 6 home straights; the slope of video-only boundary error against lateral offset (−0.159 m per m pooled, race-bootstrap SE 0.118) comes from 56 gross identity errors (13 horses), and with race-clustered intervals every robust per-stratum slope contains 0 (finish line −0.005 HV, +0.007 ST; ST bends negative in 5 of 9 races).
 - Free 8-DOF homography for the drone camera: collapsed onto degenerate solutions (every rail pixel snapped to one rail); replaced by a 7-DOF look-at pinhole.
 - TV-feed cloth reads as an identity yardstick: failed its declared criteria (HV 06-03 R3 order 62.5 %); the TV camera follows the leaders, so back markers are rarely read.
 - TV running-order bar: 8 fixed slots, a delayed copy of the render legend.
