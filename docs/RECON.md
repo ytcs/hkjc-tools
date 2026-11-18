@@ -227,6 +227,12 @@ lateral. Lateral is boxed to [0.3, width − 0.3] m. The MAP is a banded Cholesk
 nodes pinned by a stiff penalty (≤ 8 rounds); it matches an exact sparse LU to ~1e-8 m in 1/27 of the
 time (declared non-exact: labels differ on 3/26 races by 0.1–3.2 %). Posterior sd comes from the
 unconstrained normal equations at every 10th node, interpolated.
+The grid ends at the race's latest observation. When `paths_video.parquet` is written, each path gets
+a 0.5 s prior-only tail (`fusion.with_tail`): s continues at the end-node speed, lat is held, and sd_s
+grows with the acceleration prior. The fusion, EM and `fuse_video.pkl` never see the tail. Without
+it, a horse a few cm short of the line at the last observation has no finish crossing (HV 04-15 R1 #2
+ended 4 cm past the line in one seed and 3 mm short in a corrected arm). Tail crossings come from
+extrapolation: up to 7.6 m (ST 05-09 R2 #11, ST 05-09 R1 #8), most under 1.5 m.
 
 **Association** (`fusion.fuse_race`). Anonymous tracklets are scored against each posterior by mean
 χ² plus log-det ratio; the best must be < 9, beat the runner-up 2×, not overlap that horse's
@@ -397,7 +403,9 @@ set of races sealed by a metadata-only rule.
 
 From-scratch CUDA run of all 26 races on the current code (pose stalls mid-race: 2, both HV 04-15 at the
 render start). Video-only, 26 × 6: non-lateral gates 200.67 per seed (200–202), timing gates 126.67, all
-five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a, finish-short 28–29 horses per seed. The box mask
+five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a, finish-short 28–29 horses per seed. With the
+written tail (tag `recon-baseline-Z10`, fuse/validate rerun on the same stages): finish-short 26–27,
+ST 05-09 R2 finish-n passes on all 6 seeds, no other gate changes. The box mask
 and frame grid failed their own adoption rule on the video-only gates against the unmasked poses
 (non-lateral 201.33 → 200.67 per seed, SE 0.33; timing −0.50; all five −0.67), reported as a failure;
 they are the code because the pixels are right: mid-race pose stalls 48 → 2, ST 04-19 R4's wholesale
@@ -420,7 +428,8 @@ Gates failed on ≥ 5 of 6 seeds:
   slow-motion post camera: the winner #11 is read only sparsely and #10's "1" is hidden by the boot at
   the line, so neither gets a gap.
 - Finish-n, video-limited: ST 05-03 R7 (#4 8 m short at the last render frame, #10 3 m short, #11's
-  detections end 200 m out), ST 05-09 R2 (#9 3 m, #11 9 m short; #10 0.3 m short at the grid end),
+  detections end 200 m out), ST 05-09 R2 (#9 3 m, #11 9 m short at the last observation; passes since
+  the tail, with #11's crossing extrapolated over 5.9–7.6 m),
   HV 05-27 R9 (no detections over t 70.56–72.28; #7 unobserved for its last 16 m, sd 1.78 m at the
   line; #9 and #10 lose detections 73–87 m out). ST 05-24 R1: #8 and #12 have no detections after
   125/90 m; #4 has 4 sparse detections in the last 25 m that the blind cost bars.
@@ -636,7 +645,7 @@ Synchronisation and other evidence
 - Drone silk colour histograms from a fixed jockey region ahead of the detector box (course direction from the registration): top-1 0.112 and top-3 0.344 on the same 465 units (render 0.41 / 0.68).
 - Hand-built drone jockey descriptors (oriented crop ahead of the box; hue histogram + Lab grid): official-silk match top-1 0.137 (474 units); drone-to-drone enrolment across tracks 0.249 top-1 (3242 windows, chance 0.088, required 0.60).
 - Drone jockey embedding trained with batch-hard triplet loss alone (from scratch, Adam 1e-3, single-race batches): the embedding collapses (loss at the 0.3 margin from ~100 iterations; pairwise spread 2e-3). Enrolment across tracks reached 0.585 top-1 anyway (3245 windows, required 0.60; top-3 0.810, chance 0.088). The idea of a learned embedding is not rejected; only this loss is.
-- Fusion grid extended to cover the latest observation (one extra sample): removes grid-end shorts (0–3 fewer per seed) but flips `winner_ok` in ST 04-26 R1 (seeds 0 and 3; the control's winning margin is 4 ms), because the extra sample moves EM decisions. The grid-end defect itself is open; only this form is rejected.
+- Fusion grid extended to cover the latest observation (one extra sample): removes grid-end shorts (0–3 fewer per seed) but flips `winner_ok` in ST 04-26 R1 (seeds 0 and 3; the control's winning margin is 4 ms), because the extra sample moves EM decisions. The defect is fixed by the write-only tail (§2, fusion model); it had also failed the short guard of the drone-correction rules on HV 04-15 R1 #2 (4 cm).
 - Identity-free drone corrections (unmatched drone points assigned to horses without their own render detection by least displacement, injected after the EM): held-out drone agreement improves in every seed (unexplained 0.565 → 0.503), but 7 gate flips — a tailed-off horse (ST 04-19 R4 #3, 7.5 s behind) received pack drone points and got a confident, 5.9 s early finish.
 
 The off-switches of adopted rules (negative evidence, blind cost, shadow release, anchor check,

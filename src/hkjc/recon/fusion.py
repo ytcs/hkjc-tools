@@ -72,6 +72,28 @@ class Path:
     feeds: dict = field(default_factory=dict)
 
 
+TAIL = 0.5  # s: prior-only tail on WRITTEN video-only paths (never fed back into fusion)
+
+
+def with_tail(p: Path, prior: Prior, tail: float = TAIL) -> Path:
+    """``p`` plus nodes every DT for ``tail`` s after its end: the posterior mean of a prior-only tail
+    under the acceleration prior (s at the end-node velocity, lat held), sd_s grown by the prior."""
+    if len(p.t) < 2:
+        return p
+    tau = DT * np.arange(1, int(round(tail / DT)) + 1)
+    v = (p.s[-1] - p.s[-2]) / (p.t[-1] - p.t[-2])
+    k = len(tau)
+    return replace(
+        p,
+        t=np.r_[p.t, p.t[-1] + tau],
+        s=np.r_[p.s, p.s[-1] + v * tau],
+        lat=np.r_[p.lat, np.full(k, p.lat[-1])],
+        sd_s=np.r_[p.sd_s, np.hypot(p.sd_s[-1], 0.5 * prior.a_sd_s * tau**2)],
+        sd_l=np.r_[p.sd_l, np.full(k, p.sd_l[-1])],
+        n_obs=np.r_[p.n_obs, np.zeros(k, p.n_obs.dtype)],
+    )
+
+
 def _solve_banded(obs, which, t0, n, a_sd, lb, ub, v_sd, want_sd, a_ref=None):
     """One coordinate's MAP path on n nodes from t0: banded normal matrix (lower bandwidth 2:
     interpolation rows touch 2 nodes, the acceleration prior 3, the velocity prior 2) solved by banded

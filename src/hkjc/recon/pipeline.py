@@ -1134,7 +1134,9 @@ class RaceRun:
             obs = self.observations(lab2)
             pv, assign = self._fuse(obs, horses, prior)
         obs, pv = self._em_associate(pv, horses, prior)
-        self._write_paths(pv, "paths_video.parquet")
+        self._write_paths(
+            {h: fusion.with_tail(p, prior) for h, p in pv.items()}, "paths_video.parquet"
+        )
         with open(self.p("fuse_video.pkl"), "wb") as f:
             pickle.dump((obs, pv), f, protocol=pickle.HIGHEST_PROTOCOL)
         n_anon = sum(1 for o in obs if o.horse == 0)
