@@ -71,8 +71,9 @@ keyframes). Poses depend on the detector's device: the OpenVINO detector's boxes
 9122 vs 9129) and change the ORB steps on 603/705 frames; CPU vs CUDA on HV 06-03 R8 moves the final
 paths by ≤ 0.18 m (median 0.01 m). On ST 05-03 R7, HV 05-27 R9 and ST 05-24 R1 (CPU from scratch vs the CUDA reference) the frames are
 byte-identical, the boxes match one to one (1 of 29,862 unmatched) within 1.4 px, and the features differ from there on; final paths agree to a
-median 0.04–0.05 m (max 0.44 m) on the first two but differ by up to 10 m on ST 05-24 R1 (p95 5 m; sectional MAE 0.082 vs 0.103 s). A CPU
-result is therefore compared only with a CPU control. The reference roots are CUDA runs. Steps between frames ≤ 6 video frames apart
+median 0.04–0.05 m (max 0.44 m; 1.6 m on HV 05-27 R9's video-only #12 where the posterior is loose) on the first two. On ST 05-24 R1
+#2 and #3 exchange identities over most of the race (mirror-image 9 m / 4.5 m differences, tight in both runs) and #13 and #5 differ over
+the last 20 s (sectional MAE 0.082 vs 0.103 s). A CPU result is therefore compared only with a CPU control. The reference roots are CUDA runs. Steps between frames ≤ 6 video frames apart
 are RANSAC similarities (1.5 px) refitted by least squares (Umeyama): the camera is near-nadir with no
 tilt and a slow zoom.
 
@@ -520,8 +521,11 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Post-finish ticks.** After the winner crosses, the render camera parks on the line, and the duplicate test (mean |diff| < 3.0 to the
   last kept panel) drops the real ticks on which the trailing field crosses: over 26 races, 780 on-grid frames in the 3 s after the winner's
   crossing, 96 kept. In the races checked by eye, the finish-short horses cross on dropped frames. Keeping those frames, with or without
-  copying the parking pose onto them, gained no finish crossing (§7): none of the detections on the kept frames carries a finish-short horse's
-  number. Why existing crossings got worse when the pose was copied (pose and map unchanged; rail and metric changed) is untraced.
+  copying the parking pose onto them, gained no finish crossing (§7). With the pose copied (ST 05-03 R7, ST 05-24 R1), fusion's per-detection
+  labels on the kept frames never name one of the seven finish-short horses. On ST 05-24 R1 the three stragglers are tracked across the line
+  on those frames, and identify labels one of them correctly (#12, crossing 0.08 s from its official time), but fusion leaves their detections
+  unlabelled or gives them other numbers. Why existing crossings got worse when the pose was copied (pose and map unchanged; rail and metric
+  changed) is untraced.
 - **Static-overlay filter deletes a real horse.** In `world_dets` a box recurring in one 8 px panel cell on ≥ 4 % of frames in the top band is
   treated as overlay text. On ST 06-07 R8 the camera holds one horse at panel (460, 115) from 450 m to the line, and the filter removes it on
   242 frames (confidence 0.85–0.90); on HV 05-20 R2 it misses 31 boxes on the disclaimer text (at most 30 per cell against a bar of 35). Restoring
