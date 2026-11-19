@@ -4,10 +4,11 @@
 and skipped when its ``OUTPUTS`` exist (``force=`` re-runs named stages). Stages:
 
   frames    AVV render: unique 10 Hz frames cached (pixels, frame index, clock)
-  features  turf ORB features + consecutive step matches
+  features  avatar detections (self-supervised YOLO) + silk histograms; turf ORB features (the
+            detections masked) + consecutive step matches
   pose      camera pose graph (sequential/long-baseline/loop edges) -> world poses
   worldmap  mosaic of the registered frames (static world: turf, rails, painted markers)
-  detect    avatar detections (self-supervised YOLO) + silk histograms
+  detect    the avatar detections (+ map-difference blobs where YOLO is blind)
   silk      per-detection silk signatures + official silk prototypes
   hud       race clock, odometer (distance-to-go), legend running order (recognition-only OCR)
   rails     racing rail on the map; marker grid -> px/m + finish anchor
@@ -70,7 +71,7 @@ STAGES = (
 )
 OUTPUTS = {
     "frames": ["frames.bin", "frames_idx.npz", "frames_clock.npy"],
-    "features": ["feats.npz"],
+    "features": ["feats.npz", "yolo.npz"],  # + the avatar detections (read by detect)
     "pose": ["pose.npz"],
     "detect": ["dets.npz"],
     "silk": ["silk.npz"],
@@ -93,7 +94,7 @@ DEPS = {
     "features": ("frames",),
     "pose": ("features",),
     "worldmap": ("frames", "pose"),
-    "detect": ("frames", "pose", "worldmap"),
+    "detect": ("frames", "features", "pose", "worldmap"),
     "silk": ("frames", "detect"),
     "hud": ("frames",),
     "rails": ("frames", "pose", "worldmap", "detect"),
@@ -132,9 +133,10 @@ def _feat_job(args):
     i, p = _CACHE.idx[k], _CACHE.panel(k)
     lt = video.legend_top(p)
     # the avatar detector's boxes (+ shadows) are masked too: the colour mask misses brown horses
-    m = register.mask_boxes(register.world_mask(p, video.hud_mask(p, lt)), _DET.panel(p, lt))
+    rs = _DET.panel(p, lt)
+    m = register.mask_boxes(register.world_mask(p, video.hud_mask(p, lt)), rs)
     f = register.extract(p, m, nfeat)
-    return int(i), lt, f, p.shape[:2]
+    return int(i), lt, f, p.shape[:2], rs, [_detect.silk_hist(p, r) for r in rs]
 
 
 _DET = None
@@ -143,12 +145,6 @@ _DET = None
 def _det_init():
     global _DET
     _DET = _detect.AvatarDetector()
-
-
-def _det_job(k):
-    i, p = int(_CACHE.idx[k]), _CACHE.panel(k)
-    rs = _DET.panel(p, video.legend_top(p))
-    return i, rs, [_detect.silk_hist(p, r) for r in rs]
 
 
 def _step_job(k):
@@ -283,13 +279,14 @@ class RaceRun:
     def features(self, nfeat: int = 3000):
         """ORB features of every unique render frame + the sequential step matches. Per-frame work
         is independent and OpenCV's RANSAC seeds its RNG per call, so the process pool gives results
-        identical to a sequential loop."""
+        identical to a sequential loop. The avatar detections made for the mask are saved for
+        ``detect`` (yolo.npz)."""
         import multiprocessing as mp
 
         cache = self.cache()
         global _CACHE, _FEATS_PAR
         _CACHE = cache
-        # one avatar detector per worker; one accelerator context (as in ``detect``)
+        # one avatar detector per worker; one accelerator context
         accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
         nw = 1 if accel else min(_nproc(), 4)
         with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
@@ -314,6 +311,13 @@ class RaceRun:
                 steps=np.array(steps),
                 shape=np.array(res[0][3]),
             )
+        nb = 14  # silk_hist length
+        with self.out("yolo.npz") as fp:
+            np.savez(
+                fp,
+                rows=np.array([[r[0], *b[:5]] for r in res for b in r[4]]).reshape(-1, 6),
+                hist=np.array([h for r in res for h in r[5]]).reshape(-1, nb),
+            )
 
     def pose(self):
         z = dict(np.load(self.p("feats.npz")))
@@ -323,46 +327,29 @@ class RaceRun:
         self.log(f"   pose: {info['summary']}")
 
     def detect(self):
-        rows, hists, box = [], [], None
-        import multiprocessing as mp
-
+        """The features stage's avatar detections (YOLO); where YOLO is blind (AWT dirt) the
+        map-difference blobs join."""
         import cv2
 
         cache = self.cache()
         x0, x1, y0, y1 = cache.box
         box = video.PanelBox(x0, x1, y0, y1)
-        P = np.load(self.p("pose.npz"))
-        k_of = {int(f): k for k, f in enumerate(P["idx"])}
-        img_map, _cnt, _to = self._map()
-        meta = np.load(self.p("map_meta.npz"))
-        mx0, my0 = meta["bounds"]
-        sc = float(meta["sc"])
-        A = np.array([[sc, 0, -mx0 * sc], [0, sc, -my0 * sc], [0, 0, 1]])
-        ry, rb, hy, hb = [], [], [], []
-        # frames are independent: detect in a process pool (one ONNX session per worker); each
-        # frame's detections are computed exactly as in the sequential loop
-        global _CACHE
-        _CACHE = cache
-        nw = min(_nproc(), 4)  # ONNX Runtime threads inside each worker too
-        if os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda")):
-            nw = 1  # one accelerator context; the device serialises work anyway
-        with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
-            for i, rs, hs in pool.imap(_det_job, range(len(cache)), chunksize=8):
-                for r, h in zip(rs, hs):
-                    ry.append([i, *r[:5]])
-                    hy.append(h)
-        _CACHE = None
-        nfr = len(cache)
+        z = np.load(self.p("yolo.npz"))
+        ry, hy = z["rows"], z["hist"]
         yolo_med = (
-            float(
-                np.median(
-                    np.bincount(np.searchsorted(cache.idx, np.array(ry)[:, 0]), minlength=nfr)
-                )
-            )
-            if ry
+            float(np.median(np.bincount(np.searchsorted(cache.idx, ry[:, 0]), minlength=len(cache))))
+            if len(ry)
             else 0.0
         )
+        rb, hb = [], []
         if yolo_med < 0.6 * self.info.n:  # YOLO blind here (e.g. AWT dirt): map-difference pass
+            P = np.load(self.p("pose.npz"))
+            k_of = {int(f): k for k, f in enumerate(P["idx"])}
+            img_map, _cnt, _to = self._map()
+            meta = np.load(self.p("map_meta.npz"))
+            mx0, my0 = meta["bounds"]
+            sc = float(meta["sc"])
+            A = np.array([[sc, 0, -mx0 * sc], [0, sc, -my0 * sc], [0, 0, 1]])
             for i, p in cache:
                 if i not in k_of:
                     continue
@@ -376,13 +363,7 @@ class RaceRun:
                 for r in _detect.bgsub_blobs(p, back, video.hud_mask(p, lt)):
                     rb.append([i, *r[:5]])
                     hb.append(_detect.silk_hist(p, r))
-        ry, rb = np.array(ry).reshape(-1, 6), np.array(rb).reshape(-1, 6)
-        nfr = len(cache)
-        yolo_med = (
-            float(np.median(np.bincount(np.searchsorted(cache.idx, ry[:, 0]), minlength=nfr)))
-            if len(ry)
-            else 0.0
-        )
+        rb = np.array(rb).reshape(-1, 6)
         # race-level switch: on turf YOLO alone (background-subtraction blobs add duplicates and
         # false positives); where YOLO is blind (AWT dirt: median ~1/frame) map-difference blobs join
         if yolo_med >= 0.6 * self.info.n:
