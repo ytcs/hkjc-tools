@@ -489,6 +489,15 @@ Gates failed on ≥ 5 of 6 seeds:
   unlisted one. The soft legend-rank term switches at about half of those label changes; widening its
   margin through the full EM cuts the alternation by two thirds but leaves the contradictions (§7); cause not established. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
   runs that place #10 in the pack and in none of the 3 that place it wide.
+- **Double boxes on one avatar.** The detector often keeps two boxes on one horse (one on the jockey and forequarters, one on the jockey
+  and hindquarters; IoU 0.32–0.50, under NMS's 0.5; intersection over the smaller box ≥ 0.5 on 486 of 554 such pairs, 14 of 4308 other
+  close pairs, seed 0). The second box births a second track; about half of the long mid-race tracklet starts are on a double. A gate in
+  `observe` (keep the more confident box when intersection over the smaller ≥ 0.5) was run 26 × 6 under a declared rule and FAILED its
+  primary bar: hand truth on the 10 races not used to build it 884 / 142 / 42 → 887 / 143 / 38 (wrong needed ≤ 137); gates +0.33 per seed
+  (SE 0.33), long tracklets minus runners 604 → 370, glitch-seconds 25.6 → 15.1 per seed, but the glitch drop is three races (HV 05-20 R2,
+  and ST 04-19 R4 and ST 05-31 R1, which it was developed on). It also lets `stitch` join two horses (ST 04-19 R4 #6 → #14 across 5.4 s);
+  the control's `stitch` joins two horses on about a third of a small sample of long links, but such links do not mark wrong labels
+  (tracklets with a link > 1 s: 20 % wrong vs 16 % right). Not adopted.
 - **Render tick timestamps.** The render updates at 10 Hz, but `observe` stamps each panel with its 25 fps
   video index, so consecutive ticks are 0.08 s and 0.12 s apart while the content advances a uniform 0.1 s:
   alternate ticks carry ±0.01 s about the mean. On the three longest tracklets of each of the 26 races (seed 0),
