@@ -69,7 +69,10 @@ matches locked onto them (ST 04-19 R4: camera "stopped" for 3 ticks, identities 
 the box mask cuts mid-race pose stalls 48 → 30, and with the frame grid 48 → 2 (the rest were HV 04-22
 keyframes). Poses depend on the detector's device: the OpenVINO detector's boxes differ (ST 04-19 R4
 9122 vs 9129) and change the ORB steps on 603/705 frames; CPU vs CUDA on HV 06-03 R8 moves the final
-paths by ≤ 0.18 m (median 0.01 m). The reference roots are CUDA runs. Steps between frames ≤ 6 video frames apart
+paths by ≤ 0.18 m (median 0.01 m). On ST 05-03 R7, HV 05-27 R9 and ST 05-24 R1 (CPU from scratch vs the CUDA reference) the frames are
+byte-identical, the boxes match one to one (1 of 29,862 unmatched) within 1.4 px, and the features differ from there on; final paths agree to a
+median 0.04–0.05 m (max 0.44 m) on the first two but differ by up to 10 m on ST 05-24 R1 (p95 5 m; sectional MAE 0.082 vs 0.103 s). A CPU
+result is therefore compared only with a CPU control. The reference roots are CUDA runs. Steps between frames ≤ 6 video frames apart
 are RANSAC similarities (1.5 px) refitted by least squares (Umeyama): the camera is near-nadir with no
 tilt and a slow zoom.
 
@@ -535,6 +538,8 @@ Gates failed on ≥ 5 of 6 seeds:
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
+- **Straight-course test.** `rails.is_straight` sums the rail's turning over the whole polyline, so a fold-back at one end can flip an oval: with
+  38 parked post-finish frames kept, HV 05-27 R9's rail turned 3.27 rad by 75 % of its length and 0.13 rad in total, and `observe` stopped.
 - **Tracklet exclusivity in identify.** `assign_global` forbids one number on tracklets whose
   first-to-last spans overlap. Over 26 × 6, 71 unlabelled tracklets (≥ 30 detections, ≥ 10 slot votes
   for one number) have that number held by a tracklet whose span overlaps by 1–12 frames, and 147 by one
