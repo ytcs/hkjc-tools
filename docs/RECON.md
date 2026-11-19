@@ -514,6 +514,11 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Yardstick and HUD resolution.** Official per-horse times at intermediate boundaries sit on a 0.04 s grid relative to the leader
   (871 of 871 mid-race gaps over 26 races; 36 % at the finish): about 0.2 m of quantisation in every mid-race official crossing. The render's
   HUD odometer changes only every 0.4 s (intervals 0.4 s on 1833 changes, 0.8 s on 1443), so a raw tick is 0–0.4 s late.
+- **Post-finish ticks.** After the winner crosses, the render camera parks on the line, and the duplicate test (mean |diff| < 3.0 to the
+  last kept panel) drops the real ticks on which the trailing field crosses: over 26 races, 780 on-grid frames in the 3 s after the winner's
+  crossing, 96 kept. In the races checked by eye, the finish-short horses cross on dropped frames. Keeping those frames fails (§7) because
+  the pose solve misplaces parked frames and pulls shared frames near the line with them. Recovering these ticks needs parked frames posed
+  without that coupling.
 - **Static-overlay filter deletes a real horse.** In `world_dets` a box recurring in one 8 px panel cell on ≥ 4 % of frames in the top band is
   treated as overlay text. On ST 06-07 R8 the camera holds one horse at panel (460, 115) from 450 m to the line, and the filter removes it on
   242 frames (confidence 0.85–0.90); on HV 05-20 R2 it misses 31 boxes on the disclaimer text (at most 30 per cell against a bar of 35). Restoring
@@ -562,6 +567,7 @@ without a verdict.
 Frames, features, pose
 - Dropping every off-grid frame: removed the only copy of ticks after finish-zone dropouts; finish-short 34 → 39, ST 05-24 R1 winner flipped, hand 15 → 10/19.
 - Dropping a frame one after the last kept, keeping the old duplicate reference: zero-motion ticks stayed (14 per race) and later ticks were stamped 1 frame late.
+- Keeping on-grid frames the duplicate test drops after the finish (the camera parks; real ticks differ 1.5–2.1 from the last kept panel vs tolerance 3.0): 0 of 10 finish-short horses gained a finish crossing on ST 05-03 R7, HV 05-27 R9 and ST 05-24 R1; the winner flipped on 2 of 3. Detections were unchanged; the parked frames move shared frames' course position near the line by up to 3.4 m.
 - Render gate with the widened strip and ≥ 1 box: admitted 11–65 pre-race live frames per race.
 - Relaxed legend fallback before the first strict frame: admitted a dissolve tail on HV 05-27 R3, which went 5/5 → 2/5 gates.
 - Colour-whitelist ORB mask: removed the stall but dropped posts and markers; HV 04-29 R3 loop closures 335 → 0.
