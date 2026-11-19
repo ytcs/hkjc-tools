@@ -497,7 +497,8 @@ Gates failed on ≥ 5 of 6 seeds:
   (SE 0.33), long tracklets minus runners 604 → 370, glitch-seconds 25.6 → 15.1 per seed, but the glitch drop is three races (HV 05-20 R2,
   and ST 04-19 R4 and ST 05-31 R1, which it was developed on). It also lets `stitch` join two horses (ST 04-19 R4 #6 → #14 across 5.4 s);
   the control's `stitch` joins two horses on about a third of a small sample of long links, but such links do not mark wrong labels
-  (tracklets with a link > 1 s: 20 % wrong vs 16 % right). Not adopted.
+  (tracklets with a link > 1 s: 20 % wrong vs 16 % right). Seed unanimity 89.2 → 96.5 %; persistent drone contradictions (seed 0) 26 → 21
+  video-only, 27 → 21 final. Not adopted.
 - **Render tick timestamps.** The render updates at 10 Hz, but `observe` stamps each panel with its 25 fps
   video index, so consecutive ticks are 0.08 s and 0.12 s apart while the content advances a uniform 0.1 s:
   alternate ticks carry ±0.01 s about the mean. On the three longest tracklets of each of the 26 races (seed 0),
@@ -510,7 +511,13 @@ Gates failed on ≥ 5 of 6 seeds:
   322 runners and long tracklets left blank by identify 56 → 49, mixed by race: at the three arm births logged, a second box on one horse (two
   boxes ~10 px apart, conf ~0.3) births a second track, which then dies or takes over, leaving the horse in two long pieces (the replay holds
   each detection's d fixed; only times change).
- `historical._clean_race_data` drops every incident row (DISQ, DNF,
+- **Yardstick and HUD resolution.** Official per-horse times at intermediate boundaries sit on a 0.04 s grid relative to the leader
+  (871 of 871 mid-race gaps over 26 races; 36 % at the finish): about 0.2 m of quantisation in every mid-race official crossing. The render's
+  HUD odometer changes only every 0.4 s (intervals 0.4 s on 1833 changes, 0.8 s on 1443), so a raw tick is 0–0.4 s late.
+- **Static-overlay filter deletes a real horse.** In `world_dets` a box recurring in one 8 px panel cell on ≥ 4 % of frames in the top band is
+  treated as overlay text. On ST 06-07 R8 the camera holds one horse at panel (460, 115) from 450 m to the line, and the filter removes it on
+  242 frames (confidence 0.85–0.90); on HV 05-20 R2 it misses 31 boxes on the disclaimer text (at most 30 per cell against a bar of 35).
+- **Non-finishers in the results.** `historical._clean_race_data` drops every incident row (DISQ, DNF,
   FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR), which is right for withdrawals; if a code
   marks a horse that started (the meanings are not documented), that horse would vanish from the
   runners while still rendered, and the race would pass the whole-field legend test with one more avatar
@@ -688,6 +695,7 @@ Synchronisation and other evidence
 - Matching the shared finish-camera replay across feeds: it sits at a different edit position per feed.
 - Drone offset from formation matching: 1.47 s vs 2.46 s measured on HV 06-03 R8.
 - Drone camera fitted to the rails plus horse ICP for positions: the rails register, but along-track tilt is unobservable on straights and the ICP does not lock.
+- Double-box gate as an identity fix (keep the more confident of two boxes with intersection over the smaller ≥ 0.5): wrong hand labels on the 10 races not used to build it 142 → 143 (26 × 6; §6).
 - Lateral projection correction (rail-normal skew or camera tilt): painted cross-track markings map square through pose and rail on 6 home straights; the slope of video-only boundary error against lateral offset (−0.159 m per m pooled, race-bootstrap SE 0.118) comes from 56 errors over 10 m on 13 horses (44 in HV 05-20 R2 and ST 04-19 R4, races with recorded identity errors; 12 untraced), and with race-clustered intervals every robust per-stratum slope contains 0 (finish line −0.005 HV, +0.007 ST; ST bends negative in 5 of 9 races).
 - Free 8-DOF homography for the drone camera: collapsed onto degenerate solutions (every rail pixel snapped to one rail); replaced by a 7-DOF look-at pinhole.
 - TV-feed cloth reads as an identity yardstick: failed its declared criteria (HV 06-03 R3 order 62.5 %); the TV camera follows the leaders, so back markers are rarely read.
