@@ -73,7 +73,7 @@ def validate(run) -> dict:
     res["leader_timing_mae"] = float(np.nanmean(np.abs(lt)))
     # per-horse sectionals from the fused paths
     errs, fin = {}, []
-    for h, g in P.group_by("horse_no"):
+    for h, g in P.sort("horse_no").group_by("horse_no", maintain_order=True):
         h = int(h[0]) if isinstance(h, tuple) else int(h)
         g = g.sort("t")
         t, d, sd = g["t"].to_numpy(), g["d"].to_numpy(), g["sd_s"].to_numpy()
@@ -96,7 +96,7 @@ def validate(run) -> dict:
     # final product (with the official records as observations): how closely it honours them
     Pf = pl.read_parquet(run.p("paths.parquet"))
     fe = []
-    for h, g in Pf.group_by("horse_no"):
+    for h, g in Pf.sort("horse_no").group_by("horse_no", maintain_order=True):
         h = int(h[0]) if isinstance(h, tuple) else int(h)
         if h in cum:
             g = g.sort("t")
