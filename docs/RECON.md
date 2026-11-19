@@ -489,7 +489,15 @@ Gates failed on ≥ 5 of 6 seeds:
   unlisted one. The soft legend-rank term switches at about half of those label changes; widening its
   margin through the full EM cuts the alternation by two thirds but leaves the contradictions (§7); cause not established. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
   runs that place #10 in the pack and in none of the 3 that place it wide.
-- **Non-finishers in the results.** `historical._clean_race_data` drops every incident row (DISQ, DNF,
+- **Render tick timestamps.** The render updates at 10 Hz, but `observe` stamps each panel with its 25 fps
+  video index, so consecutive ticks are 0.08 s and 0.12 s apart while the content advances a uniform 0.1 s:
+  alternate ticks carry ±0.01 s about the mean. On the three longest tracklets of each of the 26 races (seed 0),
+  the along-track residual against video-index time is −0.16 to −0.19 m after a 2-frame step and +0.16 to
+  +0.19 m after a 3-frame step; against tick time (the two `grid_keep` residues shifted ∓0.25 frame) it is
+  within ±0.02 m. `tracking.Track.predict` extrapolates over the stamped interval, so a track updated on the
+  previous tick is ~0.3 m off while one that skipped a tick (0.2 s, exact) is not; this may sustain twin tracks
+  on one horse (ST 05-31 R1 t 33–45: three horses alternate frame by frame between two tracklets). Untested.
+ `historical._clean_race_data` drops every incident row (DISQ, DNF,
   FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR), which is right for withdrawals; if a code
   marks a horse that started (the meanings are not documented), that horse would vanish from the
   runners while still rendered, and the race would pass the whole-field legend test with one more avatar
