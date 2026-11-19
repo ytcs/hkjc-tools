@@ -502,11 +502,11 @@ Gates failed on ≥ 5 of 6 seeds:
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
 - **Tracklet exclusivity in identify.** `assign_global` forbids one number on tracklets whose
   first-to-last spans overlap. Over 26 × 6, 71 unlabelled tracklets (≥ 30 detections, ≥ 10 slot votes
-  for one number) lose that number to a tracklet overlapping by 1–12 frames and 147 to one spanning
-  more (nested in a stitched gap). The ST 05-09 R1 #3 hole this entry described is gone (#3 labelled in
-  96–97 % of frames over t 10–31 on every seed). Against hand truth the end-overlap case has 0 wrong of
-  10 detections; nested tracklets carry a wrong label on 15 of 39 seed-tracklets against 103 of 639
-  elsewhere, and of their 16 wrong detections the top slot-vote number is in the hand set on 9.
+  for one number) have that number held by a tracklet whose span overlaps by 1–12 frames, and 147 by one
+  overlapping more (72 sharing ≤ 12 frames, i.e. inside a gap; 69 sharing most frames, i.e. side by side;
+  6 between); whether the overlap is the sole blocker was not computed. The ST 05-09 R1 #3 hole this
+  entry described is gone (#3 labelled in 96–97 % of frames over t 10–31 on every seed). The end-overlap
+  case carries hand truth on only 3 seed-tracklets (none wrong), too few to judge.
 - **Orphan elimination** in fusion hands a leftover chain to the last missing horse; with ST 04-19
   R4's #10 read it gives tailed-off #3 a mid-field chain. Turning it off is gate-neutral on single runs
   but costs 8 races a path; not ensemble-tested.
