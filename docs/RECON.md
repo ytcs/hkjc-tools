@@ -496,7 +496,10 @@ Gates failed on ≥ 5 of 6 seeds:
   +0.19 m after a 3-frame step; against tick time (the two `grid_keep` residues shifted ∓0.25 frame) it is
   within ±0.02 m. `tracking.Track.predict` extrapolates over the stamped interval, so a track updated on the
   previous tick is ~0.3 m off while one that skipped a tick (0.2 s, exact) is not; this may sustain twin tracks
-  on one horse (ST 05-31 R1 t 33–45: three horses alternate frame by frame between two tracklets). Untested.
+  on one horse (ST 05-31 R1 t 33–45: three horses alternate frame by frame between two tracklets). Replaying the tracker on the
+  persisted detections with tick time (seed 0, 26 races): twin-seconds 289 → 31, but tracklets of ≥ 100 detections only 425 → 415 for
+  322 runners and long tracklets left blank by identify 56 → 49, mixed by race: a second box on one horse (two boxes ~10 px apart, conf
+  ~0.3) still births a second track, which then dies or takes over, leaving the horse in two long pieces.
  `historical._clean_race_data` drops every incident row (DISQ, DNF,
   FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR), which is right for withdrawals; if a code
   marks a horse that started (the meanings are not documented), that horse would vanish from the
