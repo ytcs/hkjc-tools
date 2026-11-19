@@ -684,7 +684,7 @@ class RaceRun:
         )  # saddlecloth numbers may have gaps (scratchings)
         valid = {r.no for r in self.info.runners}
         votes, rank, elim, elim_n = identity.legend_votes(
-            mem, T["rows"][:, 0], T["d"], leg, nmax, parts=True
+            mem, T["rows"][:, 0], T["d"], leg, sorted(valid), parts=True
         )
         fin, _fit = self._finish_identity(T, mem)
         fvotes = np.zeros_like(votes)

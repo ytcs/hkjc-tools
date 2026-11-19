@@ -14,12 +14,16 @@ from __future__ import annotations
 import numpy as np
 
 
-def legend_votes(members, frame_of_det, d, legend_rows, n_field, max_rank=8, parts=False):
-    """-> votes (n_tracklets, n_field+1): votes[t, num] = #frames tracklet t sat at the legend slot
+def legend_votes(members, frame_of_det, d, legend_rows, numbers, max_rank=8, parts=False):
+    """``numbers``: the runners' saddlecloth numbers (withdrawn numbers leave gaps).
+    -> votes (n_tracklets, max(numbers)+1): votes[t, num] = #frames tracklet t sat at the legend slot
     holding saddlecloth ``num``; ranks beyond the legend add 1/|missing| to every unlisted number.
     ``parts=True`` -> (votes, rank, elim, n_elim): the same evidence kept SET-VALUED for
     ``assign_global`` -- rank = slot votes only, elim[t, num] = #elimination frames whose unlisted set
     contains num, n_elim[t] = #elimination frames."""
+    runners = sorted({int(x) for x in numbers})
+    is_runner = set(runners)
+    n_field = runners[-1]
     T = len(members)
     votes = np.zeros((T, n_field + 1))
     rank = np.zeros((T, n_field + 1))
@@ -48,17 +52,17 @@ def legend_votes(members, frame_of_det, d, legend_rows, n_field, max_rank=8, par
         if len(set(tracks)) != len(tracks):
             continue
         present = len(js)
-        if present < n_field:  # ranks are trusted only when the whole field is tracked
+        if present < len(runners):  # ranks are trusted only when the whole field is tracked
             continue
         shown = [int(x) for x in slots[:max_rank]]
         for r in range(max_rank):
             num = shown[r]
-            if 1 <= num <= n_field:
+            if num in is_runner:
                 votes[tracks[r], num] += 1
                 rank[tracks[r], num] += 1
         # elimination: ranks beyond the legend belong to the numbers NOT shown this frame
-        if all(1 <= x <= n_field for x in shown) and len(set(shown)) == max_rank:
-            missing = [x for x in range(1, n_field + 1) if x not in shown]
+        if all(x in is_runner for x in shown) and len(set(shown)) == max_rank:
+            missing = [x for x in runners if x not in shown]
             for r in range(max_rank, present):
                 for num in missing:
                     votes[tracks[r], num] += 1.0 / len(missing)

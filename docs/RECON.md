@@ -198,7 +198,11 @@ line (sd = robust spread / √n, floor 15 px).
 
 `identity.legend_votes` uses frames where every runner is tracked by distinct tracklets: the
 tracklet at rank r votes for legend slot r, and ranks 9+ get set-valued elimination evidence ("one of
-the N − 8 unlisted numbers"). The finish camera names tracklets by 1D registration
+the N − 8 unlisted numbers"). It takes the runners' saddlecloth numbers, so withdrawn numbers (gaps)
+neither block the whole-field test nor enter the unlisted set: on HV 04-15 R6 (#2 and #4 withdrawn) the
+previous field-size argument cast no legend votes; with the runner numbers it casts 3713–4255 slot
+votes per seed, none for #2 or #4, numbers 11 of 13 tracklets instead of 6, and changes no gate
+(sectional MAE 0.002–0.006 s lower on all six seeds). The finish camera names tracklets by 1D registration
 (`finishcam.identity_match`) of their line crossings to `t_w + gap/C`, scanning C ± 25 % around the
 ruler prior; a name needs residual < 0.08 s with every other prediction ≥ max(2× residual, 0.15 s)
 away, and adds 40 slot votes.
@@ -394,7 +398,8 @@ The census, glitch, identity-score and ensemble scripts live outside the package
 26 turf races, all development races (inspected). Sha Tin: 04-19 R3 (1000 m straight), 04-19 R4,
 04-26 R1, 04-26 R9, 05-03 R7, 05-09 R1 (1000 m straight), 05-09 R2, 05-17 R1, 05-24 R1, 05-31 R1,
 06-07 R6, 06-07 R8 (1000 m straight). Happy Valley: 04-15 R1/R9, 04-22 R1/R9, 04-29 R3/R9, 05-13 R1/R9,
-05-20 R2/R9, 05-27 R3/R9, 06-03 R3/R8. The all-weather track is out of scope. The last sealed
+05-20 R2/R9, 05-27 R3/R9, 06-03 R3/R8. Also inspected (not in the 26): HV 04-15 R6, the withdrawal test race.
+The all-weather track is out of scope. The last sealed
 held-out test (11 races, earlier frozen code, run once) passed all five timing gates on 9/11 with
 11/11 winners; those races are in the development set, so a further held-out claim needs another
 set of races sealed by a metadata-only rule.
@@ -481,9 +486,12 @@ Gates failed on ≥ 5 of 6 seeds:
   unlisted one. The soft legend-rank term switches at about half of those label changes; widening its
   margin through the full EM cuts the alternation by two thirds but leaves the contradictions (§7); cause not established. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
   runs that place #10 in the pack and in none of the 3 that place it wide.
-- **Scratched runners.** `identity.legend_votes` receives the highest saddlecloth number as `n_field`
-  instead of the runner count; with a scratching its complete-field condition cannot hold. None of the
-  26 races has a scratching; fixing it changes behaviour and needs its own check.
+- **Non-finishers in the results.** `historical._clean_race_data` drops every incident row (DISQ, DNF,
+  FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR), which is right for withdrawals but also
+  removes horses that started (pulled up, unseated, disqualified) and are in the render; such a race
+  passes the whole-field legend test with one more avatar than runners. None of the 26 races has an
+  incident row. Separately, 80 of 10551 legend-vote frames (seed 0, 26 races) hold more detections than
+  runners and still vote; requiring exactly N would change the 26.
 - **Worklist.** 31 disclaimer-text boxes survive the static-overlay gate in HV 05-20 R2 (pixel-verified; max 30 in one 8 px cell vs the 4 % bar of 35); they are never labelled, sit in 1–2 whole-field legend-vote frames per seed, and are > 4.5 m ahead of real detections in 31 E-step frames, where the hard rank cost has no false-positive allowance (labels there differ from the tracklet's neighbouring frames on 14–27 % of detections vs 1.2–1.6 % elsewhere). Removing the 31 pixel-verified text boxes (oracle, seeds 0 and 1) changes 1.9 % and 0.9 % of video-only labels; #5's and #12's boundary errors are unchanged, seed 0's sectional MAE crosses its gate (0.261 → 0.247 s; seed 1 passes in both, 0.222), and glitch-seconds move both ways. HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
