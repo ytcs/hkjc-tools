@@ -1,0 +1,70 @@
+"""Stage runner: atomic artifact writes, forced-stage propagation, background-stage cleanup."""
+
+import multiprocessing as mp
+import time
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+from hkjc.recon import video
+from hkjc.recon.pipeline import DEPS, OUTPUTS, STAGES, RaceRun, upstream
+
+
+def test_atomic_write_leaves_nothing_on_failure(tmp_path):
+    target = tmp_path / "a.npz"
+    with pytest.raises(RuntimeError):
+        with video.atomic(target) as fp:
+            np.savez(fp, x=np.arange(3))
+            raise RuntimeError("killed mid-stage")
+    assert list(tmp_path.iterdir()) == []
+    with video.atomic(target) as fp:
+        np.savez(fp, x=np.arange(3))
+    assert [p.name for p in tmp_path.iterdir()] == ["a.npz"]
+    assert np.load(target)["x"].tolist() == [0, 1, 2]
+
+
+def test_deps_table_consistent():
+    assert set(DEPS) == set(STAGES) == set(OUTPUTS)
+    for st in STAGES:  # every dependency runs earlier in STAGES order
+        assert all(STAGES.index(d) < STAGES.index(st) for d in DEPS[st]), st
+    assert upstream("film") == {"frames", "hud"}
+    assert "finish" in upstream("validate") and "finish" not in upstream("observe")
+
+
+def _run(tmp_path, cls=RaceRun):
+    return cls(SimpleNamespace(key="race"), root=tmp_path, log=lambda *_: None)
+
+
+def test_force_reruns_consumers(tmp_path):
+    R = _run(tmp_path)
+    for outs in OUTPUTS.values():
+        for o in outs:
+            R.p(o).touch()
+    assert R.plan() == []
+    assert R.plan(force=("rails",)) == [
+        "rails", "observe", "identify", "fuse_video", "fuse_final", "validate"
+    ]
+    assert R.plan(force=("finish",)) == ["finish", "identify", "fuse_video", "fuse_final", "validate"]
+    # a missing artifact is regenerated (deterministic) without invalidating its consumers
+    R.p("film.npz").unlink()
+    assert R.plan() == ["film"]
+
+
+class _Failing(RaceRun):
+    def frames(self):
+        pass
+
+    def hud(self):  # background stage that would outlive the failure
+        time.sleep(60)
+
+    def features(self):
+        raise RuntimeError("main-chain failure")
+
+
+def test_failed_stage_terminates_background(tmp_path):
+    t0 = time.time()
+    with pytest.raises(RuntimeError, match="main-chain failure"):
+        _run(tmp_path, _Failing).run(stages=("frames", "features", "hud"))
+    assert time.time() - t0 < 20
+    assert mp.active_children() == []

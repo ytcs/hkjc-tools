@@ -7,9 +7,25 @@ frame index (its timestamp).
 
 from __future__ import annotations
 
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+
+
+@contextmanager
+def atomic(path):
+    """Yield a temporary sibling of ``path`` (same suffix) to write; renamed onto ``path`` only when
+    the block completes, so a killed or failed writer never leaves a partial artifact behind."""
+    path = Path(path)
+    tmp = path.with_name(f".{path.stem}.part{path.suffix}")
+    try:
+        yield tmp
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 # Static screen overlays inside the render panel (panel-relative px, 1080p product).
 DISCLAIMER_ROWS = 110  # top band: CN/EN disclaimer text
@@ -214,7 +230,6 @@ class FrameCache:
     (frames_clock.npy)."""
 
     def __init__(self, root):
-        from pathlib import Path
 
         self.root = Path(root)
         z = np.load(self.root / "frames_idx.npz")
@@ -237,7 +252,6 @@ class FrameCache:
     @staticmethod
     def build(path, root, clock_box=(288, 342, 800, 945), quality=92):
         import cv2
-        from pathlib import Path
 
         root = Path(root)
         idx, bufs, clocks, box = [], [], [], None
@@ -251,15 +265,17 @@ class FrameCache:
         keep = np.flatnonzero(grid_keep(idx))
         idx, bufs, clocks = [idx[k] for k in keep], [bufs[k] for k in keep], [clocks[k] for k in keep]
         off = [0]
-        with open(root / "frames.bin", "wb") as fb:
+        with atomic(root / "frames.bin") as tmp, open(tmp, "wb") as fb:
             for b in bufs:
                 fb.write(b)
                 off.append(off[-1] + len(b))
-        np.savez(
-            root / "frames_idx.npz",
-            idx=np.array(idx),
-            off=np.array(off),
-            box=np.array([box.x0, box.x1, box.y0, box.y1]),
-        )
-        np.save(root / "frames_clock.npy", np.array(clocks))
+        with atomic(root / "frames_idx.npz") as tmp:
+            np.savez(
+                tmp,
+                idx=np.array(idx),
+                off=np.array(off),
+                box=np.array([box.x0, box.x1, box.y0, box.y1]),
+            )
+        with atomic(root / "frames_clock.npy") as tmp:
+            np.save(tmp, np.array(clocks))
         return len(idx)

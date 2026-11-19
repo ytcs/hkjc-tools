@@ -87,6 +87,37 @@ OUTPUTS = {
 }
 
 
+# stage -> the stages whose artifacts it reads (directly or through the helpers it calls)
+DEPS = {
+    "frames": (),
+    "features": ("frames",),
+    "pose": ("features",),
+    "worldmap": ("frames", "pose"),
+    "detect": ("frames", "pose", "worldmap"),
+    "silk": ("frames", "detect"),
+    "hud": ("frames",),
+    "rails": ("frames", "pose", "worldmap", "detect"),
+    "film": ("hud",),
+    "observe": ("pose", "detect", "silk", "hud", "rails", "film"),
+    "finish": (),
+    "identify": ("observe", "hud", "silk", "finish"),
+    "fuse_video": ("identify", "observe", "finish", "hud", "silk", "rails"),
+    "fuse_final": ("fuse_video",),
+    "validate": ("fuse_video", "fuse_final"),
+}
+
+
+def upstream(stage: str) -> set:
+    """Every stage ``stage`` depends on, transitively."""
+    out, todo = set(), list(DEPS[stage])
+    while todo:
+        d = todo.pop()
+        if d not in out:
+            out.add(d)
+            todo.extend(DEPS[d])
+    return out
+
+
 def _nproc() -> int:
     """Worker processes per race (env HKJC_NPROC; default: all cores / parallel races)."""
     return max(1, int(os.environ.get("HKJC_NPROC", "0")) or (os.cpu_count() or 4))
@@ -142,28 +173,42 @@ class RaceRun:
             download_replay(self.info.date, self.info.race_no, feed)
         return path
 
+    def out(self, name: str):
+        """Context yielding the temporary path to write artifact ``name`` to (atomic rename)."""
+        return video.atomic(self.p(name))
+
     def done(self, stage: str) -> bool:
         return all(self.p(o).exists() for o in OUTPUTS[stage])
 
     # stages that read only the videos/frame cache run CONCURRENTLY with the render chain; the
-    # chain waits for them right before their first consumer (results identical, wall time shorter)
-    BACKGROUND = {"hud": ("frames", ("film", "observe")), "finish": (None, ("identify",))}
+    # chain waits for one right before the first stage that depends on it (results identical)
+    BACKGROUND = ("hud", "finish")
+
+    def plan(self, stages=STAGES, force=()) -> list:
+        """Stages of ``stages`` to run: those not done, those forced, and every stage that depends
+        (transitively) on a forced one -- a forced stage's consumers would otherwise stay stale."""
+        forced = set(force)
+        for st in STAGES:
+            if any(d in forced for d in DEPS[st]):
+                forced.add(st)
+        done = self.done_set()
+        return [st for st in stages if st not in done or st in forced]
 
     def run(self, stages=STAGES, force=()):
         import multiprocessing as mp
 
-        todo = [st for st in stages if st not in self.done_set() or st in force]
-        bg = {}
-
-        launched = set()
+        todo = self.plan(stages, force)
+        bg, launched, finished = {}, set(), set()
 
         def launch(st):
             launched.add(st)
 
             def work():
-                t0 = time.time()
-                getattr(self, st)()
-                self.log(f"{self.info.key} {st}: {time.time() - t0:.0f}s (background)")
+                import signal
+                import sys
+
+                signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))  # pools shut down cleanly
+                self._timed(st, background=True)
 
             pr = mp.get_context("fork").Process(target=work)
             pr.start()
@@ -175,29 +220,54 @@ class RaceRun:
             if pr.exitcode != 0:
                 raise RuntimeError(f"{self.info.key}: background stage {st} failed")
 
-        def ready(b):  # prerequisite done (or never in this run's todo list)
-            after = self.BACKGROUND[b][0]
-            return after is None or after not in todo or after in finished
+        def ready(b):  # every prerequisite in this run's todo list has finished
+            return all(d not in todo or d in finished for d in DEPS[b])
 
-        finished = set()
-        for b in self.BACKGROUND:
-            if b in todo and ready(b):
-                launch(b)
-        for st in todo:
-            for b in list(bg):
-                if st in self.BACKGROUND[b][1]:
-                    wait(b)
-            if st in self.BACKGROUND:
-                continue  # runs (or ran) in the background
-            t0 = time.time()
-            getattr(self, st)()
-            self.log(f"{self.info.key} {st}: {time.time() - t0:.0f}s")
-            finished.add(st)
+        def launch_ready():
             for b in self.BACKGROUND:
                 if b in todo and b not in launched and ready(b):
                     launch(b)
-        for b in list(bg):
-            wait(b)
+
+        try:
+            launch_ready()
+            for st in todo:
+                for b in list(bg):
+                    if b in upstream(st):
+                        wait(b)
+                if st in self.BACKGROUND:
+                    continue  # runs (or ran) in the background
+                self._timed(st)
+                finished.add(st)
+                launch_ready()
+            for b in list(bg):
+                wait(b)
+        finally:  # a failed stage must not leave background stages running into the next race
+            for pr in bg.values():
+                pr.terminate()
+                pr.join()
+
+    def _timed(self, st, background=False):
+        import resource
+
+        t0 = time.time()
+        getattr(self, st)()
+        dt = time.time() - t0
+        self.log(f"{self.info.key} {st}: {dt:.0f}s" + (" (background)" if background else ""))
+        own, kids = (
+            resource.getrusage(w).ru_maxrss // 1024
+            for w in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN)
+        )
+        rec = dict(
+            stage=st,
+            s=round(dt, 1),
+            background=background,
+            end=round(time.time(), 1),
+            maxrss_mb=own,
+            maxrss_children_mb=kids,
+            nproc=_nproc(),
+        )
+        with open(self.p("timings.jsonl"), "a") as fh:
+            fh.write(json.dumps(rec) + "\n")
 
     def done_set(self):
         return {st for st in STAGES if self.done(st)}
@@ -233,21 +303,23 @@ class RaceRun:
         steps = [
             ms.get(k) if ms.get(k) is not None else np.full(11, np.nan) for k in range(len(res))
         ]
-        np.savez_compressed(
-            self.p("feats.npz"),
-            idx=np.array([r[0] for r in res]),
-            lrow=np.array([r[1] for r in res]),
-            pts=np.concatenate([r[2].pts for r in res]),
-            des=np.concatenate([r[2].des for r in res]),
-            off=np.cumsum([0] + [len(r[2].pts) for r in res]),
-            steps=np.array(steps),
-            shape=np.array(res[0][3]),
-        )
+        with self.out("feats.npz") as fp:
+            np.savez_compressed(
+                fp,
+                idx=np.array([r[0] for r in res]),
+                lrow=np.array([r[1] for r in res]),
+                pts=np.concatenate([r[2].pts for r in res]),
+                des=np.concatenate([r[2].des for r in res]),
+                off=np.cumsum([0] + [len(r[2].pts) for r in res]),
+                steps=np.array(steps),
+                shape=np.array(res[0][3]),
+            )
 
     def pose(self):
         z = dict(np.load(self.p("feats.npz")))
         G, info = pose.solve_race(z)
-        np.savez(self.p("pose.npz"), idx=z["idx"], G=G, shape=z["shape"], **info)
+        with self.out("pose.npz") as fp:
+            np.savez(fp, idx=z["idx"], G=G, shape=z["shape"], **info)
         self.log(f"   pose: {info['summary']}")
 
     def detect(self):
@@ -335,13 +407,14 @@ class RaceRun:
             f"   detect: YOLO median {yolo_med:.1f}/frame (field {self.info.n}) -> {src}; "
             f"{len(rows)} detections"
         )
-        np.savez_compressed(
-            self.p("dets.npz"),
-            rows=rows,
-            hist=hists,
-            box=np.array([box.x0, box.x1, box.y0, box.y1]),
-            source=src,
-        )
+        with self.out("dets.npz") as fp:
+            np.savez_compressed(
+                fp,
+                rows=rows,
+                hist=hists,
+                box=np.array([box.x0, box.x1, box.y0, box.y1]),
+                source=src,
+            )
 
     def silk(self):
         """Silk signature of every detection (``detect.silk_feature``, from the aerial video's render
@@ -376,13 +449,16 @@ class RaceRun:
             if pth is not None:
                 nos.append(r.no)
                 proto.append(_detect.silk_prototype(pth))
-        np.savez(self.p("silk.npz"), feat=feat, proto_no=np.array(nos), proto=np.array(proto))
+        with self.out("silk.npz") as fp:
+            np.savez(fp, feat=feat, proto_no=np.array(nos), proto=np.array(proto))
         self.log(f"   silk: {len(rows)} detections, {len(nos)}/{len(self.info.runners)} official silks")
 
     def hud(self):
         rows, leg = ocr.read_render_hud_cached(self.cache(), n_field=max(14, self.info.n))
-        np.savez(self.p("hud.npz"), rows=rows)
-        np.savez(self.p("legend.npz"), rows=leg)
+        with self.out("hud.npz") as fp:
+            np.savez(fp, rows=rows)
+        with self.out("legend.npz") as fp:
+            np.savez(fp, rows=leg)
 
     def worldmap(self, scale: float = 1.0):
         import cv2
@@ -394,9 +470,12 @@ class RaceRun:
         for i, p in self.cache():
             if i in k_of:
                 mo.add(p, video.hud_mask(p), G[k_of[i]])
-        cv2.imwrite(str(self.p("map.png")), mo.image())
-        np.save(self.p("map_cnt.npy"), mo.cnt.astype(np.float16))
-        np.savez(self.p("map_meta.npz"), bounds=np.array([mo.x0, mo.y0]), sc=scale)
+        with self.out("map.png") as fp:
+            cv2.imwrite(str(fp), mo.image())
+        with self.out("map_cnt.npy") as fp:
+            np.save(fp, mo.cnt.astype(np.float16))
+        with self.out("map_meta.npz") as fp:
+            np.savez(fp, bounds=np.array([mo.x0, mo.y0]), sc=scale)
 
     def _final_pass_map(self, P, out, rf, span):
         """Mosaic of only the frames whose rail station lies in the last ``span`` world px of the
@@ -486,7 +565,8 @@ class RaceRun:
                 f"   rails: STRAIGHT course -> field-edge datum; fence measured {out['lat0_px']:.0f} px "
                 f"inside it (range {lo_:.0f}..{hi_:.0f})"
             )
-        np.savez(self.p("rail.npz"), frame_idx=P["idx"], **out)
+        with self.out("rail.npz") as fp:
+            np.savez(fp, frame_idx=P["idx"], **out)
         rf = rails.RailFrame.from_points(out["rail"], int(out["inner"]))
         # painted markers are drawn only near the END of the race: profile them on a FINAL-PASS
         # mosaic (rail station in the last 9000 px); on trips passing the finish area twice (HV 2200)
@@ -494,7 +574,8 @@ class RaceRun:
         mimg, mcnt, mto_px = self._final_pass_map(P, out, rf, 9000.0)
         ss, resp = rails.marker_profile(mimg, mcnt, mto_px, rf, rf.s[-1] - 9000, rf.s[-1])
         del mimg, mcnt
-        np.savez(self.p("marker_profile.npz"), ss=ss, resp=resp)  # observe: tick-seeded grid fit
+        with self.out("marker_profile.npz") as fp:
+            np.savez(fp, ss=ss, resp=resp)  # observe: tick-seeded grid fit
         fit = rails.fit_marker_grid(ss, resp)
         if fit is None:
             # markers are optional: the odometer ticks carry the metric (observe stage); give a
@@ -508,16 +589,17 @@ class RaceRun:
         gap, gsup = rails.fixed_rail_gap(
             img, cnt, to_px, out["rail"], int(out["inner"]), ppm, expected
         )
-        np.savez(
-            self.p("metric.npz"),
-            ppm=ppm,
-            sF=sF,
-            ks=ks,
-            ps=ps,
-            fixed_gap=gap,
-            fixed_gap_expected=expected,
-            fixed_gap_support=gsup,
-        )
+        with self.out("metric.npz") as fp:
+            np.savez(
+                fp,
+                ppm=ppm,
+                sF=sF,
+                ks=ks,
+                ps=ps,
+                fixed_gap=gap,
+                fixed_gap_expected=expected,
+                fixed_gap_support=gsup,
+            )
         self.log(
             f"   rails: support {out['support'].mean():.3f}; markers k={ks.tolist()} ppm {ppm:.3f}"
         )
@@ -540,7 +622,8 @@ class RaceRun:
             got = film.crossings(self.video(), hud, t_last, max_marker=mx)
             mk = np.array(sorted(got, reverse=True), int)
             tt = np.array([got[m] for m in mk], float)
-        np.savez(self.p("film.npz"), markers=mk, t=tt)
+        with self.out("film.npz") as fp:
+            np.savez(fp, markers=mk, t=tt)
         self.log(f"   film: {len(mk)} marker crossings {dict(zip(mk.tolist(), tt.round(2)))}")
 
     def observe(self):
@@ -654,19 +737,20 @@ class RaceRun:
             members = tracking.split_by_appearance(members, t, Fs)
             members = sorted((m for m in members if len(m)), key=lambda m: -len(m))
             self.log(f"   observe: appearance split {n0} -> {len(members)} tracklets")
-        np.savez(
-            self.p("tracks.npz"),
-            rows=rows,
-            d=d,
-            lat=lat,
-            t=t,
-            X=X,
-            hist=hist,
-            members=np.array(members + [None], dtype=object)[:-1],
-            odo_c=c,
-            film_delta=delta,
-            det_idx=det_idx,
-        )
+        with self.out("tracks.npz") as fp:
+            np.savez(
+                fp,
+                rows=rows,
+                d=d,
+                lat=lat,
+                t=t,
+                X=X,
+                hist=hist,
+                members=np.array(members + [None], dtype=object)[:-1],
+                odo_c=c,
+                film_delta=delta,
+                det_idx=det_idx,
+            )
         self.log(
             f"   observe: {len(resid)} odometer ticks, ppm odo/marker {ppm_odo:.3f}/{ppm:.3f}, "
             f"marker-zone c {c_m:+.1f} m (grid shift {nsh}, convention c {c:+.1f} m) -> FINISH "
@@ -724,7 +808,8 @@ class RaceRun:
         for k in el_ok:
             fixed[k] = lab[k]
         extra = dict(rank=rank, elim=elim, n_elim=elim_n, fvotes=fvotes)
-        np.savez(self.p("labels.npz"), labels=lab, votes=votes, fixed=fixed, **extra)
+        with self.out("labels.npz") as fp:
+            np.savez(fp, labels=lab, votes=votes, fixed=fixed, **extra)
         self.log(
             f"   identify: finish-camera named {len(fin)} + {n_elim} by elimination; "
             f"numbered {int((lab > 0).sum())}/{len(mem)} tracklets "
@@ -835,15 +920,16 @@ class RaceRun:
             white=self.info.venue != "HV",
         )
         order, gaps, ustar = finishcam.finish_gaps(sc)
-        np.savez(
-            self.p("finish.npz"),
-            ppm=sc.get("ppm", np.nan),
-            order=np.array(order, int),
-            line_x=sc["line_x"],
-            nums=np.array(list(gaps), int),
-            gaps=np.array(list(gaps.values()), float),
-            reads=sc["reads"],
-        )
+        with self.out("finish.npz") as fp:
+            np.savez(
+                fp,
+                ppm=sc.get("ppm", np.nan),
+                order=np.array(order, int),
+                line_x=sc["line_x"],
+                nums=np.array(list(gaps), int),
+                gaps=np.array(list(gaps.values()), float),
+                reads=sc["reads"],
+            )
         self.log(
             f"   finish: line x={sc['line_x']:.0f}, {len(sc['frames'])} unique frames, order {order}"
         )
@@ -1054,7 +1140,8 @@ class RaceRun:
             )
             for h, p in paths.items()
         ]
-        pl.concat(recs).write_parquet(self.p(name))
+        with self.out(name) as fp:
+            pl.concat(recs).write_parquet(fp)
 
     def _em_identity(self, paths):
         """Second identity pass: legend votes on frames with undetected horses, ranks completed by the
@@ -1137,8 +1224,8 @@ class RaceRun:
         self._write_paths(
             {h: fusion.with_tail(p, prior) for h, p in pv.items()}, "paths_video.parquet"
         )
-        with open(self.p("fuse_video.pkl"), "wb") as f:
-            pickle.dump((obs, pv), f, protocol=pickle.HIGHEST_PROTOCOL)
+        with self.out("fuse_video.pkl") as tmp, open(tmp, "wb") as fp:
+            pickle.dump((obs, pv), fp, protocol=pickle.HIGHEST_PROTOCOL)
         n_anon = sum(1 for o in obs if o.horse == 0)
         n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
         self.log(
@@ -1461,7 +1548,8 @@ class RaceRun:
                     )
             paths, _a = self._fuse(obs + (extra or []), horses, prior)
             self.log(f"   em-assoc: shadow paths -> {int(drop.sum())} detections released")
-        np.savez(self.p(out_name), labels=lab)  # per-detection EM identity (viz, audit)
+        with self.out(out_name) as fp:
+            np.savez(fp, labels=lab)  # per-detection EM identity (viz, audit)
         return obs, paths
 
     def paths(self):
@@ -1473,7 +1561,8 @@ class RaceRun:
         from . import validate as _v
 
         res = _v.validate(self)
-        self.p("validation.json").write_text(json.dumps(res, indent=1, default=float))
+        with self.out("validation.json") as fp:
+            fp.write_text(json.dumps(res, indent=1, default=float))
         self.log(_v.summary_line(self.info.key, res))
         # label-free consistency audit (recon.audit): written beside the gates, never fails a run
         from . import audit as _a
@@ -1481,7 +1570,8 @@ class RaceRun:
         try:
             au = _a.audit(self)
             au["rail_blocking"] = _a.rail_blocking(au)
-            self.p("audit.json").write_text(json.dumps(au, indent=1, default=str))
+            with self.out("audit.json") as fp:
+                fp.write_text(json.dumps(au, indent=1, default=str))
             if au["rail_blocking"]:
                 self.log(f"   audit: RAIL BLOCKING {au['rail_blocking']}")
         except Exception as e:  # noqa: BLE001 -- diagnostics only
