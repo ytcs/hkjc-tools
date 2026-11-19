@@ -516,7 +516,9 @@ Gates failed on ≥ 5 of 6 seeds:
   HUD odometer changes only every 0.4 s (intervals 0.4 s on 1833 changes, 0.8 s on 1443), so a raw tick is 0–0.4 s late.
 - **Static-overlay filter deletes a real horse.** In `world_dets` a box recurring in one 8 px panel cell on ≥ 4 % of frames in the top band is
   treated as overlay text. On ST 06-07 R8 the camera holds one horse at panel (460, 115) from 450 m to the line, and the filter removes it on
-  242 frames (confidence 0.85–0.90); on HV 05-20 R2 it misses 31 boxes on the disclaimer text (at most 30 per cell against a bar of 35).
+  242 frames (confidence 0.85–0.90); on HV 05-20 R2 it misses 31 boxes on the disclaimer text (at most 30 per cell against a bar of 35). Restoring
+  the 242 rows after the seeded draw (6 seeds) changes no gate and no other horse's hand label, but moves #4's path onto the horse (median
+  lateral offset 3.6 → 0.45 m over the last 450 m); removing HV 05-20 R2's text boxes failed its own rule (worklist). No replacement filter yet.
 - **Non-finishers in the results.** `historical._clean_race_data` drops every incident row (DISQ, DNF,
   FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR), which is right for withdrawals; if a code
   marks a horse that started (the meanings are not documented), that horse would vanish from the
@@ -547,7 +549,8 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Independent real-camera positions.** Drone and patrol are the only independent source for the
   start segment (the render starts at race clock 10.8–12.6 s), lateral validation and races where the
   render disagrees with the record; planned via segmentation seeded from fused positions. Also open:
-  a non-overlap constraint between horses in fusion; retraining the avatar detector under overlays.
+  a non-overlap constraint between horses in fusion; retraining the avatar detector under overlays. Sizing (seed 0): an overlay dropout
+  of a true horse precedes 8 of 36 persistent wrong labels (16 % of correct ones) and 3 of 25 finish-short horses, so retraining is parked.
 - **Stage split.** A final stage reading persisted video-only observations would make final-only
   experiments cheap and keep the video-only product identical by construction.
 
