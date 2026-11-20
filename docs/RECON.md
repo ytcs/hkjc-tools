@@ -195,7 +195,8 @@ while their content advances a uniform 0.1 s. Each render frame is stamped with 
 (mean zero; off-grid frames unchanged). All observation times (tracks, tracker, film anchor,
 time-local shift) use it. Against video-index time the along-track residual on the fused path
 alternated −0.17 / +0.18 m; with tick time it is +0.006 / +0.004 m. Over 26 × 6: twin tracks 208 → 48
-pairs, hand-wrong final labels 175 → 153, gates unchanged.
+pairs, hand-wrong final labels 175 → 153, gate passes unchanged (paired over 156 runs: leader MAE −0.0006 s,
+sectional MAE +0.003 s, SE 0.001).
 
 **Tracking.** Constant-velocity prediction and per-tick Hungarian assignment in metres (gate 3σ,
 σ = 0.9/0.45 m, coast 20 ticks), then kinematic stitching across gaps ≤ 6 s.
@@ -479,7 +480,7 @@ Gates failed on ≥ 5 of 6 seeds:
 - Lateral: ST 05-03 R7 and ST 05-31 R1 measure the B-course fixed-rail gap at 6.6 m vs the table's
   4.5 m (one clean ridge at 6.5–7.0 m on 98 % of stations; the official course diagram confirms the
   table, so the render draws the B fixed rail ~2.1 m further in); HV 04-29 R3 (weak ridge, 9.21 m).
-- Occasional: HV 05-20 R2 sectional (2/6), ST 04-26 R1 winner (1/6, a 0.05 s finish).
+- Occasional: ST 04-26 R1 winner (2/6, a 0.05 s finish), HV 05-20 R2 sectional (1/6).
 
 ## 6. Open problems
 
@@ -557,7 +558,7 @@ Gates failed on ≥ 5 of 6 seeds:
   than runners. No such race has been observed: 33 raw results pages show only WV and WV-A rows, and none
   of the 26 races has an incident row. Separately, 80 of 10551 legend-vote frames (seed 0, 26 races) hold more detections than
   runners and still vote; requiring exactly N would drop those frames' votes.
-- **Worklist.** 31 disclaimer-text boxes survive the static-overlay gate in HV 05-20 R2 (pixel-verified; max 30 in one 8 px cell vs the 4 % bar of 35); they are never labelled, sit in 1–2 whole-field legend-vote frames per seed, and are > 4.5 m ahead of real detections in 31 E-step frames, where the hard rank cost has no false-positive allowance (labels there differ from the tracklet's neighbouring frames on 14–27 % of detections vs 1.2–1.6 % elsewhere). Removing the 31 pixel-verified text boxes (oracle, seeds 0 and 1) changes 1.9 % and 0.9 % of video-only labels; #5's and #12's boundary errors are unchanged, seed 0's sectional MAE crosses its gate (0.261 → 0.247 s; seed 1 passes in both, 0.222), and glitch-seconds move both ways. HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
+- **Worklist.** Off-grid render frames (the first frame after a render dropout) keep their video index as tick time, 1–2 frames late. 31 disclaimer-text boxes survive the static-overlay gate in HV 05-20 R2 (pixel-verified; max 30 in one 8 px cell vs the 4 % bar of 35); they are never labelled, sit in 1–2 whole-field legend-vote frames per seed, and are > 4.5 m ahead of real detections in 31 E-step frames, where the hard rank cost has no false-positive allowance (labels there differ from the tracklet's neighbouring frames on 14–27 % of detections vs 1.2–1.6 % elsewhere). Removing the 31 pixel-verified text boxes (oracle, seeds 0 and 1) changes 1.9 % and 0.9 % of video-only labels; #5's and #12's boundary errors are unchanged, seed 0's sectional MAE crosses its gate (0.261 → 0.247 s; seed 1 passes in both, 0.222), and glitch-seconds move both ways. HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
