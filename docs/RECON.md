@@ -53,7 +53,7 @@ is regenerated without invalidating its consumers (the pipeline is deterministic
 written to a temporary file and renamed, so a killed stage never reads as done; a failed stage
 terminates the background stages. Each race appends `timings.jsonl` (wall s, CPU s, peak RSS).
 ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off
-(`ortsession.no_spin`): same threads and work split, so identical outputs, about a third of the CPU.
+(`ortsession.no_spin`): same threads and work split, so identical outputs; CPU about a third (avatar detector) and a half (OCR).
 
 ### frames
 
@@ -152,7 +152,8 @@ of the final 9000 world px. `rails.fixed_rail_gap` measures the lateral-gate gap
 
 The aerial's left half is a live race film on the broadcast clock; in the straight a front-on
 camera sees the painted 400–50 m stripes. `film.crossings` tracks paint lines that sweep ≥ 80 px up
-the image, takes the lowest COCO horse box as leader, and names the marker from the HUD odometer (0
+the image, takes the lowest COCO horse box as leader (the detector runs on a track's frames only up
+to the leader's first crossing of its line), and names the marker from the HUD odometer (0
 to 40 m behind). Crossings must imply 12–22 m/s to a neighbour and lie ≥ 20 m inside the home
 straight (Happy Valley's 400 m marker is on the bend). Sha Tin 400 m crossings average −0.11 s
 against official (early on 9/10 races); the bias is recorded, not corrected, since correcting it
