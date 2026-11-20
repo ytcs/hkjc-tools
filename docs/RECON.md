@@ -284,7 +284,11 @@ its measured bias); if both fail, no finish observations are emitted. Per-horse 
 the fitted clock.
 
 **EM identity pass** (`RaceRun._em_identity`). Legend votes on frames with undetected horses, ranks
-completed by the first posterior where every sd < 2 m, are added and `assign_global` re-run.
+completed by the first posterior where every sd < 2 m, are added and `assign_global` re-run. It relabels
+6.3 % of detections on long identified tracklets (26 × 6; ST 04-19 R4 42 %). Without it (Z11, 26 × 6):
+video-only horse-boundaries > 0.5 s off official 25.8 → 24.2 per seed, non-lateral gates +1.33 per seed
+(ST 04-19 R4 sectional passes on 5 of 6 seeds), seed unanimity 90.2 → 93.2 %, but hand-wrong final labels on
+the 10 unread hand races 134 → 144 (correct 891 → 881), so it stays.
 
 **Detection-level EM** (`assoc.assign_frames`). The tracker fragments are only the initialisation.
 Per frame, one Hungarian assignment of all detections to all horses, clutter cost 16 (4σ). A
@@ -504,8 +508,10 @@ Gates failed on ≥ 5 of 6 seeds:
   term was overconfident (it broke HV 05-13 R1 and ST 06-07 R6); a heavy-tailed form with per-race
   parameters is untested. The blind near-line cost also removes correctly placed unread back markers
   (HV 05-27 R9 #7 at d 49 m).
-- **Identity evidence (parked).** Of the final product's 153 hand-wrong labels (Z11, seeds 1–5), 139 are already wrong in the
-  video-only product. `identify` gave the tracklet a wrong label on 91 (the tracklet silk ranks a hand candidate first on 55, 28 of them
+- **Identity evidence (parked).** Of the final product's 153 hand-wrong labels (Z11, seeds 1–5; 45 distinct hand detections),
+  139 are already wrong in the video-only product. By stage, in distinct detections: 23 wrong in `identify` and never changed;
+  7 blank in `identify` and given a wrong number by fusion's E-step; 5 turned wrong by the EM identity pass; the rest
+  (EM iterations, `fuse_final`) at most a few each. `identify` gave the tracklet a wrong label on 91 (the tracklet silk ranks a hand candidate first on 55, 28 of them
   in ST 04-19 R3) and a right label or none on 62, where fusion's per-detection label is the wrong one (55 outside ST 04-19 R3; all 19
   in the read races). Silk's first rank disagrees with `identify` on about half of all labelled tracklets of ≥ 100 detections, even
   where the legend margin exceeds 150 votes (353 of 741, 26 × 6). On Z10 the hand-wrong error rate was 8.8 % where every hand candidate is in the legend's top 8, 12.3 % where none is,
