@@ -1325,8 +1325,11 @@ class RaceRun:
 
         bnd, cum = _cum_official(self.info)
         D = self.info.distance
+        hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: the withheld boundary sets no bias
         bs = []
         for j, bd in enumerate(bnd):
+            if hold is not None and j == int(hold):
+                continue
             r = []
             for h, c in cum.items():
                 p = paths.get(h)
