@@ -539,3 +539,34 @@ def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count():
     assert new.tolist() == [1, 2, 4, 3]
 
 
+
+
+def test_film_lazy_leads_match_eager_reads():
+    """fill_leads runs the detector on a track only up to the crossing crossings_from_rows takes:
+    an unreadable odometer at the first crossing keeps the track open for the next one."""
+    from hkjc.recon import film
+
+    rows, truth = [], {}
+    for k in range(40):
+        yc = 520.0 - 10.0 * k
+        lines = [(yc, 0, yc, 900, yc)] if yc > 210 else []
+        rows.append(dict(f=1000 + 2 * k, diff=5.0, lines=lines, lead=None))
+        # hooves cross at k=14, fall back above the line for k=15..19, cross again at k=20
+        truth[1000 + 2 * k] = (300.0 if 15 <= k <= 19 else 380.0 if k < 15 else 330.0, 400.0)
+    for odo_at in (lambda f: 310.0, lambda f: np.nan if f < 1030 else 310.0):
+        calls = []
+
+        def lead_of(f):
+            calls.append(f)
+            return truth[f]
+
+        def frames(need):
+            return ((f, f) for f in sorted(need))
+
+        lazy = film.fill_leads([dict(r) for r in rows], frames, lead_of, odo_at)
+        eager = [dict(r, lead=truth[r["f"]]) for r in rows]
+        n_need = sum(1 for r in rows if r["lines"])
+        got = film.crossings_from_rows(lazy, odo_at, f0=0.0)
+        assert got == film.crossings_from_rows(eager, odo_at, f0=0.0) and list(got) == [300]
+        assert len(calls) < n_need
+    assert abs(got[300] - 1039.0 / 25.0) < 0.05  # the second crossing, the first had no odometer

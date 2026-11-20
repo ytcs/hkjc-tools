@@ -70,11 +70,9 @@ def _detector():
     return YOLO("models/coco_yolov8x.pt"), dict(imgsz=960, device=dev if dev != "cpu" else None)
 
 
-def scan(video, f_start, f_stop, *, step=2):
+def scan(video, f_start, f_stop, odo_at, *, step=2):
     """-> per sampled frame dict(f, diff, lines, lead): diff = thumbnail change vs the previous
-    sample (camera cuts), lead = (hoof_y, cx) of the lowest horse. The detector runs only on frames
-    of sweeping line tracks up to each track's first leader crossing (the only leads
-    ``crossings_from_rows`` reads); other rows keep lead None."""
+    sample (camera cuts), lead = (hoof_y, cx) of the lowest horse, filled by ``fill_leads``."""
     import cv2
 
     out, prev = [], None
@@ -83,30 +81,47 @@ def scan(video, f_start, f_stop, *, step=2):
         diff = float(np.abs(th - prev).mean()) if prev is not None else 0.0
         prev = th
         out.append(dict(f=i, diff=diff, lines=paint_lines(film), lead=None))
+    model, kw = None, None
+
+    def lead_of(film):
+        nonlocal model, kw
+        if model is None:
+            model, kw = _detector()
+        b = model.predict(film, conf=0.35, classes=[17], verbose=False, **kw)[0].boxes.xyxy.cpu().numpy()
+        j = int(np.argmax(b[:, 3])) if len(b) else -1
+        return (float(b[j, 3]), float((b[j, 0] + b[j, 2]) / 2)) if j >= 0 else None
+
+    def frames(need):
+        return _film_frames(video, min(need), max(need), step, keep=need)
+
+    return fill_leads(out, frames, lead_of, odo_at)
+
+
+def fill_leads(rows, frames, lead_of, odo_at):
+    """Leads of the rows ``crossings_from_rows`` reads: frames of sweeping line tracks, each track
+    only up to the crossing it takes (``_taken_crossing``); other rows keep lead None.
+    ``frames(need)`` yields (frame, film) for the needed frames in order; ``lead_of(film)``."""
     on_row: dict = {}  # row -> [(track, line)]
-    for t, tr in enumerate(line_tracks(out)):
+    for t, tr in enumerate(line_tracks(rows)):
         for k, ln in tr:
             on_row.setdefault(k, []).append((t, ln))
     if not on_row:
-        return out
-    need = {out[k]["f"]: k for k in on_row}
-    model, kw = _detector()
+        return rows
+    need = {rows[k]["f"]: k for k in on_row}
     last, closed = {}, set()
-    for i, film in _film_frames(video, min(need), max(need), step, keep=need):
+    for i, film in frames(need):
         live = [(t, ln) for t, ln in on_row[need[i]] if t not in closed]
         if not live:
             continue
-        b = model.predict(film, conf=0.35, classes=[17], verbose=False, **kw)[0].boxes.xyxy.cpu().numpy()
-        if not len(b):
+        lead = rows[need[i]]["lead"] = lead_of(film)
+        if lead is None:
             continue
-        j = int(np.argmax(b[:, 3]))
-        lead = out[need[i]]["lead"] = (float(b[j, 3]), float((b[j, 0] + b[j, 2]) / 2))
         for t, ln in live:
             cur = (i, _below_line(lead, ln))
-            if t in last and _crosses(last[t], cur):
+            if t in last and _taken_crossing(last[t], cur, odo_at) is not None:
                 closed.add(t)
             last[t] = cur
-    return out
+    return rows
 
 
 def _below_line(lead, line):
@@ -116,10 +131,14 @@ def _below_line(lead, line):
     return hy - (y1 + (y2 - y1) * (cx - x1) / max(x2 - x1, 1))
 
 
-def _crosses(a, b):
-    """Successive (frame, below-line) samples of one track bracket the crossing."""
+def _taken_crossing(a, b, odo_at):
+    """Crossing frame between successive (frame, below-line) samples of one track, if it is the one
+    the track is read at (bracketed within 6 frames, odometer readable there); else None."""
     (fa, da), (fb, db) = a, b
-    return da < 0 <= db and fb - fa <= 6
+    if not (da < 0 <= db and fb - fa <= 6):
+        return None
+    fc = fa + (0 - da) / (db - da) * (fb - fa)
+    return fc if np.isfinite(odo_at(fc)) else None
 
 
 def _film_frames(video, f_start, f_stop, step, keep=None):
@@ -175,18 +194,17 @@ def crossings_from_rows(rows, odo_at, f0, fps=25.0, max_marker=None):
     mks = MARKERS if max_marker is None else MARKERS[MARKERS <= max_marker]
     for tr in line_tracks(rows):
         seq = [(rows[k]["f"], _below_line(rows[k]["lead"], ln)) for k, ln in tr if rows[k]["lead"]]
-        for (fa, da), (fb, db) in zip(seq[:-1], seq[1:]):
-            if _crosses((fa, da), (fb, db)):
-                fc = fa + (0 - da) / (db - da) * (fb - fa)
-                o = odo_at(fc)
-                if not np.isfinite(o):
-                    continue
-                cand = mks[(o - mks >= -5) & (o - mks <= 40)]
-                if len(cand):
-                    mk = int(cand.max())
-                    if mk not in got:
-                        got[mk] = (fc - f0) / fps
-                break  # one crossing per marker line
+        for a, b in zip(seq[:-1], seq[1:]):
+            fc = _taken_crossing(a, b, odo_at)
+            if fc is None:
+                continue
+            o = odo_at(fc)
+            cand = mks[(o - mks >= -5) & (o - mks <= 40)]
+            if len(cand):
+                mk = int(cand.max())
+                if mk not in got:
+                    got[mk] = (fc - f0) / fps
+            break  # one crossing per marker line
     return _speed_consistent(got)
 
 
@@ -203,7 +221,7 @@ def crossings(video, hud_rows, t_last, *, span_s=26.0, fps=25.0, max_marker=None
         k = int(np.argmin(np.abs(hf - f)))
         return ho[k] if abs(hf[k] - f) <= 6 else np.nan
 
-    rows = scan(video, int(f0 + fps * (t_last - span_s)), int(f0 + fps * (t_last + 2)))
+    rows = scan(video, int(f0 + fps * (t_last - span_s)), int(f0 + fps * (t_last + 2)), odo_at)
     return crossings_from_rows(rows, odo_at, f0, fps, max_marker=max_marker)
 
 
