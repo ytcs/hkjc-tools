@@ -489,9 +489,14 @@ Gates failed on ≥ 5 of 6 seeds:
 ## 6. Open problems
 
 - **Final-product calibration.** On held-out interior boundaries (Z11, seeds 1–5, n = 4295) the median error is
-  0.56 m and 61 % of errors exceed 2 posterior sd (median z 3.05). The video-only product shows the same pattern at intermediate
-  boundaries (error relative to the race median 0.53 m against a stated sd of 0.17 m, median z 3.0) but not at the finish (0.27 m,
-  stated 0.28 m, median z 0.88). Where the stated sd is ~0.17 m and
+  0.56 m and 61 % of errors exceed 2 posterior sd (median z 3.05); counting the official crossing's own sd (0.4 m) the median z is
+  1.25 and 32 % exceed 2 sd. The video-only product shows the same pattern at intermediate boundaries (error relative to the race
+  median 0.53 m against a stated sd of 0.17 m) but not at the finish (0.27 m, stated 0.28 m; median z 0.88, or 0.51 with 0.4 m for the
+  official). `HKJC_FINAL_HOLDOUT` withholds boundary j from the official observations but not from `_metric_bias`, so held-out
+  errors are relative to the race's common mode at j. Measured map (held-out rows within 1 s of the boundary leader, path sd plus
+  f = 0.71 m, official 0.2 m, fitted leaving one race out): median z 0.68, but 11 % beyond 2 sd (heavy tail); 0.2–0.5 m stated sd
+  0.93 / 18 %; rows > 1 s behind the leader 1.29 / 31 %. Boundary leaders, whose times are measured, are no better (0.555 m) than
+  horses within 0.3 s of them (0.453 m), so the official reference is not the floor. Where the stated sd is ~0.17 m and
   5–15 observations lie within ±0.5 s, the median error is still 0.55 m: an error floor that more
   detections do not reduce, so a systematic term, not only correlated detections. Candidates:
   effective sample size per run, or empirical inflation from held-out boundaries, under their own rule.
@@ -773,3 +778,4 @@ residual after the camera swing). The others carry no recorded verdict as altern
 - Film detector as the OpenVINO export on CPU (FP32): CPU per call 18.7 → 17.0 s (−9 %) on ST 05-09 R1, leads identical; not worth a second backend. On the iGPU at the plugin's FP16 default, one lead moved 280 px and the 200 m crossing was lost (FP32 is the opt-in above).
 - EM identity pass off (Z11, 26 × 6): non-lateral gates +1.33 per seed and seed unanimity 90.2 → 93.2 %, but by omission: on crossings present in both, horse-boundaries > 0.5 s off official +0.67 per seed; 23 such crossings vanished (ST 04-19 R4's sectional passes because #3 and #12 lose crossings on 5 of 6 seeds); glitch-seconds 21.9 → 28.0; unread hand-wrong 134 → 144 (paired per seed mean +2.0).
 - Blind near-line cost waived on detections behind every non-blind tight posterior (Z11, 26 × 6, video-only and final): 6 finish-short horses gain a finish crossing within 0.5 s of official (on ≥ 4 of 6 seeds), but ST 05-03 R7 #11 and ST 04-19 R4 #3 gain crossings > 0.5 s off and their races lose behind-winner on 6 and 3 seeds (non-lateral −1.50 per seed); the two wrong crossings take other horses' detections (pixel-checked: an identify-blank tracklet and one labelled #2). Its other guard misses were zero-tolerance (ST 04-19 R4 #9 crosses on one seed, 0.013 s from official; unconverged EM passes 83 → 85; common finish error +0.0003 s). Recovering post-finish frames depends on this waiver, so that thread is closed with it.
+- Final-product predictive sd as path sd ⊕ a constant f (0.71 m, k = 1; k and f are not separable since 85 % of held-out rows share a stated sd of 0.167 m), fitted leaving one race out: median z 0.68 but 11.3 % beyond 2 sd against a declared ceiling of 10 % (heavy tail); not written.
