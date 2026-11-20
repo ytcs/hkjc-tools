@@ -195,7 +195,7 @@ while their content advances a uniform 0.1 s. Each render frame is stamped with 
 (mean zero; off-grid frames unchanged). All observation times (tracks, tracker, film anchor,
 time-local shift) use it. Against video-index time the along-track residual on the fused path
 alternated −0.17 / +0.18 m; with tick time it is +0.006 / +0.004 m. Over 26 × 6: twin tracks 208 → 48
-pairs, hand-wrong final labels 175 → 153, gate passes unchanged (paired over 156 runs: leader MAE −0.0006 s,
+pairs, hand-wrong final labels 175 → 153 (net: 57 corrected, 35 newly wrong; unread races 142 → 134, read 33 → 19), gate passes unchanged (paired over 156 runs: leader MAE −0.0006 s,
 sectional MAE +0.003 s, SE 0.001).
 
 **Tracking.** Constant-velocity prediction and per-tick Hungarian assignment in metres (gate 3σ,
@@ -439,7 +439,7 @@ set of races sealed by a metadata-only rule.
 Z10 with tick-time stamps in `observe` (observe onward on the Z10 stages, 26 × 6). Video-only: non-lateral gates
 201.67 per seed, timing gates 126.67, all five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a (unchanged from Z10),
 finish-short 26–27 per seed. Final product: hand truth (seeds 1–5) 1117 correct, 153 wrong, 51 blank of 1321
-(Z10: 1095 / 175 / 51); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %).
+(Z10: 1095 / 175 / 51; net of 57 corrected and 35 newly wrong; unread races 142 → 134 wrong, read 33 → 19); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %).
 
 ### Earlier baseline (tag `recon-baseline-Z9`)
 
@@ -504,8 +504,11 @@ Gates failed on ≥ 5 of 6 seeds:
   term was overconfident (it broke HV 05-13 R1 and ST 06-07 R6); a heavy-tailed form with per-race
   parameters is untested. The blind near-line cost also removes correctly placed unread back markers
   (HV 05-27 R9 #7 at d 49 m).
-- **Identity evidence (parked).** Of the final product's 175 hand-wrong labels (seeds 1–5), 164 already carry the same
-  label in the video-only product; their error rate is 8.8 % where every hand candidate is in the legend's top 8, 12.3 % where none is,
+- **Identity evidence (parked).** Of the final product's 153 hand-wrong labels (Z11, seeds 1–5), 139 are already wrong in the
+  video-only product. `identify` gave the tracklet a wrong label on 91 (the tracklet silk ranks a hand candidate first on 55, 28 of them
+  in ST 04-19 R3) and a right label or none on 62, where fusion's per-detection label is the wrong one (55 outside ST 04-19 R3; all 19
+  in the read races). Silk's first rank disagrees with `identify` on about half of all labelled tracklets of ≥ 100 detections, even
+  where the legend margin exceeds 150 votes (353 of 741, 26 × 6). On Z10 the hand-wrong error rate was 8.8 % where every hand candidate is in the legend's top 8, 12.3 % where none is,
   and 21.1 % where the hand set straddles it. A blind silk read by a second reader (avatar crop and official silks only) agreed with the hand sets on 35 of 36
   controls and on 28 of 36 detections that are wrong on ≥ 3 of 5 seeds (20 of 21 outside ST 04-19 R3 and ST 04-26 R1); both
   are silk reads, so this shows the reading repeats, not independent truth. The pipeline's own tracklet silk ranks a hand
@@ -558,7 +561,7 @@ Gates failed on ≥ 5 of 6 seeds:
   than runners. No such race has been observed: 33 raw results pages show only WV and WV-A rows, and none
   of the 26 races has an incident row. Separately, 80 of 10551 legend-vote frames (seed 0, 26 races) hold more detections than
   runners and still vote; requiring exactly N would drop those frames' votes.
-- **Worklist.** Off-grid render frames (the first frame after a render dropout) keep their video index as tick time, 1–2 frames late. 31 disclaimer-text boxes survive the static-overlay gate in HV 05-20 R2 (pixel-verified; max 30 in one 8 px cell vs the 4 % bar of 35); they are never labelled, sit in 1–2 whole-field legend-vote frames per seed, and are > 4.5 m ahead of real detections in 31 E-step frames, where the hard rank cost has no false-positive allowance (labels there differ from the tracklet's neighbouring frames on 14–27 % of detections vs 1.2–1.6 % elsewhere). Removing the 31 pixel-verified text boxes (oracle, seeds 0 and 1) changes 1.9 % and 0.9 % of video-only labels; #5's and #12's boundary errors are unchanged, seed 0's sectional MAE crosses its gate (0.261 → 0.247 s; seed 1 passes in both, 0.222), and glitch-seconds move both ways. HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
+- **Worklist.** HV 04-15 R1 gained 7 hand-wrong final labels in Z11 (10 wrong, 9 of them right video-only; untraced). Off-grid render frames (the first frame after a render dropout) keep their video index as tick time, 1–2 frames late. 31 disclaimer-text boxes survive the static-overlay gate in HV 05-20 R2 (pixel-verified; max 30 in one 8 px cell vs the 4 % bar of 35); they are never labelled, sit in 1–2 whole-field legend-vote frames per seed, and are > 4.5 m ahead of real detections in 31 E-step frames, where the hard rank cost has no false-positive allowance (labels there differ from the tracklet's neighbouring frames on 14–27 % of detections vs 1.2–1.6 % elsewhere). Removing the 31 pixel-verified text boxes (oracle, seeds 0 and 1) changes 1.9 % and 0.9 % of video-only labels; #5's and #12's boundary errors are unchanged, seed 0's sectional MAE crosses its gate (0.261 → 0.247 s; seed 1 passes in both, 0.222), and glitch-seconds move both ways. HV 05-27 R3 #5 crosses 1200 m ~13 m off its official time on every seed (untraced); HV 05-20 R2 sectional (+0.05 s every seed; render crossing times
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
