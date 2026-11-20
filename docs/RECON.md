@@ -509,9 +509,8 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Identity evidence (parked).** Of the final product's 153 hand-wrong labels (Z11, seeds 1–5; 45 distinct hand detections),
   139 are already wrong in the video-only product. By stage, in distinct detections: 23 wrong in `identify` and never changed;
   7 blank in `identify` and given a wrong number by fusion's E-step; 5 turned wrong by the EM identity pass; the rest
-  (EM iterations, `fuse_final`) at most a few each. Identity work is parked at the hand set's resolution: an arm's
-  paired effect (about ±2 wrong per seed) is about one SE of the 13 hand races, and the 13 races without a hand sheet hold only
-  202 independent tracklets of ≥ 30 detections, too few for a blind set that would halve that SE. `identify` gave the tracklet a wrong label on 91 (the tracklet silk ranks a hand candidate first on 55, 28 of them
+  (EM iterations, `fuse_final`) at most a few each. Identity work is parked at the hand set's resolution: 45 distinct
+  wrong detections split into mechanisms of at most 8 cannot steer an arm, and every aggregate of the set has been read. `identify` gave the tracklet a wrong label on 91 (the tracklet silk ranks a hand candidate first on 55, 28 of them
   in ST 04-19 R3) and a right label or none on 62, where fusion's per-detection label is the wrong one (55 outside ST 04-19 R3; all 19
   in the read races). Silk's first rank disagrees with `identify` on about half of all labelled tracklets of ≥ 100 detections, even
   where the legend margin exceeds 150 votes (353 of 741, 26 × 6). On Z10 the hand-wrong error rate was 8.8 % where every hand candidate is in the legend's top 8, 12.3 % where none is,
