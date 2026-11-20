@@ -441,7 +441,8 @@ set of races sealed by a metadata-only rule.
 Z10 with tick-time stamps in `observe` (observe onward on the Z10 stages, 26 × 6). Video-only: non-lateral gates
 201.67 per seed, timing gates 126.67, all five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a (unchanged from Z10),
 finish-short 26–27 per seed. Final product: hand truth (seeds 1–5) 1117 correct, 153 wrong, 51 blank of 1321
-(Z10: 1095 / 175 / 51; net of 57 corrected and 35 newly wrong; unread races 142 → 134 wrong, read 33 → 19); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %).
+(Z10: 1095 / 175 / 51; net of 57 corrected and 35 newly wrong; unread races 142 → 134 wrong, read 33 → 19); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %); census 97.5 % of horse-runs good; held-out interior
+boundaries (seeds 1–5, each boundary withheld in turn) median error 0.0322 s (0.56 m), 61 % beyond 2 posterior sd (median z 3.05).
 
 ### Earlier baseline (tag `recon-baseline-Z9`)
 
@@ -487,8 +488,10 @@ Gates failed on ≥ 5 of 6 seeds:
 
 ## 6. Open problems
 
-- **Final-product calibration.** On held-out boundaries (one seed, n = 320) the median error is
-  0.58 m and 63 % of errors exceed 2 posterior sd (median z 3.1). Where the stated sd is ~0.17 m and
+- **Final-product calibration.** On held-out interior boundaries (Z11, seeds 1–5, n = 4295) the median error is
+  0.56 m and 61 % of errors exceed 2 posterior sd (median z 3.05). The video-only product shows the same pattern at intermediate
+  boundaries (error relative to the race median 0.53 m against a stated sd of 0.17 m, median z 3.0) but not at the finish (0.27 m,
+  stated 0.28 m, median z 0.88). Where the stated sd is ~0.17 m and
   5–15 observations lie within ±0.5 s, the median error is still 0.55 m: an error floor that more
   detections do not reduce, so a systematic term, not only correlated detections. Candidates:
   effective sample size per run, or empirical inflation from held-out boundaries, under their own rule.
