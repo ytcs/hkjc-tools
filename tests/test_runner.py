@@ -81,3 +81,16 @@ def test_yolo_backfilled_from_yolo_only_dets(tmp_path):
     R.p("yolo.npz").unlink()
     np.savez_compressed(R.p("dets.npz"), rows=rows, hist=hist, box=np.zeros(4), source="yolo+bgsub")
     assert not R.done("features")  # map-difference blobs are mixed in: features must re-run
+
+
+def test_is_straight_survives_a_fold_back():
+    from hkjc.recon import rails
+
+    def tangents(theta):
+        return np.c_[np.cos(theta), np.sin(theta)]
+
+    bend = np.linspace(0, 3.2, 400)  # an oval's turning
+    assert rails.is_straight(tangents(np.zeros(400)))
+    assert not rails.is_straight(tangents(bend))
+    folded = np.r_[bend, np.linspace(3.2, 0.1, 40)]  # parked frames fold the end back
+    assert not rails.is_straight(tangents(folded))

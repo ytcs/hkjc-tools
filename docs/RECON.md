@@ -135,7 +135,8 @@ positions and normals from a 121-station (~12 m) cubic fit, because snap wobble 
 normals noisy at wide lanes; projection uses a time-ordered station hint for revisited ground.
 
 The inner side is the measured turning sign when the camera path turns at least a quarter turn
-(ovals 2.7–8.8 rad, all clockwise), else the race's handedness (`rails.inner_side`). On straights
+(range of the cumulative turning, so a fold-back at one end cannot cancel a bend; ovals 2.8–9.1 rad,
+all clockwise; straights ≤ 0.28), else the race's handedness (`rails.inner_side`). On straights
 (the three Sha Tin 1000 m races) the mosaic shows the fence only at d ≈ 400–550, so
 `rails.straight_datum` makes the field's inner-edge scaffold the rail and adds a measured per-race
 fence offset `lat0_px` (median over the longest supported DP run: 111, 111, 61 px). Straight-course
@@ -550,8 +551,6 @@ Gates failed on ≥ 5 of 6 seeds:
   inconsistent between horse groups by ~0.15 s, residual sd 0.078 s vs 0.03 s typical), ST 05-31 R1
   tracklets splitting at t 34–36 (untraced), ST 04-19 R4 hand count, straights' leader ~0.2 s early
   from 400 m (odometer/marker scale ratio 1.034–1.036 on all three straights).
-- **Straight-course test.** `rails.is_straight` sums the rail's turning over the whole polyline, so a fold-back at one end can flip an oval: with
-  38 parked post-finish frames kept, HV 05-27 R9's rail turned 3.27 rad by 75 % of its length and 0.13 rad in total, and `observe` stopped.
 - **Tracklet exclusivity in identify.** `assign_global` forbids one number on tracklets whose
   first-to-last spans overlap. Over 26 × 6, 71 unlabelled tracklets (≥ 30 detections, ≥ 10 slot votes
   for one number) have that number held by a tracklet whose span overlaps by 1–12 frames, and 147 by one

@@ -52,10 +52,12 @@ def inner_side(T: np.ndarray, handedness: str | None = None) -> int:
 
 
 def is_straight(T: np.ndarray) -> bool:
-    """The camera path never turns decisively (|summed turning| < a quarter turn; ovals turn
-    2.7-8.8 rad, the Sha Tin 1000 m straights < 0.2)."""
+    """The path never turns decisively: the range of its cumulative turning stays under a quarter
+    turn (ovals 2.8-9.1 rad, the Sha Tin 1000 m straights <= 0.28). The range, not the total: a
+    fold-back at one end (parked post-finish frames) can cancel an oval's turning in the sum."""
     cross = T[:-1, 0] * T[1:, 1] - T[:-1, 1] * T[1:, 0]
-    return abs(float(np.sum(np.arcsin(np.clip(cross, -1.0, 1.0))))) < np.pi / 2
+    turned = np.r_[0.0, np.cumsum(np.arcsin(np.clip(cross, -1.0, 1.0)))]
+    return float(np.ptp(turned)) < np.pi / 2
 
 
 def right_normal(T):
