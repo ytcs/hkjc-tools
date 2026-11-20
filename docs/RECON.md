@@ -47,7 +47,11 @@ after seeing results; failures are reported as failures.
 ## 2. Pipeline
 
 Stages run in this order; `hud` and `finish` read only the videos and run in background processes
-until their first consumer.
+until the first stage that depends on them. `pipeline.DEPS` declares each stage's inputs: forcing a
+stage re-runs every requested stage downstream of it, and a stage whose artifact is merely missing
+is regenerated without invalidating its consumers (the pipeline is deterministic). Artifacts are
+written to a temporary file and renamed, so a killed stage never reads as done; a failed stage
+terminates the background stages. Each race appends `timings.jsonl` (wall s, CPU s, peak RSS).
 
 ### frames
 
@@ -62,7 +66,8 @@ keyframe every 100 frames that enters as a zero-motion tick).
 
 ### features
 
-ORB (3000 features) on a world mask: HUD removed, dark (V < 45) and vivid blobs dilated, and the
+The avatar detector runs once per panel here (`yolo.npz`: boxes + silk histograms, read by
+`detect`); run dirs made before that recover `yolo.npz` from a YOLO-only `dets.npz`. ORB (3000 features) on a world mask: HUD removed, dark (V < 45) and vivid blobs dilated, and the
 avatar detector's boxes, grown 1.6×, masked: the colour mask misses brown
 and pastel avatars, which are static in the image because the camera follows the field, and step
 matches locked onto them (ST 04-19 R4: camera "stopped" for 3 ticks, identities rotated). Over 26 races
@@ -93,8 +98,8 @@ markers stay sharp.
 
 ### detect
 
-A self-supervised YOLO avatar detector (conf 0.25, IoU 0.5) runs on the render panel; the legend
-icon band is dropped. Below a median of 0.6 N detections per frame (N runners) (all-weather dirt) a
+The detections of a self-supervised YOLO avatar detector (conf 0.25, IoU 0.5), made in `features`
+on the render panel; the legend icon band is dropped. Below a median of 0.6 N detections per frame (N runners) (all-weather dirt) a
 map-difference blob detector is added. Inside the disclaimer band only conf ≥ 0.45 survives, and a
 box recurring at one panel cell on ≥ 4 % of frames there is overlay text.
 
@@ -734,6 +739,7 @@ Synchronisation and other evidence
 - Drone configuration check as a predictor of official boundary-timing error (not tested as a configuration check; a path horse in drone view with no drone point within 2.5 m, one-to-one, in ≥ 50 % of frames within ±1 s of its boundary crossing): AUC 0.630 for official relative boundary error > 0.3 s (0.65 required; 792 horse-boundaries, 19 bad, precision 0.12 against a 0.024 base). Errors at boundaries are rare where the drone sees the field, so the test has little power, and it cannot see configuration errors between markers.
 - Identity by elimination for persistent drone contradictions (a drone horse with no path horse within 5 m for ≥ 4 frames takes the one in-view path horse left over with no video observation): under the current labels, the candidate is determined in ≥ 80 % of frames on 5 of 26 persistent tracks (13 required; seed 0, video-only). In most frames the leftover horse has observations and its nearest drone point within 5 m is held by another observed horse: the conflict is in the video observations themselves, which elimination cannot settle.
 - Soft legend-rank margin 0.6 → 1.13 m (the sd of a difference of two detections; hard part unchanged), against label alternation on one render track (screen on drone outcomes only, not on hand labels or identity score): full EM on the 8 affected races (seed 0) cuts the alternation by two thirds (188 → 62 label changes), but persistent drone contradictions stay (video-only 17 → 17, final 18 → 19), elimination-determined tracks 1 → 2 and 4 → 2, no gate change; on the 4 most affected tracks a blind silk read of the render avatar agrees with the track's new holder on 1 in the video-only labels (HV 05-20 R9's track goes to a third horse) and 2 in the final labels.
+- Film detector (YOLOv8x, torch CPU) in a pool of 3-thread workers plus painted-line detection in a process pool: `film.npz` identical on 4 of 4 CPU controls, but CPU 15.2 → 19.1 min on ST 05-09 R1 (wall 149 → 114 s); one measurement script hung with the pool workers idle after a fork (cause not traced). The detector's boxes depend on the torch thread count: 1 thread differs from ≥ 2 by up to 9e-5 in box coordinates or confidence (2–14 threads bit-identical on 5 frames), so `film.npz` depends on the thread environment.
 
 The off-switches of adopted rules (negative evidence, blind cost, shadow release, anchor check,
 detection EM, paint-pin override, fragment-forbid fraction, rail smoother, local refit) were removed.
