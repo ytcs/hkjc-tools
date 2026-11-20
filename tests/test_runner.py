@@ -68,3 +68,16 @@ def test_failed_stage_terminates_background(tmp_path):
         _run(tmp_path, _Failing).run(stages=("frames", "features", "hud"))
     assert time.time() - t0 < 20
     assert mp.active_children() == []
+
+
+def test_yolo_backfilled_from_yolo_only_dets(tmp_path):
+    R = _run(tmp_path)
+    R.p("feats.npz").touch()
+    rows, hist = np.arange(12.0).reshape(2, 6), np.ones((2, 14))
+    np.savez_compressed(R.p("dets.npz"), rows=rows, hist=hist, box=np.zeros(4), source="yolo")
+    assert R.done("features")
+    z = np.load(R.p("yolo.npz"))
+    assert np.array_equal(z["rows"], rows) and np.array_equal(z["hist"], hist)
+    R.p("yolo.npz").unlink()
+    np.savez_compressed(R.p("dets.npz"), rows=rows, hist=hist, box=np.zeros(4), source="yolo+bgsub")
+    assert not R.done("features")  # map-difference blobs are mixed in: features must re-run

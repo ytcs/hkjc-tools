@@ -174,7 +174,20 @@ class RaceRun:
         return video.atomic(self.p(name))
 
     def done(self, stage: str) -> bool:
+        if stage == "features":
+            self._backfill_yolo()
         return all(self.p(o).exists() for o in OUTPUTS[stage])
+
+    def _backfill_yolo(self):
+        """Run dirs made before features saved its detections: a YOLO-only dets.npz holds exactly
+        the yolo.npz rows and histograms, so recover the file instead of re-running features."""
+        y, d = self.p("yolo.npz"), self.p("dets.npz")
+        if y.exists() or not (self.p("feats.npz").exists() and d.exists()):
+            return
+        z = np.load(d)
+        if str(z["source"]) == "yolo":
+            with self.out("yolo.npz") as fp:
+                np.savez(fp, rows=z["rows"], hist=z["hist"])
 
     # stages that read only the videos/frame cache run CONCURRENTLY with the render chain; the
     # chain waits for one right before the first stage that depends on it (results identical)
