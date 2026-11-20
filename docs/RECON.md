@@ -163,8 +163,8 @@ would feed official data into the video-only product.
 `HKJC_FILM_DEVICE=intel:gpu` (or `HKJC_DEVICE=intel:*`) runs this detector as the OpenVINO export on the
 Intel iGPU, compiled at FP32 (a missing device raises). It is not bit-identical to the CPU default: on 26
 races the marker sets match and every crossing is within 5.4e-4 s of the references; on the 4 CPU controls,
-within 4e-7 s. The film stage takes 35–127 s instead of 98–484 s, and about 60–90 CPU-s instead of
-570–3,440. The GPU plugin's FP16 default lost the 200 m crossing on ST 05-09 R1. The other `intel:` paths
+within 4e-7 s. The film stage takes 35–127 s instead of 98–484 s, and 47–93 CPU-s instead of
+570–3,440. Each process holds about 2 GB of system RAM for it (1.1 GB of that shared iGPU buffers). The GPU plugin's FP16 default lost the 200 m crossing on ST 05-09 R1. The other `intel:` paths
 (avatar detector, OCR recogniser, `horse_scale`) compile at the GPU default (FP16) and are untested at FP32.
 
 ### observe
