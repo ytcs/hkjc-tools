@@ -640,6 +640,13 @@ class RaceRun:
         s_px, lat_px = rf.project(X, s_hint=hint, window=1200.0)
         ppm, sF = float(m["ppm"]), float(m["sF"])
         fu = np.unique(rows[:, 0])
+        # race-clock time of a render frame: its tick on the uniform 10 Hz grid (video.tick_frame)
+        grid = video.tick_grid(np.load(self.p("frames_idx.npz"))["idx"])
+        f0 = self.clock_f0()
+
+        def tick_s(f):
+            return (video.tick_frame(f, grid) - f0) / FPS
+
         # leader position per frame: a front detection > 8 m clear of the next is a false positive
         # only if that gap is not persistent (a genuinely clear leader keeps its margin)
         from scipy.ndimage import median_filter
@@ -689,7 +696,7 @@ class RaceRun:
         )
         delta = 0.0
         if use_film:
-            dlt, per = film.anchor_offset((fu - self.clock_f0()) / FPS, d_of_s(s_lead), film_t)
+            dlt, per = film.anchor_offset(tick_s(fu), d_of_s(s_lead), film_t)
             if dlt is None:  # crossings not matched by the render leader: back to the paint pin
                 d_of_s, c, ppm_loc, resid, (ppm_odo, sF_odo, pinned, c_m, nsh) = (
                     rails.calibrate_distance_ticks(
@@ -704,7 +711,7 @@ class RaceRun:
                 )
         d = d_of_s(s_px) - delta
         # time-local pose slips (render camera swing on the straights): per-frame along-track shift
-        tf_u = (fu - self.clock_f0()) / FPS
+        tf_u = tick_s(fu)
         shift_u, n_win = rails.time_local_shift(tf_u, d_of_s(s_lead) - delta, odo)
         if n_win:
             d = d - shift_u[np.searchsorted(fu, rows[:, 0])]
@@ -723,10 +730,10 @@ class RaceRun:
         g = lat > -1.0  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]
         det_idx = self._wd_idx[g]
-        t = (rows[:, 0] - self.clock_f0()) / FPS
+        t = tick_s(rows[:, 0])
         frames = np.unique(rows[:, 0])
         fi = np.searchsorted(frames, rows[:, 0])
-        times = (frames - self.clock_f0()) / FPS
+        times = tick_s(frames)
         trs = tracking.stitch(tracking.track(times, -d, lat, fi))
         trs.sort(key=lambda tk: -len(tk.t))
         members = [np.array(tk.det) for tk in trs]

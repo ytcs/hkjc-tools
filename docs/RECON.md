@@ -189,6 +189,14 @@ per-frame along-track shift where ≥ 3 consecutive ticks keep |residual| > 10 m
 straights' camera swing). Lateral = (lat_px + lat0_px) / local px/m; detections > 1 m inside the rail
 are dropped.
 
+**Timestamps.** The render updates at 10 Hz in 25 fps video, so new ticks start 2 and 3 frames apart
+while their content advances a uniform 0.1 s. Each render frame is stamped with its tick time
+(`video.tick_frame`): the residue followed by a 2-frame step moves −0.25 frame, the other +0.25
+(mean zero; off-grid frames unchanged). All observation times (tracks, tracker, film anchor,
+time-local shift) use it. Against video-index time the along-track residual on the fused path
+alternated −0.17 / +0.18 m; with tick time it is +0.006 / +0.004 m. Over 26 × 6: twin tracks 208 → 48
+pairs, hand-wrong final labels 175 → 153, gates unchanged.
+
 **Tracking.** Constant-velocity prediction and per-tick Hungarian assignment in metres (gate 3σ,
 σ = 0.9/0.45 m, coast 20 ticks), then kinematic stitching across gaps ≤ 6 s.
 `tracking.split_by_appearance` cuts a tracklet where its mean silk signature changes (total-variation
@@ -425,7 +433,14 @@ held-out test (11 races, earlier frozen code, run once) passed all five timing g
 11/11 winners; those races are in the development set, so a further held-out claim needs another
 set of races sealed by a metadata-only rule.
 
-### Baseline (tag `recon-baseline-Z9`)
+### Baseline (tag `recon-baseline-Z11`)
+
+Z10 with tick-time stamps in `observe` (observe onward on the Z10 stages, 26 × 6). Video-only: non-lateral gates
+201.67 per seed, timing gates 126.67, all five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a (unchanged from Z10),
+finish-short 26–27 per seed. Final product: hand truth (seeds 1–5) 1117 correct, 153 wrong, 51 blank of 1321
+(Z10: 1095 / 175 / 51); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %).
+
+### Earlier baseline (tag `recon-baseline-Z9`)
 
 Commit 35c7c72 (withdrawn numbers in `legend_votes`) leaves `labels.npz` identical on 26 × 6.
 
@@ -519,18 +534,6 @@ Gates failed on ≥ 5 of 6 seeds:
   the control's `stitch` joins two horses on about a third of a small sample of long links, but such links do not mark wrong labels
   (tracklets with a link > 1 s: 20 % wrong vs 16 % right). Seed unanimity 89.2 → 96.5 %; persistent drone contradictions (seed 0) 26 → 21
   video-only, 27 → 21 final. Not adopted.
-- **Render tick timestamps.** The render updates at 10 Hz, but `observe` stamps each panel with its 25 fps
-  video index, so consecutive ticks are 0.08 s and 0.12 s apart while the content advances a uniform 0.1 s:
-  alternate ticks carry ±0.01 s about the mean. On the three longest tracklets of each of the 26 races (seed 0),
-  the along-track residual against video-index time is −0.16 to −0.19 m after a 2-frame step and +0.16 to
-  +0.19 m after a 3-frame step; against tick time (the two `grid_keep` residues shifted ∓0.25 frame) it is
-  within ±0.02 m. `tracking.Track.predict` extrapolates over the stamped interval, so a track updated on the
-  previous tick is ~0.3 m off while one that skipped a tick (0.2 s, exact) is not; this may sustain twin tracks
-  on one horse (ST 05-31 R1 t 33–45: three horses alternate frame by frame between two tracklets). Replaying the tracker on the
-  persisted detections with tick time (seed 0, 26 races): twin-seconds 289 → 31, but tracklets of ≥ 100 detections only 425 → 415 for
-  322 runners and long tracklets left blank by identify 56 → 49, mixed by race: at the three arm births logged, a second box on one horse (two
-  boxes ~10 px apart, conf ~0.3) births a second track, which then dies or takes over, leaving the horse in two long pieces (the replay holds
-  each detection's d fixed; only times change).
 - **Yardstick and HUD resolution.** Official per-horse times at intermediate boundaries sit on a 0.04 s grid relative to the leader
   (871 of 871 mid-race gaps over 26 races; 36 % at the finish): about 0.2 m of quantisation in every mid-race official crossing. The render's
   HUD odometer changes only every 0.4 s (intervals 0.4 s on 1833 changes, 0.8 s on 1443), so a raw tick is 0–0.4 s late.

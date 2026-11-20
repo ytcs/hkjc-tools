@@ -289,6 +289,24 @@ def test_video_grid_keep_drops_off_grid_reencodes():
     assert video.grid_keep([1, 2, 3, 4, 5, 6, 7]).all()  # no dominant phase -> keep everything
 
 
+def test_video_tick_frame_puts_ticks_on_the_uniform_grid():
+    """Ticks at residues {2, 4}: 2 -> 4 is a 2-frame step, 4 -> 7 a 3-frame step. Tick times move
+    the first residue -0.25 and the second +0.25 frame, so every interval is 2.5 frames; off-grid
+    frames and non-10 Hz streams are unchanged."""
+    from hkjc.recon import video
+
+    ticks = [k * 5 + o for k in range(60, 100) for o in (2, 4)]
+    grid = video.tick_grid(ticks)
+    assert grid == (2, 4)
+    assert video.tick_grid([k * 5 + o for k in range(60, 100) for o in (4, 1)]) == (4, 1)
+    tf = video.tick_frame(ticks, grid)
+    np.testing.assert_allclose(np.diff(tf), 2.5)
+    assert abs(float(np.mean(tf - np.asarray(ticks)))) < 1e-12  # mean shift zero
+    assert video.tick_frame([473], grid)[0] == 473.0  # off-grid: unchanged
+    assert video.tick_grid([1, 2, 3, 4, 5, 6, 7]) is None
+    np.testing.assert_array_equal(video.tick_frame([1, 2, 3], None), [1.0, 2.0, 3.0])
+
+
 def test_identity_assign_global_respects_overlap_and_evidence():
     """Two overlapping tracklets both voting for #1: the stronger evidence takes it; the other is
     left unlabelled (with reliable votes, 15 for #2 against 20 elsewhere is evidence AGAINST #2); a

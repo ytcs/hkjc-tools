@@ -155,6 +155,33 @@ def is_duplicate(a, b, tol: float = 3.0) -> bool:
     return float(np.abs(a[::4, ::4].astype(np.int16) - b[::4, ::4]).mean()) < tol
 
 
+def tick_grid(idx):
+    """(a, b): the two residues of ``frame % 5`` at which 10 Hz render ticks start, with
+    b = a + 2 (mod 5), by majority vote; None if the top two hold < 90 % of the frames or are not
+    2-3 frames apart (not a 10 Hz render)."""
+    idx = np.asarray(idx, dtype=np.int64)
+    if len(idx) == 0:
+        return None
+    cnt = np.bincount(idx % 5, minlength=5)
+    top = np.argsort(-cnt, kind="stable")[:2]
+    a, b = int(top[0]), int(top[1])
+    if cnt[top].sum() < 0.9 * len(idx) or (a - b) % 5 not in (2, 3):
+        return None
+    return (a, b) if (b - a) % 5 == 2 else (b, a)
+
+
+def tick_frame(f, grid) -> np.ndarray:
+    """Frame index -> render tick time in frames. Ticks start 2 and 3 frames apart while their
+    content advances a uniform 2.5 frames, so on-grid frames move onto that grid (residue a -0.25,
+    b +0.25; mean shift zero). Off-grid frames (a tick's only copy after a render dropout) and
+    non-10 Hz renders (``grid`` None) are unchanged."""
+    f = np.asarray(f, dtype=float)
+    if grid is None:
+        return f
+    r = f.astype(np.int64) % 5
+    return f + np.where(r == grid[0], -0.25, np.where(r == grid[1], 0.25, 0.0))
+
+
 def grid_keep(idx) -> np.ndarray:
     """Boolean keep-mask over yielded frame indices: drop a frame only if it RE-ENCODES a tick
     that is already kept.
@@ -172,9 +199,8 @@ def grid_keep(idx) -> np.ndarray:
     idx = np.asarray(idx, dtype=np.int64)
     r = idx % 5
     n = len(r)
-    cnt = np.bincount(r, minlength=5)
-    top = np.argsort(-cnt, kind="stable")[:2]
-    if n == 0 or cnt[top].sum() < 0.9 * n or (int(top[0]) - int(top[1])) % 5 not in (2, 3):
+    top = tick_grid(idx)
+    if top is None:
         return np.ones(n, bool)
     on = np.isin(r, top)
     have = set(idx[on].tolist())
