@@ -189,8 +189,14 @@ def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40,
             cur["xs"].append(lx)
             if u % 6 == 0:  # a few half-res frames for the horse-length ruler (horse_scale)
                 cur.setdefault("imgs", []).append(img[::2, ::2].copy())
-            for x, y, num, conf in cloth_reads(img, n_field=n_field, x_center=lx, white=white):
-                cur["reads"].append((u, i, x, y, num, conf))
+            # OCR (the cost) waits until the run reaches min_run: most runs are short and dropped
+            cur.setdefault("pending", []).append((u, i, img, lx))
+            if len(cur["frames"]) >= min_run:
+                for pu, pi, pimg, plx in cur.pop("pending"):
+                    for x, y, num, conf in cloth_reads(
+                        pimg, n_field=n_field, x_center=plx, white=white
+                    ):
+                        cur["reads"].append((pu, pi, x, y, num, conf))
     if cur is not None and len(cur["frames"]) >= min_run:
         runs.append(cur)
     if not runs:
