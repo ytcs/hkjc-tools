@@ -245,7 +245,11 @@ class RaceRun:
     def _timed(self, st, background=False):
         import resource
 
-        t0 = time.time()
+        def cpu():
+            r = [resource.getrusage(w) for w in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN)]
+            return sum(x.ru_utime + x.ru_stime for x in r)
+
+        t0, c0 = time.time(), cpu()
         getattr(self, st)()
         dt = time.time() - t0
         self.log(f"{self.info.key} {st}: {dt:.0f}s" + (" (background)" if background else ""))
@@ -256,6 +260,7 @@ class RaceRun:
         rec = dict(
             stage=st,
             s=round(dt, 1),
+            cpu_s=round(cpu() - c0, 1),  # this process + its finished workers
             background=background,
             end=round(time.time(), 1),
             maxrss_mb=own,
