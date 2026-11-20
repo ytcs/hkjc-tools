@@ -442,7 +442,8 @@ Z10 with tick-time stamps in `observe` (observe onward on the Z10 stages, 26 × 
 201.67 per seed, timing gates 126.67, all five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a (unchanged from Z10),
 finish-short 26–27 per seed. Final product: hand truth (seeds 1–5) 1117 correct, 153 wrong, 51 blank of 1321
 (Z10: 1095 / 175 / 51; net of 57 corrected and 35 newly wrong; unread races 142 → 134 wrong, read 33 → 19); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %); census 97.5 % of horse-runs good; held-out interior
-boundaries (seeds 1–5, each boundary withheld in turn) median error 0.0322 s (0.56 m), 61 % beyond 2 posterior sd (median z 3.05).
+boundaries (seeds 1–5, each boundary withheld in turn, including from the shared metric bias) median error 0.112 s (1.97 m);
+relative to the field at that boundary 0.0322 s (0.56 m), 61 % beyond 2 posterior sd.
 
 ### Earlier baseline (tag `recon-baseline-Z9`)
 
@@ -492,11 +493,13 @@ Gates failed on ≥ 5 of 6 seeds:
   0.56 m and 61 % of errors exceed 2 posterior sd (median z 3.05); counting the official crossing's own sd (0.4 m) the median z is
   1.25 and 32 % exceed 2 sd. The video-only product shows the same pattern at intermediate boundaries (error relative to the race
   median 0.53 m against a stated sd of 0.17 m) but not at the finish (0.27 m, stated 0.28 m; median z 0.88, or 0.51 with 0.4 m for the
-  official). `HKJC_FINAL_HOLDOUT` withholds boundary j from the official observations but not from `_metric_bias`, so held-out
-  errors are relative to the race's common mode at j. Measured map (held-out rows within 1 s of the boundary leader, path sd plus
+  official). Those held-out figures are relative to the field at the boundary: until d4812bb `HKJC_FINAL_HOLDOUT` did not withhold boundary j
+  from `_metric_bias`, which removed the race's common mode at j using the withheld times. Withholding it too, the median held-out
+  error is 0.112 s (1.97 m; median z against path ⊕ official sd 4.4): the shared metric between boundaries (median 1.8 m from an
+  interpolation over the other boundaries) dominates. Verdicts made with the old holdout (0157, 0160) were paired on the same
+  measure and stand as relative-error verdicts. Measured map (held-out rows within 1 s of the boundary leader, path sd plus
   f = 0.71 m, official 0.2 m, fitted leaving one race out): median z 0.68, but 11 % beyond 2 sd (heavy tail); 0.2–0.5 m stated sd
-  0.93 / 18 %; rows > 1 s behind the leader 1.29 / 31 %. Boundary leaders, whose times are measured, are no better (0.555 m) than
-  horses within 0.3 s of them (0.453 m), so the official reference is not the floor. Where the stated sd is ~0.17 m and
+  0.93 / 18 %; rows > 1 s behind the leader 1.29 / 31 %. Boundary leaders are no better (0.555 m) than horses within 0.3 s of them (0.453 m), which does not locate the floor. Where the stated sd is ~0.17 m and
   5–15 observations lie within ±0.5 s, the median error is still 0.55 m: an error floor that more
   detections do not reduce, so a systematic term, not only correlated detections. Candidates:
   effective sample size per run, or empirical inflation from held-out boundaries, under their own rule.
