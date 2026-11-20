@@ -29,6 +29,9 @@ def _engine():
 
     from rapidocr_onnxruntime import RapidOCR
 
+    from .ortsession import no_spin
+
+    no_spin()
     n = int(os.environ.get("HKJC_OCR_THREADS", "-1"))  # parallel races: cap threads per process
     eng = RapidOCR(intra_op_num_threads=n, inter_op_num_threads=1) if n > 0 else RapidOCR()
     dev = os.environ.get("HKJC_DEVICE", "cpu")

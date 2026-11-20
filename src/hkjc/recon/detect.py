@@ -63,6 +63,9 @@ class AvatarDetector:
     def __init__(self, weights: str | None = None, imgsz: int = 960):
         from ultralytics import YOLO
 
+        from .ortsession import no_spin
+
+        no_spin()
         self.model = YOLO(weights or default_weights())
         self.imgsz = imgsz
 
