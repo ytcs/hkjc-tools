@@ -285,10 +285,8 @@ the fitted clock.
 
 **EM identity pass** (`RaceRun._em_identity`). Legend votes on frames with undetected horses, ranks
 completed by the first posterior where every sd < 2 m, are added and `assign_global` re-run. It relabels
-6.3 % of detections on long identified tracklets (26 × 6; ST 04-19 R4 42 %). Without it (Z11, 26 × 6):
-video-only horse-boundaries > 0.5 s off official 25.8 → 24.2 per seed, non-lateral gates +1.33 per seed
-(ST 04-19 R4 sectional passes on 5 of 6 seeds), seed unanimity 90.2 → 93.2 %, but hand-wrong final labels on
-the 10 unread hand races 134 → 144 (correct 891 → 881), so it stays.
+6.3 % of detections on long identified tracklets (26 × 6; ST 04-19 R4 42 %); on the unread hand races its
+tracklet relabels help 20 distinct hand detections and hurt 20. Without it see §7.
 
 **Detection-level EM** (`assoc.assign_frames`). The tracker fragments are only the initialisation.
 Per frame, one Hungarian assignment of all detections to all horses, clutter cost 16 (4σ). A
@@ -768,3 +766,4 @@ Two off-states are measured: negative legend evidence off raised HV 05-20 R2's s
 the local refit off on the masked pose moved no race by more than 1e-4 s (kept for the straights'
 residual after the camera swing). The others carry no recorded verdict as alternatives.
 - Film detector as the OpenVINO export on CPU (FP32): CPU per call 18.7 → 17.0 s (−9 %) on ST 05-09 R1, leads identical; not worth a second backend. On the iGPU at the plugin's FP16 default, one lead moved 280 px and the 200 m crossing was lost (FP32 is the opt-in above).
+- EM identity pass off (Z11, 26 × 6): non-lateral gates +1.33 per seed and seed unanimity 90.2 → 93.2 %, but by omission: on crossings present in both, horse-boundaries > 0.5 s off official +0.67 per seed; 23 such crossings vanished (ST 04-19 R4's sectional passes because #3 and #12 lose crossings on 5 of 6 seeds); glitch-seconds 21.9 → 28.0; unread hand-wrong 134 → 144 (paired per seed mean +2.0).
