@@ -579,8 +579,6 @@ Gates failed on ≥ 5 of 6 seeds:
   render disagrees with the record; planned via segmentation seeded from fused positions. Also open:
   a non-overlap constraint between horses in fusion; retraining the avatar detector under overlays. Sizing (seed 0): an overlay dropout
   of a true horse precedes 8 of 36 persistent wrong labels (16 % of correct ones) and 3 of 25 finish-short horses, so retraining is parked.
-- **Stage split.** A final stage reading persisted video-only observations would make final-only
-  experiments cheap and keep the video-only product identical by construction.
 
 ## 7. Rejected (do not retry)
 
