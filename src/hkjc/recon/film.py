@@ -20,6 +20,7 @@ These are REAL-VIDEO observations (no official data)."""
 
 from __future__ import annotations
 
+import contextlib
 import os
 
 import numpy as np
@@ -60,14 +61,57 @@ def paint_lines(film, *, min_len=300):
     return out
 
 
+OV_MODEL = "models/coco_yolov8x_544x960_openvino_model"
+
+
 def _detector():
+    """-> (model, predict kwargs): torch on CPU (the exact references) unless ``HKJC_FILM_DEVICE``
+    (else ``HKJC_DEVICE``) is ``intel:<device>`` (``_openvino_fp32``)."""
     from ultralytics import YOLO
 
-    dev = os.environ.get("HKJC_DEVICE", "cpu")
-    ov = "models/coco_yolov8x_544x960_openvino_model"
-    if dev.startswith("intel:") and os.path.exists(ov):
-        return YOLO(ov, task="detect"), dict(imgsz=(544, 960), device=dev)
+    dev = os.environ.get("HKJC_FILM_DEVICE") or os.environ.get("HKJC_DEVICE", "cpu")
+    if dev.startswith("intel:"):
+        return _openvino_fp32(dev)
     return YOLO("models/coco_yolov8x.pt"), dict(imgsz=960, device=dev if dev != "cpu" else None)
+
+
+def _openvino_fp32(dev):
+    """The OpenVINO export compiled at FP32 on ``dev`` (the GPU plugin's FP16 default lost a marker
+    crossing). Not bit-identical to torch CPU: crossings within 0.02 s on 26 races. A missing device
+    raises (ultralytics would fall back silently)."""
+    import openvino as ov
+    from ultralytics import YOLO
+
+    name = dev.split(":", 1)[1].upper()
+    if name not in ov.Core().available_devices:
+        raise RuntimeError(f"{dev}: OpenVINO device {name} not available")
+    if not os.path.exists(OV_MODEL):
+        raise FileNotFoundError(f"{OV_MODEL} (OpenVINO export of models/coco_yolov8x.pt, imgsz 544x960)")
+    model, kw = YOLO(OV_MODEL, task="detect"), dict(imgsz=(544, 960), device=dev)
+    with fp32_compile():  # ultralytics compiles at predictor setup (first predict)
+        model.predict(np.zeros((1080, 1920, 3), np.uint8), verbose=False, **kw)
+    got = model.predictor.model.ov_compiled_model.get_property("INFERENCE_PRECISION_HINT")
+    if got != ov.Type.f32:
+        raise RuntimeError(f"{dev}: compiled at {got}, not f32")
+    return model, kw
+
+
+@contextlib.contextmanager
+def fp32_compile():
+    """OpenVINO models compiled inside run at FP32 inference precision."""
+    import openvino as ov
+
+    base = ov.Core.compile_model
+
+    def compile_model(self, model, device_name=None, config=None, **kw):
+        config = {**(config or {}), "INFERENCE_PRECISION_HINT": ov.Type.f32}
+        return base(self, model, device_name=device_name, config=config, **kw)
+
+    ov.Core.compile_model = compile_model
+    try:
+        yield
+    finally:
+        ov.Core.compile_model = base
 
 
 def scan(video, f_start, f_stop, odo_at, *, step=2):

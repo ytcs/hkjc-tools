@@ -14,7 +14,8 @@ run = RaceRun(race_info("20260603", "HV", 8)); run.run(); run.paths()
 CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force stage,...]`. Stages are
 cached under `data_cache/recon/<date>_<venue>_<no>/`; a stage is skipped when its outputs exist.
 Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `HKJC_NPROC` (workers per
-race), `HKJC_OCR_THREADS`, `HKJC_AVATAR_WEIGHTS` (detector weights).
+race), `HKJC_OCR_THREADS`, `HKJC_AVATAR_WEIGHTS` (detector weights), `HKJC_FILM_DEVICE` (the film
+detector alone, e.g. `intel:gpu`; see the film section).
 
 Race identifiers below are `venue MM-DD Rn` (2026 meetings), e.g. ST 05-31 R1 is Sha Tin,
 2026-05-31, race 1.
@@ -159,6 +160,12 @@ to 40 m behind). Crossings must imply 12–22 m/s to a neighbour and lie ≥ 20 
 straight (Happy Valley's 400 m marker is on the bend). Sha Tin 400 m crossings average −0.11 s
 against official (early on 9/10 races); the bias is recorded, not corrected, since correcting it
 would feed official data into the video-only product.
+`HKJC_FILM_DEVICE=intel:gpu` (or `HKJC_DEVICE=intel:*`) runs this detector as the OpenVINO export on the
+Intel iGPU, compiled at FP32 (a missing device raises). It is not bit-identical to the CPU default: on 26
+races the marker sets match and every crossing is within 5.4e-4 s of the references; on the 4 CPU controls,
+within 4e-7 s. The film stage takes 35–127 s instead of 98–484 s, and about 60–90 CPU-s instead of
+570–3,440. The GPU plugin's FP16 default lost the 200 m crossing on ST 05-09 R1. The other `intel:` paths
+(avatar detector, OCR recogniser, `horse_scale`) compile at the GPU default (FP16) and are untested at FP32.
 
 ### observe
 
@@ -741,7 +748,7 @@ Synchronisation and other evidence
 - Drone configuration check as a predictor of official boundary-timing error (not tested as a configuration check; a path horse in drone view with no drone point within 2.5 m, one-to-one, in ≥ 50 % of frames within ±1 s of its boundary crossing): AUC 0.630 for official relative boundary error > 0.3 s (0.65 required; 792 horse-boundaries, 19 bad, precision 0.12 against a 0.024 base). Errors at boundaries are rare where the drone sees the field, so the test has little power, and it cannot see configuration errors between markers.
 - Identity by elimination for persistent drone contradictions (a drone horse with no path horse within 5 m for ≥ 4 frames takes the one in-view path horse left over with no video observation): under the current labels, the candidate is determined in ≥ 80 % of frames on 5 of 26 persistent tracks (13 required; seed 0, video-only). In most frames the leftover horse has observations and its nearest drone point within 5 m is held by another observed horse: the conflict is in the video observations themselves, which elimination cannot settle.
 - Soft legend-rank margin 0.6 → 1.13 m (the sd of a difference of two detections; hard part unchanged), against label alternation on one render track (screen on drone outcomes only, not on hand labels or identity score): full EM on the 8 affected races (seed 0) cuts the alternation by two thirds (188 → 62 label changes), but persistent drone contradictions stay (video-only 17 → 17, final 18 → 19), elimination-determined tracks 1 → 2 and 4 → 2, no gate change; on the 4 most affected tracks a blind silk read of the render avatar agrees with the track's new holder on 1 in the video-only labels (HV 05-20 R9's track goes to a third horse) and 2 in the final labels.
-- Film detector (YOLOv8x, torch CPU) in a process pool plus painted-line detection in a process pool: `film.npz` identical on 4 of 4 CPU controls, but CPU 15.2 → 19.1 min on ST 05-09 R1 (wall 149 → 114 s); one measurement script hung with the pool workers idle after a fork (cause not traced). The workers meant to run 3 threads ran 8 (ultralytics resets torch to 8 threads at predictor setup, after the cap), so this does not reject a pool capped after the first predict (untested). The detector's boxes depend on the torch thread count: 1 thread differs from ≥ 2 by up to 9e-5 in box coordinates or confidence (2–8 threads bit-identical), so `film.npz` depends on the thread environment.
+- Film detector (YOLOv8x, torch CPU) in a process pool plus painted-line detection in a process pool: `film.npz` identical on 4 of 4 CPU controls, but CPU 15.2 → 19.1 min on ST 05-09 R1 (wall 149 → 114 s); one measurement script hung with the pool workers idle after a fork (cause not traced). The workers meant to run 3 threads ran 8 (ultralytics resets torch to 8 threads at predictor setup, after the cap), so this does not reject a pool capped after the first predict (untested). The detector's boxes depend on the torch thread count: 1 thread differs from ≥ 2 by up to 9e-5 in box coordinates or confidence (2–8 threads bit-identical), so `film.npz` depends on the thread environment. At equal cores a capped pool gains at most the 13–16 % CPU that capping torch threads saved (see below).
 - ONNX Runtime thread caps for the avatar detector: 1 and 2 intra-op threads agree with each other but differ from 4 and from the default by up to 1.2e-4 in box values (49 panels), so a cap changes `yolo.npz`. Torch thread cap on the YOLOv8x ruler/film detector (ultralytics sets 8 threads at predictor setup): bit-identical at 2 and 4 threads, CPU 150 → 131 / 126 s on 8 frames (−13 / −16 %) for wall 20 → 37 / 72 s.
 
 The off-switches of adopted rules (negative evidence, blind cost, shadow release, anchor check,
@@ -749,3 +756,4 @@ detection EM, paint-pin override, fragment-forbid fraction, rail smoother, local
 Two off-states are measured: negative legend evidence off raised HV 05-20 R2's sectional 0.147 → 0.187 s;
 the local refit off on the masked pose moved no race by more than 1e-4 s (kept for the straights'
 residual after the camera swing). The others carry no recorded verdict as alternatives.
+- Film detector as the OpenVINO export on CPU (FP32): CPU per call 18.7 → 17.0 s (−9 %) on ST 05-09 R1, leads identical; not worth a second backend. On the iGPU at the plugin's FP16 default, one lead moved 280 px and the 200 m crossing was lost (FP32 is the opt-in above).

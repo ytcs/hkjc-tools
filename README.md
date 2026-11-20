@@ -36,7 +36,9 @@ uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse_final,val
 Detector weights are expected in `models/` (`avv_avatar_yolo11n.onnx`/`.pt`, the self-trained
 render-avatar detector; `coco_yolov8x.pt` from Ultralytics). They are not distributed in git.
 Environment knobs: `HKJC_DEVICE=cuda` (GPU detection), `HKJC_NPROC` (worker processes),
-`HKJC_OCR_THREADS` (OCR threads per process). Detector boxes, and so camera poses, depend slightly on
+`HKJC_OCR_THREADS` (OCR threads per process), `HKJC_FILM_DEVICE=intel:gpu` (the film detector on an Intel
+iGPU via OpenVINO at FP32: film stage 3–4× faster, crossings within 5.4e-4 s; needs the OpenVINO export
+`models/coco_yolov8x_544x960_openvino_model`). Detector boxes, and so camera poses, depend slightly on
 the device (CPU vs CUDA on HV 06-03 R8 moves final paths by ≤ 0.18 m); the reference baseline is a
 CUDA run.
 
