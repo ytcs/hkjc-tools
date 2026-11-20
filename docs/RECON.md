@@ -441,9 +441,10 @@ set of races sealed by a metadata-only rule.
 Z10 with tick-time stamps in `observe` (observe onward on the Z10 stages, 26 × 6). Video-only: non-lateral gates
 201.67 per seed, timing gates 126.67, all five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a (unchanged from Z10),
 finish-short 26–27 per seed. Final product: hand truth (seeds 1–5) 1117 correct, 153 wrong, 51 blank of 1321
-(Z10: 1095 / 175 / 51; net of 57 corrected and 35 newly wrong; unread races 142 → 134 wrong, read 33 → 19); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %); census 97.5 % of horse-runs good; held-out interior
-boundaries (seeds 1–5, each boundary withheld in turn, including from the shared metric bias) median error 0.112 s (1.97 m);
-relative to the field at that boundary 0.0322 s (0.56 m), 61 % beyond 2 posterior sd.
+(Z10: 1095 / 175 / 51; net of 57 corrected and 35 newly wrong; unread races 142 → 134 wrong, read 33 → 19); glitch-seconds 21.9 per seed (Z10: 25.6); seed unanimity 90.2 % (89.2 %); census 97.5 % of horse-runs good; interior boundaries
+withheld in turn (seeds 1–5, also from the shared metric bias): median error 0.112 s (1.97 m) at 400 m from the nearest official
+time (≈ 0.08 s midway between boundaries in the product, see §6); relative to the field at that boundary 0.0322 s (0.56 m), 61 % beyond
+2 posterior sd.
 
 ### Earlier baseline (tag `recon-baseline-Z9`)
 
@@ -461,7 +462,7 @@ identity rotation gone, ST 05-09 R1 blind labels 13/38 → 37/38, seed unanimity
 
 **Final product** (26 × 6): census 97.4 % of horse-runs good, glitch-seconds 25.6 per seed (without the
 final identity pass, measured on the previous base: 93.1 %, 56.4; the start prior removes every
-implausible pre-render race); held-out boundary median error 0.032 s (all interior boundaries, seeds
+implausible pre-render race); held-out boundary median error relative to the field 0.032 s (all interior boundaries, seeds
 1–5, previous base, whose outputs differ only on HV 04-22 R1/R9); hand truth on the final labels (seeds 1–5) 1095 correct, 175 wrong, 51 blank of 1321; video-only
 paths byte-identical with and without the final chain.
 
@@ -496,7 +497,10 @@ Gates failed on ≥ 5 of 6 seeds:
   official). Those held-out figures are relative to the field at the boundary: until d4812bb `HKJC_FINAL_HOLDOUT` did not withhold boundary j
   from `_metric_bias`, which removed the race's common mode at j using the withheld times. Withholding it too, the median held-out
   error is 0.112 s (1.97 m; median z against path ⊕ official sd 4.4): the shared metric between boundaries (median 1.8 m from an
-  interpolation over the other boundaries) dominates. Verdicts made with the old holdout (0157, 0160) were paired on the same
+  interpolation over the other boundaries) dominates that figure. It is the error 400 m from the nearest official time with the
+  neighbours 800 m apart; in the product every point is within 200 m of one. The shared bias's steps between adjacent boundaries
+  are close to independent (median second difference / median step 0.77, 45 triples), so the product's shared error midway between
+  boundaries is about the held-out figure / √2, ≈ 1.4 m (0.08 s), falling to zero at each boundary. Verdicts made with the old holdout (0157, 0160) were paired on the same
   measure and stand as relative-error verdicts. Measured map (held-out rows within 1 s of the boundary leader, path sd plus
   f = 0.71 m, official 0.2 m, fitted leaving one race out): median z 0.68, but 11 % beyond 2 sd (heavy tail); 0.2–0.5 m stated sd
   0.93 / 18 %; rows > 1 s behind the leader 1.29 / 31 %. Boundary leaders are no better (0.555 m) than horses within 0.3 s of them (0.453 m), which does not locate the floor. Where the stated sd is ~0.17 m and
