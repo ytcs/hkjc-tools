@@ -473,7 +473,8 @@ Gates failed on ≥ 5 of 6 seeds:
   tracklet (worst boundary error 4.55 s); #5, #12 and #14 reach 0.5–0.8 s. Its finish camera is a
   slow-motion post camera: the winner #11 is read only sparsely and #10's "1" is hidden by the boot at
   the line, so neither gets a gap.
-- Finish-n, video-limited: ST 05-03 R7 (#4 8 m short at the last render frame, #10 3 m short, #11's
+- Finish-n, video-limited (every horse the blind near-line cost applies to, 24 race-horses over 26 races, is finish-short on all 6 seeds,
+  against 26–27 finish-short horses per seed): ST 05-03 R7 (#4 8 m short at the last render frame, #10 3 m short, #11's
   detections end 200 m out), ST 05-09 R2 (#9 3 m, #11 9 m short at the last observation; passes since
   the tail, with #11's crossing extrapolated over 5.9–7.6 m),
   HV 05-27 R9 (no detections over t 70.56–72.28; #7 unobserved for its last 16 m, sd 1.78 m at the
@@ -768,3 +769,4 @@ the local refit off on the masked pose moved no race by more than 1e-4 s (kept f
 residual after the camera swing). The others carry no recorded verdict as alternatives.
 - Film detector as the OpenVINO export on CPU (FP32): CPU per call 18.7 → 17.0 s (−9 %) on ST 05-09 R1, leads identical; not worth a second backend. On the iGPU at the plugin's FP16 default, one lead moved 280 px and the 200 m crossing was lost (FP32 is the opt-in above).
 - EM identity pass off (Z11, 26 × 6): non-lateral gates +1.33 per seed and seed unanimity 90.2 → 93.2 %, but by omission: on crossings present in both, horse-boundaries > 0.5 s off official +0.67 per seed; 23 such crossings vanished (ST 04-19 R4's sectional passes because #3 and #12 lose crossings on 5 of 6 seeds); glitch-seconds 21.9 → 28.0; unread hand-wrong 134 → 144 (paired per seed mean +2.0).
+- Blind near-line cost waived on detections behind every non-blind tight posterior (Z11, 26 × 6, video-only and final): 6 finish-short horses gain a finish crossing within 0.5 s of official (on ≥ 4 of 6 seeds), but ST 05-03 R7 #11 and ST 04-19 R4 #3 gain crossings > 0.5 s off and their races lose behind-winner on 6 and 3 seeds (non-lateral −1.50 per seed); ST 04-19 R4 #9 crosses on one seed; unconverged EM passes 83 → 85.
