@@ -60,7 +60,23 @@ ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off
 
 ### frames
 
-Unique frames of the render panel. A frame is render-active when the legend band (0.70–0.86 of the
+Two render styles: the avatar render with the silk legend (to 2025/26) and, from 2026/27, numbered blue
+discs (radius ~25 px, the runner's number printed on each) with no legend. `video.layout` samples 12 frames
+across the replay: a frame with ≥ max(3, 0.4 × runners) discs votes circle (tested first: discs crossing the
+legend strip pass the silk gate), a frame passing the relaxed legend gate votes silk; ≥ 2 votes and a strict
+plurality decide, else the race stops with "unknown render style" (213/213 replays classified correctly).
+The style is stored in `frames_idx.npz` (silk caches keep their exact layout).
+
+The panel box is a constant of the broadcast layout: the voting frames also give a median box, and the first
+render frame keeps its own box unless it differs from that by more than 3 px (the antialiased edges jitter
+1–2 px). The first accepted frame can be the crossfade from the full-screen live shot, whose letterbox is
+not yet black: its box spanned the full height (rows 1–1076 instead of 271–806), the static-overlay mask
+landed in the letterbox and the pose locked on the disclaimer and minimap (S1 pose lock; circle HV 10-14
+R3: oval folded, 283 tracklets → 10 and all gates with the layout box). 196 of 209 cached races keep their
+box exactly; 8 of the 13 that change are S1 silk races with full-height boxes (box, pose and tracklet
+count clear on all 8, 4 pass every gate).
+
+Silk render: a frame is render-active when the legend band (0.70–0.86 of the
 panel) shows a saturated box, the top strip is the dark HUD box (turf-green fraction ≤ 0.30) and the
 track band is sharp (Laplacian variance ≥ 240). Once the strict test has passed, ≥ 5 boxes in a band
 widened to 0.60 also pass: on ST 04-19 R4 and ST 04-26 R9 the legend sits higher and the strict gate
@@ -69,7 +85,17 @@ dropped up to 13 s of race. The render updates at 10 Hz in 25 fps video; a frame
 timestamp. `video.grid_keep` drops off-grid re-encodes of a kept tick (HV 04-22 R1/R9 have a
 keyframe every 100 frames that enters as a zero-motion tick).
 
+Circle render: the render's yellow odometer text (fraction ≥ 0.05 of its box; live film and the dissolve
+≤ 0.02, the render 0.10–0.33) plus ≥ 2 discs; the top-strip test stays and there is no texture floor (the
+smoother 2026/27 render sits below the silk one's, median Laplacian variance ~230). Without the odometer test
+the start gate's blue banner passed as discs.
+
 ### features
+
+Circle render: disc centres replace the avatar detector (a disc-template filter on the closed blue mask, peaks
+with fill ≥ 0.8 at least 18 px apart: discs 25 px apart, about 1.3 m, still split); the number inside each
+disc is read with recognition-only OCR (`numbers.npz`, row-aligned with `yolo.npz`): 96–99 % of discs give a
+valid read, 96.5–99.8 % agree with their tracklet's majority. `detect` uses the disc detections only.
 
 The avatar detector runs once per panel here (`yolo.npz`: boxes + silk histograms, read by
 `detect`); run dirs made before that recover `yolo.npz` from a YOLO-only `dets.npz`. ORB (3000 features) on a world mask: HUD removed, dark (V < 45) and vivid blobs dilated, and the
@@ -269,6 +295,10 @@ per tracklet and per frame; gain ≤ 0 stays unlabelled. Against the greedy labe
 ρ 0.954 → 0.966 and hand majority 108 → 113/151. Unlabelled line-reaching tracklets are then matched
 by elimination (`finishcam.eliminate`) to numbers with no line-reaching tracklet. Camera and
 elimination names are hard constraints downstream.
+
+Circle render: each confident disc-number read (OCR confidence ≥ 0.6, a runner's number) adds one vote for
+that number to its tracklet, about one legend frame's worth; late-frame numbers count as shown for the
+blind set in `fuse_final`.
 
 ### fuse_video, fuse_final
 
@@ -675,6 +705,7 @@ Each line: the approach, then the measurement that decided it. "Removed untested
 without a verdict.
 
 Frames, features, pose
+- Circle-render disc tests on a non-blue ring (R+5..R+9 ≤ 50 % blue) and a saturated core (median S ≥ 150), added to keep the start gate's banner out: they rejected discs in overlapping clusters (the ring is legitimately blue); HV 10-14 R3 fell from 10.0 to 7.0 discs per frame for 10 runners and 11 to 227 tracklets. The odometer-text gate keeps the banner out instead.
 - Dropping every off-grid frame: removed the only copy of ticks after finish-zone dropouts; finish-short 34 → 39, ST 05-24 R1 winner flipped, hand 15 → 10/19.
 - Dropping a frame one after the last kept, keeping the old duplicate reference: zero-motion ticks stayed (14 per race) and later ticks were stamped 1 frame late.
 - Keeping on-grid frames the duplicate test drops after the finish (the camera parks; real ticks differ 1.5–2.1 from the last kept panel vs tolerance 3.0): 0 of 10 finish-short horses gained a finish crossing on ST 05-03 R7, HV 05-27 R9 and ST 05-24 R1; the winner flipped on 2 of 3. Detections were unchanged; shared frames' course position near the line moved by up to 3.4 m. With the parking pose copied onto the kept frames and the pose solved on the other frames only (their poses bit-identical): 0 of 7 gained on ST 05-03 R7 and ST 05-24 R1, ST 05-24 R1 lost `finish_rho` (1.0 → 0.88), HV 05-27 R9 stopped in `observe` (its rail tested as straight).
