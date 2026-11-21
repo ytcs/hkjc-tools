@@ -1043,7 +1043,7 @@ class RaceRun:
         if not self.p("finish.npz").exists():
             return {}, None
         z = np.load(self.p("finish.npz"))
-        order, gaps, _u = finishcam.finish_gaps(dict(line_x=float(z["line_x"]), reads=z["reads"]))
+        order, gaps, _u = finishcam.finish_gaps(self.finish_sc(z))
         gaps = {int(k): v for k, v in gaps.items()}
         if len(gaps) < 3:
             return {}, None
@@ -1090,6 +1090,7 @@ class RaceRun:
             # camera it adds false reads
             white=self.info.venue != "HV",
         )
+        sc["overhead"] = self.info.venue == "HV"
         order, gaps, ustar = finishcam.finish_gaps(sc)
         with self.out("finish.npz") as fp:
             np.savez(
@@ -1112,9 +1113,7 @@ class RaceRun:
             return []
         z = np.load(self.p("finish.npz"))
         # order/gaps recomputed from the cached cloth reads (cheap; no video re-scan)
-        order, gaps, _u, gsd = finishcam.finish_gaps(
-            dict(line_x=float(z["line_x"]), reads=z["reads"]), with_sd=True
-        )
+        order, gaps, _u, gsd = finishcam.finish_gaps(self.finish_sc(z), with_sd=True)
         order = [int(n) for n in order]
         gaps = {int(k): v for k, v in gaps.items()}
         gsd = {int(k): v for k, v in gsd.items()}
@@ -1564,11 +1563,14 @@ class RaceRun:
         return out
     ANCHOR_SD = 3.0  # m: a fused crossing anchors the finish clock only where the path is tight
 
-    @staticmethod
-    def _fc_read(zf) -> set:
+    def finish_sc(self, zf) -> dict:
+        """The finish camera's cached scan (finish.npz) for ``finishcam``: line, cloth reads, and the camera's
+        geometry (Happy Valley's is overhead: one image band per lane; Sha Tin's is side-on)."""
+        return dict(line_x=float(zf["line_x"]), reads=zf["reads"], overhead=self.info.venue == "HV")
+
+    def _fc_read(self, zf) -> set:
         """Horses the finish camera read (negative evidence / shadow-path tie-break): those with a GAP."""
-        sc = dict(line_x=float(zf["line_x"]), reads=zf["reads"])
-        return {int(k) for k in finishcam.finish_gaps(sc)[1]}
+        return {int(k) for k in finishcam.finish_gaps(self.finish_sc(zf))[1]}
 
     def _em_associate(
         self, paths, horses, prior, extra=None, out_name="det_labels.npz", s_bias=None

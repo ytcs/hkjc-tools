@@ -170,7 +170,7 @@ def identity_checks(run) -> dict:
     read, gaps = set(), {}
     if run.p("finish.npz").exists():
         zf = np.load(run.p("finish.npz"))
-        sc = dict(line_x=float(zf["line_x"]), reads=zf["reads"])
+        sc = run.finish_sc(zf)
         read = finishcam.read_numbers(sc)
         gaps = {int(k): v for k, v in finishcam.finish_gaps(sc)[1].items()}
     DL = np.load(run.p("det_labels.npz"))["labels"]

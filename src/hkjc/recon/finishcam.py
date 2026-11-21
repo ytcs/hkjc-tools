@@ -226,7 +226,7 @@ def tracks(sc, *, min_reads=4, y_tol=40.0):
     """Memoised ``_tracks`` (a pure function of the reads). Exact: returns deep copies."""
     import copy
 
-    key = (_reads_key(sc), float(min_reads), float(y_tol))
+    key = (_reads_key(sc), float(min_reads), float(y_tol), bool(sc.get("overhead")))
     if key not in _TRACKS_CACHE:
         if len(_TRACKS_CACHE) > 64:
             _TRACKS_CACHE.clear()
@@ -309,6 +309,37 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
                     out.pop(sh, None)
                 else:
                     out[sh] = tr
+    # MISREADS ON A WELL-READ CLOTH (overhead camera, sc["overhead"]: each lane is its own image band):
+    # reads of any other number lying on a much better-read track (on its robust line within 60 px, its lane
+    # within 30 px, inside its passage +-10 frames) are that cloth read wrongly ('3' on the '7' cloth);
+    # removed before tracks are built, else they merge with the other number's real reads elsewhere into one
+    # track with a false crossing (HV 2026-11-18 R6). Not on the Sha Tin side-on camera: horses abreast
+    # share an image band there, and the rule took other horses' true reads.
+    for lng in sorted(list(out), key=lambda n: -len(out[n][0])) if sc.get("overhead") else ():
+        if lng not in out:
+            continue
+        rl = raw[lng]
+        rl = rl[np.abs(rl[:, 3] - np.median(out[lng][2])) < 30]
+        if len(rl) < MISREAD_HOST_MIN:
+            continue
+        coef = _robust_line(rl)
+        for sh in list(raw):
+            if sh == lng:
+                continue
+            r = raw[sh]
+            on = (
+                (r[:, 0] >= rl[:, 0].min() - 10)
+                & (r[:, 0] <= rl[:, 0].max() + 10)
+                & (np.abs(r[:, 0] * coef[0] + coef[1] - r[:, 2]) < 60)
+                & (np.abs(r[:, 3] - np.median(rl[:, 3])) < 30)
+            )
+            if on.any() and len(rl) >= MISREAD_HOST_RATIO * on.sum():
+                raw[sh] = r[~on]
+                tr = build(raw[sh])
+                if tr is None:
+                    out.pop(sh, None)
+                else:
+                    out[sh] = tr
     # a MISREAD is the same physical cloth read under a second number (e.g. 1/4/14 confusions on the
     # Sha Tin side-on camera): two numbers whose tracks coincide in (x, y) on shared frames (or on one
     # track continued past its ends: see the docstring) -> keep the one with more reads
@@ -343,6 +374,19 @@ def _tracks(sc, *, min_reads=4, y_tol=40.0):
     return {n: v for n, v in out.items() if n not in drop}
 
 
+MISREAD_HOST_MIN = 10  # reads a track needs before it can claim other numbers' reads on its cloth ...
+MISREAD_HOST_RATIO = 3  # ... and at least this many times the reads it claims
+
+
+def _robust_line(rl):
+    """x(u) line through a cloth's reads, refitted without gross outliers (res > max(60 px, 2.5 x median))."""
+    A = np.c_[rl[:, 0], np.ones(len(rl))]
+    coef = np.linalg.lstsq(A, rl[:, 2], rcond=None)[0]
+    res = np.abs(A @ coef - rl[:, 2])
+    keep = res < max(60.0, 2.5 * np.median(res))
+    return np.linalg.lstsq(A[keep], rl[keep, 2], rcond=None)[0]
+
+
 def _x_at(tr, u):
     """Cloth x at (fractional) unique frame u, linear between reads, linear extrapolation outside."""
     uu, xx = tr[0], tr[1]
@@ -372,7 +416,7 @@ def finish_gaps(sc, *, max_dx=1500.0, with_sd=False):
     """Memoised ``_finish_gaps`` (a pure function of line_x and the reads). Exact: returns deep copies."""
     import copy
 
-    key = (float(sc["line_x"]), _reads_key(sc), float(max_dx), bool(with_sd))
+    key = (float(sc["line_x"]), _reads_key(sc), float(max_dx), bool(with_sd), bool(sc.get("overhead")))
     if key not in _GAPS_CACHE:
         if len(_GAPS_CACHE) > 64:
             _GAPS_CACHE.clear()
