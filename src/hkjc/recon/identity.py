@@ -55,7 +55,7 @@ def legend_votes(members, frame_of_det, d, legend_rows, numbers, max_rank=8, par
         if present < len(runners):  # ranks are trusted only when the whole field is tracked
             continue
         shown = [int(x) for x in slots[:max_rank]]
-        for r in range(max_rank):
+        for r in range(min(max_rank, present)):  # fields smaller than the legend show fewer ranks
             num = shown[r]
             if num in is_runner:
                 votes[tracks[r], num] += 1
