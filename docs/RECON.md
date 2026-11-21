@@ -82,7 +82,8 @@ not yet black: its box spanned the full height (rows 1–1076 instead of 271–8
 landed in the letterbox and the pose locked on the disclaimer and minimap (S1 pose lock; circle HV 10-14
 R3: oval folded, 283 tracklets → 10 and all gates with the layout box). 196 of 209 cached races keep their
 box exactly; 8 of the 13 that change are S1 silk races with full-height boxes (box, pose and tracklet
-count clear on all 8, 4 pass every gate).
+count clear on all 8, 4 pass every gate). Dev HV 05-13 R9 (first frame 7 crossfade rows lower) still passes every gate, with
+sectional MAE 0.110 → 0.175 s and finish ρ 1.00 → 0.93 against Z12 (same on CPU and on the pods).
 
 Silk render: a frame is render-active when the legend band (0.70–0.86 of the
 panel) shows a saturated box, the top strip is the dark HUD box (turf-green fraction ≤ 0.30) and the
@@ -96,7 +97,11 @@ keyframe every 100 frames that enters as a zero-motion tick).
 Circle render: the render's yellow odometer text (fraction ≥ 0.05 of its box; live film and the dissolve
 ≤ 0.02, the render 0.10–0.33) plus ≥ 2 discs; the top-strip test stays and there is no texture floor (the
 smoother 2026/27 render sits below the silk one's, median Laplacian variance ~230). Without the odometer test
-the start gate's blue banner passed as discs.
+the start gate's blue banner passed as discs. Once the render has started (`relaxed`), the odometer text is not
+required: it leaves ~20 m out while the render runs on across the finish line to the end of the replay; requiring it
+stopped every circle path ~20 m short (no render finish crossing on 24/25 dev races). With the relaxed gate the 25
+dev circle races (tag `recon-dev-C2`) score all five timing gates on 17 (68 %), winner 24 (96 %), lateral AUC
+(stewards' WIDE vs INSIDE) 0.998, census 95.9 %.
 
 ### features
 
