@@ -46,9 +46,15 @@ def test_force_reruns_consumers(tmp_path):
         "rails", "observe", "identify", "fuse_video", "fuse_final", "validate"
     ]
     assert R.plan(force=("finish",)) == ["finish", "identify", "fuse_video", "fuse_final", "validate"]
-    # a missing artifact is regenerated (deterministic) without invalidating its consumers
-    R.p("film.npz").unlink()
-    assert R.plan() == ["film"]
+    # a large artifact deleted for space is regenerated (deterministic) without invalidating its consumers
+    R.p("frames.bin").unlink()
+    assert R.plan() == ["frames"]
+    R.p("frames.bin").touch()
+    # a stage that never ran (a new stage, e.g. start) re-runs every consumer: their artifacts predate it
+    R.p("start.npz").unlink()
+    assert R.plan() == ["start", "observe", "identify", "fuse_video", "fuse_final", "validate"]
+    # ... but only when it is requested
+    assert R.plan(stages=("identify", "fuse_video")) == []
 
 
 class _Failing(RaceRun):

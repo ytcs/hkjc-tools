@@ -49,8 +49,10 @@ after seeing results; failures are reported as failures.
 
 Stages run in this order; `hud` and `finish` read only the videos and run in background processes
 until the first stage that depends on them. `pipeline.DEPS` declares each stage's inputs: forcing a
-stage re-runs every requested stage downstream of it, and a stage whose artifact is merely missing
-is regenerated without invalidating its consumers (the pipeline is deterministic). Artifacts are
+stage re-runs every requested stage downstream of it. A requested stage that has never run (none of its
+outputs exist, e.g. a stage added after the cache was made) counts as forced, since its consumers' artifacts
+predate it; a stage missing only some outputs (large files deleted for space) is regenerated without invalidating
+its consumers (the pipeline is deterministic). Artifacts are
 written to a temporary file and renamed, so a killed stage never reads as done; a failed stage
 terminates the background stages. Each race appends `timings.jsonl` (wall s, CPU s, peak RSS).
 ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off

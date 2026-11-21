@@ -198,8 +198,12 @@ class RaceRun:
 
     def plan(self, stages=STAGES, force=()) -> list:
         """Stages of ``stages`` to run: those not done, those forced, and every stage that depends
-        (transitively) on a forced one -- a forced stage's consumers would otherwise stay stale."""
-        forced = set(force)
+        (transitively) on a forced one -- a forced stage's consumers would otherwise stay stale.
+        A requested stage that has never run (none of its outputs exist) counts as forced: artifacts
+        made before one of their inputs existed are stale. A stage missing only some outputs (large
+        files deleted for space) is regenerated without invalidating its consumers (deterministic)."""
+        never = {st for st in stages if not any(self.p(o).exists() for o in OUTPUTS[st])}
+        forced = set(force) | never
         for st in STAGES:
             if any(d in forced for d in DEPS[st]):
                 forced.add(st)
