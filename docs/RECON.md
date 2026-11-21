@@ -58,13 +58,13 @@ terminates the background stages. Each race appends `timings.jsonl` (wall s, CPU
 ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off
 (`ortsession.no_spin`): same threads and work split, so identical outputs; CPU about a third (avatar detector) and a half (OCR).
 
-GPU pods (environment switches): `HKJC_OCR_THREADS=1` and `HKJC_MATCH_DEVICE=cuda` (the ORB brute-force tables
-computed on the GPU in a helper interpreter: integer popcounts, OpenCV's tie order) give artifacts identical to
-8 OCR threads and OpenCV matching (3 races, same pod, every artifact). `HKJC_OCR_DEVICE=cuda` runs the OCR
-recogniser on ONNX Runtime's CUDA provider (onnxruntime-gpu): not bit-exact (finish-camera reads, a legend read,
-identity votes move), but on the 25 dev circle races no gate changed, 8 validations were identical and the rest
-differed in the third decimal. With all three, per-race CPU falls several-fold (OCR dominated: on the circle
-render the disc-number reads were most of `features`); one 16-vCPU pod ran ~37 races/h.
+Accelerator switches (environment): `HKJC_OCR_THREADS=1` and `HKJC_MATCH_DEVICE=cuda` (the ORB brute-force
+tables computed on the GPU in a helper interpreter: integer popcounts, OpenCV's tie order) give artifacts
+identical to 8 OCR threads and OpenCV matching (3 races, every artifact). `HKJC_OCR_DEVICE=cuda` runs the OCR
+recogniser on ONNX Runtime's CUDA provider (needs onnxruntime-gpu): not bit-exact (finish-camera reads, a legend
+read, identity votes move), but on the 25 dev circle races no gate changed, 8 validations were identical and the
+rest differed in the third decimal. With all three, per-race CPU falls several-fold (OCR dominated: on the circle
+render the disc-number reads were most of `features`).
 
 ### frames
 
@@ -83,7 +83,7 @@ landed in the letterbox and the pose locked on the disclaimer and minimap (S1 po
 R3: oval folded, 283 tracklets → 10 and all gates with the layout box). 196 of 209 cached races keep their
 box exactly; 8 of the 13 that change are S1 silk races with full-height boxes (box, pose and tracklet
 count clear on all 8, 4 pass every gate). Dev HV 05-13 R9 (first frame 7 crossfade rows lower) still passes every gate, with
-sectional MAE 0.110 → 0.175 s and finish ρ 1.00 → 0.93 against Z12 (same on CPU and on the pods).
+sectional MAE 0.110 → 0.175 s and finish ρ 1.00 → 0.93 against Z12 (same with CPU and CUDA detectors).
 
 Silk render: a frame is render-active when the legend band (0.70–0.86 of the
 panel) shows a saturated box, the top strip is the dark HUD box (turf-green fraction ≤ 0.30) and the
@@ -100,7 +100,7 @@ smoother 2026/27 render sits below the silk one's, median Laplacian variance ~23
 the start gate's blue banner passed as discs. Once the render has started (`relaxed`), the odometer text is not
 required: it leaves ~20 m out while the render runs on across the finish line to the end of the replay; requiring it
 stopped every circle path ~20 m short (no render finish crossing on 24/25 dev races). With the relaxed gate the 25
-dev circle races (tag `recon-dev-C2`) score all five timing gates on 17 (68 %), winner 24 (96 %), lateral AUC
+dev circle races (commit 6f4d62e) score all five timing gates on 17 (68 %), winner 24 (96 %), lateral AUC
 (stewards' WIDE vs INSIDE) 0.998, census 95.9 %. With the finish-camera misread rule and the number split (421ef9e; observe onward, local):
 all five on 19 (76 %), winner 24, lateral AUC 1.000, census 96.8 %. Remaining: leader timing on four Sha Tin
 races (the render's own odometer is late early in long races, by up to ~1 s, in both render eras; the film
