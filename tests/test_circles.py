@@ -31,3 +31,12 @@ def test_discs_closer_than_the_split_limit_merge():
 
 def test_no_discs_on_plain_turf():
     assert len(circles.centres(_panel([]))) == 0
+
+
+def test_render_gate_keeps_discs_after_the_odometer_text_leaves():
+    from hkjc.recon.video import render_active
+
+    p = _panel([(80, 250), (200, 300), (300, 260)], size=(540, 960))
+    p[:160] = (60, 60, 60)  # top strip: the render's dark overlay band, no turf
+    assert not render_active(p, style="circle")  # strict: no odometer text
+    assert render_active(p, relaxed=True, style="circle")  # the render has started: discs suffice

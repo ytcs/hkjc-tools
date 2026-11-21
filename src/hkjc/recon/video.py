@@ -134,8 +134,8 @@ def render_active(panel, *, relaxed: bool = False, style: str = "silk") -> bool:
     The legend (1) flickers on during the dissolve, so (2)+(3) reject the blended frames it lets
     through. ``relaxed`` (only after the strict test has passed in this replay) also accepts >= 5
     legend boxes in a strip widened to 0.60 of the height. ``style='circle'`` (the 2026/27 numbered-
-    disc render, no legend) replaces (1) by the render's yellow odometer text plus >= 2 discs and
-    drops (3).
+    disc render, no legend) replaces (1) by the render's yellow odometer text plus >= 2 discs
+    (``relaxed``: the discs alone) and drops (3).
     """
     import cv2
     import numpy as np
@@ -165,7 +165,9 @@ def render_active(panel, *, relaxed: bool = False, style: str = "silk") -> bool:
         oy0, oy1, ox0, ox1 = 286, 320, 1606 - 960, 1700 - 960  # ocr.AVV_ODO in right-half coordinates
         hs = cv2.cvtColor(panel[oy0:oy1, ox0:ox1], cv2.COLOR_BGR2HSV)
         yellow = ((hs[..., 0] >= 18) & (hs[..., 0] <= 38) & (hs[..., 1] > 120) & (hs[..., 2] > 150)).mean()
-        if yellow < ODO_YELLOW_MIN or circles.count(panel) < 2:
+        # ``relaxed`` (the render has started): the odometer text leaves ~20 m out while the render
+        # runs on through the finish line to the end of the replay
+        if (yellow < ODO_YELLOW_MIN and not relaxed) or circles.count(panel) < 2:
             return False
     else:
         strict = legend_boxes(0.70, 0.86) >= 1
