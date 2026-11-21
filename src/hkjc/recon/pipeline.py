@@ -361,10 +361,10 @@ class RaceRun:
 
     # ------------------------------------------------------------------ stages
     def frames(self):
-        style = video.render_style(self.video(), self.info.n)
+        style, box = video.layout(self.video(), self.info.n)
         if style == "unknown":
             raise RuntimeError("unknown render style (neither the silk legend nor numbered discs)")
-        n = video.FrameCache.build(self.video(), self.dir, style=style)
+        n = video.FrameCache.build(self.video(), self.dir, style=style, layout_box=box)
         self._style = style
         self.log(f"   frames: {n} unique render frames cached ({style} render)")
 

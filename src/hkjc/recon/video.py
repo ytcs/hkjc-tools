@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -62,6 +62,19 @@ def find_panel_box(img) -> PanelBox:
     return PanelBox(
         w // 2 + int(cols[0]) + 2, w // 2 + int(cols[-1]) - 1, int(rows[0]) + 1, int(rows[-1])
     )
+
+
+BOX_JITTER = 3  # px: frame-to-frame jitter of the detected panel edges (antialiased borders)
+
+
+def frame_box(img, layout_box: PanelBox | None = None) -> PanelBox:
+    """``find_panel_box(img)``, or ``layout_box`` (the replay's sampled layout) when they differ by
+    more than the edge jitter: a single frame can be a crossfade whose letterbox is not yet black."""
+    b = find_panel_box(img)
+    if layout_box is None:
+        return b
+    d = np.abs(np.subtract(astuple(b), astuple(layout_box))).max()
+    return b if d <= BOX_JITTER else layout_box
 
 
 def legend_top(panel) -> int:
@@ -167,17 +180,21 @@ def render_active(panel, *, relaxed: bool = False, style: str = "silk") -> bool:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= TRACK_LAP_MIN
 
 
-def render_style(path, n_runners: int, fracs=tuple(np.linspace(0.2, 0.85, 12))) -> str:
-    """'silk' (avatar render with the top-8 legend strip), 'circle' (numbered discs, no legend) or
-    'unknown', from frames sampled across the replay: a circle frame shows >= max(3, 0.4 x runners)
-    discs (tested first: discs crossing the legend strip would pass the silk gate), a silk frame
-    passes the legend render gate; frames showing neither (live film, finish replay) abstain. Needs
-    >= 2 votes and a strict plurality."""
+def layout(path, n_runners: int, fracs=tuple(np.linspace(0.2, 0.85, 12))):
+    """(style, box) of a replay, from frames sampled across it.
+
+    style: 'silk' (avatar render with the top-8 legend strip), 'circle' (numbered discs, no legend)
+    or 'unknown'. A circle frame shows >= max(3, 0.4 x runners) discs (tested first: discs crossing
+    the legend strip would pass the silk gate), a silk frame passes the legend render gate; frames
+    showing neither (live film, finish replay) abstain. Needs >= 2 votes and a strict plurality.
+
+    box: the render panel's content box, a constant of the broadcast layout: the per-coordinate
+    median of ``find_panel_box`` over the voting frames; None when no frame voted."""
     import av
 
     from . import circles
 
-    votes = []
+    votes, boxes = [], []
     with av.open(str(path)) as c:
         st = c.streams.video[0]
         dur = float(st.duration * st.time_base) if st.duration else float(c.duration) / 1e6
@@ -192,12 +209,13 @@ def render_style(path, n_runners: int, fracs=tuple(np.linspace(0.2, 0.85, 12))) 
                 votes.append("circle")
             elif render_active(panel, relaxed=True):  # relaxed: legend height varies by layout
                 votes.append("silk")
+            else:
+                continue
+            boxes.append(astuple(find_panel_box(img)))
     ns, nc = votes.count("silk"), votes.count("circle")
-    if ns >= 2 and ns > nc:
-        return "silk"
-    if nc >= 2 and nc > ns:
-        return "circle"
-    return "unknown"
+    style = "silk" if ns >= 2 and ns > nc else "circle" if nc >= 2 and nc > ns else "unknown"
+    box = PanelBox(*(int(v) for v in np.median(boxes, axis=0))) if boxes else None
+    return style, box
 
 
 def is_duplicate(a, b, tol: float = 3.0) -> bool:
@@ -271,9 +289,10 @@ def iter_unique_render(
     stop: int | None = None,
     keep_full: bool = False,
     style: str = "silk",
+    layout_box: PanelBox | None = None,
 ):
     """Yield ``(frame_idx, panel[, full])`` for render-active frames whose panel CHANGED vs the
-    previous yielded one (the 10 Hz de-dup). ``box`` is auto-found on the first frame if None."""
+    previous yielded one (the 10 Hz de-dup). ``box`` is ``frame_box`` of the first frame if None."""
     import av
 
     prev = None
@@ -292,7 +311,7 @@ def iter_unique_render(
                 prev = None
                 continue
             if box is None:
-                box = find_panel_box(img)
+                box = frame_box(img, layout_box)
             p = box.crop(img)
             if prev is not None and is_duplicate(p, prev):
                 continue
@@ -327,13 +346,15 @@ class FrameCache:
             yield int(self.idx[k]), self.panel(k)
 
     @staticmethod
-    def build(path, root, clock_box=(288, 342, 800, 945), quality=92, style="silk"):
+    def build(path, root, clock_box=(288, 342, 800, 945), quality=92, style="silk", layout_box=None):
         import cv2
 
         root = Path(root)
         idx, bufs, clocks, box = [], [], [], None
-        for i, p, full in iter_unique_render(path, keep_full=True, style=style):
-            box = box or find_panel_box(full)
+        for i, p, full in iter_unique_render(
+            path, keep_full=True, style=style, layout_box=layout_box
+        ):
+            box = box or frame_box(full, layout_box)
             ok, buf = cv2.imencode(".jpg", p, [cv2.IMWRITE_JPEG_QUALITY, quality])
             idx.append(i)
             bufs.append(buf.tobytes())
