@@ -886,6 +886,12 @@ class RaceRun:
             members = tracking.split_by_appearance(members, t, Fs)
             members = sorted((m for m in members if len(m)), key=lambda m: -len(m))
             self.log(f"   observe: appearance split {n0} -> {len(members)} tracklets")
+        nums = self._number_reads(dict(det_idx=det_idx))  # circle render: identity switches inside tracklets
+        if nums is not None:
+            n0 = len(members)
+            members = tracking.split_by_number(members, t, nums)
+            members = sorted((m for m in members if len(m)), key=lambda m: -len(m))
+            self.log(f"   observe: number split {n0} -> {len(members)} tracklets")
         with self.out("tracks.npz") as fp:
             np.savez(
                 fp,

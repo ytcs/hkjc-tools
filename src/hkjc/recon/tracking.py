@@ -135,6 +135,55 @@ def stitch(tracks, *, max_gap=6.0, sig_s=1.5, sig_l=0.6, gate=3.0, min_len=3):
 SPLIT_TV = 0.30  # max-split silk distance above which a tracklet holds two horses (pure ones <= 0.28)
 
 
+NUMBER_WIN = 10  # confident number reads in the change window (~1 s at 10 Hz)
+NUMBER_SHARE = 0.8  # share of the window a new number needs to count as a switch
+
+
+def _same_cloth(a: int, b: int) -> bool:
+    """A read of ``b`` on cloth ``a`` is a dropped digit ('1' on '11', '2' on '12'), not another horse."""
+    return a == b or str(b) in str(a) or str(a) in str(b)
+
+
+def split_by_number(members, t, num):
+    """Split tracklets where the number read on the disc CHANGES and stays changed (circle render: the
+    tracker swaps identities where discs touch). ``num`` per detection row: the confident read, 0 if none.
+    Walking a tracklet's reads in time order, a switch is >= NUMBER_SHARE of the last NUMBER_WIN reads
+    naming one other number that is not a dropped digit of the current one; the split falls just before
+    the first of those reads. Returns new members (order kept, then appended pieces)."""
+    out = []
+    for m in members:
+        m = np.asarray(m)
+        if len(m) == 0:
+            out.append(m)
+            continue
+        m = m[np.argsort(t[m], kind="stable")]
+        rd = [(k, int(num[j])) for k, j in enumerate(m) if num[j] > 0]
+        cuts, cur, k = [], None, 0
+        while k < len(rd):
+            if cur is None:
+                win = [n for _, n in rd[k : k + NUMBER_WIN]]
+                cur = max(set(win), key=win.count)
+                k += 1
+                continue
+            win = rd[max(0, k - NUMBER_WIN + 1) : k + 1]
+            if len(win) == NUMBER_WIN:
+                c = {}
+                for _, n in win:
+                    if not _same_cloth(cur, n):
+                        c[n] = c.get(n, 0) + 1
+                if c:
+                    n, cnt = max(c.items(), key=lambda x: x[1])
+                    if cnt >= NUMBER_SHARE * NUMBER_WIN:
+                        first = next(i for i, x in win if x == n)
+                        if not cuts or first > cuts[-1]:
+                            cuts.append(first)
+                        cur = n
+            k += 1
+        edges = [0, *cuts, len(m)]
+        out += [m[a:b] for a, b in zip(edges[:-1], edges[1:]) if b > a]
+    return out
+
+
 def split_by_appearance(members, t, F, *, thr=SPLIT_TV, min_n=40):
     """Split tracker tracklets at APPEARANCE change points (identity switches the motion tracker
     cannot see, e.g. in the render's camera swings). Binary segmentation on the tracklet's per-
