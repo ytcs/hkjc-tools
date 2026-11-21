@@ -39,3 +39,14 @@ def test_tables_empty_when_not_opted_in(monkeypatch):
 
     monkeypatch.delenv("HKJC_MATCH_DEVICE", raising=False)
     assert bfmatch.tables([np.zeros((5, 32), np.uint8)] * 2, [(0, 1, True)]) == {}
+
+
+def test_helper_interpreter_gives_the_in_process_tables():
+    from hkjc.recon import bfmatch
+
+    rng = np.random.default_rng(1)
+    des = [_des(rng, 200, 30), _des(rng, 180, 30)]
+    jobs = [(0, 1, True), (0, 1, False)]
+    a, b = bfmatch._tables("cpu", des, jobs), bfmatch._tables_subprocess("cpu", des, jobs)
+    assert a.keys() == b.keys()
+    assert all(np.array_equal(np.asarray(a[k]), np.asarray(b[k])) for k in a)

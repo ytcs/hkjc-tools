@@ -1,8 +1,8 @@
 """Brute-force Hamming matching of ORB descriptors, index-identical to ``cv2.BFMatcher(NORM_HAMMING)``.
 
 Opt-in (``HKJC_MATCH_DEVICE``: ``cuda`` or ``cpu``): the neighbour tables of every frame pair a stage will match
-are computed up front in ONE spawned helper process (CUDA never initialises in the parent, whose forked
-pools must stay CUDA-free) and handed to ``register.match``. Unset: OpenCV inside ``register.match``.
+are computed up front in ONE helper interpreter (CUDA never initialises in the parent, whose forked pools
+must stay CUDA-free) and handed to ``register.match``. Unset: OpenCV inside ``register.match``.
 
 Exactness: distances are popcounts <= 256, computed as |a| + |b| - 2 a.b on 0/1 bit vectors; every partial
 sum is an integer <= 256, exact in fp16 and fp32. OpenCV's tie order (equal distance -> lower train index
@@ -69,7 +69,24 @@ def tables(des: list, jobs: list) -> dict:
     jobs = list(dict.fromkeys(jobs))
     if not dev.startswith("cuda"):
         return _tables(dev, des, jobs)
-    import multiprocessing as mp
+    return _tables_subprocess(dev, des, jobs)
 
-    with mp.get_context("spawn").Pool(1) as pool:
-        return pool.apply(_tables, (dev, des, jobs))
+
+def _tables_subprocess(dev: str, des: list, jobs: list) -> dict:
+    """``_tables`` in a fresh interpreter (``python -c``, arguments and result pickled over pipes): CUDA
+    initialises there, never in the caller, whose forked pools must stay CUDA-free. Unlike a
+    multiprocessing spawn it never re-imports the caller's main module."""
+    import pickle
+    import subprocess
+    import sys
+
+    code = (
+        "import pickle, sys; from hkjc.recon.bfmatch import _tables; "
+        "sys.stdout.buffer.write(pickle.dumps(_tables(*pickle.load(sys.stdin.buffer))))"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code], input=pickle.dumps((dev, des, jobs)), capture_output=True
+    )
+    if r.returncode:
+        raise RuntimeError(f"bfmatch helper failed: {r.stderr.decode(errors='replace')[-2000:]}")
+    return pickle.loads(r.stdout)
