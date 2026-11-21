@@ -101,7 +101,13 @@ the start gate's blue banner passed as discs. Once the render has started (`rela
 required: it leaves ~20 m out while the render runs on across the finish line to the end of the replay; requiring it
 stopped every circle path ~20 m short (no render finish crossing on 24/25 dev races). With the relaxed gate the 25
 dev circle races (tag `recon-dev-C2`) score all five timing gates on 17 (68 %), winner 24 (96 %), lateral AUC
-(stewards' WIDE vs INSIDE) 0.998, census 95.9 %.
+(stewards' WIDE vs INSIDE) 0.998, census 95.9 %. With the finish-camera misread rule and the number split (421ef9e; observe onward, local):
+all five on 19 (76 %), winner 24, lateral AUC 1.000, census 96.8 %. Remaining: leader timing on four Sha Tin
+races (the render's own odometer is late early in long races, by up to ~1 s, in both render eras; the film
+read does not separate the failing races), HV 11-18 R7's first boundary (common to all horses; the render
+odometer is early there too), HV 11-18 R6's winner (a short head with the winner's cloth hidden from the
+camera), and the lateral-scale gate on Sha Tin B/B+2/A+3: the render draws the B racing rail ~6.5 m out from
+the A rail (ridge profiles), against the official 4.5 m (B width 26 m, racing.hkjc.com course page).
 
 ### features
 
@@ -281,7 +287,14 @@ be used to calibrate it.
 `finishcam.tracks` keeps, per number, the lateral cluster read at the most distinct places (a rail
 post read 60 times at one spot outvoted the real cloth on ST 06-07 R8) and needs ≥ 4 reads and
 ≥ 100 px of motion. Digit drops ("1" on the "11" cloth) are removed when most of the shorter number's
-reads lie on the longer number's track; coinciding numbers keep the longer one. `finishcam.finish_gaps`
+reads lie on the longer number's track; coinciding numbers keep the longer one. On the overhead camera
+(Happy Valley; `RaceRun.finish_sc` carries the geometry) reads of any number lying on a much better-read
+track (≥ 10 reads, ≥ 3× the reads it claims, on its line within 60 px, its lane within 30 px) are that
+cloth's misreads and are removed before tracks are built: on HV 2026-11-18 R6 '3' reads on the #7 cloth had
+merged with the real #3's reads into a track that put #3 second (official: last). On 197 non-sealed races
+camera-order inversions vs official fell 228 → 217 with no race worse; on the Sha Tin side-on camera, where
+horses abreast share one image band, the same rule made 4–5 races worse at every setting tried, so it is not
+applied there. `finishcam.finish_gaps`
 gives spatial gaps at an instant: crossers are chained from the crosser that links the most, and other
 horses get `gap_h = gap_r + x_h − x_r` from ≥ 2 shared frames, which recovers horses occluded at the
 line (sd = robust spread / √n, floor 15 px).
@@ -308,6 +321,14 @@ per tracklet and per frame; gain ≤ 0 stays unlabelled. Against the greedy labe
 ρ 0.954 → 0.966 and hand majority 108 → 113/151. Unlabelled line-reaching tracklets are then matched
 by elimination (`finishcam.eliminate`) to numbers with no line-reaching tracklet. Camera and
 elimination names are hard constraints downstream.
+
+Circle render: `observe` first splits tracklets where the disc number changes and stays changed
+(`tracking.split_by_number`: ≥ 8 of the last 10 confident reads name one other runner number that is not a
+dropped digit of the current one, and it holds for the next 20 reads, ~2 s). The motion tracker swaps
+identities where discs touch, and the post-swap stretch kept the tracklet's majority label (ST 2026-10-19 R3:
+#11 and #12 swap at ~60 s, #2's reads become '9' at ~90 s). On the 25 dev circle races: no gate changed for
+the worse, ST 10-19 R3 finish ρ 0.88 → 1.00, ST 11-08 R7 ρ 0.73 → 1.00 and behind-winner 0.335 → 0.012 s.
+Swaps between 1 and 11 (or 2 and 12, ...) look like dropped digits and are not caught.
 
 Circle render: each confident disc-number read (OCR confidence ≥ 0.6, a runner's number) adds one vote for
 that number to its tracklet, about one legend frame's worth; late-frame numbers count as shown for the
