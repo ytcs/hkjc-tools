@@ -129,17 +129,26 @@ def _nproc() -> int:
 
 _CACHE = None
 _FEATS_PAR = None
+_STYLE = "silk"  # render style of the race being processed (fork-shared with the feature workers)
 
 
 def _feat_job(args):
     k, nfeat = args
     i, p = _CACHE.idx[k], _CACHE.panel(k)
-    lt = video.legend_top(p)
-    # the avatar detector's boxes (+ shadows) are masked too: the colour mask misses brown horses
-    rs = _DET.panel(p, lt)
+    if _STYLE == "circle":  # numbered discs, no legend strip
+        from . import circles
+
+        lt = p.shape[0]
+        rs = circles.centres(p)
+        hist = [np.zeros(14) for _ in rs]
+    else:
+        lt = video.legend_top(p)
+        # the avatar detector's boxes (+ shadows) are masked too: the colour mask misses brown horses
+        rs = _DET.panel(p, lt)
+        hist = [_detect.silk_hist(p, r) for r in rs]
     m = register.mask_boxes(register.world_mask(p, video.hud_mask(p, lt)), rs)
     f = register.extract(p, m, nfeat)
-    return int(i), lt, f, p.shape[:2], rs, [_detect.silk_hist(p, r) for r in rs]
+    return int(i), lt, f, p.shape[:2], rs, hist
 
 
 _DET = None
@@ -147,7 +156,8 @@ _DET = None
 
 def _det_init():
     global _DET
-    _DET = _detect.AvatarDetector()
+    if _STYLE != "circle":
+        _DET = _detect.AvatarDetector()
 
 
 def _step_job(k):
@@ -161,6 +171,7 @@ class RaceRun:
         self.dir = Path(root) / info.key
         self.dir.mkdir(parents=True, exist_ok=True)
         self.log = log
+        self._style = None  # render style, read once from frames_idx.npz
 
     # ------------------------------------------------------------------ plumbing
     def p(self, name: str) -> Path:
@@ -350,8 +361,23 @@ class RaceRun:
 
     # ------------------------------------------------------------------ stages
     def frames(self):
-        n = video.FrameCache.build(self.video(), self.dir)
-        self.log(f"   frames: {n} unique render frames cached")
+        style = video.render_style(self.video(), self.info.n)
+        if style == "unknown":
+            raise RuntimeError("unknown render style (neither the silk legend nor numbered discs)")
+        n = video.FrameCache.build(self.video(), self.dir, style=style)
+        self._style = style
+        self.log(f"   frames: {n} unique render frames cached ({style} render)")
+
+    def render_style(self) -> str:
+        """'silk' or 'circle', recorded by the frames stage (caches made before it are silk)."""
+        if self._style is None:
+            z = np.load(self.p("frames_idx.npz"))
+            self._style = str(z["style"]) if "style" in z.files else "silk"
+        return self._style
+
+    def legend_row(self, panel) -> int:
+        """Top row of the silk-legend strip (panel-relative); the circle render has none."""
+        return panel.shape[0] if self.render_style() == "circle" else video.legend_top(panel)
 
     def cache(self):
         return video.FrameCache(self.dir)
@@ -364,8 +390,9 @@ class RaceRun:
         import multiprocessing as mp
 
         cache = self.cache()
-        global _CACHE, _FEATS_PAR
+        global _CACHE, _FEATS_PAR, _STYLE
         _CACHE = cache
+        _STYLE = self.render_style()
         # one avatar detector per worker; one accelerator context
         accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
         nw = 1 if accel else min(_nproc(), 4)
@@ -398,6 +425,23 @@ class RaceRun:
                 rows=np.array([[r[0], *b[:5]] for r in res for b in r[4]]).reshape(-1, 6),
                 hist=np.array([h for r in res for h in r[5]]).reshape(-1, nb),
             )
+        if _STYLE == "circle":
+            self._read_numbers(cache, res)
+        _STYLE = "silk"
+
+    def _read_numbers(self, cache, res):
+        """numbers.npz (circle render): the number read inside each disc, row-aligned with yolo.npz."""
+        from . import circles
+
+        crops = []
+        for k, r in enumerate(res):
+            p = cache.panel(k)
+            crops += [circles.crop(p, b[0], b[1]) for b in r[4]]
+        reads = circles.read(crops)
+        with self.out("numbers.npz") as fp:
+            np.savez(fp, num=np.array([n for n, _c in reads], int), conf=np.array([c for _n, c in reads]))
+        ok = np.mean([n > 0 and c >= 0.6 for n, c in reads]) if reads else 0.0
+        self.log(f"   features: {len(reads)} discs, {100 * ok:.0f}% numbers read")
 
     def pose(self):
         z = dict(np.load(self.p("feats.npz")))
@@ -422,7 +466,7 @@ class RaceRun:
             else 0.0
         )
         rb, hb = [], []
-        if yolo_med < 0.6 * self.info.n:  # YOLO blind here (e.g. AWT dirt): map-difference pass
+        if yolo_med < 0.6 * self.info.n and self.render_style() != "circle":  # YOLO blind (AWT dirt)
             P = np.load(self.p("pose.npz"))
             k_of = {int(f): k for k, f in enumerate(P["idx"])}
             img_map, _cnt, _to = self._map()
@@ -433,7 +477,7 @@ class RaceRun:
             for i, p in cache:
                 if i not in k_of:
                     continue
-                lt = video.legend_top(p)
+                lt = self.legend_row(p)
                 back = cv2.warpAffine(
                     img_map,
                     (A @ P["G"][k_of[i]])[:2],
@@ -446,7 +490,9 @@ class RaceRun:
         rb = np.array(rb).reshape(-1, 6)
         # race-level switch: on turf YOLO alone (background-subtraction blobs add duplicates and
         # false positives); where YOLO is blind (AWT dirt: median ~1/frame) map-difference blobs join
-        if yolo_med >= 0.6 * self.info.n:
+        if self.render_style() == "circle":  # disc detections only: numbers.npz stays row-aligned
+            rows, hists, src = ry, np.array(hy), "yolo"
+        elif yolo_med >= 0.6 * self.info.n:
             rows, hists, src = ry, np.array(hy), "yolo"
         else:
             nb = 14  # silk_hist length
@@ -516,6 +562,8 @@ class RaceRun:
 
     def hud(self):
         rows, leg = ocr.read_render_hud_cached(self.cache(), n_field=max(14, self.info.n))
+        if self.render_style() == "circle":  # no legend strip: its slots stay unread
+            leg[:, 1:] = 0
         with self.out("hud.npz") as fp:
             np.savez(fp, rows=rows)
         with self.out("legend.npz") as fp:
@@ -530,7 +578,7 @@ class RaceRun:
         mo = worldmap.Mosaic(worldmap.bounds_of(G, shape), scale)
         for i, p in self.cache():
             if i in k_of:
-                mo.add(p, video.hud_mask(p), G[k_of[i]])
+                mo.add(p, video.hud_mask(p, self.legend_row(p)), G[k_of[i]])
         with self.out("map.png") as fp:
             cv2.imwrite(str(fp), mo.image())
         with self.out("map_cnt.npy") as fp:
@@ -555,7 +603,7 @@ class RaceRun:
         for i, p in self.cache():
             k = k_of.get(i)
             if k is not None and k in keep:
-                mo.add(p, video.hud_mask(p), G[k])
+                mo.add(p, video.hud_mask(p, self.legend_row(p)), G[k])
         img, cnt = mo.image(), mo.cnt
         del mo
         x0, y0 = worldmap.bounds_of(G[sel], tuple(P["shape"]))[:2]
@@ -872,6 +920,15 @@ class RaceRun:
             if num <= nmax:
                 votes[k, num] += self.FINISH_VOTES
                 fvotes[k, num] += self.FINISH_VOTES
+        nums = self._number_reads(T)  # circle render: the number printed on each disc
+        if nums is not None:
+            for k, m in enumerate(mem):
+                v = nums[m]
+                v = v[(v > 0) & (v <= nmax)]
+                if len(v):
+                    c = np.bincount(v, minlength=nmax + 1).astype(votes.dtype) * self.NUMBER_VOTE
+                    votes[k] += c
+                    fvotes[k] += c
         # joint ML assignment: set-valued legend evidence + silk evidence
         lab = identity.assign_global(
             mem,
@@ -913,6 +970,19 @@ class RaceRun:
         )
 
     FINISH_VOTES = 40.0  # one finish-camera match ~ 4 s of unanimous legend votes
+    NUMBER_VOTE = 1.0  # one disc number read (circle render) ~ one legend frame vote
+    NUMBER_CONF = 0.6  # minimum OCR confidence of a disc number read
+
+    def _number_reads(self, T):
+        """Per tracks row: the disc number read (circle render; 0 = unread or low confidence), else None."""
+        if not self.p("numbers.npz").exists():
+            return None
+        z = np.load(self.p("numbers.npz"))
+        di = np.asarray(T["det_idx"], int)
+        num, conf = z["num"][di], z["conf"][di]
+        valid = {r.no for r in self.info.runners}
+        ok = (conf >= self.NUMBER_CONF) & np.isin(num, list(valid))
+        return np.where(ok, num, 0)
 
     def _silk_llr(self, mem, T, nmax):
         """(tracklets x numbers) silk log-likelihood ratio for identity.assign_global (None without
@@ -1537,6 +1607,9 @@ class RaceRun:
                 t_fin = min(crossings) if crossings else float(np.max(t))
                 late_frames = {int(f) for f, tt in zip(fr, t) if t_fin - 8.0 <= tt <= t_fin + 1.0}
                 shown = {int(x) for r_ in leg if int(r_[0]) in late_frames for x in r_[1:9] if x}
+                nums = self._number_reads(T)  # circle render: numbers read on discs count as shown
+                if nums is not None:
+                    shown |= {int(nums[j]) for j, f in enumerate(fr) if int(f) in late_frames and nums[j]}
                 blind = [h for h in horses if h not in read and h not in shown]
                 if blind:
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))

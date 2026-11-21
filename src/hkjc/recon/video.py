@@ -98,6 +98,7 @@ def hud_mask(panel, legend_row: int | None = None) -> np.ndarray:
 #   * TRACK_LAP_MIN  a clean top-down render is sharp; a blended frame is smooth/ghosted (low texture).
 TOP_GREEN_MAX = 0.30
 TRACK_LAP_MIN = 240.0
+ODO_YELLOW_MIN = 0.05  # circle render: yellow fraction of the odometer box
 
 
 def _green_frac(hsv_band) -> float:
@@ -106,7 +107,7 @@ def _green_frac(hsv_band) -> float:
     return float(((h > 35) & (h < 90) & (s > 60)).mean())
 
 
-def render_active(panel, *, relaxed: bool = False) -> bool:
+def render_active(panel, *, relaxed: bool = False, style: str = "silk") -> bool:
     """Is a CLEAN AVV 3D render present in this RIGHT panel (vs the live broadcast / a dissolve frame)?
 
     The replay opens with the live broadcast before switching to the split-screen render, with a short
@@ -119,7 +120,9 @@ def render_active(panel, *, relaxed: bool = False) -> bool:
 
     The legend (1) flickers on during the dissolve, so (2)+(3) reject the blended frames it lets
     through. ``relaxed`` (only after the strict test has passed in this replay) also accepts >= 5
-    legend boxes in a strip widened to 0.60 of the height.
+    legend boxes in a strip widened to 0.60 of the height. ``style='circle'`` (the 2026/27 numbered-
+    disc render, no legend) replaces (1) by the render's yellow odometer text plus >= 2 discs and
+    drops (3).
     """
     import cv2
     import numpy as np
@@ -140,14 +143,61 @@ def render_active(panel, *, relaxed: bool = False) -> bool:
     # The legend height varies by race layout (~0.67 of the frame on some ST races), so the strict
     # 0.70-0.86 strip can miss it; the relaxed 0.60 strip needs >= 5 boxes (legend frames show 6-12
     # there, pre-race live frames <= 3) and only fills holes inside the render segment.
-    strict = legend_boxes(0.70, 0.86) >= 1
-    if not strict and not (relaxed and legend_boxes(0.60, 0.86) >= 5):
-        return False
+    if style == "circle":  # no legend strip: the render shows numbered discs instead
+        from . import circles
+
+        # the render's odometer box (yellow distance-to-go text, fixed screen position): live film and the
+        # cross-dissolve lack it (yellow fraction <= 0.02 vs >= 0.10), and the start gate's blue banner can
+        # pass as discs
+        oy0, oy1, ox0, ox1 = 286, 320, 1606 - 960, 1700 - 960  # ocr.AVV_ODO in right-half coordinates
+        hs = cv2.cvtColor(panel[oy0:oy1, ox0:ox1], cv2.COLOR_BGR2HSV)
+        yellow = ((hs[..., 0] >= 18) & (hs[..., 0] <= 38) & (hs[..., 1] > 120) & (hs[..., 2] > 150)).mean()
+        if yellow < ODO_YELLOW_MIN or circles.count(panel) < 2:
+            return False
+    else:
+        strict = legend_boxes(0.70, 0.86) >= 1
+        if not strict and not (relaxed and legend_boxes(0.60, 0.86) >= 5):
+            return False
     top = cv2.cvtColor(panel[: int(0.30 * ph)], cv2.COLOR_BGR2HSV)
     if _green_frac(top) > TOP_GREEN_MAX:  # live turf/horses leak into the top strip
         return False
+    if style == "circle":  # no texture floor: the smoother 2026/27 render sits below the silk
+        return True  # render's (median Laplacian var ~230)
     gray = cv2.cvtColor(panel[int(0.34 * ph) : int(0.70 * ph)], cv2.COLOR_BGR2GRAY)
     return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= TRACK_LAP_MIN
+
+
+def render_style(path, n_runners: int, fracs=tuple(np.linspace(0.2, 0.85, 12))) -> str:
+    """'silk' (avatar render with the top-8 legend strip), 'circle' (numbered discs, no legend) or
+    'unknown', from frames sampled across the replay: a circle frame shows >= max(3, 0.4 x runners)
+    discs (tested first: discs crossing the legend strip would pass the silk gate), a silk frame
+    passes the legend render gate; frames showing neither (live film, finish replay) abstain. Needs
+    >= 2 votes and a strict plurality."""
+    import av
+
+    from . import circles
+
+    votes = []
+    with av.open(str(path)) as c:
+        st = c.streams.video[0]
+        dur = float(st.duration * st.time_base) if st.duration else float(c.duration) / 1e6
+        for f in fracs:
+            c.seek(int(f * dur / st.time_base), stream=st)
+            fr = next(c.decode(st), None)
+            if fr is None:
+                continue
+            img = fr.to_ndarray(format="bgr24")
+            panel = img[:, img.shape[1] // 2 :]
+            if circles.count(panel) >= max(3, 0.4 * n_runners):
+                votes.append("circle")
+            elif render_active(panel, relaxed=True):  # relaxed: legend height varies by layout
+                votes.append("silk")
+    ns, nc = votes.count("silk"), votes.count("circle")
+    if ns >= 2 and ns > nc:
+        return "silk"
+    if nc >= 2 and nc > ns:
+        return "circle"
+    return "unknown"
 
 
 def is_duplicate(a, b, tol: float = 3.0) -> bool:
@@ -220,6 +270,7 @@ def iter_unique_render(
     start: int = 0,
     stop: int | None = None,
     keep_full: bool = False,
+    style: str = "silk",
 ):
     """Yield ``(frame_idx, panel[, full])`` for render-active frames whose panel CHANGED vs the
     previous yielded one (the 10 Hz de-dup). ``box`` is auto-found on the first frame if None."""
@@ -235,7 +286,7 @@ def iter_unique_render(
             if stop is not None and i >= stop:
                 break
             img = fr.to_ndarray(format="bgr24")
-            active = render_active(img[:, img.shape[1] // 2 :], relaxed=seen)  # relaxed >= strict
+            active = render_active(img[:, img.shape[1] // 2 :], relaxed=seen, style=style)
             seen = seen or active
             if not active:
                 prev = None
@@ -276,12 +327,12 @@ class FrameCache:
             yield int(self.idx[k]), self.panel(k)
 
     @staticmethod
-    def build(path, root, clock_box=(288, 342, 800, 945), quality=92):
+    def build(path, root, clock_box=(288, 342, 800, 945), quality=92, style="silk"):
         import cv2
 
         root = Path(root)
         idx, bufs, clocks, box = [], [], [], None
-        for i, p, full in iter_unique_render(path, keep_full=True):
+        for i, p, full in iter_unique_render(path, keep_full=True, style=style):
             box = box or find_panel_box(full)
             ok, buf = cv2.imencode(".jpg", p, [cv2.IMWRITE_JPEG_QUALITY, quality])
             idx.append(i)
@@ -295,12 +346,14 @@ class FrameCache:
             for b in bufs:
                 fb.write(b)
                 off.append(off[-1] + len(b))
+        extra = {} if style == "silk" else {"style": style}  # silk caches keep their exact layout
         with atomic(root / "frames_idx.npz") as tmp:
             np.savez(
                 tmp,
                 idx=np.array(idx),
                 off=np.array(off),
                 box=np.array([box.x0, box.x1, box.y0, box.y1]),
+                **extra,
             )
         with atomic(root / "frames_clock.npy") as tmp:
             np.save(tmp, np.array(clocks))
