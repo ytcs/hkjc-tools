@@ -458,7 +458,14 @@ held-out test (11 races, earlier frozen code, run once) passed all five timing g
 11/11 winners; those races are in the development set, so a further held-out claim needs another
 set of races sealed by a metadata-only rule.
 
-### Baseline (tag `recon-baseline-Z11`)
+### Baseline (tag `recon-baseline-Z12`)
+
+Z11 plus the `start` stage (the race clock re-anchored to the gate opening when the overlay clock lags it), 26 × 6
+via `scripts/perturb_ensemble.sh` (default stages now start, observe..validate): identical to Z11 on 150 of 156
+runs; HV 06-03 R3 (all 6 seeds) takes a false 0.34 s correction. Gates per seed unchanged: non-lateral 201.67,
+timing 126.67, all five on 23.67 races.
+
+### Earlier baseline (tag `recon-baseline-Z11`)
 
 Z10 with tick-time stamps in `observe` (observe onward on the Z10 stages, 26 × 6). Video-only: non-lateral gates
 201.67 per seed, timing gates 126.67, all five on 23.67 races, lateral 10 pass / 3 fail / 13 n/a (unchanged from Z10),
@@ -521,7 +528,8 @@ Gates failed on ≥ 5 of 6 seeds:
   numbered circles with no silk avatars or legend, so the avatar detector and silk identity do not apply (24 of
   the 36 crashes); (3) a sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no
   clock is read and `film` fails (2 races); (4) one race (ST 2024-04-07 R5) with pose residuals of 0.05 px and 494
-  loop closures reads as a straight course and gets no paths, cause not yet verified. Further crashes are listed in
+  loop closures reads as a straight course and gets no paths: its panel box came out full height (letterbox
+  bars included), so the HUD mask missed the disclaimer text and pose locked onto it (verified on the inliers). Further crashes are listed in
   the S1 failure log and not yet traced. Pre-2025/26 races still pass all five on only 29 of 51 after the fix, and
   2025/26 races (development render and clock) on 32 of 47: both unexplained.
 - **Older seasons.** The aerial feed exists back to 2015, at 1280 × 720 until 2023-05; the pipeline assumes
