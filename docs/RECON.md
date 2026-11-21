@@ -58,6 +58,14 @@ terminates the background stages. Each race appends `timings.jsonl` (wall s, CPU
 ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off
 (`ortsession.no_spin`): same threads and work split, so identical outputs; CPU about a third (avatar detector) and a half (OCR).
 
+GPU pods (environment switches): `HKJC_OCR_THREADS=1` and `HKJC_MATCH_DEVICE=cuda` (the ORB brute-force tables
+computed on the GPU in a helper interpreter: integer popcounts, OpenCV's tie order) give artifacts identical to
+8 OCR threads and OpenCV matching (3 races, same pod, every artifact). `HKJC_OCR_DEVICE=cuda` runs the OCR
+recogniser on ONNX Runtime's CUDA provider (onnxruntime-gpu): not bit-exact (finish-camera reads, a legend read,
+identity votes move), but on the 25 dev circle races no gate changed, 8 validations were identical and the rest
+differed in the third decimal. With all three, per-race CPU falls several-fold (OCR dominated: on the circle
+render the disc-number reads were most of `features`); one 16-vCPU pod ran ~37 races/h.
+
 ### frames
 
 Two render styles: the avatar render with the silk legend (to 2025/26) and, from 2026/27, numbered blue
