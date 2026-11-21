@@ -364,6 +364,15 @@ The final product reuses the video-only detections and adds the official records
    with the official observations in every fuse and bias-shifted detections; the last fuse writes
    `paths.parquet`.
 
+### status
+
+`run()` always writes `status.json` (not a stage artifact): `failed` with the stage and error when a stage raises,
+else `unhealthy` with the failed video-only checks, else `ok`. Checks: render ticks per expected race second
+(unique render frames / (distance / 16.5 m/s)) ≥ 4.0; median avatar detections per render frame per runner ≥ 0.4;
+≥ 3 race-clock reads; the rails stage's course shape (straight writes `lat0_px`) matches the race facts (straight
+only for Sha Tin 1000 m). The `start` status is recorded but not a failure. On S1 and the development set: all 26
+development races and every completed silk-render S1 race are healthy; every completed 2026/27 race is unhealthy.
+
 ### validate
 
 `recon.validate` writes `validation.json` (gates on `paths_video.parquet` plus the final product's

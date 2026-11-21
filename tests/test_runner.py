@@ -1,5 +1,6 @@
 """Stage runner: atomic artifact writes, forced-stage propagation, background-stage cleanup."""
 
+import json
 import multiprocessing as mp
 import time
 from types import SimpleNamespace
@@ -129,3 +130,25 @@ def test_final_holdout_withholds_the_boundary_from_metric_bias(monkeypatch):
     monkeypatch.setenv("HKJC_FINAL_HOLDOUT", "1")
     sb1, _b1 = RaceRun._metric_bias(run, paths)
     assert len(sb1) == 2 and 1200.0 - 400.0 not in sb1.tolist()
+
+
+def test_status_records_the_failed_stage(tmp_path):
+    R = _run(tmp_path, _Failing)
+    with pytest.raises(RuntimeError):
+        R.run(stages=("frames", "features"))
+    st = json.load(open(R.p("status.json")))
+    assert st["status"] == "failed" and st["stage"] == "features" and "main-chain failure" in st["error"]
+
+
+def test_health_flags_an_unreadable_render(tmp_path):
+    R = RaceRun(SimpleNamespace(key="race", distance=1200, n=12, venue="HV"), root=tmp_path)
+    np.savez(R.p("frames_idx.npz"), idx=np.arange(150))  # 150 render ticks for a ~73 s race
+    np.savez(R.p("yolo.npz"), rows=np.c_[np.repeat(np.arange(150), 1), np.zeros((150, 5))])  # 1 marker/frame
+    rows = np.c_[np.arange(10.0), np.arange(10.0), np.arange(10.0)]
+    np.savez(R.p("hud.npz"), rows=rows)
+    np.savez(R.p("rail.npz"), rail=np.zeros((3, 2)), lat0_px=1.0)  # 'straight' on a Happy Valley oval
+    R.write_status()
+    st = json.load(open(R.p("status.json")))
+    assert st["status"] == "unhealthy"
+    assert set(st["unhealthy"]) == {"render_ticks_per_s", "markers_per_runner", "course_shape"}
+    assert st["checks"]["clock_reads"]["ok"]

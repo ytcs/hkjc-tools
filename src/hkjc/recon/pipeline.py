@@ -244,23 +244,78 @@ class RaceRun:
                 if b in todo and b not in launched and ready(b):
                     launch(b)
 
+        current = None
         try:
             launch_ready()
             for st in todo:
                 for b in list(bg):
                     if b in upstream(st):
+                        current = b
                         wait(b)
                 if st in self.BACKGROUND:
                     continue  # runs (or ran) in the background
+                current = st
                 self._timed(st)
                 finished.add(st)
                 launch_ready()
             for b in list(bg):
+                current = b
                 wait(b)
+            current = None
+        except Exception as e:
+            self.write_status(failed=(current, f"{type(e).__name__}: {e}"))
+            raise
         finally:  # a failed stage must not leave background stages running into the next race
             for pr in bg.values():
                 pr.terminate()
                 pr.join()
+        self.write_status()
+
+    # video-only health checks: thresholds sit between the S1/dev silk-render races (worst 5.1 ticks/s,
+    # 0.64 markers per runner) and the 2026/27 numbered-circle render the pipeline cannot read (<= 3.5, ~0.08)
+    HEALTH_TICKS_PER_S = 4.0  # unique render frames per expected race second (distance / 16.5 m/s)
+    HEALTH_MARKERS = 0.4  # median avatar detections per render frame / runners
+    HEALTH_CLOCK_READS = 3  # race-clock reads (the clock zero, film and start need them)
+
+    def health(self) -> dict:
+        """Video-only self-checks on the artifacts present: {check: (ok, value)}."""
+        out = {}
+        D, N = float(self.info.distance), max(int(self.info.n), 1)
+        if self.p("frames_idx.npz").exists():
+            v = len(np.load(self.p("frames_idx.npz"))["idx"]) / (D / 16.5)
+            out["render_ticks_per_s"] = (v >= self.HEALTH_TICKS_PER_S, round(v, 2))
+        if self.p("yolo.npz").exists():
+            rows = np.load(self.p("yolo.npz"))["rows"]
+            cnt = np.bincount(rows[:, 0].astype(int)) if len(rows) else np.zeros(1, int)
+            v = float(np.median(cnt[cnt > 0])) / N if (cnt > 0).any() else 0.0
+            out["markers_per_runner"] = (v >= self.HEALTH_MARKERS, round(v, 2))
+        if self.p("hud.npz").exists():
+            v = int(np.isfinite(np.load(self.p("hud.npz"))["rows"][:, 1]).sum())
+            out["clock_reads"] = (v >= self.HEALTH_CLOCK_READS, v)
+        if self.p("rail.npz").exists():
+            straight = "lat0_px" in np.load(self.p("rail.npz")).files
+            expect = self.info.venue == "ST" and int(D) == 1000
+            out["course_shape"] = (straight == expect, "straight" if straight else "oval")
+        if self.p("start.npz").exists():
+            st = str(np.load(self.p("start.npz"))["status"])
+            out["clock_anchor"] = (st != "none", st)
+        return out
+
+    def write_status(self, failed=None):
+        """status.json (not a stage artifact): 'failed' (stage, error), 'unhealthy' (failed checks) or 'ok'."""
+        try:
+            h = self.health()
+        except Exception as e:  # never mask the stage error being reported
+            h = {"health_error": (False, f"{type(e).__name__}: {e}"[:200])}
+        bad = [k for k, (ok, _v) in h.items() if not ok and k != "clock_anchor"]
+        status = "failed" if failed else ("unhealthy" if bad else "ok")
+        rec = dict(status=status, checks={k: {"ok": bool(ok), "value": v} for k, (ok, v) in h.items()})
+        if failed:
+            rec["stage"], rec["error"] = failed[0], failed[1][:300]
+        if bad:
+            rec["unhealthy"] = bad
+        with open(self.p("status.json"), "w") as fh:
+            json.dump(rec, fh, indent=1)
 
     def _timed(self, st, background=False):
         import resource
@@ -758,16 +813,9 @@ class RaceRun:
         if n_win:
             d = d - shift_u[np.searchsorted(fu, rows[:, 0])]
             self.log(f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m")
-        # straight courses: the rail polyline is the field-edge datum; lat0_px = the fence's measured
-        # offset inside it (rails.straight_datum)
+        # straight courses (the rails stage's decision, recorded as lat0_px): the rail polyline is the
+        # field-edge datum and lat0_px the fence's measured offset inside it (rails.straight_datum)
         lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
-        if "lat0_px" not in z.files:
-            Tr = np.gradient(z["rail"], axis=0)
-            Tr /= np.linalg.norm(Tr, axis=1, keepdims=True) + 1e-12
-            if rails.is_straight(Tr):  # stale-cache guard: a straight course needs lat0_px
-                raise RuntimeError(
-                    "rail.npz of a straight course has no lat0_px (pre-Z6 cache): re-run the rails stage"
-                )
         lat = (lat_px + lat0) / ppm_loc(s_px)
         g = lat > -1.0  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]
