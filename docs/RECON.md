@@ -532,8 +532,11 @@ Gates failed on ≥ 5 of 6 seeds:
   clock is read and `film` fails (2 races); (4) one race (ST 2024-04-07 R5) with pose residuals of 0.05 px and 494
   loop closures reads as a straight course and gets no paths: its panel box came out full height (letterbox
   bars included), so the HUD mask missed the disclaimer text and pose locked onto it (verified on the inliers). Further crashes are listed in
-  the S1 failure log and not yet traced. Pre-2025/26 races still pass all five on only 29 of 51 after the fix, and
-  2025/26 races (development render and clock) on 32 of 47: both unexplained.
+  the S1 failure log and not yet traced. On the frozen code the lateral check against stewards' comments passes on
+  the silk render (AUC 0.931 on 91 pre-2025/26 races, 0.947 on 47 from 2025/26) and fails on the new render
+  (0.604, 26 races); the final-product census is 88.2 % / 93.4 % / 21.4 % good horse-runs (threshold 95 %). After the
+  `start` fix the silk races pass all five on 41 of 70 (pre-2025/26) and 28 of 40 (2025/26); the largest remaining
+  classes are leader timing (missed clock lags and 4 gross failures) and finish-only failures (15).
 - **Older seasons.** The aerial feed exists back to 2015, at 1280 × 720 until 2023-05; the pipeline assumes
   1920 × 1080.
 
