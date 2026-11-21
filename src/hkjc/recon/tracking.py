@@ -137,19 +137,23 @@ SPLIT_TV = 0.30  # max-split silk distance above which a tracklet holds two hors
 
 NUMBER_WIN = 10  # confident number reads in the change window (~1 s at 10 Hz)
 NUMBER_SHARE = 0.8  # share of the window a new number needs to count as a switch
+NUMBER_RUN = 20  # ... and the new number must hold for this many reads after the cut (~2 s): discs
+# overlapping at the line give short misread bursts (HV 2026-11-18 R6: 8 reads of '3' on the #2 disc)
 
 
 def _same_cloth(a: int, b: int) -> bool:
-    """A read of ``b`` on cloth ``a`` is a dropped digit ('1' on '11', '2' on '12'), not another horse."""
-    return a == b or str(b) in str(a) or str(a) in str(b)
+    """A read of ``b`` on cloth ``a`` is a dropped digit ('1' on '11', '2' on '12'), not another horse. A digit
+    is only ever DROPPED: '12' read on a '2' tracklet is another horse."""
+    return a == b or (len(str(b)) < len(str(a)) and str(b) in str(a))
 
 
 def split_by_number(members, t, num):
     """Split tracklets where the number read on the disc CHANGES and stays changed (circle render: the
     tracker swaps identities where discs touch). ``num`` per detection row: the confident read, 0 if none.
     Walking a tracklet's reads in time order, a switch is >= NUMBER_SHARE of the last NUMBER_WIN reads
-    naming one other number that is not a dropped digit of the current one; the split falls just before
-    the first of those reads. Returns new members (order kept, then appended pieces)."""
+    naming one other number that is not a dropped digit of the current one, and that number holding for
+    the NUMBER_RUN reads from there (a burst at the end of a tracklet never splits); the split falls just
+    before the first of those reads. Returns new members (order kept, then appended pieces)."""
     out = []
     for m in members:
         m = np.asarray(m)
@@ -175,9 +179,12 @@ def split_by_number(members, t, num):
                     n, cnt = max(c.items(), key=lambda x: x[1])
                     if cnt >= NUMBER_SHARE * NUMBER_WIN:
                         first = next(i for i, x in win if x == n)
-                        if not cuts or first > cuts[-1]:
+                        j0 = next(q for q, (i, _x) in enumerate(rd) if i == first)
+                        after = [x for _, x in rd[j0 : j0 + NUMBER_RUN]]
+                        holds = len(after) == NUMBER_RUN and after.count(n) >= NUMBER_SHARE * NUMBER_RUN
+                        if holds and (not cuts or first > cuts[-1]):
                             cuts.append(first)
-                        cur = n
+                            cur = n
             k += 1
         edges = [0, *cuts, len(m)]
         out += [m[a:b] for a, b in zip(edges[:-1], edges[1:]) if b > a]

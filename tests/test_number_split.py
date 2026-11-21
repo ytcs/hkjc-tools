@@ -26,3 +26,12 @@ def test_dropped_digits_and_stray_misreads_do_not_split():
 def test_two_switches():
     parts = _run([12] * 25 + [11] * 25 + [3] * 25)
     assert [len(p) for p in parts] == [25, 25, 25]
+
+
+def test_short_burst_and_tail_burst_do_not_split():
+    assert len(_run([2] * 40 + [3] * 9 + [2] * 30)) == 1  # 9-read burst mid-tracklet
+    assert len(_run([2] * 40 + [3] * 12)) == 1  # burst at the tracklet's end (discs overlap at the line)
+
+
+def test_a_longer_number_on_a_shorter_tracklet_is_a_switch():
+    assert len(_run([2] * 30 + [12] * 30)) == 2  # digits are dropped, never added
