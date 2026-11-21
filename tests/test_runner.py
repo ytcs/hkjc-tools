@@ -28,7 +28,7 @@ def test_deps_table_consistent():
     assert set(DEPS) == set(STAGES) == set(OUTPUTS)
     for st in STAGES:  # every dependency runs earlier in STAGES order
         assert all(STAGES.index(d) < STAGES.index(st) for d in DEPS[st]), st
-    assert upstream("film") == {"frames", "hud"}
+    assert upstream("film") == {"frames", "hud", "start"}
     assert "finish" in upstream("validate") and "finish" not in upstream("observe")
 
 

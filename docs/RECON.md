@@ -167,6 +167,28 @@ within 4e-7 s. The film stage takes 35–127 s instead of 98–484 s, and 47–9
 570–3,440. Each process holds about 2 GB of system RAM for it (1.1 GB of that shared iGPU buffers). The GPU plugin's FP16 default lost the 200 m crossing on ST 05-09 R1. The other `intel:` paths
 (avatar detector, OCR recogniser, `horse_scale`) compile at the GPU default (FP16) and are untested at FP32.
 
+### start
+
+The race clock is the aerial's overlay clock, except where that clock starts late. Before the 2025/26 season the
+overlay clock started about 0.4 s after the gates opened (up to ~3 s on some races), so every video-only time was
+early by that much; from 2025/26 it starts with the gates. `start.lag` finds the gate opening in the live start
+film that opens the aerial video: the closed stalls' doors are a band of dark-green pixels that drops when they
+swing open. On an 8 × 6 grid of the quarter-resolution frames it takes the row strip with the largest relative drop
+(≥ 25 %, ≥ 1 point) within 100 frames before the clock zero, provided the drop persists over 40 frames (doors stay
+open) and is shared by ≥ 60 % of the strip's door-bearing columns (not a person crossing). The onset is the 25 %
+crossing of that step. The detector's convention lag (clock zero − onset where the clock is synced) is 1.4 frames at
+Sha Tin and 2.55 at Happy Valley; a larger net lag of more than 4 frames re-anchors the clock (`RaceRun.clock_f0`
+= overlay zero − lag, used by `observe` and every stage downstream). The `film` scan still runs on the overlay
+clock and its crossing times are shifted by the lag, which is exact by construction. No detection, or a lag within
+4 frames, keeps the overlay clock unchanged. `start.npz` records the clock zero, onset, lag and status
+(`late`, `synced`, `none`).
+
+Measured (S1 pilot races, film 400 m read minus official): on 66 corrected pre-2025/26 races the residual after the
+correction is −0.12 s median (the film read's own bias, as on synced races) with MAD 0.06 s and 1 race in 35 beyond
+0.2 s; 6 of 74 pre-2025/26 races give no detection and keep the late clock. No correction on 54 synced-era races;
+on the 26 development races one false correction (HV 06-03 R3, 0.34 s: its doors visibly open about 11 frames
+before a clock zero that matches the official start).
+
 ### observe
 
 Detections go to world px and to (s, lat) on the rail. The per-frame leader ignores a front
@@ -489,6 +511,17 @@ Gates failed on ≥ 5 of 6 seeds:
 - Occasional: ST 04-26 R1 winner (2/6, a 0.05 s finish), HV 05-20 R2 sectional (1/6).
 
 ## 6. Open problems
+
+- **Sealed pilot S1 (200 turf races, 2023-09 to 2026-11, frozen tag `recon-pilot-S1`, run once): failed.** All
+  five timing gates on 19 % of the first 90 complete races (dev 91 %); winner 76 %. Causes found: (1) the overlay
+  clock's late start before 2025/26 (fixed by `start`; on 51 held-out S1 races leader-timing passes 1 → 39, all
+  five 1 → 29); (2) the 2026/27 render draws horses as blue numbered circles with no silk avatars or legend, so
+  the avatar detector and silk identity do not apply (needs a render front end that reads the numbers); (3) a
+  sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no clock is read and `film`
+  fails (2 races); (4) pose locking onto static screen content (ST 2024-04-07 R5: residuals 0.05 px, the race reads
+  as a straight course, no paths). Further crashes are listed in the S1 failure log and not yet traced.
+- **Older seasons.** The aerial feed exists back to 2015, at 1280 × 720 until 2023-05; the pipeline assumes
+  1920 × 1080.
 
 - **Final-product calibration.** On held-out interior boundaries (Z11, seeds 1–5, n = 4295) the median error is
   0.56 m and 61 % of errors exceed 2 posterior sd (median z 3.05); counting the official crossing's own sd (0.4 m) the median z is

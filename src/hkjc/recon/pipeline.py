@@ -61,6 +61,7 @@ STAGES = (
     "silk",  # silk signatures + official prototypes (identify's silk LLR, observe's appearance split)
     "hud",
     "rails",
+    "start",  # gate opening in the start film: re-anchors the race clock when the overlay clock lags
     "film",  # race-film marker crossings -> the metric's constant offset
     "observe",
     "finish",  # independent of the render; before identify (finish-camera identity votes)
@@ -76,6 +77,7 @@ OUTPUTS = {
     "detect": ["dets.npz"],
     "silk": ["silk.npz"],
     "hud": ["hud.npz", "legend.npz"],
+    "start": ["start.npz"],
     "film": ["film.npz"],
     "worldmap": ["map.png", "map_cnt.npy", "map_meta.npz"],
     "rails": ["rail.npz", "metric.npz"],
@@ -98,8 +100,9 @@ DEPS = {
     "silk": ("frames", "detect"),
     "hud": ("frames",),
     "rails": ("frames", "pose", "worldmap", "detect"),
-    "film": ("hud",),
-    "observe": ("pose", "detect", "silk", "hud", "rails", "film"),
+    "start": ("hud",),
+    "film": ("hud", "start"),
+    "observe": ("pose", "detect", "silk", "hud", "rails", "start", "film"),
     "finish": (),
     "identify": ("observe", "hud", "silk", "finish"),
     "fuse_video": ("identify", "observe", "finish", "hud", "silk", "rails"),
@@ -603,10 +606,42 @@ class RaceRun:
             f"   rails: support {out['support'].mean():.3f}; markers k={ks.tolist()} ppm {ppm:.3f}"
         )
 
-    def clock_f0(self) -> float:
+    def overlay_f0(self) -> float:
+        """Video frame where the overlay race clock reads zero."""
         r = np.load(self.p("hud.npz"))["rows"]
         ok = ~np.isnan(r[:, 1])
         return float(np.median(r[ok, 0] - FPS * r[ok, 1]))
+
+    def clock_lag(self) -> float:
+        """Frames the overlay clock lags the gate opening (``start`` stage; 0 when synced or not measured)."""
+        if self.p("start.npz").exists():
+            return max(0.0, float(np.load(self.p("start.npz"))["lag_frames"]))
+        return 0.0
+
+    def clock_f0(self) -> float:
+        """Video frame of the race-clock zero: the overlay clock's zero, moved back to the gate opening when the
+        overlay clock lags it."""
+        lag = self.clock_lag()
+        return self.overlay_f0() - lag if lag > 0 else self.overlay_f0()
+
+    def start(self):
+        """Gate opening in the start film (``recon.start``): the overlay clock's lag behind it."""
+        from . import start
+
+        r = np.load(self.p("hud.npz"))["rows"]
+        ok = ~np.isnan(r[:, 1])
+        clock0 = float(np.median(r[ok, 0] - FPS * r[ok, 1])) if ok.any() else np.nan
+        res = (
+            start.lag(self.video(), clock0, self.info.venue)
+            if np.isfinite(clock0)
+            else dict(clock0=clock0, onset=np.nan, lag_frames=0.0, status="none")
+        )
+        with self.out("start.npz") as fp:
+            np.savez(fp, **res)
+        self.log(
+            f"   start: gate opening {res['onset']:.1f}, clock zero {clock0:.1f} -> {res['status']}"
+            f" (lag {res['lag_frames'] / FPS:.2f} s)"
+        )
 
     def film(self):
         """Leader crossings of the REAL painted markers in the race film (``recon.film``); the
@@ -615,12 +650,16 @@ class RaceRun:
         g = np.isfinite(hud[:, 2])
         mk, tt = np.zeros(0, int), np.zeros(0)
         if g.sum() >= 10:
-            t_last = (hud[g, 0][np.argmin(hud[g, 2])] - self.clock_f0()) / FPS
+            # the film scan runs on the overlay clock; its times move to the race clock by the clock lag
+            t_last = (hud[g, 0][np.argmin(hud[g, 2])] - self.overlay_f0()) / FPS
             g_ = self.info.geometry
             mx = g_.home_straight(self.info.course) - film.STRAIGHT_MARGIN
             got = film.crossings(self.video(), hud, t_last, max_marker=mx)
             mk = np.array(sorted(got, reverse=True), int)
             tt = np.array([got[m] for m in mk], float)
+            lag = self.clock_lag()
+            if lag > 0:
+                tt = tt + lag / FPS
         with self.out("film.npz") as fp:
             np.savez(fp, markers=mk, t=tt)
         self.log(f"   film: {len(mk)} marker crossings {dict(zip(mk.tolist(), tt.round(2)))}")
