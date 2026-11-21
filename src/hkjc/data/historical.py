@@ -2,12 +2,11 @@
 Incident rows (DISQ, DNF, PU, ...) are dropped; FinishTime is converted from m:ss.ff to seconds."""
 from __future__ import annotations
 
-import requests
 import polars as pl
 from bs4 import BeautifulSoup
 from cachetools.func import ttl_cache
 
-from ._util import _parse_html_table
+from ._util import _parse_html_table, get
 
 HKJC_RACE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate={date}&Racecourse={venue_code}&RaceNo={race_number}"
 
@@ -28,7 +27,7 @@ HTML_HEADERS = {
 @ttl_cache(maxsize=100, ttl=3600)
 def _soupify(url: str) -> BeautifulSoup:
     """GET + parse a page (1 h in-process cache)."""
-    response = requests.get(url, timeout=REQUEST_TIMEOUT, headers=HTML_HEADERS)
+    response = get(url, timeout=REQUEST_TIMEOUT, headers=HTML_HEADERS)
     response.raise_for_status()
     return BeautifulSoup(response.content, 'html.parser')
 

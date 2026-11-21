@@ -1,7 +1,24 @@
 """Small parsing helpers shared by the HKJC readers (HTML tables, safe casts, date checks)."""
+import time
+
 import polars as pl
 import bs4
 import re
+import requests
+
+
+def get(url: str, *, headers=None, timeout: float = 20.0, tries: int = 3) -> requests.Response:
+    """HTTP GET with retries (backoff 2, 4 s) on timeouts, connection errors and 5xx responses."""
+    for k in range(tries):
+        try:
+            r = requests.get(url, headers=headers, timeout=timeout)
+            if r.status_code < 500 or k == tries - 1:
+                return r
+        except (requests.Timeout, requests.ConnectionError):
+            if k == tries - 1:
+                raise
+        time.sleep(2.0 * (k + 1))
+    return r
 
 
 def _parse_html_table(table: bs4.element.Tag, skip_header=False) -> pl.DataFrame:

@@ -101,7 +101,7 @@ DEPS = {
     "hud": ("frames",),
     "rails": ("frames", "pose", "worldmap", "detect"),
     "start": ("hud",),
-    "film": ("hud", "start"),
+    "film": ("hud",),
     "observe": ("pose", "detect", "silk", "hud", "rails", "start", "film"),
     "finish": (),
     "identify": ("observe", "hud", "silk", "finish"),
@@ -650,16 +650,13 @@ class RaceRun:
         g = np.isfinite(hud[:, 2])
         mk, tt = np.zeros(0, int), np.zeros(0)
         if g.sum() >= 10:
-            # the film scan runs on the overlay clock; its times move to the race clock by the clock lag
+            # film.npz holds OVERLAY-clock times; observe moves them to the race clock (clock_lag)
             t_last = (hud[g, 0][np.argmin(hud[g, 2])] - self.overlay_f0()) / FPS
             g_ = self.info.geometry
             mx = g_.home_straight(self.info.course) - film.STRAIGHT_MARGIN
             got = film.crossings(self.video(), hud, t_last, max_marker=mx)
             mk = np.array(sorted(got, reverse=True), int)
             tt = np.array([got[m] for m in mk], float)
-            lag = self.clock_lag()
-            if lag > 0:
-                tt = tt + lag / FPS
         with self.out("film.npz") as fp:
             np.savez(fp, markers=mk, t=tt)
         self.log(f"   film: {len(mk)} marker crossings {dict(zip(mk.tolist(), tt.round(2)))}")
@@ -720,7 +717,9 @@ class RaceRun:
         film_t = {}
         if fz.exists():
             zf = np.load(fz)
-            film_t = dict(zip(zf["markers"].tolist(), zf["t"].tolist()))
+            lag = self.clock_lag()  # film.npz is on the overlay clock
+            tt = zf["t"] + lag / FPS if lag > 0 else zf["t"]
+            film_t = dict(zip(zf["markers"].tolist(), tt.tolist()))
         use_film = len(film_t) >= film.FILM_MIN
         d_of_s, c, ppm_loc, resid, (ppm_odo, sF_odo, pinned, c_m, nsh) = (
             rails.calibrate_distance_ticks(

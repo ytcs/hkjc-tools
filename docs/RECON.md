@@ -178,9 +178,9 @@ swing open. On an 8 × 6 grid of the quarter-resolution frames it takes the row 
 open) and is shared by ≥ 60 % of the strip's door-bearing columns (not a person crossing). The onset is the 25 %
 crossing of that step. The detector's convention lag (clock zero − onset where the clock is synced) is 1.4 frames at
 Sha Tin and 2.55 at Happy Valley; a larger net lag of more than 4 frames re-anchors the clock (`RaceRun.clock_f0`
-= overlay zero − lag, used by `observe` and every stage downstream). The `film` scan still runs on the overlay
-clock and its crossing times are shifted by the lag, which is exact by construction. No detection, or a lag within
-4 frames, keeps the overlay clock unchanged. `start.npz` records the clock zero, onset, lag and status
+= overlay zero − lag, used by `observe` and every stage downstream). `film.npz` keeps overlay-clock times and
+`observe` shifts them by the lag, so `film` does not depend on `start` and older caches stay valid. No detection,
+or a lag within 4 frames, keeps the overlay clock unchanged. `start.npz` records the clock zero, onset, lag and status
 (`late`, `synced`, `none`).
 
 Measured (S1 pilot races, film 400 m read minus official): on 66 corrected pre-2025/26 races the residual after the
@@ -512,14 +512,18 @@ Gates failed on ≥ 5 of 6 seeds:
 
 ## 6. Open problems
 
-- **Sealed pilot S1 (200 turf races, 2023-09 to 2026-11, frozen tag `recon-pilot-S1`, run once): failed.** All
-  five timing gates on 19 % of the first 90 complete races (dev 91 %); winner 76 %. Causes found: (1) the overlay
-  clock's late start before 2025/26 (fixed by `start`; on 51 held-out S1 races leader-timing passes 1 → 39, all
-  five 1 → 29); (2) the 2026/27 render draws horses as blue numbered circles with no silk avatars or legend, so
-  the avatar detector and silk identity do not apply (needs a render front end that reads the numbers); (3) a
-  sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no clock is read and `film`
-  fails (2 races); (4) pose locking onto static screen content (ST 2024-04-07 R5: residuals 0.05 px, the race reads
-  as a straight course, no paths). Further crashes are listed in the S1 failure log and not yet traced.
+- **Sealed pilot S1 (200 turf races, 2023-09 to 2026-11, frozen tag `recon-pilot-S1`, run once): failed.** 164
+  races completed, 36 crashed; all five timing gates on 35 of 200 (2023/24 3, 2024/25 0, 2025/26 32, 2026/27 0;
+  development set 91 %); winner on 121 of 200. S1 is now development data. Causes found: (1) the overlay clock's
+  late start before 2025/26, fixed by `start`: on 51 pre-2025/26 S1 races outside the 30 used to tune the
+  detector (its rules were chosen while viewing film-minus-official on all pulled races, so these are not
+  held out) leader-timing passes go 1 → 39 and all five 1 → 29; (2) the 2026/27 render draws horses as blue
+  numbered circles with no silk avatars or legend, so the avatar detector and silk identity do not apply (24 of
+  the 36 crashes); (3) a sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no
+  clock is read and `film` fails (2 races); (4) one race (ST 2024-04-07 R5) with pose residuals of 0.05 px and 494
+  loop closures reads as a straight course and gets no paths, cause not yet verified. Further crashes are listed in
+  the S1 failure log and not yet traced. Pre-2025/26 races still pass all five on only 29 of 51 after the fix, and
+  2025/26 races (development render and clock) on 32 of 47: both unexplained.
 - **Older seasons.** The aerial feed exists back to 2015, at 1280 × 720 until 2023-05; the pipeline assumes
   1920 × 1080.
 

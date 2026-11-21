@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import requests
+from ._util import get
 
 _URL = "https://racing.hkjc.com/racing/content/Images/RaceColor/{hid}.gif"
 DEFAULT_DIR = Path("data_cache/silks")
@@ -15,7 +15,7 @@ def silk_path(horse_id: str, root: Path | str = DEFAULT_DIR) -> Path | None:
     out = Path(root) / f"{horse_id}.gif"
     if out.exists():
         return out
-    r = requests.get(_URL.format(hid=horse_id), headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    r = get(_URL.format(hid=horse_id), headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
     if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image"):
         return None
     out.parent.mkdir(parents=True, exist_ok=True)

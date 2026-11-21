@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 import polars as pl
-import requests
+from ._util import get
 from bs4 import BeautifulSoup
 
 SECTIONAL_URL = "https://racing.hkjc.com/en-us/local/information/displaysectionaltime?racedate={date}&RaceNo={race}"
@@ -78,7 +78,7 @@ def get_sectional_times(date: str, race_no: int) -> pl.DataFrame:
     Empty if sectionals aren't published for that race.
     """
     dd = _to_ddmmyyyy(date)
-    resp = requests.get(SECTIONAL_URL.format(date=dd, race=race_no), headers=_HEADERS, timeout=20)
+    resp = get(SECTIONAL_URL.format(date=dd, race=race_no), headers=_HEADERS, timeout=20)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.content, "html.parser")
     table = next((t for t in soup.find_all("table") if "Finishing Order" in t.get_text()), None)

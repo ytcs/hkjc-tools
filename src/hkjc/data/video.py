@@ -53,7 +53,7 @@ def download_replay(
     if out.exists() and out.stat().st_size > 0 and not overwrite:
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".part")
+    tmp = out.with_suffix(f".{os.getpid()}.part")  # per process: concurrent fetches of one file cannot collide
     with requests.get(
         replay_url(date, race_no, feed),
         stream=True,
