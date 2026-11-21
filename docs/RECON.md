@@ -717,6 +717,9 @@ Gates failed on ≥ 5 of 6 seeds:
 Each line: the approach, then the measurement that decided it. "Removed untested" means removed
 without a verdict.
 
+Fusion, identity
+- Dropping finish-camera crossings that contradict the horse's own render-observed crossing (offset from the median camera-minus-render offset > max(4 sd, 0.25 s)): fixed HV 2026-11-18 R6 (camera misread '2'/'3', winner and finish ρ 0.59 → 0.99) but failed ST 2026-10-19 R3 behind-winner (ρ 0.88 → 0.53) and silk ST 04-19 R4 finish ρ and behind-winner; the render's own crossing is wrong by up to ~1 s on some horses even with a well-read identity, so a disagreement alone does not say which feed is wrong. Without the median reference it also dropped every crossing on ST 11-08 R1 (a shared clock offset, the camera right).
+
 Frames, features, pose
 - Circle-render disc tests on a non-blue ring (R+5..R+9 ≤ 50 % blue) and a saturated core (median S ≥ 150), added to keep the start gate's banner out: they rejected discs in overlapping clusters (the ring is legitimately blue); HV 10-14 R3 fell from 10.0 to 7.0 discs per frame for 10 runners and 11 to 227 tracklets. The odometer-text gate keeps the banner out instead.
 - Dropping every off-grid frame: removed the only copy of ticks after finish-zone dropouts; finish-short 34 → 39, ST 05-24 R1 winner flipped, hand 15 → 10/19.
