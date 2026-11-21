@@ -158,19 +158,20 @@ def centres(G, shape) -> np.ndarray:
 
 # ----------------------------------------------------------------------------- whole-race solve
 _FEATS = None  # fork-shared feature list for the edge-measurement pool
+_NN = {}  # fork-shared bfmatch neighbour tables {(i, j, cross): table} (empty: OpenCV matches in-call)
 
 
 def _measure(args):
     i, j, prior, gate, min_inl, kind = args
     F = _FEATS
     if kind == "loop":  # chain drift can exceed any gate: match UNGUIDED, accept if near prior
-        m = register.match(F[i], F[j], prior=None)
+        m = register.match(F[i], F[j], prior=None, nn=_NN.get((i, j, True)))
         if m is not None and m.n_inl >= min_inl and m.resid <= 1.3:
             c = np.array([[480.0, 270.0, 1.0]])
             if np.hypot(*((c @ m.S.T) - (c @ prior.T))[0, :2]) > 400:
                 m = None
     else:
-        m = register.match(F[i], F[j], prior=prior, gate=gate)
+        m = register.match(F[i], F[j], prior=prior, gate=gate, nn=_NN.get((i, j, False)))
     if m is None or m.n_inl < min_inl or m.resid > 1.3:
         return (i, j, kind, None)
     return (i, j, kind, m.S)
@@ -178,7 +179,7 @@ def _measure(args):
 
 def _seq_job(args):
     k, prior = args
-    return register.match(_FEATS[k - 1], _FEATS[k], prior=prior, gate=40)
+    return register.match(_FEATS[k - 1], _FEATS[k], prior=prior, gate=40, nn=_NN.get((k - 1, k, False)))
 
 
 def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
@@ -190,7 +191,9 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
     then gross-outlier pruning (>10 px) and re-solve."""
     import multiprocessing as mp
 
-    global _FEATS
+    from . import bfmatch
+
+    global _FEATS, _NN
     off, pts, des = z["off"], z["pts"], z["des"]
     F = [
         register.Feats(pts[off[k] : off[k + 1]], des[off[k] : off[k + 1]])
@@ -205,6 +208,8 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
     # the pool (identical results: OpenCV RANSAC seeds per call); only steps that need the running
     # chain as their guide stay sequential
     _FEATS = F
+    D = [f.des for f in F]
+    _NN = bfmatch.tables(D, [(k - 1, k, False) for k in range(1, K)])
     pre_k = [k for k in range(1, K) if not np.isnan(steps[k][0])]
     with mp.get_context("fork").Pool(nproc) as pool:
         pre = dict(
@@ -216,7 +221,7 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
         if k in pre:
             m = pre[k]
         else:
-            m = register.match(F[k - 1], F[k], prior=S[-1], gate=40)
+            m = register.match(F[k - 1], F[k], prior=S[-1], gate=40, nn=_NN.get((k - 1, k, False)))
         if m is None or m.n_inl < 60 or m.resid > 1.3:
             S.append(S[-1])
             edges.append(Edge(k - 1, k, S[-1], 0.05, "interp"))
@@ -235,9 +240,10 @@ def solve_race(z: dict, *, nproc: int | None = None, loop_weight: float = 3.0):
         cand = np.where((np.arange(K) - i > 120) & (dd < 0.45 * shape[1]))[0]
         jobs += [(i, j, np.linalg.inv(G0[j]) @ G0[i], 120, 80, "loop") for j in cand[::4][:6]]
     _FEATS = F
+    _NN = bfmatch.tables(D, [(i, j, kind == "loop") for i, j, _p, _g, _m, kind in jobs])
     with mp.get_context("fork").Pool(nproc) as pool:
         out = pool.map(_measure, jobs, chunksize=16)
-    _FEATS = None
+    _FEATS, _NN = None, {}
     for i, j, kind, Sm in out:
         if Sm is not None:
             edges.append(Edge(i, j, Sm, loop_weight if kind == "loop" else 1.0, kind))

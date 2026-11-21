@@ -37,7 +37,27 @@ def _engine():
     dev = os.environ.get("HKJC_DEVICE", "cpu")
     if dev.startswith("intel:"):  # the SAME PP-OCRv4 recogniser compiled for the Intel iGPU/NPU
         eng.text_rec.session = _OVSession(eng.text_rec.session.session._model_path, dev)
+    if os.environ.get("HKJC_OCR_DEVICE", "cpu").startswith("cuda"):  # opt-in; NOT bit-exact vs CPU
+        eng.text_rec.session = _CudaSession(eng.text_rec.session.session._model_path)
     return eng
+
+
+class _CudaSession:
+    """Drop-in for RapidOCR's ONNX session: the same recogniser on ONNX Runtime's CUDA provider
+    (needs onnxruntime-gpu). Fails loudly rather than falling back to the CPU provider."""
+
+    def __init__(self, model_path):
+        import onnxruntime as ort
+
+        if hasattr(ort, "preload_dlls"):  # CUDA/cuDNN from the nvidia-* wheels, if present
+            ort.preload_dlls()
+        self.session = ort.InferenceSession(model_path, providers=["CUDAExecutionProvider"])
+        if "CUDAExecutionProvider" not in self.session.get_providers():
+            raise RuntimeError("HKJC_OCR_DEVICE=cuda but ONNX Runtime has no CUDA provider")
+        self.name = self.session.get_inputs()[0].name
+
+    def __call__(self, x):
+        return self.session.run(None, {self.name: x})
 
 
 class _OVSession:

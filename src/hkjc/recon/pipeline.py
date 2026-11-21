@@ -129,6 +129,7 @@ def _nproc() -> int:
 
 _CACHE = None
 _FEATS_PAR = None
+_STEP_NN = {}  # fork-shared bfmatch cross-check tables for the step matches (empty: OpenCV in-call)
 _STYLE = "silk"  # render style of the race being processed (fork-shared with the feature workers)
 
 
@@ -161,7 +162,7 @@ def _det_init():
 
 
 def _step_job(k):
-    m = register.match(_FEATS_PAR[k - 1], _FEATS_PAR[k])
+    m = register.match(_FEATS_PAR[k - 1], _FEATS_PAR[k], nn=_STEP_NN.get((k - 1, k, True)))
     return np.r_[m.S.ravel(), m.n_inl, m.resid] if m else None
 
 
@@ -390,7 +391,9 @@ class RaceRun:
         import multiprocessing as mp
 
         cache = self.cache()
-        global _CACHE, _FEATS_PAR, _STYLE
+        from . import bfmatch
+
+        global _CACHE, _FEATS_PAR, _STYLE, _STEP_NN
         _CACHE = cache
         _STYLE = self.render_style()
         # one avatar detector per worker; one accelerator context
@@ -401,9 +404,11 @@ class RaceRun:
         # a NEW pool: workers fork the parent's state, so the features must exist before forking
         _FEATS_PAR = [r[2] for r in res]
         pairs = [k for k in range(1, len(res)) if res[k][0] - res[k - 1][0] <= 6]
+        _STEP_NN = bfmatch.tables([f.des for f in _FEATS_PAR], [(k - 1, k, True) for k in pairs])
         with mp.get_context("fork").Pool(_nproc()) as pool:
             ms = dict(zip(pairs, pool.map(_step_job, pairs, chunksize=8)))
         _CACHE = _FEATS_PAR = None
+        _STEP_NN = {}
         steps = [
             ms.get(k) if ms.get(k) is not None else np.full(11, np.nan) for k in range(len(res))
         ]

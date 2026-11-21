@@ -101,6 +101,7 @@ def match(
     gate: float = 40.0,
     thr: float = 1.5,
     min_inl: int = 30,
+    nn=None,
 ) -> Match | None:
     """Similarity a->b. With ``prior`` (3x3 a->b guess) candidate matches are restricted to those
     whose prior-predicted position is within ``gate`` px — kills aliasing on repetitive turf."""
@@ -108,21 +109,29 @@ def match(
 
     if len(a.pts) < 10 or len(b.pts) < 10:
         return None
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=prior is None)
+    # nn: a precomputed bfmatch table for this pair (cross-check (ia, ib), or the knn train-index table)
+    bf = None if nn is not None else cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=prior is None)
     if prior is None:
-        ms = bf.match(a.des, b.des)
-        ia = np.array([m.queryIdx for m in ms])
-        ib = np.array([m.trainIdx for m in ms])
+        if nn is not None:
+            ia, ib = nn
+        else:
+            ms = bf.match(a.des, b.des)
+            ia = np.array([m.queryIdx for m in ms])
+            ib = np.array([m.trainIdx for m in ms])
     else:
         pa = a.pts @ prior[:2, :2].T + prior[:2, 2]
-        knn = bf.knnMatch(a.des, b.des, k=4)
-        # vectorised (identical result): per query, the FIRST of its k candidates within the gate
-        L = max((len(q) for q in knn), default=0)
-        qi = np.full((len(knn), L), -1)
-        ti = np.full((len(knn), L), -1)
-        for r, q in enumerate(knn):
-            for c, m in enumerate(q):
-                qi[r, c], ti[r, c] = m.queryIdx, m.trainIdx
+        if nn is not None:
+            ti = np.asarray(nn)
+            qi = np.repeat(np.arange(len(ti))[:, None], ti.shape[1], axis=1)
+        else:
+            knn = bf.knnMatch(a.des, b.des, k=4)
+            # vectorised (identical result): per query, the FIRST of its k candidates within the gate
+            L = max((len(q) for q in knn), default=0)
+            qi = np.full((len(knn), L), -1)
+            ti = np.full((len(knn), L), -1)
+            for r, q in enumerate(knn):
+                for c, m in enumerate(q):
+                    qi[r, c], ti[r, c] = m.queryIdx, m.trainIdx
         ok = ti >= 0
         dist = np.full(qi.shape, np.inf)
         dist[ok] = np.hypot(*(pa[qi[ok]] - b.pts[ti[ok]]).T)
