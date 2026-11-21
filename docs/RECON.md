@@ -524,7 +524,9 @@ Gates failed on ≥ 5 of 6 seeds:
   development set 91 %); winner on 121 of 200. S1 is now development data. Causes found: (1) the overlay clock's
   late start before 2025/26, fixed by `start`: on 51 pre-2025/26 S1 races outside the 30 used to tune the
   detector (its rules were chosen while viewing film-minus-official on all pulled races, so these are not
-  held out) leader-timing passes go 1 → 39 and all five 1 → 29; (2) the 2026/27 render draws horses as blue
+  held out) leader-timing passes go 1 → 39 and all five 1 → 29; on the 49 S1 races pulled after the detector was
+  fixed (held out), pre-2025/26 (19): leader timing 0 → 14, all five 0 → 12; 2025/26 on (30, one correction on the
+  season's opening weeks): 16 → 17 and 13 → 14; (2) the 2026/27 render draws horses as blue
   numbered circles with no silk avatars or legend, so the avatar detector and silk identity do not apply (24 of
   the 36 crashes); (3) a sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no
   clock is read and `film` fails (2 races); (4) one race (ST 2024-04-07 R5) with pose residuals of 0.05 px and 494
