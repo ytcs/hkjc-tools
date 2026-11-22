@@ -12,13 +12,15 @@ and skipped when its ``OUTPUTS`` exist (``force=`` re-runs named stages). Stages
   silk      per-detection silk signatures + official silk prototypes
   hud       race clock, odometer (distance-to-go), legend running order (recognition-only OCR)
   rails     racing rail on the map; marker grid -> px/m + finish anchor
+  start     gate opening in the start film: re-anchors the race clock when the overlay clock lags
   film      race-film leader crossings of the painted markers -> the metric's constant offset
   observe   detections -> (d, lateral) metres (odometer-tick distance calibration) -> world tracklets
   finish    RF/drone finish-line camera: saddlecloth OCR -> finish order + spatial gaps
   identify  tracklet -> saddlecloth number (legend order + finish camera + elimination + silk)
-  fuse      Bayesian fusion with physics/geometry priors -> paths_video.parquet (video-only:
-            no official outcome data) + paths.parquet (final: adds the official records)
-  validate  gates on the video-only product vs the official record
+  fuse_video  Bayesian fusion with physics/geometry priors -> paths_video.parquet (no official
+            outcome data)
+  fuse_final  + the official records the mask leaves visible -> paths.parquet
+  validate  gates vs the full official record
 
 Memory: run under a hard cap (``scripts/capped.sh``) — the MP4s and feature caches are large.
 """
