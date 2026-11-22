@@ -431,8 +431,10 @@ The final product reuses the video-only detections and adds the official records
 2. `RaceRun._metric_bias`: at each boundary, b = median over ≥ 3 horses of (video-only crossing delay
    × speed); render s is shifted by b interpolated along s. The render metric error is shared by all
    horses, and hundreds of render observations otherwise outvote one official time (residual ~5× its sd).
-3. Fuse with the grid running 0.5 s past the last official finish (ending at the last observation left
-   HV 04-22 R9 #11 0.8 m short of the line).
+3. Fuse with the grid running 0.5 s past the later of the last visible official time and the video-only
+   grid's end (ending at the last observation left HV 04-22 R9 #11 0.8 m short of the line; with the
+   finish withheld, the last visible official time is 400 m out). Held-out finish (196 races, finish
+   withheld): median 0.135 → 0.125 s, p90 0.577 → 0.510 s, horses without a crossing 24 → 10.
 4. Field-relative start prior: until the first render frame + 1 s there is no video, so acceleration
    has sd 0.63 m/s² per node about the field's median curve from step 3 (the clean races'
    horse-specific acceleration). The zero-mean 6 m/s² prior extrapolated a late-seen horse backwards
