@@ -80,8 +80,8 @@ def test_hud_reads_equal_per_frame_reads(monkeypatch):
     assert rows[:, 0].tolist() == cache.idx.tolist()
 
 
-def test_parse_legend_ignores_non_ascii_digits():
+def test_parse_legend_normalises_circled_and_fullwidth_digits():
     from hkjc.recon.ocr import _parse_legend
 
-    row = _parse_legend([("④", 0.99), ("1④2", 0.99), ("7", 0.99)], n_field=14)
-    assert list(row[:3]) == [0, 12, 7]
+    row = _parse_legend([("④", 0.99), ("⑪", 0.99), ("１２", 0.99), ("7", 0.99)], n_field=14)
+    assert list(row[:4]) == [4, 11, 12, 7]

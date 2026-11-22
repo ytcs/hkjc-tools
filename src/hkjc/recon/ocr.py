@@ -10,6 +10,7 @@ a round-up display: it ticks V+10 -> V as the leader REACHES V), the legend (top
 from __future__ import annotations
 
 import re
+import unicodedata
 from functools import lru_cache
 
 import numpy as np
@@ -122,7 +123,8 @@ def _legend_slot_crops(panel, n_slots: int = 8) -> list:
 def _parse_legend(res, n_field: int = 14) -> np.ndarray:
     row = np.zeros(8, int)
     for k, (txt, conf) in enumerate(res):
-        dg = "".join(ch for ch in txt if "0" <= ch <= "9")  # ASCII only: str.isdigit() admits "④", which int() rejects
+        # NFKC folds circled and fullwidth digits to ASCII ("④" -> "4", "⑪" -> "11"); then ASCII digits only
+        dg = "".join(ch for ch in unicodedata.normalize("NFKC", txt) if "0" <= ch <= "9")
         if dg and conf > 0.6 and 1 <= int(dg) <= n_field:
             row[k] = int(dg)
     return row
