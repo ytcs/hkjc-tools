@@ -52,7 +52,7 @@ results; failures are reported as failures.
 | drone feed | one shot gate to finish | synced viewer only |
 | pre-race facts | distance, course and rail width, runners, official silk images | every stage (course shape, lateral bounds, silk evidence, runner numbers) |
 | draw | stall per runner | `fuse_final` (lateral at t = 0) |
-| official records | cumulative sectional times, finish times, placings | `fuse_final` only (`pipeline.READS_OUTCOME`): official observations (interior times as noisy measurements, the finish near-hard), shared metric bias, finish-camera clock, final identity pass, finish re-timing, placing ties |
+| official records | cumulative sectional times, finish times, placings | `fuse_final` only (`pipeline.READS_OUTCOME`): official observations (interior times as noisy measurements, the finish near-hard), shared metric bias, finish-camera crossings replaced by the official finish, final identity pass, finish re-timing, placing ties |
 | track geometry | `hkjc.data.track_for`: handedness, course widths, home-straight length | `rails` (inner side, movable-rail check, expected fixed-rail gap), `film` (markers inside the home straight), fusion's lateral box |
 
 ## 3. The mask and held-out evaluation
@@ -485,13 +485,20 @@ The product: the video-only detections plus the draw and the official records th
    horse's official-only skeleton by > 4 combined σ (flat at 3–5); the E-step is re-run from there with the
    official observations in every fuse and bias-shifted detections (`det_labels_final.npz`). With every official
    time withheld there is no skeleton.
-   Finish clock: in every fuse of steps 3–5 (and the final E-step's finish seeds) the finish-camera observations
-   are moved onto the official clock: the camera's first-finisher time is shifted by the median over horses of
-   (official finish time − camera crossing time), from ≥ 3 horses with both (`RaceRun.official_clock_offset`);
-   order, gaps and sd are kept. Without it the camera can sit on the video clock (when its anchor fit falls back to
-   the label-free registration) and conflict with the official finish: on ST 2026-11-08 R1 0.48 s, which bent the
-   official-only skeleton by up to 47 m and cost the final pass 2,254 correctly read disc detections (now 261). With
-   the finish withheld, or fewer than 3 such horses, the camera observations are unchanged.
+   Finish camera: in every fuse of steps 3–5 (skeleton, final E-step and its finish seeds included) a horse whose
+   official finish is visible gets no finish-camera crossing (`RaceRun.finish_observations`; the camera's proposals
+   are `RaceRun.finish_camera`): its official finish is the better measurement of the same crossing and fills the
+   camera's anchor role in fusion. A camera-read horse without a path still gets an E-step seed, timed by its official
+   finish (sd `OFFICIAL_SD`). The camera's read set (negative evidence, blind set, shadow tie-break) is unchanged.
+   Camera crossings that remain (a horse without a visible official finish, while others have one) are moved onto
+   the official clock: the camera's first-finisher time is shifted by the median over horses of (official finish time
+   − camera crossing time), from ≥ 3 horses with both (`RaceRun.official_clock_offset`); order, gaps and sd are
+   kept. With the finish withheld every camera crossing enters, unchanged.
+   Measured on the 142 evaluation races outside 14 camera-fault races, against the code before it: every O2 item
+   unchanged within its tolerance (H1 inversions 262 -> 261, withheld detections > 2 m 15 -> 15, withheld disc reads
+   -0.0005 pp, overlap 5.01 -> 5.03 %, silk legend-rank agreement -0.0015 pp). On the 14 camera-fault races (selected
+   by their outcome): horses whose finish needed a re-timing shift > 0.05 s 15 -> 0, held-out interior inversions
+   51 -> 41 and worst error 3.82 -> 0.58 s, withheld disc reads unlabelled 3.30 -> 0.09 % on HV 2026-11-18 R6.
 6. `RaceRun._official_retime`: each fused path is re-timed so it crosses the line at its official finish time; the
    interior official times are not re-timed onto. The correction is local to the last section
    (`RaceRun._finish_warp`): the identity up to the path's own crossing of the last sectional boundary before the
