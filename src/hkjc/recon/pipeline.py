@@ -47,7 +47,7 @@ from . import (
     video,
     worldmap,
 )
-from ..data import RaceInfo, download_replay, replay_path
+from ..data import Mask, MaskedRace, RaceInfo, download_replay, replay_path
 
 FPS = 25.0
 
@@ -167,8 +167,18 @@ def _step_job(k):
 
 
 class RaceRun:
-    def __init__(self, info: RaceInfo, root: str | Path = "data_cache/recon", log=print):
-        self.info = info
+    """``info``: the full race record (``truth``, read only by validation). Every stage reads the race
+    through ``self.info``, the masked view: pre-race facts plus the official outcome records ``mask``
+    leaves visible (default: ``Mask.from_env()``, i.e. ``HKJC_MASK`` / ``HKJC_FINAL_HOLDOUT``; no mask
+    withholds nothing). A masked run writes ``fuse_final``/``validate`` artifacts like any other: give it
+    its own ``root``."""
+
+    def __init__(
+        self, info: RaceInfo, root: str | Path = "data_cache/recon", log=print, mask: Mask | None = None
+    ):
+        self.truth = info
+        self.mask = Mask.from_env() if mask is None else mask
+        self.info = MaskedRace(info, self.mask)
         self.dir = Path(root) / info.key
         self.dir.mkdir(parents=True, exist_ok=True)
         self.log = log
@@ -1238,9 +1248,7 @@ class RaceRun:
     def official_observations(self) -> list:
         """FINAL-product observations (official outcome data): the gate draw fixes every runner's
         lateral at t=0 (standing start, s=0), and the official per-runner sectional times fix its
-        crossing times at the section boundaries (d = 400 k)."""
-        from .validate import _cum_official
-
+        crossing times at the section boundaries (d = 400 k); what the mask withholds is absent."""
         D = self.info.distance
         out = []
         for r in self.info.runners:
@@ -1257,16 +1265,13 @@ class RaceRun:
                     tid=20_000 + r.no,
                 )
             )
-        bnd, cum = _cum_official(self.info)
-        hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: withhold boundary index j (held-out check)
+        bnd, cum = self.info.official_boundaries()
         for h, ft in self._official_finish().items():  # runners without sectional times: the finish only
-            if h not in cum and not (hold is not None and int(hold) == len(bnd) - 1):
+            if h not in cum:
                 out.append(fusion.Obs(np.array([ft]), np.array([D]), None, self.OFFICIAL_SD, 1.0, "official",
                                       horse=h, tid=30_000 + h))
         for h, c in cum.items():
             ok = np.isfinite(c)
-            if hold is not None:
-                ok = ok & (np.arange(len(c)) != int(hold))
             out.append(
                 fusion.Obs(
                     np.asarray(c)[ok],
@@ -1445,8 +1450,9 @@ class RaceRun:
                 pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
         # FINAL identity pass: the E-step re-run with the official records in every fuse, detections
         # carrying the final metric bias, starting from the detection paths except where a horse's
-        # path conflicts with its own official skeleton (> 4 combined sigma); video-only unaffected
-        sk, _a = self._fuse(offi, horses, prior, t_end=t_end)
+        # path conflicts with its own official skeleton (> 4 combined sigma); video-only unaffected.
+        # No official times (all withheld by the mask): no skeleton
+        sk = self._fuse(offi, horses, prior, t_end=t_end)[0] if t_end is not None else {}
         start = self._skeleton_merge(pf, sk)
         obs_e, _pe = self._em_associate(
             start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
@@ -1463,34 +1469,25 @@ class RaceRun:
     TIE_STEP = 0.002  # s between horses sharing an official finish time, in placing order
 
     def _official_finish(self) -> dict:
-        """{horse: official finish time s} (results FinishTime)."""
-        out = {}
-        for h, ft in self.info.results.select(["HorseNo", "FinishTime"]).iter_rows():
-            if h is not None and ft is not None and np.isfinite(ft):
-                out[int(h)] = float(ft)
-        return out
+        """{horse: official finish time s} (empty where the mask withholds it)."""
+        return self.info.official_finish()
 
     def _official_place(self, h) -> int:
         """Index of horse ``h`` in the official result (placing order; unplaced last)."""
-        hs = [int(x) for x in self.info.results["HorseNo"].to_list() if x is not None]
+        hs = self.info.official_order()
         return hs.index(h) if h in hs else len(hs)
 
     def _official_retime(self, paths):
         """FINAL product: each horse passes every official boundary at its official time. A monotone
         piecewise-linear re-timing of the fused path (fixed at its first node; slope 1 after the last
         boundary) moves its crossings onto the official times; lateral and sd follow the same re-timing.
-        -> (paths, {horse: largest shift s})."""
-        from .validate import _cum_official
-
-        bnd, cum = _cum_official(self.info)
+        A boundary the mask withholds is not re-timed. -> (paths, {horse: largest shift s})."""
+        bnd, cum = self.info.official_boundaries()
         D = self.info.distance
         fin = self._official_finish()
-        hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: the withheld boundary is not re-timed
-        keep = [j for j in range(len(bnd)) if hold is None or j != int(hold)]
-        targets = {h: ([bnd[j] for j in keep], [c[j] for j in keep]) for h, c in cum.items()}
-        if hold is None or int(hold) != len(bnd) - 1:
-            for h, ft in fin.items():
-                targets.setdefault(h, ([0.0], [ft]))
+        targets = {h: (list(bnd), list(c)) for h, c in cum.items()}
+        for h, ft in fin.items():
+            targets.setdefault(h, ([0.0], [ft]))
         # equal official finish times (0.01 s resolution) keep the official placing: spaced inside the interval
         groups = {}
         for h in fin:
@@ -1573,16 +1570,14 @@ class RaceRun:
         return out
 
     def _metric_bias(self, paths):
-        """(s at the official boundaries, shared render metric bias b there, m) or None."""
-        from .validate import _cum_official, crossing
+        """(s at the official boundaries, shared render metric bias b there, m) or None; a boundary the
+        mask withholds sets no bias."""
+        from .validate import crossing
 
-        bnd, cum = _cum_official(self.info)
+        bnd, cum = self.info.official_boundaries()
         D = self.info.distance
-        hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: the withheld boundary sets no bias
         bs = []
         for j, bd in enumerate(bnd):
-            if hold is not None and j == int(hold):
-                continue
             r = []
             for h, c in cum.items():
                 p = paths.get(h)
@@ -1828,7 +1823,7 @@ class RaceRun:
     def validate(self):
         from . import validate as _v
 
-        res = _v.validate(self)
+        res = _v.validate(self, self.truth)
         with self.out("validation.json") as fp:
             fp.write_text(json.dumps(res, indent=1, default=float))
         self.log(_v.summary_line(self.info.key, res))
