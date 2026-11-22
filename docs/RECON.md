@@ -52,7 +52,7 @@ results; failures are reported as failures.
 | drone feed | one shot gate to finish | synced viewer only |
 | pre-race facts | distance, course and rail width, runners, official silk images | every stage (course shape, lateral bounds, silk evidence, runner numbers) |
 | draw | stall per runner | `fuse_final` (lateral at t = 0) |
-| official records | cumulative sectional times, finish times, placings | `fuse_final` only (`pipeline.READS_OUTCOME`): official observations, shared metric bias, final identity pass, re-timing, placing ties |
+| official records | cumulative sectional times, finish times, placings | `fuse_final` only (`pipeline.READS_OUTCOME`): official observations, shared metric bias, finish-camera clock, final identity pass, re-timing, placing ties |
 | track geometry | `hkjc.data.track_for`: handedness, course widths, home-straight length | `rails` (inner side, movable-rail check, expected fixed-rail gap), `film` (markers inside the home straight), fusion's lateral box |
 
 ## 3. The mask and held-out evaluation
@@ -477,6 +477,13 @@ The product: the video-only detections plus the draw and the official records th
    horse's official-only skeleton by > 4 combined σ (flat at 3–5); the E-step is re-run from there with the
    official observations in every fuse and bias-shifted detections (`det_labels_final.npz`). With every official
    time withheld there is no skeleton.
+   Finish clock: in every fuse of steps 3–5 (and the final E-step's finish seeds) the finish-camera observations
+   are moved onto the official clock: the camera's first-finisher time is shifted by the median over horses of
+   (official finish time − camera crossing time), from ≥ 3 horses with both (`RaceRun.official_clock_offset`);
+   order, gaps and sd are kept. Without it the camera can sit on the video clock (when its anchor fit falls back to
+   the label-free registration) and conflict with the official finish: on ST 2026-11-08 R1 0.48 s, which bent the
+   official-only skeleton by up to 47 m and cost the final pass 2,254 correctly read disc detections (now 261). With
+   the finish withheld, or fewer than 3 such horses, the camera observations are unchanged.
 6. `RaceRun._official_retime`: each fused path is re-timed so it passes every visible official boundary at the
    official time. The re-timing (`RaceRun._monotone_warp`) is a strictly increasing C1 cubic Hermite through the
    (fused crossing, official time) knots with Fritsch–Butland slopes, fixed at the path's first node and
@@ -599,7 +606,7 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 - Held-out official boundary: §3. Unmasked product: every winner and finishing order reproduced, every official
   boundary within 0.02 s.
 - Hand truth (video-only labels): 138 of 164 hand-labelled detections on 9 races, 84.1 %.
-- Numbered-disc agreement on the 25 disc races: 99.13 % (video-only labels), 98.91 % (final labels).
+- Numbered-disc agreement on the 25 disc races: 99.13 % (video-only labels), 99.21 % (final labels).
 - Withheld detections (391 stretches, 370 of them beside another horse; video-only paths): along-track RMS
   median 0.25 m, p90 0.84 m, 4.6 % above 2 m; lateral RMS median 0.19 m, p90 0.61 m; the path in the gap overlaps
   another horse in 5.9 % of stretches. With the same detections visible: 0.12 m, 0.27 m, 0 %; 0.12 m, 0.29 m;
@@ -607,11 +614,17 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   gave another horse, in 3 detections the reference left unlabelled, and in 5 none (the path extrapolates); 14 of
   the 18 have median posterior sd ≤ 0.4 m in the gap.
 - Withheld disc reads (25 disc races, alternate 10 s blocks): labels inside the hidden blocks equal the hidden
-  read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.45 %), 0.91 % left
-  unlabelled (final 1.59 %); with every read visible, 99.19 % and 0.49 % (final 98.98 %, 1.12 %). Here a
+  read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.76 %), 0.91 % left
+  unlabelled (final 0.94 %); with every read visible, 99.19 % and 0.49 % (final 99.28 %, 0.47 %). Here a
   confident read is one of a runner's numbers (`RaceRun._number_reads`); the agreement above counts every read.
 - Lateral yardstick on the final paths: AUC (WIDE > INSIDE) 0.961; MID > INSIDE 0.912, WIDE > MID 0.860 (INSIDE
   400, MID 262, WIDE 453 horse-runs).
+- The finish-clock re-registration (§4 fuse_final) was measured on the 156 evaluation races (196 less the 40
+  development races) against the code before it: withheld detections on the product paths, along-track RMS
+  median 0.36 m, p90 1.15 m, 21 stretches above 2 m (unchanged; paired mean −0.002 m, SE 0.003); held-out
+  boundary, lateral AUC and boundary kinks unchanged within 0.001 s / 0.001 / 0.001 m/s (order inversions 351 →
+  350 of 10,218); horse-time in a physical overlap 5.50 % → 5.42 %; every official boundary still within 0.02 s.
+  The §3 and lateral figures above predate it.
 
 ## 8. Open problems
 
