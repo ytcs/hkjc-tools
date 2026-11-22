@@ -1259,6 +1259,10 @@ class RaceRun:
             )
         bnd, cum = _cum_official(self.info)
         hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: withhold boundary index j (held-out check)
+        for h, ft in self._official_finish().items():  # runners without sectional times: the finish only
+            if h not in cum:
+                out.append(fusion.Obs(np.array([ft]), np.array([D]), None, self.OFFICIAL_SD, 1.0, "official",
+                                      horse=h, tid=30_000 + h))
         for h, c in cum.items():
             ok = np.isfinite(c)
             if hold is not None:
@@ -1268,7 +1272,7 @@ class RaceRun:
                     np.asarray(c)[ok],
                     D - np.asarray(bnd)[ok],
                     None,
-                    0.4,
+                    self.OFFICIAL_SD,
                     1.0,
                     "official",
                     horse=int(h),
@@ -1278,6 +1282,9 @@ class RaceRun:
         return out
 
     ANCHOR_CHECK = True
+    # official sectional/finish times are published to 0.01 s (~0.1 m at race speed): near-hard in the final
+    # product, so a mislabelled render tracklet conflicts with them (and is demoted) instead of bending them
+    OFFICIAL_SD = 0.1
 
     def _fuse(self, obs, horses, prior, t_end=None):
         """Render-fused posterior, then + finish camera. ``t_end``: the grid runs at least to this
@@ -1445,8 +1452,81 @@ class RaceRun:
             start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
         )
         pf, _a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
+        pf, warp = self._official_retime(pf)
+        if warp:
+            big = {h: round(w, 2) for h, w in warp.items() if w > 0.05}
+            self.log(f"   fuse_final: re-timed onto the official boundary times (max shift {max(warp.values()):.3f} s"
+                     + (f"; > 0.05 s: {big}" if big else "") + ")")
         self._write_paths(pf, "paths.parquet")
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
+
+    TIE_STEP = 0.002  # s between horses sharing an official finish time, in placing order
+
+    def _official_finish(self) -> dict:
+        """{horse: official finish time s} (results FinishTime)."""
+        out = {}
+        for h, ft in self.info.results.select(["HorseNo", "FinishTime"]).iter_rows():
+            if h is not None and ft is not None and np.isfinite(ft):
+                out[int(h)] = float(ft)
+        return out
+
+    def _official_place(self, h) -> int:
+        """Index of horse ``h`` in the official result (placing order; unplaced last)."""
+        hs = [int(x) for x in self.info.results["HorseNo"].to_list() if x is not None]
+        return hs.index(h) if h in hs else len(hs)
+
+    def _official_retime(self, paths):
+        """FINAL product: each horse passes every official boundary at its official time. A monotone
+        piecewise-linear re-timing of the fused path (fixed at its first node; slope 1 after the last
+        boundary) moves its crossings onto the official times; lateral and sd follow the same re-timing.
+        -> (paths, {horse: largest shift s})."""
+        from .validate import _cum_official
+
+        bnd, cum = _cum_official(self.info)
+        D = self.info.distance
+        fin = self._official_finish()
+        targets = {h: (list(bnd), list(c)) for h, c in cum.items()}
+        for h, ft in fin.items():
+            targets.setdefault(h, ([0.0], [ft]))
+        # equal official finish times (0.01 s resolution) keep the official placing: spaced inside the interval
+        groups = {}
+        for h in fin:
+            if h in targets and np.isfinite(targets[h][1][-1]):
+                groups.setdefault(round(targets[h][1][-1], 2), []).append(h)
+        for tie in groups.values():
+            for i, h in enumerate(sorted(tie, key=self._official_place)):
+                targets[h][1][-1] += i * self.TIE_STEP
+        out, warp = {}, {}
+        for h, p in paths.items():
+            if h not in targets:
+                out[h] = p
+                continue
+            bnd_h, c = targets[h]
+            s_mono = np.maximum.accumulate(p.s)
+            kt, kw = [float(p.t[0])], [float(p.t[0])]
+            for b, tc in zip(bnd_h, c):
+                if not np.isfinite(tc) or not (s_mono[0] < D - b <= s_mono[-1]):
+                    continue
+                tp = float(np.interp(D - b, s_mono, p.t))
+                if tp > kt[-1] and tc > kw[-1]:
+                    kt.append(tp)
+                    kw.append(float(tc))
+            if len(kt) < 2:
+                out[h] = p
+                continue
+            kt, kw = np.array(kt), np.array(kw)
+            w = np.interp(p.t, kt, kw)
+            after = p.t > kt[-1]
+            w[after] = p.t[after] + (kw[-1] - kt[-1])
+            warp[h] = float(np.max(np.abs(kw - kt)))
+            out[h] = replace(
+                p,
+                s=np.interp(p.t, w, p.s),
+                lat=np.interp(p.t, w, p.lat),
+                sd_s=np.interp(p.t, w, p.sd_s),
+                sd_l=np.interp(p.t, w, p.sd_l),
+            )
+        return out, warp
 
     def _metric_corrected(self, obs, paths, bias=None):
         """FINAL product only: the render's distance metric has a smooth SHARED error b(s) (all
