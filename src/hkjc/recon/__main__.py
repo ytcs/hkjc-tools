@@ -1,5 +1,5 @@
 """CLI: python -m hkjc.recon DATE VENUE RACE_NO [DATE VENUE RACE_NO ...] [--force a,b] [--stages a,b]
-[--mask none|boundary=J|outcome]"""
+[--mask SPEC]"""
 
 import argparse
 import sys
@@ -16,8 +16,8 @@ def main(argv=None):
     ap.add_argument(
         "--mask",
         default=None,
-        help="official outcome withheld from the reconstruction: none | boundary=J | outcome "
-        "(default: env HKJC_MASK / HKJC_FINAL_HOLDOUT)",
+        help="information withheld from the reconstruction: none, or ';'-joined boundary=J | outcome, "
+        "dets=I,J,... (dets.npz rows), discs=P[@PHASE] (default: env HKJC_MASK / HKJC_FINAL_HOLDOUT)",
     )
     a = ap.parse_args(argv)
     if len(a.race) % 3:

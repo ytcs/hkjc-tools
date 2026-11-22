@@ -68,12 +68,24 @@ official outcome records that the run's `hkjc.data.Mask` leaves visible, read on
 - `Mask(outcome=True)` withholds all official outcome data (results, finish times, placings, sectionals,
   running positions); pre-race facts, the draw included, stay visible.
 
-Select it with `RaceRun(info, mask=...)`, CLI `--mask none|boundary=J|outcome`, or env `HKJC_MASK`
+The mask also withholds video evidence, from `observe` on (`pipeline.READS_EVIDENCE`), for held-out scoring
+of the reconstruction where the videos are silent:
+- `Mask(dets={i, ...})` removes those render detections (`dets.npz` row indices) in `observe`, as if the
+  detector had missed them: tracking, identity and every fusion pass run without them. `rails` (upstream)
+  still sees them.
+- `Mask(discs=P)` counts every disc-number read (circle render) on the race clock's odd `P`-second blocks
+  `[kP, (k+1)P)` as unread (`discs_phase=0`: the even blocks), in all three consumers: `observe`'s number
+  split, `identify`'s votes and the fusion's blind set (`RaceRun._number_reads`).
+
+Select it with `RaceRun(info, mask=...)`, CLI `--mask SPEC`, or env `HKJC_MASK`; a spec is `none` or
+`;`-joined parts `boundary=J` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`
 (`HKJC_FINAL_HOLDOUT=j` is an alias for `boundary=j`; setting both is an error). A masked run writes
 `paths.parquet` and `validation.json` like any other, so give it its own `root`: the run dir records a
-non-empty mask in `mask.txt`, and a run refuses a dir whose `fuse_final`/`validate` artifacts were made under
-another mask. A withheld boundary is absent from the official observations, sets no metric bias and is not
-re-timed, so the product's error there is independent of that record.
+non-empty mask in `mask.txt`, and a run refuses a dir whose mask-dependent artifacts were made under another
+mask (the outcome part governs `fuse_final`/`validate`, the evidence part `observe` and everything downstream;
+an evidence-masked run therefore starts from a dir without `observe`'s outputs). A withheld boundary is absent
+from the official observations, sets no metric bias and is not re-timed, so the product's error there is
+independent of that record.
 
 **Held-out baseline.** 196 races (145 silk-render races from a 200-race sample of 2023-09 to 2026-11 turf
 meetings, the 26 silk-render development races, 25 numbered-disc races); one official boundary withheld per

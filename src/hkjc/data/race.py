@@ -88,38 +88,88 @@ def official_order(info) -> list:
 
 @dataclass(frozen=True)
 class Mask:
-    """Official outcome information withheld from the reconstruction.
+    """Information withheld from the reconstruction: official outcome records and video evidence.
 
-    ``boundary=j``: the cumulative official time at sectional boundary j (0 = the first section end;
-    the last index is the finish, which also withholds the finish times and placings).
+    Official outcome. ``boundary=j``: the cumulative official time at sectional boundary j (0 = the first
+    section end; the last index is the finish, which also withholds the finish times and placings).
     ``outcome=True``: every official outcome record (results, finish times, placings, sectionals,
     running positions); pre-race facts (distance, course, draw, runners, silks) stay visible.
-    ``Mask()`` withholds nothing. Spec strings (``parse``, CLI ``--mask``, env ``HKJC_MASK``):
-    ``none``, ``boundary=J``, ``outcome``."""
+
+    Video evidence (read from ``observe`` on). ``dets``: render detections, as ``dets.npz`` row indices,
+    removed as if the detector had missed them. ``discs=P``: disc-number reads (circle render) on the
+    race clock's blocks ``[kP, (k+1)P)`` with ``k % 2 == discs_phase`` (default 1, the odd blocks) count
+    as unread.
+
+    ``Mask()`` withholds nothing. Spec strings (``parse``, CLI ``--mask``, env ``HKJC_MASK``): ``none``,
+    or ``;``-joined parts ``boundary=J`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``."""
 
     boundary: int | None = None
     outcome: bool = False
+    dets: frozenset = frozenset()
+    discs: float | None = None
+    discs_phase: int = 1
 
     def __post_init__(self):
         if self.boundary is not None and (self.outcome or not isinstance(self.boundary, int) or self.boundary < 0):
             raise ValueError(f"invalid mask {self!r}: boundary is a non-negative index, exclusive of outcome")
+        object.__setattr__(self, "dets", frozenset(int(i) for i in self.dets))
+        if any(i < 0 for i in self.dets):
+            raise ValueError(f"invalid mask {self!r}: dets are dets.npz row indices")
+        if self.discs is not None and not (self.discs > 0 and self.discs_phase in (0, 1)):
+            raise ValueError(f"invalid mask {self!r}: discs is a block length > 0 s, phase 0 or 1")
 
     def __bool__(self) -> bool:
-        return self.outcome or self.boundary is not None
+        return bool(self.outcome_part() or self.evidence_part())
+
+    def outcome_part(self) -> str:
+        """The official-outcome component of the spec ('' when nothing is withheld)."""
+        return "outcome" if self.outcome else "" if self.boundary is None else f"boundary={self.boundary}"
+
+    def evidence_part(self) -> str:
+        """The video-evidence component of the spec ('' when nothing is withheld)."""
+        parts = []
+        if self.dets:
+            parts.append("dets=" + ",".join(str(i) for i in sorted(self.dets)))
+        if self.discs is not None:
+            parts.append(f"discs={self.discs:g}" + ("" if self.discs_phase == 1 else f"@{self.discs_phase}"))
+        return ";".join(parts)
 
     def __str__(self) -> str:
-        return "outcome" if self.outcome else "none" if self.boundary is None else f"boundary={self.boundary}"
+        return ";".join(p for p in (self.outcome_part(), self.evidence_part()) if p) or "none"
+
+    def discs_withheld(self, t) -> np.ndarray:
+        """Per race-clock time: is a disc read at that time withheld?"""
+        t = np.asarray(t, float)
+        if self.discs is None:
+            return np.zeros(t.shape, bool)
+        return np.floor(t / self.discs).astype(np.int64) % 2 == self.discs_phase
 
     @classmethod
     def parse(cls, spec: str | None) -> Mask:
         s = (spec or "").strip().lower()
         if s in ("", "none"):
             return cls()
-        if s == "outcome":
-            return cls(outcome=True)
-        if s.startswith("boundary="):
-            return cls(boundary=int(s.split("=", 1)[1]))
-        raise ValueError(f"mask spec {spec!r}: expected none | boundary=J | outcome")
+        kw = {}
+        for part in (p.strip() for p in s.split(";")):
+            key, _eq, val = part.partition("=")
+            if key in kw or (key in ("outcome", "boundary") and ({"outcome", "boundary"} & kw.keys())):
+                raise ValueError(f"mask spec {spec!r}: {key} given twice")
+            if part == "outcome":
+                kw["outcome"] = True
+            elif key == "boundary" and val:
+                kw["boundary"] = int(val)
+            elif key == "dets" and val:
+                kw["dets"] = frozenset(int(i) for i in val.split(","))
+            elif key == "discs" and val:
+                p, _at, ph = val.partition("@")
+                kw["discs"] = float(p)
+                if ph:
+                    kw["discs_phase"] = int(ph)
+            else:
+                raise ValueError(
+                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J | outcome, dets=I,J,..., discs=P[@PHASE]"
+                )
+        return cls(**kw)
 
     @classmethod
     def from_env(cls) -> Mask:
