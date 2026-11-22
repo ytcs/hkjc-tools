@@ -93,7 +93,10 @@ OUTPUTS = {
 
 # stages that read the official outcome (through the mask); they and their consumers depend on the mask
 READS_OUTCOME = ("fuse_final",)
-MASK_FILE = "mask.txt"  # the mask behind a run dir's outcome-dependent artifacts; absent = none
+# the first stage reading the video evidence an evidence mask withholds (detections, disc-number reads);
+# it and its consumers depend on the mask's evidence part
+READS_EVIDENCE = ("observe",)
+MASK_FILE = "mask.txt"  # the mask behind a run dir's mask-dependent artifacts; absent = none
 
 
 # stage -> the stages whose artifacts it reads (directly or through the helpers it calls)
@@ -176,8 +179,9 @@ class RaceRun:
     """``info``: the full race record (``truth``, read only by validation). Every stage reads the race
     through ``self.info``, the masked view: pre-race facts plus the official outcome records ``mask``
     leaves visible (default: ``Mask.from_env()``, i.e. ``HKJC_MASK`` / ``HKJC_FINAL_HOLDOUT``; no mask
-    withholds nothing). A masked run writes ``fuse_final``/``validate`` artifacts like any other: give it
-    its own ``root``: ``run`` refuses a dir whose outcome-dependent artifacts were made under another mask."""
+    withholds nothing); the mask's evidence part withholds detections and disc reads from ``observe`` on.
+    A masked run writes artifacts like any other: give it its own ``root``: ``run`` refuses a dir whose
+    mask-dependent artifacts were made under another mask."""
 
     def __init__(
         self, info: RaceInfo, root: str | Path = "data_cache/recon", log=print, mask: Mask | None = None
@@ -238,23 +242,39 @@ class RaceRun:
         done = self.done_set()
         return [st for st in stages if st not in done or st in forced]
 
-    def outcome_stages(self) -> set:
-        """READS_OUTCOME and every stage depending on one of them (transitively)."""
-        dep = set(READS_OUTCOME)
+    @staticmethod
+    def _downstream(first) -> set:
+        """``first`` and every stage depending on one of them (transitively)."""
+        dep = set(first)
         for st in STAGES:
             if any(d in dep for d in DEPS[st]):
                 dep.add(st)
         return dep
 
+    def outcome_stages(self) -> set:
+        """READS_OUTCOME and every stage depending on one of them (transitively)."""
+        return self._downstream(READS_OUTCOME)
+
+    def evidence_stages(self) -> set:
+        """READS_EVIDENCE and every stage depending on one of them (transitively)."""
+        return self._downstream(READS_EVIDENCE)
+
     def mask_guard(self, todo):
-        """One run dir holds one mask's outcome-dependent artifacts: never reuse or overwrite them under
-        another mask. Records a non-empty mask before any outcome-dependent stage runs."""
+        """One run dir holds one mask's mask-dependent artifacts: never reuse or overwrite them under
+        another mask. The outcome part of the mask governs the outcome stages, the evidence part the
+        evidence stages. Records a non-empty mask before any mask-dependent stage runs."""
         rec = self.p(MASK_FILE)
-        have = rec.read_text().strip() if rec.exists() else "none"
-        dep = self.outcome_stages()
-        if have != str(self.mask) and any(self.p(o).exists() for st in dep for o in OUTPUTS[st]):
-            raise ValueError(f"{self.info.key}: {self.dir} holds artifacts made under mask '{have}', this run's "
-                             f"mask is '{self.mask}': give the run its own root")
+        have_s = rec.read_text().strip() if rec.exists() else "none"
+        have = Mask.parse(have_s)
+        dep = set()
+        for stages, a, b in (
+            (self.outcome_stages(), have.outcome_part(), self.mask.outcome_part()),
+            (self.evidence_stages(), have.evidence_part(), self.mask.evidence_part()),
+        ):
+            dep |= stages
+            if a != b and any(self.p(o).exists() for st in stages for o in OUTPUTS[st]):
+                raise ValueError(f"{self.info.key}: {self.dir} holds artifacts made under mask '{have_s}', this "
+                                 f"run's mask is '{self.mask}': give the run its own root")
         if dep & set(todo):
             if self.mask:
                 rec.write_text(f"{self.mask}\n")
@@ -843,6 +863,11 @@ class RaceRun:
             keep = np.random.default_rng(int(seed)).random(len(rows)) >= 0.01
             rows, X, hist = rows[keep], X[keep], hist[keep]
             self._wd_idx = self._wd_idx[keep]
+        if self.mask.dets:  # evidence mask: withheld detections, as if the detector had missed them
+            keep = ~np.isin(self._wd_idx, np.fromiter(self.mask.dets, int))
+            rows, X, hist = rows[keep], X[keep], hist[keep]
+            self._wd_idx = self._wd_idx[keep]
+            self.log(f"   observe: {int((~keep).sum())} detections withheld by the mask")
         z = np.load(self.p("rail.npz"))
         m = np.load(self.p("metric.npz"))
         rf = rails.RailFrame.from_points(z["rail"], int(z["inner"]))
@@ -952,7 +977,7 @@ class RaceRun:
             members = tracking.split_by_appearance(members, t, Fs)
             members = sorted((m for m in members if len(m)), key=lambda m: -len(m))
             self.log(f"   observe: appearance split {n0} -> {len(members)} tracklets")
-        nums = self._number_reads(dict(det_idx=det_idx))  # circle render: identity switches inside tracklets
+        nums = self._number_reads(dict(det_idx=det_idx, t=t))  # circle render: identity switches inside tracklets
         if nums is not None:
             n0 = len(members)
             members = tracking.split_by_number(members, t, nums)
@@ -1060,7 +1085,8 @@ class RaceRun:
     NUMBER_CONF = 0.6  # minimum OCR confidence of a disc number read
 
     def _number_reads(self, T):
-        """Per tracks row: the disc number read (circle render; 0 = unread or low confidence), else None."""
+        """Per tracks row: the disc number read (circle render; 0 = unread, low confidence or withheld by
+        the mask), else None."""
         if not self.p("numbers.npz").exists():
             return None
         z = np.load(self.p("numbers.npz"))
@@ -1068,6 +1094,8 @@ class RaceRun:
         num, conf = z["num"][di], z["conf"][di]
         valid = {r.no for r in self.info.runners}
         ok = (conf >= self.NUMBER_CONF) & np.isin(num, list(valid))
+        if self.mask.discs is not None:
+            ok &= ~self.mask.discs_withheld(T["t"])
         return np.where(ok, num, 0)
 
     def _silk_llr(self, mem, T, nmax):

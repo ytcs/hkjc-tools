@@ -11,7 +11,7 @@ import pytest
 from hkjc.data import Mask, MaskedRace, RaceInfo, Runner
 from hkjc.data.race import official_boundaries, official_finish, official_order
 from hkjc.recon.fusion import Path
-from hkjc.recon.pipeline import RaceRun
+from hkjc.recon.pipeline import READS_EVIDENCE, RaceRun
 from hkjc.recon.validate import _cum_official, crossing
 
 D = 1200.0
@@ -220,3 +220,98 @@ def test_run_dir_refuses_artifacts_of_another_mask(tmp_path):
     m2.p("paths.parquet").write_bytes(b"x")
     with pytest.raises(ValueError):
         RaceRun(info, root=other, log=lambda *a: None, mask=Mask()).mask_guard(["validate"])
+
+
+# ---------------------------------------------------------------- evidence mask (video evidence withheld)
+
+
+def test_evidence_mask_spec():
+    m = Mask(dets={7, 3, 12})
+    assert m and str(m) == "dets=3,7,12" and m.outcome_part() == "" and m.evidence_part() == "dets=3,7,12"
+    assert str(Mask(discs=10)) == "discs=10" and str(Mask(discs=10, discs_phase=0)) == "discs=10@0"
+    both = Mask(boundary=1, dets={2}, discs=2.5, discs_phase=0)
+    assert str(both) == "boundary=1;dets=2;discs=2.5@0"
+    for x in (m, both, Mask(discs=10), Mask(outcome=True, dets={0}), Mask()):
+        assert Mask.parse(str(x)) == x
+    assert not Mask().evidence_part() and not Mask(boundary=2).evidence_part()
+    for bad in ("dets=", "dets=-1", "dets=a", "discs=0", "discs=10@2", "outcome;boundary=1", "dets=1;dets=2"):
+        with pytest.raises(ValueError):
+            Mask.parse(bad)
+    w = Mask(discs=10).discs_withheld([0.0, 9.9, 10.0, 19.9, 20.0, -3.0])
+    assert w.tolist() == [False, False, True, True, False, True]
+    assert Mask(discs=10, discs_phase=0).discs_withheld([0.0, 10.0]).tolist() == [True, False]
+    assert not Mask().discs_withheld(np.arange(100.0)).any()
+
+
+def test_disc_reads_withheld_only_inside_the_masked_blocks(tmp_path):
+    info = _info()  # runners 1..3
+    num = np.array([1, 2, 3, 9, 1, 2, 3, 1])
+    conf = np.array([0.9, 0.9, 0.9, 0.9, 0.3, 0.9, 0.9, 0.9])
+    T = dict(det_idx=np.arange(8), t=np.array([1.0, 5.0, 12.0, 13.0, 14.0, 21.0, 35.0, 39.0]))
+    full = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask())
+    np.savez(full.p("numbers.npz"), num=num, conf=conf)
+    assert full._number_reads(T).tolist() == [1, 2, 3, 0, 0, 2, 3, 1]  # default: confident reads of runners
+    held = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(discs=10))._number_reads(T)
+    assert held.tolist() == [1, 2, 0, 0, 0, 2, 0, 0]  # [10, 20) and [30, 40) count as unread
+    even = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(discs=10, discs_phase=0))._number_reads(T)
+    assert even.tolist() == [0, 0, 3, 0, 0, 0, 3, 1]
+
+
+def test_recon_reads_disc_numbers_and_detections_only_where_the_mask_applies():
+    src = (FsPath(__file__).parents[1] / "src/hkjc/recon/pipeline.py").read_text()
+    methods = {m.split("(", 1)[0]: m for m in src.split("\n    def ")[1:]}
+
+    def readers(pat):
+        return sorted(name for name, body in methods.items() if pat in body)
+
+    # numbers.npz is read in one place (_number_reads, which applies the disc mask); raw detections reach
+    # the stages from observe on only through observe's world_dets call, where the detection mask applies
+    # (rails and silk are upstream of observe)
+    assert readers('self.p("numbers.npz")') == ["_number_reads"]
+    assert readers("self.world_dets()") == ["observe", "rails"]
+    assert readers('self.p("dets.npz")') == ["_backfill_yolo", "silk", "world_dets"]
+    assert {"rails", "silk", "detect"} & RaceRun._downstream(READS_EVIDENCE) == set()
+
+
+def test_withheld_detections_never_reach_tracking(tmp_path):
+    info = _info()
+    rows = np.c_[np.arange(5), np.zeros((5, 5))]
+
+    def bare(mask, root):
+        run = RaceRun(info, root=root, log=lambda *a: None, mask=mask)
+
+        def wd():  # dets.npz rows 0..4, all passing the gates
+            run._wd_idx = np.arange(5)
+            return rows, np.zeros((5, 2)), np.zeros((5, 14)), None
+
+        run.world_dets = wd
+        with pytest.raises(FileNotFoundError):  # stops at the first artifact read after the withholding
+            run.observe()
+        return run._wd_idx.tolist()
+
+    assert bare(Mask(dets={1, 3}), tmp_path / "a") == [0, 2, 4]
+    assert bare(Mask(boundary=1, discs=10), tmp_path / "b") == [0, 1, 2, 3, 4]  # no detection withheld
+
+
+def test_run_dir_refuses_artifacts_of_another_evidence_mask(tmp_path):
+    info = _info()
+    assert RaceRun(info, root=tmp_path, log=lambda *a: None).evidence_stages() == {
+        "observe", "identify", "fuse_video", "fuse_final", "validate"}
+    plain = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask())
+    plain.p("tracks.npz").write_bytes(b"x")  # unmasked tracklets
+    with pytest.raises(ValueError, match="own root"):
+        RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(dets={5})).mask_guard(["fuse_video"])
+    with pytest.raises(ValueError, match="own root"):
+        RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(discs=10)).mask_guard(["observe"])
+    # an outcome mask leaves the video-evidence artifacts valid (held-out boundary runs reuse them)
+    RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(boundary=1)).mask_guard(["fuse_final"])
+    assert (tmp_path / info.key / "mask.txt").read_text().strip() == "boundary=1"
+    other = tmp_path / "ev"
+    ev = RaceRun(info, root=other, log=lambda *a: None, mask=Mask(dets={5}, boundary=1))
+    ev.mask_guard(["observe", "identify", "fuse_video", "fuse_final"])
+    assert ev.p("mask.txt").read_text().strip() == "boundary=1;dets=5"
+    ev.p("paths_video.parquet").write_bytes(b"x")
+    for m in (Mask(), Mask(boundary=1), Mask(dets={6}, boundary=1), Mask(dets={5}, discs=10, boundary=1)):
+        with pytest.raises(ValueError, match="own root"):
+            RaceRun(info, root=other, log=lambda *a: None, mask=m).mask_guard(["fuse_final"])
+    ev.mask_guard(["fuse_final"])  # same mask: reuse is fine
