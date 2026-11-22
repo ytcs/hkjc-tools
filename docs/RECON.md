@@ -413,7 +413,9 @@ again. Shadow release: two tight paths within 0.8 m along and 0.5 m lateral for 
 The final product reuses the video-only detections and adds the official records:
 1. `RaceRun.official_observations`: the draw fixes lateral at t = 0 (stall 1 at 2.5 m, pitch 1.06 m,
    measured on HV 06-03 R8's drone start frame; sd 0.4 m) and official cumulative sectional times fix
-   crossings at d = 400k (sd 0.4 m).
+   crossings at d = 400k with sd 0.1 m (their 0.01 s publication precision); runners without sectional
+   times are held to their official finish time. At sd 0.4 m a mislabelled render tracklet outweighed the
+   record (145 S1 silk races: official winner wrong on 7, finish-order inversions on 75).
 2. `RaceRun._metric_bias`: at each boundary, b = median over ≥ 3 horses of (video-only crossing delay
    × speed); render s is shifted by b interpolated along s. The render metric error is shared by all
    horses, and hundreds of render observations otherwise outvote one official time (residual ~5× its sd).
@@ -425,8 +427,13 @@ The final product reuses the video-only detections and adds the official records
    out of the gate (ST 05-31 R1 #6 26 m out at 2 s, the field 8–15 m).
 5. Final identity pass: `RaceRun._skeleton_merge` keeps the step-4 path except where it conflicts with
    the horse's official-only skeleton by > 4 combined σ (flat at 3–5); the E-step is re-run from there
-   with the official observations in every fuse and bias-shifted detections; the last fuse writes
-   `paths.parquet`.
+   with the official observations in every fuse and bias-shifted detections.
+6. `RaceRun._official_retime`: each fused path is re-timed (monotone, piecewise linear in time, fixed at
+   its first node, slope 1 after the last boundary) so it passes every official boundary at the official
+   time; horses sharing an official finish time keep the official placing, 2 ms apart. Shifts over
+   0.05 s are logged (they mark identity errors left in the video evidence). `paths.parquet` reproduces
+   the official result: on the 145 S1 silk races every winner, no finish-order inversion, every
+   horse-boundary within 0.02 s.
 
 ### status
 
