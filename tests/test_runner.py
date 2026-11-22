@@ -182,3 +182,27 @@ def test_camera_crossings_leave_fuse_final_where_the_official_finish_is_visible(
     s1 = seeds[1]
     assert abs(np.interp(1200.0, s1.s, s1.t) - 70.5) < 1e-6 and abs(s1.sd_s.min() - R.OFFICIAL_SD) < 0.02
     assert abs(np.interp(1200.0, seeds[2].s, seeds[2].t) - 70.2) < 1e-6
+
+
+def test_registration_shift_puts_both_finish_clocks_in_the_shifted_frame(tmp_path, monkeypatch):
+    from hkjc.recon import finishcam
+
+    bias = (np.array([400.0, 800.0]), np.array([-2.0, -9.0]))  # held flat past the last visible boundary
+    assert abs(RaceRun.registration_shift(bias, 1200.0, 15.0) - 0.6) < 1e-12  # render +9 m short -> 0.6 s later
+    R = RaceRun(SimpleNamespace(key="race", distance=1200.0, n=4, venue="ST", width=25.0), root=tmp_path,
+                log=lambda *_: None)
+    np.savez(R.p("finish.npz"), line_x=100.0, reads=np.zeros((0, 4)), ppm=100.0)
+    gaps = {1: 0.0, 2: 300.0, 3: 600.0, 4: 900.0}
+    monkeypatch.setattr(finishcam, "finish_gaps", lambda sc, with_sd=False: ([1, 2, 3, 4], gaps, None, {}))
+    # the anchor fits the (bias-shifted) fused crossings: winner at 70.6 s; the label-free registration of the
+    # unshifted tracklets: 70.0 s
+    monkeypatch.setattr(finishcam, "anchor", lambda g, t, **kw: (70.6, 1500.0, 4, np.eye(2) * 1e-4))
+    monkeypatch.setattr(RaceRun, "_finish_identity", lambda self, *a: ({}, {"t_w": 70.0, "C": 1500.0, "edge": False,
+                                                                               "n_close": 4}))
+    t = np.arange(60.0, 72.0, 0.1)
+    p = SimpleNamespace(t=t, s=1200.0 + 15.0 * (t - 70.6), sd_s=np.full(len(t), 0.2))
+    paths = {h: p for h in gaps}
+    t_win = lambda obs: min(float(o.t[0]) for o in obs)  # noqa: E731
+    assert abs(t_win(R.finish_camera(paths)) - 70.0) < 1e-9  # frames compared unshifted: anchor rejected
+    R._render_bias = bias
+    assert abs(t_win(R.finish_camera(paths)) - 70.6) < 1e-9  # one frame: the anchor stands

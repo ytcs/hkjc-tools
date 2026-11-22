@@ -1284,6 +1284,8 @@ class RaceRun:
         # labels drag it; registering the anonymous tracklet crossings to the gaps needs no labels
         # (measured bias ~0.15 s early)
         _m, fit = self._finish_identity()
+        if fit is not None and self._render_bias is not None:
+            fit = dict(fit, t_w=fit["t_w"] + self.registration_shift(self._render_bias, self.info.distance, v_line))
         reg_ok = fit is not None and not fit["edge"] and fit["n_close"] >= 0.5 * self.info.n
         src = "anchor"
         if cal is not None and reg_ok:
@@ -1544,6 +1546,17 @@ class RaceRun:
 
     # {horse: official finish time} while fuse_final runs: the finish camera's clock is re-registered onto it
     _official_clock = None
+    # (s at the official boundaries, shared render metric bias b there) while fuse_final runs with a bias
+    _render_bias = None
+
+    @staticmethod
+    def registration_shift(bias, distance, v_line) -> float:
+        """Shift (s) of the label-free finish registration's clock into fuse_final's bias-shifted render frame. The
+        registration matches the tracklets' own line crossings (render s, unshifted), while every fuse here sees render
+        s + b(s); with b(line) the bias held at the line (np.interp, flat past the last visible boundary) the shifted
+        render reaches the line -b(line)/v_line later. Without it the anchor-vs-registration check compares two frames
+        and, for |b(line)| above ~6 m, rejects the anchor for a clock 0.3-0.6 s off the render it is fused with."""
+        return -float(np.interp(distance, *bias)) / v_line
     CLOCK_MIN_HORSES = 3
 
     @classmethod
@@ -1564,6 +1577,7 @@ class RaceRun:
             self._fuse_final()
         finally:
             self._official_clock = None
+            self._render_bias = None
 
     def _fuse_final(self):
         import pickle
@@ -1580,6 +1594,7 @@ class RaceRun:
         ends = [x for x in (t_off, t_vid) if x is not None]
         t_end = max(ends) + 0.5 if ends else None
         bias = self._metric_bias(pv)
+        self._render_bias = bias
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
         # the gate -> first render frame stretch has no video evidence: a field-relative start prior
