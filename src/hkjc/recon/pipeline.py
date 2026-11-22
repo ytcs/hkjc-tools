@@ -1461,8 +1461,12 @@ class RaceRun:
         prior = fusion.Prior(width=self.info.width)
         horses = [r.no for r in self.info.runners]
         offi = self.official_observations()
-        t_end = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
-        t_end = None if t_end is None else t_end + 0.5
+        # the grid runs past the last official time AND the video-only grid's end, else the slowest
+        # finisher ends short of the line (the official finish may be withheld by the mask)
+        t_off = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
+        t_vid = max((float(p.t[-1]) for p in pv.values()), default=None)
+        ends = [x for x in (t_off, t_vid) if x is not None]
+        t_end = max(ends) + 0.5 if ends else None
         bias = self._metric_bias(pv)
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
@@ -1482,7 +1486,7 @@ class RaceRun:
         # carrying the final metric bias, starting from the detection paths except where a horse's
         # path conflicts with its own official skeleton (> 4 combined sigma); video-only unaffected.
         # No official times (all withheld by the mask): no skeleton
-        sk = self._fuse(offi, horses, prior, t_end=t_end)[0] if t_end is not None else {}
+        sk = self._fuse(offi, horses, prior, t_end=t_end)[0] if t_off is not None else {}
         start = self._skeleton_merge(pf, sk)
         obs_e, _pe = self._em_associate(
             start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
