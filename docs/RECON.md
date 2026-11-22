@@ -439,9 +439,11 @@ The final product reuses the video-only detections and adds the official records
 5. Final identity pass: `RaceRun._skeleton_merge` keeps the step-4 path except where it conflicts with
    the horse's official-only skeleton by > 4 combined σ (flat at 3–5); the E-step is re-run from there
    with the official observations in every fuse and bias-shifted detections.
-6. `RaceRun._official_retime`: each fused path is re-timed (monotone, piecewise linear in time, fixed at
-   its first node, slope 1 after the last boundary) so it passes every official boundary at the official
-   time; horses sharing an official finish time keep the official placing, 2 ms apart. Shifts over
+6. `RaceRun._official_retime`: each fused path is re-timed so it passes every official boundary at the
+   official time. The re-timing (`RaceRun._monotone_warp`) is a strictly increasing C1 cubic Hermite
+   through the (fused crossing, official time) knots with Fritsch–Butland slopes, fixed at the path's
+   first node and continued past the last boundary at the last section's rate, so it adds no speed jump
+   at a boundary (5 races: speed jump at the boundaries the same as the un-re-timed fused path); horses sharing an official finish time keep the official placing, 2 ms apart. Shifts over
    0.05 s are logged (they mark identity errors left in the video evidence). `paths.parquet` reproduces
    the official result: on the 145 S1 silk races every winner, no finish-order inversion, every
    horse-boundary within 0.02 s.
@@ -657,6 +659,12 @@ Gates failed on ≥ 5 of 6 seeds:
   fading horses also exceed 3 m/s relative (HV 04-29 R9 #8, ST 05-03 R7 #11); relative acceleration
   separates them (faders ≤ 1.25 m/s², conflicts ≥ 2.4 m/s² on five traced cases). Boundary-crossing
   runs already agree with their official times in the final labels (1 of 783 off by > 0.3 s).
+- **Speed kinks at official crossings come from the fuse.** The fused final path, before re-timing, already
+  has a speed corner where it meets an official crossing: on 5 offA races, the step-to-step speed change
+  within 0.15 s of a boundary averages 3.5× its value elsewhere (0.073 vs 0.021 m/s per 0.1 s). The
+  median jump is 0.09 m/s (p95 0.23) net of local acceleration, against 0.005 m/s (p95 0.025) for the
+  video-only path at the same instants. The re-timing adds nothing to it. Speed and acceleration
+  features derived near a boundary carry this artefact.
 - **Back-marker identity.** Back markers get only elimination evidence and a weak silk LLR: HV 05-20
   R2 #5/#12 are swapped at 400 m (~1 s, every seed), and at 1200 and 800 m #5 and #12 cross 0.6–1.4 s early on all six seeds (video-only;
   #2 0.6–0.75 s at 1200 m on six seeds and at 800 m on three; #6 and #8 0.3–1.0 s where they have a crossing); in one seed-0 frame at 1200 m the avatar the
@@ -886,6 +894,7 @@ Fusion
 Final product
 - Final identity pass comparing raw detections with bias-shifted paths: census 87.3 %, hand −4.
 - Official sd 0.1 m: glitch-seconds 55.8 → 85.4.
+- Piecewise-linear official re-timing: a speed jump v·(1/w′₋ − 1/w′₊) at every official boundary; on 5 offA races the largest boundary speed jump was 1.72 m/s (ST 2024-03-24 R8 #1, shift 2.87 s), against 0.24 m/s with the C1 warp, which matches the un-re-timed fused path.
 - Final identity pass started from the official-only skeleton: hand 220 → 164 (no lateral detail; bunched field mislabelled).
 - Field-relative prior over the whole final race: share of held-out errors beyond 2 sd 0.628 → 0.694 (guard +5 points).
 - Field-curve centre without the stiffer width after the start: glitch-seconds 24.3 → 42.4, no held-out gain.

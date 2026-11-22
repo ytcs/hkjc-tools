@@ -1478,10 +1478,11 @@ class RaceRun:
         return hs.index(h) if h in hs else len(hs)
 
     def _official_retime(self, paths):
-        """FINAL product: each horse passes every official boundary at its official time. A monotone
-        piecewise-linear re-timing of the fused path (fixed at its first node; slope 1 after the last
-        boundary) moves its crossings onto the official times; lateral and sd follow the same re-timing.
-        A boundary the mask withholds is not re-timed. -> (paths, {horse: largest shift s})."""
+        """FINAL product: each horse passes every official boundary at its official time. A strictly
+        increasing C1 re-timing of the fused path (``_monotone_warp``; fixed at its first node) moves its
+        crossings onto the official times without a speed jump at any boundary; lateral and sd follow
+        the same re-timing. A boundary the mask withholds is not re-timed.
+        -> (paths, {horse: largest shift s})."""
         bnd, cum = self.info.official_boundaries()
         D = self.info.distance
         fin = self._official_finish()
@@ -1515,9 +1516,7 @@ class RaceRun:
                 out[h] = p
                 continue
             kt, kw = np.array(kt), np.array(kw)
-            w = np.interp(p.t, kt, kw)
-            after = p.t > kt[-1]
-            w[after] = p.t[after] + (kw[-1] - kt[-1])
+            w = self._monotone_warp(kt, kw, p.t)
             warp[h] = float(np.max(np.abs(kw - kt)))
             out[h] = replace(
                 p,
@@ -1527,6 +1526,26 @@ class RaceRun:
                 sd_l=np.interp(p.t, w, p.sd_l),
             )
         return out, warp
+
+    @staticmethod
+    def _monotone_warp(kt, kw, t):
+        """Strictly increasing C1 map t -> w through the knots (kt[i] -> kw[i], both strictly
+        increasing): cubic Hermite with Fritsch-Butland (PCHIP) interior slopes, each <= 3x the
+        adjacent secants, so every piece is strictly monotone."""
+        from scipy.interpolate import CubicHermiteSpline
+
+        h = np.diff(kt)
+        m = np.diff(kw) / h
+        d = np.empty_like(kt)
+        # ends: the adjacent section's mean rate, continued linearly outside the knots -- C1, strictly
+        # monotone, and the post-finish stretch (< ~1 s) keeps the last section's clock rate
+        d[0], d[-1] = m[0], m[-1]
+        if len(m) > 1:
+            w1, w2 = 2 * h[1:] + h[:-1], h[1:] + 2 * h[:-1]
+            d[1:-1] = (w1 + w2) / (w1 / m[:-1] + w2 / m[1:])
+        w = CubicHermiteSpline(kt, kw, d)(np.clip(t, kt[0], kt[-1]))
+        w = np.where(t < kt[0], kw[0] + d[0] * (t - kt[0]), w)
+        return np.where(t > kt[-1], kw[-1] + d[-1] * (t - kt[-1]), w)
 
     def _metric_corrected(self, obs, paths, bias=None):
         """FINAL product only: the render's distance metric has a smooth SHARED error b(s) (all
