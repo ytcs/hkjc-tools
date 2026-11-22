@@ -3,19 +3,10 @@ __pycache__/
 .venv/
 data_cache/
 *.parquet
-yolov8*.pt
 *.pt
 
 # agent worktrees + local settings
 .claude/
-studies/newdata_samples/
-
-# CV prototype regenerable artifacts (code is tracked; frames/outputs/video are not)
-studies/cv/frames/
-studies/cv/out/
-
-# regenerable model-figure outputs (code is tracked; figures are not)
-studies/out/
 
 # Ultralytics YOLO training runs (weights/plots/configs; regenerable)
 runs/

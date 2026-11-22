@@ -2,9 +2,10 @@
 
 The **reference data** of Hong Kong racing: the physical tracks, the handicap/
 competition system, and the pari-mutuel pools with their economics. This is the
-authoritative, slow-changing layer — import facts from `hkjc.core.hkjc_facts` and
-`hkjc.core.track` rather than hard-coding them; this doc explains what those encode
-and why.
+authoritative, slow-changing layer. The track geometry is encoded in `hkjc.data.tracks`
+(`TrackGeometry`, `TRACKS`, `track_for`; the first and last are also exported from
+`hkjc.data`) and the incident codes in `hkjc.data.historical.incidents`; import those
+rather than hard-coding them. The competition and betting rules are documented here only.
 
 > Venue codes used everywhere: **`ST` = Sha Tin**, **`HV` = Happy Valley** — the only
 > two local courses. Two surfaces: **Turf** and **AWT** (All-Weather Track, dirt).
@@ -16,7 +17,7 @@ and why.
 The turf **running rail is movable**: it is shifted outward meeting-to-meeting to
 spread wear, which **changes the usable width and the draw-bias geometry per race** —
 geometry is *not* fixed per venue. The `Course` field (`A`, `A+2`, `B`, `B+2`, `B+3`,
-`C`, `C+3`) sets the rail position. Official widths (encoded in `hkjc.core.track`):
+`C`, `C+3`) sets the rail position. Official widths (encoded in `hkjc.data.tracks`):
 
 | Course | Sha Tin width | Happy Valley width |
 | --- | --- | --- |
@@ -27,8 +28,9 @@ geometry is *not* fixed per venue. The `Course` field (`A`, `A+2`, `B`, `B+2`, `
 | C | 21.3 m | 22.5 m |
 | C+3 | 18.3 m | 19.5 m |
 
-`hkjc.core.track` holds a `TrackGeometry` per *venue × surface × configuration* with a
-resolver `track_for(venue, distance, surface)`. The four encoded geometries:
+`hkjc.data.tracks` holds a `TrackGeometry` per *venue × surface × configuration* (the
+`TRACKS` dict) with a resolver `track_for(venue, distance, surface)`. The four encoded
+geometries:
 
 - **Happy Valley** — turf, ~1,450 m circuit, right-handed, **bend-dominated** (near-
   continuous turning: home straight ~[0,300]; Sanatorium/Crescent/"The Rock" bends
@@ -45,8 +47,7 @@ resolver `track_for(venue, distance, surface)`. The four encoded geometries:
 - **Sha Tin AWT** — dirt, 1,560 m, right-handed, 365 m home straight, **fixed single
   rail** (uniform 22.8 m). Surface inferred from the "ALL WEATHER TRACK" label (going
   codes alone are ambiguous — both scales have GOOD). AWT has distinct physics: lower
-  achievable speeds, kickback, and **ability that may not transfer from turf** (the
-  model treats it as more diffusive — see THEORY / the model state).
+  achievable speeds, kickback, and **ability that may not transfer from turf**.
 
 Draw bias is most acute at HV and the short ST turf trips, flat on the ST 1000 m chute.
 The `draw` info page (`DrawStatistics`) publishes realised W%/P% by course-distance.
@@ -82,8 +83,7 @@ that shapes every win probability and is essential context for modelling:
 
 The handicapper's explicit goal is a *blanket finish* — to compress ability
 differences so every horse has a chance. This is **why win probabilities are close,
-why beating the market is hard, and why "% of market" is the right yardstick** (THEORY
-§ competition structure). It also means raw form must be read **relative to the field
+why beating the market is hard, and why "% of market" is the right yardstick**. It also means raw form must be read **relative to the field
 faced** (opponent-strength-adjusted), not in absolute terms.
 
 ## 4. Runner & result field semantics
@@ -95,8 +95,8 @@ faced** (opponent-strength-adjusted), not in absolute terms.
   runners flagged via `changeHistories` / `scratched`.
 - **`Pla`** — finishing position; may carry an **incident code** instead of a number:
   `DISQ, DNF, FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR` (filtered
-  out during cleaning — but the *fact* that a horse failed to complete is itself a
-  signal; see THEORY § stochasticity).
+  out of the results table — but the *fact* that a horse failed to complete is itself
+  informative).
 - **Time strings differ by page** (parse each with its own rule):
 
   | Page | Field | Format | Unit of last part |
@@ -182,8 +182,8 @@ dividend_per_unit(combo) = net_pool × winning_share(combo) / stakes_on(combo)
 
 - **Takeout is the operator's only structural edge** and **differs by pool** (~17.5%
   WIN/PLA/QIN/QPL → ~25% QTT/FF). A 5% model edge is profitable at 17.5%, underwater at
-  25%. `harville_model`'s `takeout_rate=0.175` default is valid **only** for the
-  WIN/PLA/QIN/QPL family — set it per pool.
+  25%. A 17.5% takeout applies **only** to the WIN/PLA/QIN/QPL family — use the
+  per-pool rate.
 - **Dividend is endogenous to the crowd:** your payout falls the more money is on your
   combination. The model predicts *probabilities*; the *odds/dividend* come from the
   live pool. We assume our stake is small vs the pool (ignore own price impact), but the
@@ -218,10 +218,6 @@ Operator Reserve Deduction ≈ 0.5% of pool
   `estimatedDividend`, joined on (pool, leg races) (HKJC_DATA §1.3); they are null until pools open.
   Result pages show a jackpot dividend only when the pool was won and never the carried-in amount,
   so C must be captured live during the betting window.
-
-> Strategy note: harvesting carryover is the **strategist agent's** domain (cover
-> optimisation, dilution/late-money haircuts, FDR on a handful of events/season). This
-> doc only states the *mechanics*; the build/strategy lives in that agent's journal.
 
 ## 8. Open verification tasks (rules are priors — HKJC tunes them per season)
 

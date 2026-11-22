@@ -11,8 +11,8 @@ surface *is* the search space.
 > `requests.get()` returns full HTML (parse with BeautifulSoup), no browser needed, *if*
 > you use the right params. There is no public per-page JSON for racing data.
 
-Implementation status legend: ✅ wired in `hkjc.data` · 🟡 partial · ⬜ not wired · 📜 parser
-removed 2026-11; the recipe below is complete enough to rebuild it (last code in git at `data-acquisition-last`).
+Implementation status legend: ✅ wired in `hkjc.data` · 🟡 partial · ⬜ not wired · 📜 not
+wired, with a complete fetch-and-parse recipe below.
 Of the §1–§3 sources, only the results table (`LocalResults.aspx`) and `displaysectionaltime` are
 wired today (both via `hkjc.data.race_info`); replay videos (§4), silks and track geometry stay
 wired in their own modules.
@@ -30,7 +30,7 @@ Accept: application/json
 User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
 body: {"operationName": ..., "variables": {...}, "query": "<exact text, §1.2>"}
 ```
-No auth, cookie or token. The old client used a 30 s timeout and raised on any non-200.
+No auth, cookie or token. A 30 s timeout works; treat any non-200 as an error.
 The response is `{"data": {"raceMeetings": [...]}}`.
 
 Two operations (exact query texts in §1.2):
@@ -46,7 +46,7 @@ you asked for — the server can hand back a different meeting.
 
 **Pool / odds types accepted:** `WIN, PLA, QIN, QPL, CWA, CWB, CWC, IWN, FCT, TCE, TRI,
 FF, QTT, DBL, TBL, DT, TT, SixUP`, plus `JKC` (jockey challenge), `TNC` (trainer
-challenge). The removed parser read only `WIN, PLA, QIN, QPL` into arrays; the rest are unextracted ⬜.
+challenge). The odds recipe (§1.3) covers `WIN, PLA, QIN, QPL`; the rest are unextracted ⬜.
 
 **Rich fields exposed but NOT yet extracted** (a roadmap):
 - `winOdds`, `finalPosition`, `deadHeat` — live result as it lands.
@@ -69,7 +69,7 @@ Returns **both ST & HV**, `max-age=15`. Per racecourse:
 - `sectional[]` — **four anemometers (A/B/C/D)** around the track, each with
   `avgCorrectedWindDirection` (compass, e.g. `N80W`), `avgCorrectedWindSpeed`, gust dir/speed,
   `gpsPosition` (lat:lon:elev). → the **real per-straight wind vector** (head/tail/cross),
-  projectable onto each straight's heading via the GPS — fills THEORY §2.5 (wind), reshapes draft.
+  projectable onto each straight's heading via the GPS (wind exposure, draft).
 - `weatherStation` (loc E) — the above wind fields **plus** `temperature`, `relativeHumidity`,
   `pressure`, `solarRadiation`, `sunshineHour`, daily max/min, `rainPrecipitationDailyTotal`,
   **`soilVolumeticWaterContent`**, **`soilMoistureLoss{1Min,DailyTotal,24H}}`**. → a **continuous
@@ -313,32 +313,32 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 }
 ```
 
-**Rebuild notes (exact behaviour of the removed code, from a doc-only rebuild test).**
+**Request details.**
 - Endpoint: `POST https://info.cld.hkjc.com/graphql/base/` (the `/graphql` in the summary above is shorthand).
   Headers `{"Origin": "https://bet.hkjc.com", "Referer": "https://bet.hkjc.com", "Content-Type": "application/json",
   "Accept": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
   Gecko) Chrome/141.0.0.0 Safari/537.36"}`,
   timeout 30 s, body = `{"operationName"?, "variables": {...}, "query": "<text>"}` sent with `requests.post(json=...)`.
 - `date` is sent exactly as given (`YYYY-MM-DD`); `venueCode` `"ST"`/`"HV"`. Current meeting: send `null` for both
-  (`live_jackpots` mapped `""` -> null; `_fetch_live_races` sent `""` as is -- use null).
-- `oddsTypes` in the `racing` query is a list in the caller's order; the removed defaults were `["PLA"]` (single-pool
-  fetch) and `["WIN", "PLA", "QPL", "QIN"]` (`live_odds`).
+  (an empty string also selects the current meeting; prefer null).
+- `oddsTypes` in the `racing` query is a list in the caller's order; typical values are `["PLA"]` (single-pool
+  fetch) and `["WIN", "PLA", "QPL", "QIN"]` (the four main pools).
 
-### 1.3 Extraction recipes (what the removed `live.py` did)
+### 1.3 Extraction recipes
 
 - **Meeting choice.** `data.raceMeetings` is a list: take the first entry with `venueCode` in
   `HV`/`ST`, else the first. Compare its `date`/`venueCode` with the request and continue with the
   server's values (warn).
 - **Card** (`raceMeetings`): per race `no`, `raceName_en`, `raceClass_en`, `raceCourse.displayCode`, `distance`, `go_en`, `raceTrack.description_en`; per runner with
   `status != "Standby"`: `no`, `name_en`, `barrierDrawNumber`, `currentRating`, `currentWeight`,
-  `handicapWeight`, `horse.code` (brand). The old code coerced unparseable ints to **0** (not
-  null): treat 0 rating/weight as missing.
+  `handicapWeight`, `horse.code` (brand). Map unparseable ints to null (if they are coerced
+  to 0 instead, treat 0 rating/weight as missing).
 - **Odds** (`racing`): for each `raceMeetings[].pmPools[]` and each `oddsNodes[]`: `combString`,
   `oddsValue` (float; unparseable -> NaN), pool `oddsType`, pool `lastUpdateTime`. `combString` is
   the runner number for `WIN`/`PLA` and `"a,b"` for `QIN`/`QPL` (fill both `[a,b]` and `[b,a]`;
   diagonal stays NaN). Array size = number of non-Standby runners in the race from `raceMeetings`;
   index = runner number − 1. For a time series, poll uncached and dedupe on `lastUpdateTime` (server
-  clock), not on the polling clock (the old 30 s in-process cache would repeat snapshots).
+  clock), not on the polling clock (an in-process cache would repeat snapshots).
 - **Jackpots / pool sizes** (`raceMeetings`): index `jpEsts[]` by `(oddsType, tuple(leg.races))`,
   then for each `poolInvs[]` row output `pool`=`oddsType`, `leg`=`leg.number`,
   `races`=comma-joined `leg.races`, `investment` (today's gross G), matching `jpEsts.jackpot`
@@ -351,24 +351,24 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 - **Most info routes:** `racedate=YYYY/MM/DD` (slashes, zero-padded) + `Racecourse=ST|HV`
   + `RaceNo=N`. Note the capital `R` in `Racecourse`/`RaceNo`.
 - **`displaysectionaltime` ONLY:** `racedate=DD/MM/YYYY` (day-first), lowercase, **no
-  `Racecourse`**. Wrong format → empty "released shortly" page. *(This bit us; handled
-  in `data.sectional`.)*
+  `Racecourse`**. Wrong format → empty "released shortly" page. *(Handled
+  in `hkjc.data.sectional`.)*
 - **`draw`:** `racedate` + `Racecourse`, no `RaceNo` (returns all races).
 - **`btresult`:** `Date=DD/MM/YYYY` (param named `Date`, capital D, day-first), no venue/race.
 - **`trackworkresult`:** `horseid=HK_YYYY_<brand>` (the long registration id).
 - **Legacy `.aspx` pages** (`racing.hkjc.com/racing/information/English/...`): results take
   `RaceDate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`; the horse page takes `HorseNo=<id>` (presumably the
-  brand; not stated in the code).
+  brand; unverified).
 - **Horse ids:** the *brand* is `[A-Z]\d+` (e.g. `K400`), printed in name cells as `NAME (K400)`
   (regex `\(([A-Z]\d+)\)`); the *registration* is `HK_YYYY_<brand>` (e.g. `HK_2023_J183`), found in
   links as `horseid=...` (regex `horseid=(HK_\d{4}_([A-Z]\d+))`). Racecard "Brand No." is the brand.
 - **Other date shapes inside pages:** trackwork gallop entries `DD/MM` (no year, §2.2),
   `trackworkresult` rows `DD/MM/YYYY`, horse-page form `Date` `dd/mm/yy` (or `dd/mm/YYYY`).
-- **Requests:** plain `GET`, no cookies. The old modern-route scrapers sent only
-  `User-Agent: Mozilla/5.0` and `Referer: https://racing.hkjc.com` (timeout 20 s); the legacy
-  `.aspx` fetches sent `Origin`/`Referer: https://racing.hkjc.com`, `Content-Type: text/plain`,
+- **Requests:** plain `GET`, no cookies. Modern routes need only
+  `User-Agent: Mozilla/5.0` and `Referer: https://racing.hkjc.com` (timeout 20 s); for the legacy
+  `.aspx` pages send `Origin`/`Referer: https://racing.hkjc.com`, `Content-Type: text/plain`,
   `Accept: */*` and the full Chrome UA of §1 (timeout 10 s). Pass `response.content` (bytes) to
-  BeautifulSoup `html.parser`; no explicit charset was needed. No header is a secret.
+  BeautifulSoup `html.parser`; no explicit charset is needed. No header is a secret.
 - Three date formats coexist: ISO `YYYY-MM-DD` (GraphQL), slashed `YYYY/MM/DD` (most
   HTML), `DD/MM/YYYY` (sectional page **and** inside SpeedPro JSON). Easy to mix up.
 
@@ -377,10 +377,10 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 | Page | Route | Key data | Status |
 |---|---|---|---|
 | **Race Card** | `racecard?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | **27 cols**: ratings, **Rtg +/- (rating move)**, gear (`V-/B2/TT`), **Horse Wt + Wt+/- (body-weight delta)**, Best Time, **days-since-run**, WFA, season stakes, priority, owner/sire/dam, import cat | 📜 §2.2 |
-| **Comments on Running** | `corunning?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | per-horse free-text stewards' trip line ("raced wide, stayed on final 200m…"); past races presumably served (the removed code was used for prior-run analysis; unverified) | 📜 §2.2 |
+| **Comments on Running** | `corunning?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | per-horse free-text stewards' trip line ("raced wide, stayed on final 200m…"); past races presumably served (unverified) | 📜 §2.2 |
 | **Sectional Time** | `displaysectionaltime?racedate=D/M/Y&RaceNo=N` | per-horse section positions + split times (1st–6th Sec.) + race splits | ✅ `data.sectional` |
 | **Results** | `localresults?racedate=Y/M/D&Racecourse=ST&RaceNo=N`; wired via legacy `/racing/information/English/Racing/LocalResults.aspx?RaceDate=Y/M/D&Racecourse=ST&RaceNo=N` | result table + **full exotic/jackpot dividends** + **incident table** + running positions | ✅ results table · 📜 dividends §2.2 |
-| **Horse page** | `horse?horseid=HK_2023_J183`; legacy `/racing/information/English/Horse/Horse.aspx?HorseNo=<id>` (id presumably the brand, e.g. `J183`; the code does not say) | record, location (Conghua/ST), import; tabs: Form, Rating/Wt/Placing, **Performance by Distance**, **Trackwork**, **Veterinary**, Movement, Pre-import, **Pedigree** + replay links | 📜 legacy form table §2.2 |
+| **Horse page** | `horse?horseid=HK_2023_J183`; legacy `/racing/information/English/Horse/Horse.aspx?HorseNo=<id>` (id presumably the brand, e.g. `J183`; unverified) | record, location (Conghua/ST), import; tabs: Form, Rating/Wt/Placing, **Performance by Distance**, **Trackwork**, **Veterinary**, Movement, Pre-import, **Pedigree** + replay links | 📜 legacy form table §2.2 |
 | **Trackwork archive** | `trackworkresult?horseid=HK_2023_J183` | one horse's **full dated work log over years** (SSR) — the only historical trackwork route | 📜 §2.2 |
 
 ### Per-runner "angle" pages (server-rendered, all ⬜ — the buried gold)
@@ -389,7 +389,7 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 > "…available shortly", for *future* "No information". The "0 tables" you'd otherwise see is a
 > stale-date artifact, **not** JS-rendering. Scrape them in the pre-race window with the upcoming date.
 > **Exceptions:** `btresult` (barrier trials) and `trackworkresult` (per-horse trackwork archive)
-> serve past dates (the removed code fetched them); `corunning` presumably serves past races (unverified).
+> serve past dates; `corunning` presumably serves past races (unverified).
 - **`exceptionalfactors`** — per horse: `Out of Handicap, WFA, Gear, Tongue Tie, Bit Change
   From/To, Rtg, Dist, Days since Last Run, New Trainer, Date returned from Conghua`, **plus a
   `Trainer | Multi Entries` table** (which stable saddles 2+ runners — pair with `trainerPreference`).
@@ -410,15 +410,15 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
   Jockey, Last Jockey, Placing, Time, Margin, Win Odds, Weight Carried +/-, Rating +/-`. **The
   pre-assembled OPPONENT-LINKAGE / collateral-form graph** — raw material for the competition axis (§2.6).
 - **`draw`** — barrier **W%/P%/F% over last 3 seasons** for the exact course/distance + a
-  Favourites strike-rate row — realised draw-bias (validate/residual-correct the modelled geometry).
+  Favourites strike-rate row — realised draw-bias (validate/residual-correct the track geometry).
 - **`racereportext`** / **`racereportfull`** — per-horse past incident history / full
   stewards report (panel, going, per-race incidents).
 - **`latestonhorse`** — late declared-starter changes / scratchings feed.
 - **`formline`**, **`jockeyfavourite`/`trainerfavourite`**, `jkcstat`,
   `jockeyprofile`/`trainerprofile` (some need extra params / partial JS).
 
-### 2.2 Page recipes (parsers removed 2026-11)
-**Racecard rebuild notes.** URL `https://racing.hkjc.com/en-us/local/information/racecard?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`
+### 2.2 Page recipes (not wired)
+**Racecard.** URL `https://racing.hkjc.com/en-us/local/information/racecard?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`
 (slashes literal, not percent-encoded; venue upper-case as given). Headers `{"User-Agent": "Mozilla/5.0",
 "Referer": "https://racing.hkjc.com"}`, timeout 20 s. Input dates `YYYY-MM-DD`, `YYYY/MM/DD` or `DD/MM/YYYY` (dashes
 -> slashes; a first part that is not 4 digits is day-first). `Best Time` `m.ss.ff` / `ss.ff` -> seconds (float, 2 dp;
@@ -426,7 +426,7 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 unknown header cells are dropped (only the mapped columns are kept).
 
 
-URL templates exactly as the removed code built them (`{date}` formats: racecard, corunning,
+URL templates (`{date}` formats: racecard, corunning,
 localtrackwork, LocalResults `YYYY/MM/DD`; btresult `DD/MM/YYYY`; `{venue}` `ST`/`HV`):
 
 ```
@@ -504,7 +504,7 @@ horse). Tables whose first row starts `Date, Type`; columns 0 date `DD/MM/YYYY`,
 sessions strictly before the race day when joining to races.
 
 **Horse page, legacy** (`https://racing.hkjc.com/racing/information/English/Horse/Horse.aspx?HorseNo=<id>`;
-the code does not say which id; presumably the brand, as on the results page).
+which id is unverified; presumably the brand, as on the results page).
 Name = `<title>` text before `- Horses -`. Form table = `<table class="bigborder">`: headers from
 `<thead>` `td`s (else the first row), column names stripped of non-word characters; drop rows with
 empty `Date`. Used columns (cleaned names): `Pla` (first token; incident codes
@@ -522,8 +522,8 @@ cell: PLACE and QUINELLA PLACE pay several combinations). Dividend: strip `,`, p
 null. Dividends are **HK$ per HK$10 unit** (decimal odds = dividend / 10). Page
 labels → codes: WIN→WIN, PLACE→PLA, QUINELLA→QIN, QUINELLA PLACE→QPL, FORECAST→FCT, TIERCE→TCE,
 TRIO→TRI, FIRST 4→FF, QUARTET→QTT, DOUBLE→DBL, TREBLE→TBL, DOUBLE TRIO→DT, TRIPLE TRIO→TT,
-SIX UP→`6UP` (GraphQL calls it `SixUP`: normalise before matching — the removed jackpot scanner
-filtered on `SixUP` and so never kept Six Up). **Jackpot history:** a DT/TT/Six Up dividend appears
+SIX UP→`6UP` (GraphQL calls it `SixUP`: normalise before matching: filtering result-page
+codes on `SixUP` silently drops Six Up). **Jackpot history:** a DT/TT/Six Up dividend appears
 on the pool's final leg **only when won**; carryover meetings are inferred by absence over cards that
 offered the pool; the carried-in amount is not on result pages (capture `jpEsts` live, §1.3). The
 scanner walked races 1–11 per (date, venue), treating a failure on race 1 as "no meeting", with a
@@ -545,29 +545,24 @@ energy/fitness are blank until published shortly before the off. The old
 
 ## 4. Trajectory / positioning data (the dense-kinematics frontier)
 
-The model wants a dense per-horse `(x, y, v)` time series, not one finish time. The
-verdict from a live network/JS recon (`FEED_RECON`):
+A dense per-horse `(x, y, v)` time series is far richer than one finish time. What a live
+network/JS inspection of the HKJC site shows:
 
-- **Provider is Trakus** — an **RF saddlecloth-tag** system sampling **~30 Hz**. So the
-  dense per-horse trajectory the model wants **does exist upstream at ~30 Hz**.
+- **Provider is Trakus** — an **RF saddlecloth-tag** system sampling **~30 Hz**. So a
+  dense per-horse trajectory **does exist upstream at ~30 Hz**.
 - **BUT it is NOT a public data feed.** The "**Aerial Virtual View**" is delivered as a
   **pre-rendered flat MP4 (pixels only)**, served from Akamai; the 3D virtualisation is
   rendered server-side. Its own disclaimer ("accuracy affected by signal interference…
   refer to Real Replay") confirms it's an RF-positioning render (lossy — good for
   lateral-lane / ground-loss, not sub-metre truth). **There is no `(x,y)` JSON/websocket
-  to tap.** Always re-confirm the feed hunt before building CV.
+  to tap.**
 - **Therefore two routes to dense data:**
   1. **Sectionals (structured, ✅).** `data.sectional` gives ~6 dense points/horse
-     (positions + split times) with no CV — the practical source for `v_c`/`W′`/
-     finishing-speed features. **Open question: are ~6 points enough to fit energetics,
-     or is the market already efficient w.r.t. sectionals too?**
-  2. **CV from the Aerial Virtual View (pixels-only fallback).** The `hkjc.vision`
-     package is the scaffold (detect → identify → homography → project → trajectory).
-     The virtual view is more tractable than broadcast footage (clean silk-icons, rail
-     lines, distance markers `420M/920M` for calibration) but needs per-frame moving-
-     camera homography; it's **lossy** and expensive. A single-race PoC ran on HV
-     2026-06-03 R1 (recovered `(d, off)` tracks, fragmented). **Gate any CV build behind
-     a confirmed sectional signal** — don't build a trajectory pipeline for ~zero edge.
+     (positions + split times) with no CV.
+  2. **CV from the replay videos (pixels only).** This is what `hkjc.recon` does (method in
+     docs/RECON.md). The virtual view is more tractable than broadcast footage (clean
+     silk icons, rail lines, distance markers `420M/920M` for calibration) but needs
+     per-frame moving-camera registration, and the render is **lossy**.
 
 ### Video / replay URLs (for CV ingest or manual review)
 Each past run on the horse page links an iframe player:
@@ -588,8 +583,8 @@ https://streaminghkjc-a.akamaihd.net/hdflash/{TOKEN}/{YYYY}/{YYYYMMDD}/{NN}/eng/
    {NN} = zero-padded race number;  {YYYY} = year of {YYYYMMDD}
 ```
 The player's documented `type=` list is INCOMPLETE — `replay-drone` is unlisted yet live, and the
-player even mis-guesses the drone filename. The four feeds we use, each a DIFFERENT instrument for a
-DIFFERENT part of the causal program (journal 0073 — they are complementary, not redundant):
+player even mis-guesses the drone filename. The four feeds we use, each a DIFFERENT instrument
+(complementary, not redundant):
 
 | `{TOKEN}` | Feed | Camera | Carries / best for |
 |---|---|---|---|
@@ -607,15 +602,13 @@ They are not on the sectional page, which is server-rendered (not JS-only) but o
 Morning track-work clips: `…/twstarter/{YYYY}/{YYYYMMDD}/{RR}/novo/twstarter_…_2500kbps.mp4`
 (`{RR}` zero-padded). Pundit tips: `…/tipsindex/tips_index.asp?RaceNo={n}`.
 
-**Easiest video acquisition (the CV unblock) — YouTube archives via `yt-dlp`.** The HKJC CMS
-resolver (`getVideoInfo`) needs the browser session and is awkward to script (the CV feasibility
-probe's one hard blocker). But there are **full race live-stream archives on YouTube** — the side
+**Alternative source — YouTube archives via `yt-dlp`.** The HKJC CMS resolver
+(`getVideoInfo`) needs the browser session and is awkward to script; the direct MP4s above avoid
+it. There are also **full race live-stream archives on YouTube** — the side
 broadcast view **plus commentary plus on-screen LIVE ODDS** — downloadable with `yt-dlp`
-(playlists like `youtube.com/playlist?list=PLMVIVrWyo-Z_3Bddw6rIoyqhzeP35h1ij`). This is the
-practical substrate for any CV build: the broadcast SIDE view is the tractable one for
-off-the-shelf detection (the feasibility probe got 7 horses + 11 jockeys with no fine-tune vs 0 on
-the overhead), it carries saddlecloth numbers + silks for identity, and the burned-in odds/commentary
-are bonus signals. (Not a priority now — recorded for when CV path-extraction / gait is taken up.)
+(playlists like `youtube.com/playlist?list=PLMVIVrWyo-Z_3Bddw6rIoyqhzeP35h1ij`). The broadcast
+SIDE view suits off-the-shelf detection, carries saddlecloth numbers + silks for identity, and the
+burned-in odds/commentary are extra signals.
 
 ## 5. Scraping discipline (don't get rate-limited)
 
@@ -623,13 +616,13 @@ are bonus signals. (Not a priority now — recorded for when CV path-extraction 
   the off). **Concurrency ≤ 3.** Inter-request delay **80–250 ms** random. **Timeouts used:** 10 s legacy `.aspx`, 20 s
   modern HTML routes, 30 s GraphQL. Send a real browser `User-Agent` + matching `Origin`/`Referer`
   (`bet.hkjc.com` for GraphQL, `racing.hkjc.com` for HTML/JSON).
-- TTL caches: the results page is cached 3600 s in process (`historical._soupify`). The removed
-  clients used live card 1000 s, live odds 30 s, SpeedPro 300 s — reuse those rather than hammer.
+- TTL caches: the results page is cached 3600 s in process (`historical._soupify`). Suggested
+  TTLs: live card 1000 s, live odds 30 s, SpeedPro 300 s — reuse rather than hammer.
 - **Backfills** (barrier trials by date, trackwork archive by horse): ~1 request/s, one retry after
-  2 s on a network error, then skip and log. The removed code kept no disk cache for any page except
-  the race facts (`data_cache/race_official/`); everything else was in-process TTL only.
-- **Missing values:** the old GraphQL parser turned unparseable ints into 0 and floats into NaN;
-  HTML parsers mapped `""`, `-`, `--` to null. Prefer null everywhere.
+  2 s on a network error, then skip and log. `hkjc.data` disk-caches the race facts
+  (`data_cache/race_official/`), silks and replay videos; nothing else is disk-cached.
+- **Missing values:** HTML pages show `""`, `-`, `--`; GraphQL numbers can be unparseable. Map
+  all of them to null.
 
 ## 6. Gotchas (learned the hard way)
 
@@ -638,10 +631,8 @@ are bonus signals. (Not a priority now — recorded for when CV path-extraction 
   (those appear in that page's CSS too). Always target a real meeting date.
 - **SpeedPro staleness** — `race_n.json` can serve a previous meeting; energy/fitness
   blank until published. Don't assume it reflects today.
-- **QIN/QPL diagonals** are self-pairs with zero probability → `1/p = inf`; handled with
+- **QIN/QPL diagonals** are self-pairs with zero probability → `1/p = inf`; guard with
   `nan_to_num`. Expect NaNs on matrix diagonals.
-- **Harville cost is `O(N·2^N)`** with a one-off Numba JIT warm-up (~10 s) per process;
-  keep fields ≤ ~20 runners.
 - Empty-string `date`/`venue` to live endpoints is a **feature** (server picks the
   current meeting), not a bug — but verify what came back.
 
@@ -650,20 +641,20 @@ are bonus signals. (Not a priority now — recorded for when CV path-extraction 
 ## 7. Mining priority (highest unrealised value first)
 
 1. **`weather` GraphQL op** (§1.1) — per-section **wind vectors** + **soil-moisture** firmness.
-   Fills the model's single weakest cell (ENVIRONMENT), same endpoint as §1, plain-HTTP.
+   Same endpoint as §1, plain-HTTP.
    Highest leverage, lowest integration cost.
 2. **`racecard`** — the 27-field pre-race card (ratings + **rating moves** + gear +
-   **body-weight deltas** + days-since-run + pedigree). Biggest single fetch; feeds every model.
+   **body-weight deltas** + days-since-run + pedigree). Biggest single fetch.
 3. **`trainerPreference` + `trumpCard`** (GraphQL, already in our query body) — zero extra fetch;
    extract two runner fields = stable-intent ranking + confidence flag.
 4. **`formline`** — the pre-assembled opponent-linkage / collateral-form graph → the competition
-   axis (§2.6). The simplistic Elo/relative-form treatments failed; this is the raw data for a
-   deeper game-theoretic treatment.
+   axis (§2.6). This is the raw data for a
+   game-theoretic treatment of form.
 5. **`exceptionalfactors` + `veterinaryrecord` + `localtrackwork` + `btresult`** —
    gear/first-time/vet/work-load/barrier-trial **condition, health & intent** angles.
 6. **`corunning`** — running comments → **trip/trouble NLP** (the stochasticity/racing-luck cell).
-7. **`draw` stats** — realised W%/P%/F% by course-distance, to validate the modelled draw geometry.
-8. **Full exotic dividends + `investment`/`jpEsts`** — pool sizes & carryover (strategist).
+7. **`draw` stats** — realised W%/P%/F% by course-distance, to validate the draw geometry.
+8. **Full exotic dividends + `investment`/`jpEsts`** — pool sizes & carryover.
 9. **Sectionals → energetics**; CV trajectory only for place/exotics, and only if it ever pays.
 
 ### New routes found (beyond the above) — mostly Next.js (browser or backing GraphQL needed)
