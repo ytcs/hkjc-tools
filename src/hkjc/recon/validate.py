@@ -34,13 +34,10 @@ GATES = {
 
 
 def _cum_official(info):
-    sec = info.sectionals
-    nsec = sec["section"].n_unique()
-    bnd = [400.0 * (nsec - 1 - k) for k in range(nsec)]  # distance-to-go at section ends
-    w = sec.pivot(index="runner", on="section", values="section_time").sort("runner")
-    cols = [c for c in w.columns if c != "runner"]
-    cum = np.cumsum(w.select(cols).to_numpy(), axis=1)
-    return bnd, dict(zip(w["runner"].to_list(), cum))
+    """The FULL official record's (boundaries, {runner: cumulative times}) of a ``RaceInfo``."""
+    from ..data.race import official_boundaries
+
+    return official_boundaries(info)
 
 
 def crossing(t, d, sd, mark):
@@ -54,11 +51,12 @@ def crossing(t, d, sd, mark):
     return t[a] + (d[a] - mark) / max(d[a] - d[b], 1e-9) * (t[b] - t[a])
 
 
-def validate(run) -> dict:
+def validate(run, truth) -> dict:
+    """Gates for ``run``'s artifacts against ``truth``, the full (unmasked) ``RaceInfo``."""
     import polars as pl
     from scipy.stats import spearmanr
 
-    info = run.info
+    info = truth
     bnd, cum = _cum_official(info)
     # gates score the VIDEO-ONLY posterior (the final product contains the official records)
     P = pl.read_parquet(run.p("paths_video.parquet"))

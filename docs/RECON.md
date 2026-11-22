@@ -17,6 +17,17 @@ Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `H
 race), `HKJC_OCR_THREADS`, `HKJC_AVATAR_WEIGHTS` (detector weights), `HKJC_FILM_DEVICE` (the film
 detector alone, e.g. `intel:gpu`; see the film section).
 
+**Mask.** Every stage reads the race through `RaceRun.info`, a `hkjc.data.MaskedRace`: the pre-race facts
+plus the official outcome records that the run's `hkjc.data.Mask` leaves visible, read only through
+`official_boundaries()` (cumulative sectional times), `official_finish()` and `official_order()` (placings).
+`validate` scores against the full record (`RaceRun.truth`). `Mask()` withholds nothing (the default);
+`Mask(boundary=j)` withholds the cumulative official time at sectional boundary j for every runner (the last
+index is the finish, which also withholds finish times and placings); `Mask(outcome=True)` withholds all
+official outcome data (results, finish times, placings, sectionals, running positions). Select it with
+`RaceRun(info, mask=...)`, CLI `--mask none|boundary=J|outcome`, or env `HKJC_MASK` (`HKJC_FINAL_HOLDOUT=j`
+is an alias for `boundary=j`). A masked run writes `paths.parquet` and `validation.json` like any other, so
+give it its own `root`.
+
 Race identifiers below are `venue MM-DD Rn` (2026 meetings), e.g. ST 05-31 R1 is Sha Tin,
 2026-05-31, race 1.
 
@@ -520,9 +531,9 @@ The last four were declared before held-out races. "Non-lateral gates" counts th
   horse-seconds where the gap changes by > 3 m/s over a 1 s window, between the first render detection
   + 1 s and the first finisher − 1 s, with sd < 3 m at both ends; excluded vague seconds are reported
   alongside.
-- **Held-out boundary.** `HKJC_FINAL_HOLDOUT=j` withholds one official boundary; the final product's
-  error there is independent of that record, except that the metric bias still reads it, so the
-  error is also reported with race medians removed.
+- **Held-out boundary.** `Mask(boundary=j)` (`--mask boundary=j`, alias `HKJC_FINAL_HOLDOUT=j`) withholds one
+  official boundary from every stage (official observations, metric bias, re-timing); the final product's
+  error there is independent of that record. `Mask(outcome=True)` withholds every official outcome record.
 - **Pixels.** `viz.reproject` and the synced video; every claimed fix is checked on frames.
 
 The census, glitch, identity-score and ensemble scripts live outside the package.
