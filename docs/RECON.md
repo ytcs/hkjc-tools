@@ -575,6 +575,13 @@ gates" the first eight.
 - **Withheld disc reads** (§3, `Mask(discs=10)` and `Mask(discs=10, discs_phase=0)`). Each confident disc
   read is scored once while hidden: among detections with a confident read inside the withheld blocks, the
   share of labelled ones whose label equals the read, and the share left unlabelled.
+- **Withheld legend reads** (§3, `Mask(legend=10)` and `Mask(legend=10, legend_phase=0)`; silk render). Each legend read
+  is scored once while hidden, at least 0.5 s inside its block (the consumers take the nearest legend read within 6
+  frames). In a frame where every runner is detected (boxes within 0.6 m along and 0.4 m across merged as one horse),
+  legend slot r names the unique detection of rank r (1 + detections more than 0.6 m ahead; none within 0.6 m of it); the
+  slot agrees when that detection's label is the listed number. A horse's hidden 10 s block (>= 5 scored frames) is
+  confirmed when >= 80 % of its slots agree. The same reads scored on an unmasked run, which saw them, give the floor set
+  by legend reading and rank ties.
 - **Lateral yardstick.** AUC of final-path lateral position against the stewards' comments (WIDE > INSIDE, with
   MID between).
 - **Perturbation ensembles.** Seeds of `HKJC_PERTURB_SEED` (1 % detection drop) per race; arms are compared
@@ -621,6 +628,11 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.76 %), 0.91 % left
   unlabelled (final 0.94 %); with every read visible, 99.19 % and 0.49 % (final 99.28 %, 0.47 %). Here a
   confident read is one of a runner's numbers (`RaceRun._number_reads`); the agreement above counts every read.
+- Withheld legend reads (171 silk races, alternate 10 s blocks; video-only labels): 74.4 % of 7,083 horse-blocks confirmed
+  (the 26 development races 80.3 %, the 145 evaluation races 73.4 %); the same reads visible 78.4 % (paired per-race
+  difference -5.5 %, SE 0.6 %). Per slot: 85.9 % agree, 8.7 % the neighbouring slot's horse (rank ties), 4.5 % another
+  horse, 1.0 % unlabelled (visible 89.2 / 7.7 / 2.1 / 1.1 %); detections ranked 9th or later carry a listed number in
+  4.1 % (visible 1.9 %). Final labels within 0.3 points of these.
 - Lateral yardstick on the final paths: AUC (WIDE > INSIDE) 0.961; MID > INSIDE 0.912, WIDE > MID 0.860 (INSIDE
   400, MID 262, WIDE 453 horse-runs).
 - The finish-clock re-registration (§4 fuse_final) was measured on the 156 evaluation races (196 less the 40
