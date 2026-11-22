@@ -1,5 +1,10 @@
 """Official results page (LocalResults.aspx): race header, placings, finish times, running positions.
-Incident rows (DISQ, DNF, PU, ...) are dropped; FinishTime is converted from m:ss.ff to seconds."""
+
+One row per horse that started. ``Pla`` is the placing's leading integer (a dead heat, "5 DH", is 5 for
+both horses) and null for a horse with no placing: a non-finisher (FE, UR, PU, DNF, TNP) or a
+disqualified horse (DISQ, which keeps its finish time). ``PlaCode`` is the placing cell as printed.
+``FinishTime`` is in seconds (m:ss.ff), null where none is printed. Withdrawn horses (WV, WV-A, WX,
+WX-A, WXNR, WR) and void-race rows are dropped."""
 from __future__ import annotations
 
 import polars as pl
@@ -10,8 +15,11 @@ from ._util import _parse_html_table, get
 
 HKJC_RACE_URL_TEMPLATE = "https://racing.hkjc.com/racing/information/English/Racing/LocalResults.aspx?RaceDate={date}&Racecourse={venue_code}&RaceNo={race_number}"
 
-incidents = ['DISQ', 'DNF', 'FE', 'ML', 'PU', 'TNP', 'TO',
-             'UR', 'VOID', 'WR', 'WV', 'WV-A', 'WX', 'WX-A', 'WXNR']
+# placing codes of a horse that started and has no placing (DISQ: finished, placing removed)
+STARTED_UNPLACED = ("DISQ", "DNF", "FE", "PU", "TNP", "UR")
+# placing codes of a horse that is not a runner (withdrawn; WXNR: declared a non-runner after the start)
+# or of a race that does not count (VOID)
+NOT_RUNNER = ("VOID", "WR", "WV", "WV-A", "WX", "WX-A", "WXNR")
 
 REQUEST_TIMEOUT = 10
 
@@ -40,13 +48,19 @@ def _soupify_race_page(date: str, venue_code: str, race_number: int) -> Beautifu
 
 
 def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
-    """Drop incident rows, cast numeric columns, FinishTime m:ss.ff -> s."""
+    """Drop non-runner rows, cast numeric columns, FinishTime m:ss.ff -> s (null if none printed).
+    A placing cell that is neither a number (optionally with "DH") nor a known code raises."""
     if df.height == 0:
         return df
 
     df = df.with_columns(
-        pl.col('Pla').str.split(' ').list.first().alias('Pla')
-    ).filter(~pl.col('Pla').is_in(incidents))
+        pl.col('Pla').str.strip_chars().alias('PlaCode'),
+        pl.col('Pla').str.strip_chars().str.split(' ').list.first().alias('Pla'),
+    ).filter(~pl.col('Pla').is_in(NOT_RUNNER))
+    known = pl.col('PlaCode').str.contains(r'^\d+(\s+DH)?$') | pl.col('Pla').is_in(STARTED_UNPLACED)
+    bad = df.filter(~known)['PlaCode'].to_list()
+    if bad:
+        raise ValueError(f"unknown placing code(s) {bad} on the results page")
 
     df = df.with_columns([
         pl.col('Pla').cast(pl.Int64, strict=False),
@@ -59,9 +73,9 @@ def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
 
     df = df.with_columns(
         (
-            pl.col("FinishTime").str.splitn(":", 2).struct.field("field_0").cast(pl.Int64) * 60 +
+            pl.col("FinishTime").str.splitn(":", 2).struct.field("field_0").cast(pl.Int64, strict=False) * 60 +
             pl.col("FinishTime").str.splitn(
-                ":", 2).struct.field("field_1").cast(pl.Float64)
+                ":", 2).struct.field("field_1").cast(pl.Float64, strict=False)
         ).cast(pl.Float64).round(2).alias("FinishTime")
     )
 
@@ -69,7 +83,11 @@ def _clean_race_data(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _extract_race_data(date: str, venue_code: str, race_number: int) -> pl.DataFrame:
-    soup = _soupify_race_page(date, venue_code, race_number)
+    return _parse_race_page(_soupify_race_page(date, venue_code, race_number), date, venue_code, race_number)
+
+
+def _parse_race_page(soup: BeautifulSoup, date: str, venue_code: str, race_number: int) -> pl.DataFrame:
+    """The results page's header + performance table, uncleaned (strings as printed)."""
     table = soup.find('div', class_='race_tab').find('table')
     race_data = _parse_html_table(table)
 

@@ -10,7 +10,9 @@ Fixed acceptance gates (set before looking at numbers; never loosened):
   behind_winner_mae   <= 0.20 s   per-horse time behind the winner at the line
 Declared before the held-out races (no retuning on them): sectional coverage >= 0.80, a fused path
 for >= N-1 runners, finish rho over >= N-2 runners, lateral scale: the racing->fixed rail gap on the
-map vs the course table within 0.75 m (where the fixed rail is visible).
+map vs the course table within 0.75 m (where the fixed rail is visible). N counts every runner for the
+path gate and the runners with an official finish time for the finish gate (the two differ only when a
+horse did not finish); coverage counts only the official times that exist.
 A crossing is only scored where the fused posterior is tight (sd_s < ``SD_MAX`` m) — coverage is
 reported alongside, so gaps are visible rather than smoothed over.
 """
@@ -56,6 +58,8 @@ def validate(run, truth) -> dict:
     import polars as pl
     from scipy.stats import spearmanr
 
+    from ..data.race import official_finish, official_placing
+
     info = truth
     bnd, cum = _cum_official(info)
     # gates score the VIDEO-ONLY posterior (the final product contains the official records)
@@ -82,8 +86,10 @@ def validate(run, truth) -> dict:
     E = np.array(list(errs.values()))
     res["sectional_err"] = errs
     res["sectional_mae"] = float(np.nanmean(np.abs(E)))
-    res["sectional_coverage"] = float(np.isfinite(E).mean())
-    fin = [(h, r, o) for h, r, o in fin if np.isfinite(r)]
+    # coverage over the official times that exist (a non-finisher has none after its last complete section)
+    off = np.array([cum[h] for h in errs], float)
+    res["sectional_coverage"] = float(np.isfinite(E).sum() / max(np.isfinite(off).sum(), 1))
+    fin = [(h, r, o) for h, r, o in fin if np.isfinite(r) and np.isfinite(o)]
     res["finish_n"] = len(fin)
     if len(fin) >= 3:
         rr = np.array([f[1] for f in fin])
@@ -103,15 +109,16 @@ def validate(run, truth) -> dict:
                 - cum[h]
             )
     res["final_official_resid_mae"] = float(np.nanmean(np.abs(fe))) if fe else float("nan")
-    res["finish_n_short"] = info.n - res["finish_n"]
+    # N for the finish gate: the runners that finished (an official finish time; equals info.n without non-finishers)
+    res["finish_n_short"] = len(official_finish(info)) - res["finish_n"]
     m = np.load(run.p("metric.npz"))
     if "fixed_gap" in m.files and np.isfinite(float(m["fixed_gap"])):
         res["fixed_gap_m"] = float(m["fixed_gap"])
         res["lateral_scale_err"] = abs(float(m["fixed_gap"]) - float(m["fixed_gap_expected"]))
-    off_winner = int(info.results.filter(info.results["Pla"] == 1)["HorseNo"][0])
+    off_winners = [h for h, p in official_placing(info).items() if p == 1]  # two on a dead heat for first
     rec_winner = min(fin, key=lambda f: f[1])[0] if fin else None
-    res["winner_ok"] = bool(rec_winner == off_winner)
-    res["winner"] = {"official": off_winner, "reconstructed": rec_winner}
+    res["winner_ok"] = bool(rec_winner in off_winners)
+    res["winner"] = {"official": off_winners[0] if len(off_winners) == 1 else off_winners, "reconstructed": rec_winner}
     res["gates"] = {}
     for k, (op, thr) in GATES.items():
         v = res.get(k)

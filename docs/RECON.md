@@ -59,8 +59,13 @@ results; failures are reported as failures.
 
 Every stage reads the race through `RaceRun.info`, a `hkjc.data.MaskedRace`: the pre-race facts plus the
 official outcome records that the run's `hkjc.data.Mask` leaves visible, read only through
-`official_boundaries()` (cumulative sectional times), `official_finish()` and `official_order()` (placings).
-`validate` scores against the full record (`RaceRun.truth`).
+`official_boundaries()` (cumulative sectional times), `official_finish()`, `official_order()` and
+`official_placing()` (placings; a dead heat shares one). `validate` scores against the full record (`RaceRun.truth`).
+
+The runners are every horse that started; withdrawn horses (WV, WV-A, WX, WX-A, WXNR) are not runners. A horse
+that started and did not finish (FE, UR, PU, DNF, TNP) is a runner with no finish time and no placing; its
+cumulative sectional times run to its last complete section and are NaN after. A disqualified horse (DISQ) keeps
+its finish time and sectionals and has no placing.
 
 - `Mask()` withholds nothing (the default).
 - `Mask(boundary=j)` withholds the cumulative official time at sectional boundary j for every runner (0 is the
@@ -563,9 +568,9 @@ official sectional ends, 400 m apart.
 | `finish_rho` | ≥ 0.90 | Spearman of reconstructed vs official finish times (≥ 3 scored) |
 | `winner_ok` | == official | earliest scored crossing |
 | `behind_winner_mae` | ≤ 0.20 s | time behind the winner at the line |
-| `sectional_coverage` | ≥ 0.80 | share of (horse, boundary) crossings scored |
+| `sectional_coverage` | ≥ 0.80 | share of (horse, boundary) crossings with an official time that are scored |
 | `horses_with_path_short` | ≤ 1 | runners without a fused path |
-| `finish_n_short` | ≤ 2 | runners without a scored finish |
+| `finish_n_short` | ≤ 2 | runners with an official finish time but no scored finish |
 | `lateral_scale_err` | ≤ 0.75 m | \|racing-to-fixed rail gap on the map − course table\|; n/a where unmeasurable (A course, no supported ridge) |
 
 The last four were declared before any held-out race was run. "Timing gates" are the first five; "non-lateral
@@ -724,9 +729,10 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 - **Clock crops.** A sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no
   clock is read and `film` fails (2 races of the 200-race sample). Older seasons are at 1280 × 720 until 2023-05
   (the aerial feed exists back to 2015); the pipeline assumes 1920 × 1080.
-- **Non-finishers in the results.** `historical._clean_race_data` drops every incident row (DISQ, DNF, FE, ML,
-  PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR); a code marking a horse that started would remove a
-  rendered horse from the runners. Not observed: raw results pages show only WV and WV-A rows.
+- **Non-finishers and non-runners that raced.** Non-finishers are runners (§3), but identity and fusion have not
+  been checked on a horse that leaves the render mid-race (a faller, HV 2025-06-25 R5), nor on a TNP horse that
+  stays in the stalls. A WXNR horse is declared a non-runner after the start, yet some raced the whole event
+  (HV 2025-02-19 R2 #3, ST 2025-12-07 R9 #10): the render may draw a horse that is not in the runners.
 - **Resolution floors.** Official mid-race times sit on a 0.04 s grid relative to the leader (~0.2 m); the HUD
   odometer changes only every 0.4 s, so a raw tick is 0–0.4 s late.
 - **Independent real-camera positions.** Drone and patrol are the only independent source for the start segment

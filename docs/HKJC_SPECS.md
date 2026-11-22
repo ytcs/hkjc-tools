@@ -93,10 +93,14 @@ faced** (opponent-strength-adjusted), not in absolute terms.
 - **`last6run`** — recent finishing-positions string.
 - **Runner `status` `Standby`** = reserve (exclude it when building a card from GraphQL); scratched
   runners flagged via `changeHistories` / `scratched`.
-- **`Pla`** — finishing position; may carry an **incident code** instead of a number:
-  `DISQ, DNF, FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR` (filtered
-  out of the results table — but the *fact* that a horse failed to complete is itself
-  informative).
+- **`Pla`** — finishing position, `N DH` on a dead heat (both horses share N); may carry an
+  **incident code** instead of a number: `DISQ, DNF, FE, ML, PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX,
+  WX-A, WXNR`. In `hkjc.data` results and sectionals, a horse that started (finisher, `DISQ`,
+  `DNF`, `FE`, `PU`, `TNP`, `UR`) is a row with `Pla` null when unplaced (`PlaCode` keeps the
+  cell); `DISQ` keeps its finish time and sections; withdrawn codes (`WV`, `WV-A`, `WX`, `WX-A`,
+  `WXNR`, `WR`) and `VOID` rows are dropped. `WXNR` = declared a non-runner by the stewards after the
+  start (e.g. denied a fair start); the horse may still have run the race. On the sectional page a
+  non-finisher's last cell holds only a sub-split (no position), which is not a section time.
 - **Time strings differ by page** (parse each with its own rule):
 
   | Page | Field | Format | Unit of last part |

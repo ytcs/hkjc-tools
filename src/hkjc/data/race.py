@@ -39,7 +39,7 @@ class RaceInfo:
     surface: str  # "turf" | "awt"
     going: str
     race_class: str
-    runners: tuple
+    runners: tuple  # every horse that started, finisher or not; withdrawn horses are not runners
     results: pl.DataFrame = field(repr=False, compare=False)  # official outcome: never an input to the video-only product
     sectionals: pl.DataFrame = field(repr=False, compare=False)  # official outcome (same contract)
 
@@ -62,18 +62,20 @@ class RaceInfo:
 
 
 def official_boundaries(info) -> tuple[list, dict]:
-    """Full official record: (distance-to-go at each sectional end, {runner: cumulative times there})."""
+    """Full official record: (distance-to-go at each sectional end, {runner: cumulative times there}).
+    A horse that did not finish has times up to its last complete section, NaN after."""
     sec = info.sectionals
     nsec = sec["section"].n_unique()
     bnd = [400.0 * (nsec - 1 - k) for k in range(nsec)]  # distance-to-go at section ends
     w = sec.pivot(index="runner", on="section", values="section_time").sort("runner")
-    cols = [c for c in w.columns if c != "runner"]
-    cum = np.cumsum(w.select(cols).to_numpy(), axis=1)
+    cols = sorted((c for c in w.columns if c != "runner"), key=int)
+    cum = np.cumsum(w.select(cols).to_numpy().astype(float), axis=1)
     return bnd, dict(zip(w["runner"].to_list(), cum))
 
 
 def official_finish(info) -> dict:
-    """Full official record: {horse: finish time s} (results FinishTime), in result order."""
+    """Full official record: {horse: finish time s} (results FinishTime), in result order. Horses
+    without a time (non-finishers) are absent; a disqualified horse keeps the time it ran."""
     out = {}
     for h, ft in info.results.select(["HorseNo", "FinishTime"]).iter_rows():
         if h is not None and ft is not None and np.isfinite(ft):
@@ -81,9 +83,19 @@ def official_finish(info) -> dict:
     return out
 
 
+def official_placing(info) -> dict:
+    """Full official record: {horse: placing} for the placed horses, in placing order (the results' row
+    order); the horses of a dead heat share a placing; unplaced horses (non-finishers, DISQ) are absent."""
+    return {
+        int(h): int(p)
+        for h, p in info.results.select(["HorseNo", "Pla"]).iter_rows()
+        if h is not None and p is not None
+    }
+
+
 def official_order(info) -> list:
-    """Full official record: horse numbers in placing order (the results' row order)."""
-    return [int(x) for x in info.results["HorseNo"].to_list() if x is not None]
+    """Full official record: placed horse numbers in placing order (the results' row order)."""
+    return list(official_placing(info))
 
 
 @dataclass(frozen=True)
@@ -200,8 +212,8 @@ class Mask:
 
 class MaskedRace:
     """The race as the reconstruction sees it: every pre-race fact of ``info`` (``PRE_RACE``) and the
-    official outcome only through ``official_boundaries`` / ``official_finish`` / ``official_order``,
-    with what ``mask`` withholds removed. It has no ``results`` / ``sectionals``."""
+    official outcome only through ``official_boundaries`` / ``official_finish`` / ``official_order`` /
+    ``official_placing``, with what ``mask`` withholds removed. It has no ``results`` / ``sectionals``."""
 
     PRE_RACE = (
         "date", "venue", "race_no", "distance", "course", "surface", "going", "race_class",
@@ -245,10 +257,16 @@ class MaskedRace:
         return official_finish(self._info)
 
     def official_order(self) -> list:
-        """Horse numbers in official placing order; empty when the outcome or the finish is withheld."""
+        """Placed horse numbers in official placing order; empty when the outcome or the finish is withheld."""
         if self._finish_withheld():
             return []
         return official_order(self._info)
+
+    def official_placing(self) -> dict:
+        """{horse: official placing} (dead heats share one); empty when the outcome or the finish is withheld."""
+        if self._finish_withheld():
+            return {}
+        return official_placing(self._info)
 
 
 def _cached(path: Path, fetch):
