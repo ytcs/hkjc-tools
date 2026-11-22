@@ -142,6 +142,14 @@ def test_official_observations_follow_the_mask():
     assert [(o.horse, float(o.lat[0])) for o in out] == [(r.no, f.lat[0]) for r, f in zip(info.runners, full)]
 
 
+def test_interior_official_times_are_soft_and_the_finish_near_hard():
+    obs = [o for o in _bare(_info(), Mask()).official_observations() if o.feed == "official"]
+    for o in obs:
+        sd = RaceRun.OFFICIAL_SD if np.all(o.s == D) else RaceRun.OFFICIAL_INTERIOR_SD
+        assert o.sd_s == sd and (np.all(o.s == D) or np.all(o.s < D))
+    assert RaceRun.OFFICIAL_INTERIOR_SD > 5 * RaceRun.OFFICIAL_SD
+
+
 def _paths():
     t = np.linspace(0, 80, 1601)
     return {
@@ -158,9 +166,9 @@ def test_retime_follows_the_mask():
     q, _w = _bare(info, Mask(boundary=1))._official_retime(p)
     _b, cum = official_boundaries(info)
     for h, c in cum.items():
-        x = q[h]
-        assert abs(crossing(x.t, D - x.s, None, 400.0) - c[1]) > 0.05  # withheld: not snapped
-        assert abs(crossing(x.t, D - x.s, None, 800.0) - c[0]) < 5e-3
+        x, y = q[h], p[h]
+        # interior crossings stay the fused path's own (soft official times), the finish is exact
+        assert abs(crossing(x.t, D - x.s, None, 400.0) - crossing(y.t, D - y.s, None, 400.0)) < 1e-6
         assert abs(crossing(x.t, D - x.s, None, 0.0) - c[2]) < 5e-3
     assert _bare(info, Mask(outcome=True))._metric_bias(p) is None
 

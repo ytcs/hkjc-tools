@@ -1345,8 +1345,9 @@ class RaceRun:
 
     def official_observations(self) -> list:
         """FINAL-product observations (official outcome data): the gate draw fixes every runner's
-        lateral at t=0 (standing start, s=0), and the official per-runner sectional times fix its
-        crossing times at the section boundaries (d = 400 k); what the mask withholds is absent."""
+        lateral at t=0 (standing start, s=0); the official finish time is a near-hard crossing at d = 0
+        (OFFICIAL_SD) and the official interior sectional times are measured crossings at d = 400 k
+        (OFFICIAL_INTERIOR_SD); what the mask withholds is absent."""
         D = self.info.distance
         out = []
         for r in self.info.runners:
@@ -1367,27 +1368,23 @@ class RaceRun:
         for h, ft in self._official_finish().items():  # runners without sectional times: the finish only
             if h not in cum:
                 out.append(fusion.Obs(np.array([ft]), np.array([D]), None, self.OFFICIAL_SD, 1.0, "official",
-                                      horse=h, tid=30_000 + h))
+                                      horse=h, tid=40_000 + h))
         for h, c in cum.items():
-            ok = np.isfinite(c)
-            out.append(
-                fusion.Obs(
-                    np.asarray(c)[ok],
-                    D - np.asarray(bnd)[ok],
-                    None,
-                    self.OFFICIAL_SD,
-                    1.0,
-                    "official",
-                    horse=int(h),
-                    tid=30_000 + int(h),
-                )
-            )
+            c, b = np.asarray(c, float), np.asarray(bnd, float)
+            for part, sd, tid in ((b > 0, self.OFFICIAL_INTERIOR_SD, 30_000), (b == 0, self.OFFICIAL_SD, 40_000)):
+                ok = part & np.isfinite(c)
+                if ok.any():
+                    out.append(fusion.Obs(c[ok], D - b[ok], None, sd, 1.0, "official", horse=int(h), tid=tid + int(h)))
         return out
 
     ANCHOR_CHECK = True
-    # official sectional/finish times are published to 0.01 s (~0.1 m at race speed): near-hard in the final
+    # official finish times are photo-finish, published to 0.01 s (~0.1 m at race speed): near-hard in the final
     # product, so a mislabelled render tracklet conflicts with them (and is demoted) instead of bending them
     OFFICIAL_SD = 0.1
+    # official INTERIOR times are the leader's time plus a margin quantised to 0.04 s: against identity-verified horses
+    # their horse-specific error has a robust sd of 0.58-0.59 m (disc and legend-confirmed silk races) once a per
+    # race-boundary field-spread term is removed (raw, disc races: ~0.93 m); that term is not modelled
+    OFFICIAL_INTERIOR_SD = 0.6
 
     def _fuse(self, obs, horses, prior, t_end=None):
         """Render-fused posterior, then + finish camera. ``t_end``: the grid runs at least to this
@@ -1588,7 +1585,7 @@ class RaceRun:
         pf, warp = self._official_retime(pf)
         if warp:
             big = {h: round(w, 2) for h, w in warp.items() if w > 0.05}
-            self.log(f"   fuse_final: re-timed onto the official boundary times (max shift {max(warp.values()):.3f} s"
+            self.log(f"   fuse_final: re-timed onto the official finish (max shift {max(warp.values()):.3f} s"
                      + (f"; > 0.05 s: {big}" if big else "") + ")")
         self._write_paths(pf, "paths.parquet")
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
@@ -1605,15 +1602,16 @@ class RaceRun:
         return hs.index(h) if h in hs else len(hs)
 
     def _official_retime(self, paths):
-        """FINAL product: each horse passes every official boundary at its official time. A strictly
-        increasing C1 re-timing of the fused path (``_monotone_warp``; fixed at its first node) moves its
-        crossings onto the official times without a speed jump at any boundary; lateral and sd follow
-        the same re-timing. A boundary the mask withholds is not re-timed.
-        -> (paths, {horse: largest shift s})."""
+        """FINAL product: each horse crosses the line at its official finish time (photo-finish, exact). The
+        correction is LOCAL to the last section: the re-timing is the identity up to the path's own crossing of the
+        last sectional boundary before the finish, then one strictly increasing C1 segment (``_finish_warp``) moves
+        the finish crossing onto the official time without a speed jump; lateral and sd follow the same re-timing.
+        The interior official times are noisy measurements already in the fusion (OFFICIAL_INTERIOR_SD), so they
+        are not re-timed onto. Withheld finish: no re-timing. -> (paths, {horse: largest shift s})."""
         bnd, cum = self.info.official_boundaries()
-        D = self.info.distance
         fin = self._official_finish()
-        targets = {h: (list(bnd), list(c)) for h, c in cum.items()}
+        D = self.info.distance
+        targets = {h: ([0.0], [c[-1]]) for h, c in cum.items() if bnd and bnd[-1] == 0.0 and np.isfinite(c[-1])}
         for h, ft in fin.items():
             targets.setdefault(h, ([0.0], [ft]))
         # equal official finish times (0.01 s resolution) keep the official placing: spaced inside the interval
@@ -1643,7 +1641,11 @@ class RaceRun:
                 out[h] = p
                 continue
             kt, kw = np.array(kt), np.array(kw)
-            w = self._monotone_warp(kt, kw, p.t)
+            tl = float(np.interp(D - bnd[-2], s_mono, p.t)) if len(bnd) >= 2 and s_mono[0] < D - bnd[-2] else None
+            if tl is not None and tl < kt[-1] and tl < kw[-1]:
+                w = self._finish_warp(tl, kt[-1], kw[-1], p.t)
+            else:  # no last-section start on the path: one segment from the first node
+                w = self._monotone_warp(kt, kw, p.t)
             warp[h] = float(np.max(np.abs(kw - kt)))
             out[h] = replace(
                 p,
@@ -1653,6 +1655,18 @@ class RaceRun:
                 sd_l=np.interp(p.t, w, p.sd_l),
             )
         return out, warp
+
+    @staticmethod
+    def _finish_warp(tl, tf, wf, t):
+        """t -> w: the identity up to ``tl``, a cubic Hermite from (tl, tl, slope 1) to (tf, wf, slope m) with m the
+        secant (wf - tl) / (tf - tl), continued at slope m after ``tf``. C1 everywhere; strictly increasing for
+        m >= 1/3 (Fritsch-Carlson), else the start slope is clipped to 3 m."""
+        from scipy.interpolate import CubicHermiteSpline
+
+        m = (wf - tl) / (tf - tl)
+        d0 = min(1.0, 3.0 * m)
+        seg = CubicHermiteSpline([tl, tf], [tl, wf], [d0, m])(np.clip(t, tl, tf))
+        return np.where(t <= tl, t, np.where(t >= tf, wf + m * (t - tf), seg))
 
     @staticmethod
     def _monotone_warp(kt, kw, t):
