@@ -359,9 +359,9 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 - **Legacy `.aspx` pages** (`racing.hkjc.com/racing/information/English/...`): results take
   `RaceDate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`; the horse page takes `HorseNo=<id>` (presumably the
   brand; unverified).
-- **Horse ids:** the *brand* is `[A-Z]\d+` (e.g. `K400`), printed in name cells as `NAME (K400)`
-  (regex `\(([A-Z]\d+)\)`); the *registration* is `HK_YYYY_<brand>` (e.g. `HK_2023_J183`), found in
-  links as `horseid=...` (regex `horseid=(HK_\d{4}_([A-Z]\d+))`). Racecard "Brand No." is the brand.
+- **Horse ids:** the *brand* is `[A-Z]{1,2}\d+` (e.g. `K400`, `AJ313`), printed in name cells as `NAME (K400)`
+  (regex `\(([A-Z]{1,2}\d+)\)`); the *registration* is `HK_YYYY_<brand>` (e.g. `HK_2023_J183`), found in
+  links as `horseid=...` (regex `horseid=(HK_\d{4}_([A-Z]{1,2}\d+))`). Racecard "Brand No." is the brand.
 - **Other date shapes inside pages:** trackwork gallop entries `DD/MM` (no year, §2.2),
   `trackworkresult` rows `DD/MM/YYYY`, horse-page form `Date` `dd/mm/yy` (or `dd/mm/YYYY`).
 - **Requests:** plain `GET`, no cookies. Modern routes need only
@@ -377,7 +377,7 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 | Page | Route | Key data | Status |
 |---|---|---|---|
 | **Race Card** | `racecard?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | **27 cols**: ratings, **Rtg +/- (rating move)**, gear (`V-/B2/TT`), **Horse Wt + Wt+/- (body-weight delta)**, Best Time, **days-since-run**, WFA, season stakes, priority, owner/sire/dam, import cat | 📜 §2.2 |
-| **Comments on Running** | `corunning?racedate=Y/M/D&Racecourse=ST&RaceNo=N` | per-horse free-text stewards' trip line ("raced wide, stayed on final 200m…"); past races presumably served (unverified) | 📜 §2.2 |
+| **Comments on Running** | `corunning?date=YYYYMMDD&raceno=N` | per-horse free-text stewards' trip line ("raced wide, stayed on final 200m…"); past races served (earlier seasons redirect to `/archive/...`). The `racedate=...&Racecourse=...` form ignores the date and returns the latest meeting | 📜 §2.2 |
 | **Sectional Time** | `displaysectionaltime?racedate=D/M/Y&RaceNo=N` | per-horse section positions + split times (1st–6th Sec.) + race splits | ✅ `data.sectional` |
 | **Results** | `localresults?racedate=Y/M/D&Racecourse=ST&RaceNo=N`; wired via legacy `/racing/information/English/Racing/LocalResults.aspx?RaceDate=Y/M/D&Racecourse=ST&RaceNo=N` | result table + **full exotic/jackpot dividends** + **incident table** + running positions | ✅ results table · 📜 dividends §2.2 |
 | **Horse page** | `horse?horseid=HK_2023_J183`; legacy `/racing/information/English/Horse/Horse.aspx?HorseNo=<id>` (id presumably the brand, e.g. `J183`; unverified) | record, location (Conghua/ST), import; tabs: Form, Rating/Wt/Placing, **Performance by Distance**, **Trackwork**, **Veterinary**, Movement, Pre-import, **Pedigree** + replay links | 📜 legacy form table §2.2 |
@@ -389,7 +389,7 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 > "…available shortly", for *future* "No information". The "0 tables" you'd otherwise see is a
 > stale-date artifact, **not** JS-rendering. Scrape them in the pre-race window with the upcoming date.
 > **Exceptions:** `btresult` (barrier trials) and `trackworkresult` (per-horse trackwork archive)
-> serve past dates; `corunning` presumably serves past races (unverified).
+> serve past dates; so does `corunning` with `date=YYYYMMDD&raceno=N`.
 - **`exceptionalfactors`** — per horse: `Out of Handicap, WFA, Gear, Tongue Tie, Bit Change
   From/To, Rtg, Dist, Days since Last Run, New Trainer, Date returned from Conghua`, **plus a
   `Trainer | Multi Entries` table** (which stable saddles 2+ runners — pair with `trainerPreference`).
@@ -426,12 +426,12 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 unknown header cells are dropped (only the mapped columns are kept).
 
 
-URL templates (`{date}` formats: racecard, corunning,
+URL templates (`{date}` formats: racecard,
 localtrackwork, LocalResults `YYYY/MM/DD`; btresult `DD/MM/YYYY`; `{venue}` `ST`/`HV`):
 
 ```
 https://racing.hkjc.com/en-us/local/information/racecard?racedate={date}&Racecourse={venue}&RaceNo={race}
-https://racing.hkjc.com/en-us/local/information/corunning?racedate={date}&Racecourse={venue}&RaceNo={race}
+https://racing.hkjc.com/en-us/local/information/corunning?date={yyyymmdd}&raceno={race}
 https://racing.hkjc.com/en-us/local/information/btresult?Date={date}
 https://racing.hkjc.com/en-us/local/information/localtrackwork?racedate={date}&Racecourse={venue}&RaceNo={race}
 https://racing.hkjc.com/en-us/local/information/trackworkresult?horseid={horseid}
@@ -458,7 +458,7 @@ days_since_last_run, season_stakes): strip `,` and `+`; `""`, `-`, `--` → null
 carries an apprentice allowance, `NAME (-2)`: regex `\(([-+]?\d+)\)` → `jockey_allowance` (default
 0), name = cell without it. `Best Time` is `m.ss.ff` or `ss.ff` (hundredths).
 
-**Comments on Running** (`corunning?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`). First table
+**Comments on Running** (`corunning?date=YYYYMMDD&raceno=N`). First table
 whose text contains `Comment` and `Horse`. Data rows: ≥ 6 cells and `cells[1]` all digits.
 `cells[1]` runner no., `cells[2]` `NAME (BRAND)`, `cells[4]` gear, `cells[5]` comment (`cells[0]`,
 `cells[3]` were not read; labels unrecorded). Trouble flag used (case-insensitive search), meant to
@@ -472,17 +472,20 @@ apply `Batch\s*(\d+)\s*-\s*(.+?)\s*-\s*(\d+)m` (DOTALL; batch, course, distance 
 `Sectional Time:\s*([\d.\s]+)` (3 space-separated splits). A table **with** horse links: each row
 with a `horseid` link and ≥ 10 cells is a runner: 0 `NAME (BRAND)`, 1 jockey, 2 trainer, 3 draw,
 4 gear, 5 LBW, 6 running position, 7 time, 8 result, 9 comment; long id from the link
-`horseid=(HK_\d{4}_[A-Z]\d+)`. Times `m.ss.ff`/`ss.ff` (hundredths; `m:ss.ff` tolerated). LBW →
+`horseid=(HK_\d{4}_[A-Z]{1,2}\d+)`. Times `m.ss.ff`/`ss.ff` (hundredths; `m:ss.ff` tolerated). LBW →
 lengths: upper-case, NBSP → space; `""`/`-` → 0 (leader); `N` 0.3, `NK` 0.3, `HD` 0.2, `SH` 0.1,
 `DH` 0; else `^\s*(\d+)?[\s-]*(?:(\d+)/(\d+))?\s*L?\s*$` = whole + num/den (`8-1/2L`, `8 1/2L`,
 `3/4L`, `8L`); else null. Trials run mostly Mon/Tue/Thu/Fri, sometimes Wed/Sat, never Sun; other
 days give no tables. **Date list:** the page's first `<select>` lists trial dates as option values
 `DD/MM/YYYY` covering roughly the trailing 13 months; older dates must be probed. **Backfill used:**
 candidates = dropdown dates ∪ every Mon–Sat in range; 1 request/s, one retry after 2 s on a network
-error; dedupe on (date, batch, brand).
+error; dedupe on (date, batch sequence, brand). Batch numbers restart at 1 per venue on days with sessions at two
+venues, so identify a batch by its position in the page (date, sequence), not its printed number. Column 8 is a verdict
+(`Passed`, `Failed`, ...), not a placing; the placing is the last running-position call. Earlier seasons redirect to
+`/archive/...` with the date as `YYYY/MM/DD`.
 
 **Trackwork, race-keyed** (`localtrackwork?racedate=YYYY/MM/DD&Racecourse=ST|HV&RaceNo=N`,
-imminent meeting only). Tables containing a `horseid=(HK_\d{4}_([A-Z]\d+))` link; header = first
+imminent meeting only). Tables containing a `horseid=(HK_\d{4}_([A-Z]{1,2}\d+))` link; header = first
 row; the Gallop column is the header cell equal to `Gallop` (case-insensitive). Each runner row:
 long id and brand from the link, name = `cells[1]` cut at the first `\s+[A-Z]\s|\s+\d`. The Gallop
 cell holds consecutive entries `DD/MM: LOCATION SURFACE s1 s2 [s3…] (total) (rider) [companion]`,
