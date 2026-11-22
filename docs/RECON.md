@@ -590,11 +590,13 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 - Withheld detections (391 stretches, 370 of them beside another horse; video-only paths): along-track RMS
   median 0.25 m, p90 0.84 m, 4.6 % above 2 m; lateral RMS median 0.19 m, p90 0.61 m; the path in the gap overlaps
   another horse in 5.9 % of stretches. With the same detections visible: 0.12 m, 0.27 m, 0 %; 0.12 m, 0.29 m;
-  2.6 %. The errors above 2 m are mostly confident (posterior sd 0.2–0.4 m): the hidden horse's path follows
-  another horse's detections.
+  2.6 %. Of the 18 stretches above 2 m, in 10 the hidden horse's masked-run E-step takes detections the reference
+  gave another horse, in 3 detections the reference left unlabelled, and in 5 none (the path extrapolates); 14 of
+  the 18 have median posterior sd ≤ 0.4 m in the gap.
 - Withheld disc reads (25 disc races, alternate 10 s blocks): labels inside the hidden blocks equal the hidden
   read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.45 %), 0.91 % left
-  unlabelled (final 1.59 %); with every read visible, 99.19 % and 0.49 % (final 98.98 %, 1.12 %).
+  unlabelled (final 1.59 %); with every read visible, 99.19 % and 0.49 % (final 98.98 %, 1.12 %). Here a
+  confident read is one of a runner's numbers (`RaceRun._number_reads`); the agreement above counts every read.
 - Lateral yardstick on the final paths: AUC (WIDE > INSIDE) 0.961; MID > INSIDE 0.912, WIDE > MID 0.860 (INSIDE
   400, MID 262, WIDE 453 horse-runs).
 
