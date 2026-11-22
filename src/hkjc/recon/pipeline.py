@@ -613,8 +613,10 @@ class RaceRun:
             # the fixed crop missed the clock (a sponsor box above it moves it down): locate it in the video,
             # on the same frames (every CLOCK_EVERY-th render frame)
             sel = np.arange(0, len(rows), ocr.CLOCK_EVERY)
-            rows[sel, 1], dy = ocr.read_clock_located(self.video(), rows[sel, 0])
-            self.log(f"   hud: clock not at the fixed crop; located {dy:+d} px: {np.isfinite(rows[:, 1]).sum()} reads")
+            loc, dy = ocr.read_clock_located(self.video(), rows[sel, 0])
+            if np.isfinite(loc).sum() > np.isfinite(rows[sel, 1]).sum():
+                rows[sel, 1] = loc
+            self.log(f"   hud: clock not at the fixed crop; located {dy:+d} px: {np.isfinite(loc).sum()} reads")
         if self.render_style() == "circle":  # no legend strip: its slots stay unread
             leg[:, 1:] = 0
         with self.out("hud.npz") as fp:
@@ -825,6 +827,15 @@ class RaceRun:
 
     LAT_GATE = 1.0  # m: detections further inside the racing rail are dropped
 
+    def fence_lat0(self, ppm: float) -> float:
+        """World px from the rail polyline to the racing rail: on straight courses the fence's measured offset
+        inside the field-edge datum (``rail.npz`` lat0_px), else 0. A "fence" more than LAT_GATE on the FIELD
+        side of the field's inner edge is another ridge (observe's gate would drop the inner horses): unmeasured,
+        0 as when no ridge is supported."""
+        z = np.load(self.p("rail.npz"))
+        lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+        return 0.0 if lat0 < -self.LAT_GATE * ppm else lat0
+
     def observe(self):
         rows, X, hist, _P = self.world_dets()
         seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness perturbation
@@ -920,12 +931,10 @@ class RaceRun:
             self.log(f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m")
         # straight courses (the rails stage's decision, recorded as lat0_px): the rail polyline is the
         # field-edge datum and lat0_px the fence's measured offset inside it (rails.straight_datum)
-        lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
-        if lat0 < -self.LAT_GATE * ppm:
-            # a "fence" more than the gate's tolerance on the FIELD side of the field's inner edge is another
-            # ridge (the gate below would drop the inner horses): unmeasured, as when no ridge is supported
-            self.log(f"   observe: straight-course fence measured {-lat0:.0f} px on the field side of its edge -> rejected")
-            lat0 = 0.0
+        lat0 = self.fence_lat0(ppm)
+        if "lat0_px" in z.files and lat0 != float(z["lat0_px"]):
+            self.log(f"   observe: straight-course fence measured {-float(z['lat0_px']):.0f} px on the field side "
+                     "of its edge -> rejected")
         lat = (lat_px + lat0) / ppm_loc(s_px)
         g = lat > -self.LAT_GATE  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]

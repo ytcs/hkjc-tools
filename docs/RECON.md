@@ -193,7 +193,10 @@ crops read at most one slot there (ST 2024-04-14 R8: slot 8 only; ST 2025-04-13 
 almost no legend votes. The slot crops follow the field size (`ocr._legend_slot_x`, a line through the two measured
 pitches). Fields of 8+ read exactly as before. ST 2025-04-13 R1: 6 of 6 tracklets numbered instead of 2, winner
 and finish-n now pass (leader timing 0.289 s still fails); ST 2024-04-14 R8: 10 of 17 instead of 6, every gate passes
-as before. The product's one other field under 8 (ST 2026-03-01 R7, 6 runners) has not been re-read.
+as before. The product's one other field under 8 (ST 2026-03-01 R7, 6 runners; not used to fit the pitch) reads 96–98 %
+of frames in each of its 6 slots instead of one slot: 12 of 18 tracklets numbered instead of 5, and the video-only
+gates go from 3 to 8 of 9 (winner, finish ρ 0.20 → 1.00, sectional MAE 0.596 → 0.109 s, behind-winner, paths; the
+lateral scale still fails).
 
 ### rails
 

@@ -56,7 +56,7 @@ def reproject(run, want):
         sel = slice(max(0, st - 500), min(len(rf.R), st + 500))
         # straight courses: the polyline is the field-edge DATUM; the racing rail drawn (and the
         # lateral reference) is the fence measured lat0_px inside it (rails.straight_datum)
-        lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+        lat0 = run.fence_lat0(ppm)
         if lat0:
             W = rf.R[sel]
             uv = (np.c_[W, np.ones(len(W))] @ Gi.T)[:, :2].astype(np.int32)
@@ -221,8 +221,8 @@ def _map_geometry(run):
     bs = np.array([np.median(ss[idx == i]) for i in np.unique(idx)])
     order = np.argsort(bd)
     bd, bs = bd[order], bs[order]
-    lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
     ppm = float(m["ppm"])
+    lat0 = run.fence_lat0(ppm)
 
     def d_to_s(d):
         return np.interp(d, bd, bs)  # beyond the observed range: clamped (drawn at the edge)
