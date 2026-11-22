@@ -540,6 +540,17 @@ gates" the first eight.
   measured.
 - **Numbered-disc agreement.** On the disc render, detections with a confident disc read and a label: the share
   whose label equals the read number.
+- **Withheld detections** (§3, `Mask(dets=...)`). Per race, two horses × one 3 s stretch in the middle third of
+  the race, chosen by a fixed seeded rule from an unmasked reference run: at least 80 % of the stretch's render
+  frames carry a detection that both the video-only and the final E-step label as the horse, the horse is never
+  the frame's frontmost detection, and stretches where another detection lies within 3 m along and 2 m across
+  in at least half the frames are preferred. Every detection either E-step labels as the horse in the stretch is
+  withheld (plus unlabelled duplicate boxes within 0.6 m / 0.4 m), and the reconstructed path is scored against
+  the withheld detections: along-track and lateral RMS and max error, and whether the path in the gap overlaps
+  another horse's firm path (|Δs| < 2.0 m and |Δlat| < 0.7 m).
+- **Withheld disc reads** (§3, `Mask(discs=10)` and `Mask(discs=10, discs_phase=0)`). Each confident disc
+  read is scored once while hidden: among detections with a confident read inside the withheld blocks, the
+  share of labelled ones whose label equals the read, and the share left unlabelled.
 - **Lateral yardstick.** AUC of final-path lateral position against the stewards' comments (WIDE > INSIDE, with
   MID between).
 - **Perturbation ensembles.** Seeds of `HKJC_PERTURB_SEED` (1 % detection drop) per race; arms are compared
@@ -576,6 +587,14 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   boundary within 0.02 s.
 - Hand truth (video-only labels): 138 of 164 hand-labelled detections on 9 races, 84.1 %.
 - Numbered-disc agreement on the 25 disc races: 99.13 % (video-only labels), 98.91 % (final labels).
+- Withheld detections (391 stretches, 370 of them beside another horse; video-only paths): along-track RMS
+  median 0.25 m, p90 0.84 m, 4.6 % above 2 m; lateral RMS median 0.19 m, p90 0.61 m; the path in the gap overlaps
+  another horse in 5.9 % of stretches. With the same detections visible: 0.12 m, 0.27 m, 0 %; 0.12 m, 0.29 m;
+  2.6 %. The errors above 2 m are mostly confident (posterior sd 0.2–0.4 m): the hidden horse's path follows
+  another horse's detections.
+- Withheld disc reads (25 disc races, alternate 10 s blocks): labels inside the hidden blocks equal the hidden
+  read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.45 %), 0.91 % left
+  unlabelled (final 1.59 %); with every read visible, 99.19 % and 0.49 % (final 98.98 %, 1.12 %).
 - Lateral yardstick on the final paths: AUC (WIDE > INSIDE) 0.961; MID > INSIDE 0.912, WIDE > MID 0.860 (INSIDE
   400, MID 262, WIDE 453 horse-runs).
 
