@@ -766,6 +766,8 @@ Each line: the approach, then the measurement that decided it. "Removed untested
 without a verdict.
 
 Fusion, identity
+- Official times reaching the final paths only through the C1 re-timing (out of the path fuses; still in the skeleton and the final identity pass): removes the boundary speed kinks (interior jump median 0.087 → 0.006 m/s on 5 races) but worsens the held-out boundary on 196 races (one boundary withheld per race: interior median 0.114 → 0.119 s, p90 0.287 → 0.307; finish median 0.135 → 0.160): the official points inside the fuse carry real information to neighbouring boundaries.
+- A constant metric bias (instead of interpolating it between official boundaries) against the boundary speed kinks: interior jump median 0.087 → 0.141 m/s on 5 races.
 - A 0.6 m margin for "ahead of every listed horse" in the detection-level EM (`assoc.FLOOR_EPS`): failed; 4, 8 and 16 m are equivalent (8 m kept).
 - Dropping finish-camera crossings that contradict the horse's own render-observed crossing (offset from the median camera-minus-render offset > max(4 sd, 0.25 s)): fixed HV 2026-11-18 R6 (camera misread '2'/'3', winner and finish ρ 0.59 → 0.99) but failed ST 2026-10-19 R3 behind-winner (ρ 0.88 → 0.53) and silk ST 04-19 R4 finish ρ and behind-winner; the render's own crossing is wrong by up to ~1 s on some horses even with a well-read identity, so a disagreement alone does not say which feed is wrong. Without the median reference it also dropped every crossing on ST 11-08 R1, where camera and render crossings differ by a shared −0.47 s: a common offset of the clock or distance axis, not misreads.
 
