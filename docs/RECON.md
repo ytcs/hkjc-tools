@@ -386,7 +386,7 @@ the fitted clock.
 **EM identity pass** (`RaceRun._em_identity`). Legend votes on frames with undetected horses, ranks
 completed by the first posterior where every sd < 2 m, are added and `assign_global` re-run. It relabels
 6.3 % of detections on long identified tracklets (26 × 6; ST 04-19 R4 42 %); on the unread hand races its
-tracklet relabels help 20 distinct hand detections and hurt 20. Without it see §7.
+tracklet relabels help 20 distinct hand detections and hurt 20.
 
 **Detection-level EM** (`assoc.assign_frames`). The tracker fragments are only the initialisation.
 Per frame, one Hungarian assignment of all detections to all horses, clutter cost 16 (4σ). A
@@ -701,7 +701,7 @@ Gates failed on ≥ 5 of 6 seeds:
   sit on one drone horse while the render tracklet's labels alternate between the two horses and the
   drone shows one horse throughout (76 of 78 label changes), often the legend's 7th/8th horse and an
   unlisted one. The soft legend-rank term switches at about half of those label changes; widening its
-  margin through the full EM cuts the alternation by two thirds but leaves the contradictions (§7); cause not established. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
+  margin through the full EM cuts the alternation by two thirds but leaves the contradictions; cause not established. HV 04-15 R1: a wide drone horse has no path horse in the 9 seed-product
   runs that place #10 in the pack and in none of the 3 that place it wide.
 - **Double boxes on one avatar.** The detector often keeps two boxes on one horse (one on the jockey and forequarters, one on the jockey
   and hindquarters; IoU 0.32–0.50, under NMS's 0.5; intersection over the smaller box ≥ 0.5 on 486 of 554 such pairs, 14 of 4308 other
@@ -719,7 +719,7 @@ Gates failed on ≥ 5 of 6 seeds:
 - **Post-finish ticks.** After the winner crosses, the render camera parks on the line, and the duplicate test (mean |diff| < 3.0 to the
   last kept panel) drops the real ticks on which the trailing field crosses: over 26 races, 780 on-grid frames in the 3 s after the winner's
   crossing, 96 kept. In the races checked by eye, the finish-short horses cross on dropped frames. Keeping those frames, with or without
-  copying the parking pose onto them, gained no finish crossing (§7). With the pose copied (ST 05-03 R7, ST 05-24 R1), fusion's per-detection
+  copying the parking pose onto them, gained no finish crossing. With the pose copied (ST 05-03 R7, ST 05-24 R1), fusion's per-detection
   labels on the kept frames never name one of the seven finish-short horses. On ST 05-24 R1 the three stragglers are tracked across the line
   on those frames, and identify labels one of them correctly (#12, crossing 0.08 s from its official time), but fusion leaves their detections
   unlabelled or gives them other numbers. Why existing crossings got worse when the pose was copied (pose and map unchanged; rail and metric
@@ -761,192 +761,3 @@ Gates failed on ≥ 5 of 6 seeds:
   render disagrees with the record; planned via segmentation seeded from fused positions. Also open:
   a non-overlap constraint between horses in fusion; retraining the avatar detector under overlays. Sizing (seed 0): an overlay dropout
   of a true horse precedes 8 of 36 persistent wrong labels (16 % of correct ones) and 3 of 25 finish-short horses, so retraining is parked.
-
-## 7. Rejected (do not retry)
-
-Each line: the approach, then the measurement that decided it. "Removed untested" means removed
-without a verdict.
-
-Fusion, identity
-- Relaxing the official re-timing's rate to 1 beyond the last official time (time constant 1 s) instead of keeping the last section's rate: held-out finish (196 races, finish withheld) median +1.6 %, p90 −2.2 % on top of the final grid running past the video-only grid: below the 5 % adoption threshold.
-- The race clock's zero from the official times in the final product (video clock offset = median field crossing delay at the visible boundaries, fused in the video clock, metric bias measured in it): held-out first boundary 0.131 → 0.132 s, interior 0.114 → 0.113 s (196 races); the official points already absorb a whole-race clock offset.
-- Official times reaching the final paths only through the C1 re-timing (out of the path fuses; still in the skeleton and the final identity pass): removes the boundary speed kinks (interior jump median 0.087 → 0.006 m/s on 5 races) but worsens the held-out boundary on 196 races (one boundary withheld per race: interior median 0.114 → 0.119 s, p90 0.287 → 0.307; finish median 0.135 → 0.160): the official points inside the fuse carry real information to neighbouring boundaries.
-- A constant metric bias (instead of interpolating it between official boundaries) against the boundary speed kinks: interior jump median 0.087 → 0.141 m/s on 5 races.
-- A 0.6 m margin for "ahead of every listed horse" in the detection-level EM (`assoc.FLOOR_EPS`): failed; 4, 8 and 16 m are equivalent (8 m kept).
-- Dropping finish-camera crossings that contradict the horse's own render-observed crossing (offset from the median camera-minus-render offset > max(4 sd, 0.25 s)): fixed HV 2026-11-18 R6 (camera misread '2'/'3', winner and finish ρ 0.59 → 0.99) but failed ST 2026-10-19 R3 behind-winner (ρ 0.88 → 0.53) and silk ST 04-19 R4 finish ρ and behind-winner; the render's own crossing is wrong by up to ~1 s on some horses even with a well-read identity, so a disagreement alone does not say which feed is wrong. Without the median reference it also dropped every crossing on ST 11-08 R1, where camera and render crossings differ by a shared −0.47 s: a common offset of the clock or distance axis, not misreads.
-
-Frames, features, pose
-- Circle-render disc tests on a non-blue ring (R+5..R+9 ≤ 50 % blue) and a saturated core (median S ≥ 150), added to keep the start gate's banner out: they rejected discs in overlapping clusters (the ring is legitimately blue); HV 10-14 R3 fell from 10.0 to 7.0 discs per frame for 10 runners and 11 to 227 tracklets. The odometer-text gate keeps the banner out instead.
-- Dropping every off-grid frame: removed the only copy of ticks after finish-zone dropouts; finish-short 34 → 39, ST 05-24 R1 winner flipped, hand 15 → 10/19.
-- Dropping a frame one after the last kept, keeping the old duplicate reference: zero-motion ticks stayed (14 per race) and later ticks were stamped 1 frame late.
-- Keeping on-grid frames the duplicate test drops after the finish (the camera parks; real ticks differ 1.5–2.1 from the last kept panel vs tolerance 3.0): 0 of 10 finish-short horses gained a finish crossing on ST 05-03 R7, HV 05-27 R9 and ST 05-24 R1; the winner flipped on 2 of 3. Detections were unchanged; shared frames' course position near the line moved by up to 3.4 m. With the parking pose copied onto the kept frames and the pose solved on the other frames only (their poses bit-identical): 0 of 7 gained on ST 05-03 R7 and ST 05-24 R1, ST 05-24 R1 lost `finish_rho` (1.0 → 0.88), HV 05-27 R9 stopped in `observe` (its rail tested as straight).
-- Render gate with the widened strip and ≥ 1 box: admitted 11–65 pre-race live frames per race.
-- Relaxed legend fallback before the first strict frame: admitted a dissolve tail on HV 05-27 R3, which went 5/5 → 2/5 gates.
-- Colour-whitelist ORB mask: removed the stall but dropped posts and markers; HV 04-29 R3 loop closures 335 → 0.
-- Half-scale ORB (1500 features): 5× faster, but 2 vs 5 of 10 dev races pass every timing gate; HV 06-03 R8 loops 171 → 0.
-- Nonlinear (trf) pose solve: 3 vs 5 of 10 dev races pass every timing gate, 33× slower; it satisfies its world-px objective by collapsing frame scales.
-- Rigid pose (no scale): ~5× worse on long-baseline edges; the render zooms slowly.
-- ECC refinement: the mowing-stripe aperture causes scale drift.
-- LMEDS refit: integer FAST keypoints snap steps to whole pixels, a speed-dependent accumulating bias.
-- Projection-guided matching: no gain (~30 keypoints per 40 px gate cost as much as brute force).
-- XFeat features: 4× slower extraction, matching not faster, d = 24 pairs fail (24 vs 90 inliers).
-
-Detection
-- Adding background-subtraction blobs on turf: duplicates and false positives shattered HV 06-03 R8's tracking; used only where YOLO is blind.
-- Isotropic merge radius for blob fragments: too small for head-to-tail splits, too large for horses abreast.
-
-Rails and metric
-- Brightness-scored rail DP: left the movable rail for the fixed rail or apron edge via diagonals (ST 05-31 R1 bend ~4700 stations).
-- Continuity score alone (without nearness cost, robust scaffold, gap weight): non-lateral 198.0 → 193.8 per seed.
-- Rail smoother alone (brightness line choice, no silk ties): non-lateral 197.8 per seed, hand 53/79.
-- Brightness score plus the robust scaffold: hand 62 → 53/79; wrong-line segments unchanged (15/347).
-- Continuity score, nearness and scaffold without the 0.1 gap weight: 198.5 per seed; ST 05-24 R1's rail bulged off the map and lost its marker grid.
-- Unseen offsets scored 0 on straights: rail bridged off the map for 1800–2800 stations, marker grids lost, blocking audit failed.
-- DP slope bound on straights: the lateral step becomes a ramp.
-- Whole-course coverage band for the DP: ST 04-19 R4's rail clears it by ~2 px.
-- Robust straight line for straights: the mosaic bends (30 % inliers, end errors up to 10 m on ST 06-07 R8).
-- Straight datum without the measured fence constant: ~10 % of detections inside the rail; ρ 0.845 vs 0.923.
-- Bare turning sign on straights: flipped between pose variants; ST 05-09 R1's field slid ~3.5 m and #4 ended 3.4 m short.
-- Offset-space gap interpolation: humps where the scaffold jogs; HV 06-03 R8 adjacent tracklets swapped.
-- Gaussian despike trend: flattened curvature at the ends and shifted the marker grid by one marker.
-- Gaussian normals (σ = 3 stations): wobble amplified at wide lanes.
-- Exponential nearest-to-field DP preference: pulled the rail into the field on the home straight.
-- Lateral gate counting only stations imaged to the expected rail + 1 m: corrected HV 06-03 R8, broke HV 04-29 R3, left ST 05-03 R7; noise at low support.
-- Unseeded marker grid: took a coverage-edge artefact as FINISH (HV 04-29 R3).
-- Geometry-only metric (marker scale, no ticks): far worse on every race; the map scale drifts along the trip.
-- Fixed tick convention c = 0 at Sha Tin: a constant +0.3 s at every boundary.
-- Measured tick convention applied with an unpinned marker grid: ST 04-01 R5 and R6 got worse.
-- 51-station median + Gaussian for the inner-edge scaffold: a 107-station outlier run on HV 05-20 R9 (up to 247 px vs ~30 px) survived it, bent the scaffold and folded every rail ridge into a V the DP could not follow.
-- Dense knots wherever any tick is flagged: an isolated start tick gave 170 m residuals.
-- Local refit's derivative for lateral: ST 04-19 R3 p99 lateral 30 m vs 19.4 m.
-- Painted FINISH pin as the anchor when the film has ≥ 3 crossings: step in the last 50 m (+0.2 s late, then −0.16 s early).
-- Two-parameter film anchor (offset + scale): film-marker slope correlates with the official slope at r = 0.26.
-- Film single-frame longest line: static stripes won (104 of 351 frames on ST 04-19 R4).
-- Film markers outside the home straight: HV 400 m −0.32/+0.10/+0.68 s; HV course A 300 m +2.32 s.
-- Film constant-speed extrapolation to the line as an observation: biased early by 0.28–0.61 s.
-- Correcting the film's Sha Tin −0.11 s bias with official times: would put outcome data into the video-only product.
-
-Observe and tracking
-- Per-frame 8 m leader cut alone: dropped HV 05-20 R2's 13 m clear winner; finish 1.06 s early.
-- Common along-track shift in the tracker: −4 gates on 26 races (ST 04-19 R3 ρ 0.98 → 0.88).
-- Silk appearance cost in the tracker: −2 gates; seed unanimity 54.5 → 49.9 %.
-- Merging tracker seam duplicates: gates +0.17 per seed but hand majority 57 → 48/79.
-
-Finish camera
-- Temporal gaps from the unique-frame index: the playback rate varies near the winner.
-- Segmenting the whole white cloth: merges with white breeches and grey horses.
-- Fixed V < 100 digit cut or black-hat: fragments blurred strokes or lights up dark horse bodies.
-- White-ring minimum 0.55: lost far-side cloths (ST 05-03 R7 winner read on 2 frames).
-- White-cloth reader at Happy Valley: false reads (HV 05-27: a "#7" at 0.5 s, the real #7 2.36 s back).
-- Requiring ≥ 2 gap estimates for line crossers: dropped the first crosser (ST 06-07 R8 order [2, 7, 1]).
-- Digit-drop by gap proximity: dropped ST 06-07 R8's real #2 beside #12.
-- Spread test after the running median: drops genuine short tracks (ST 04-19 R4 winner spans 95 px).
-- Robust line x(u) plus motion-rate test: restores ST 04-19 R4's #11 and #10 but timing gates 126 → 123 on 26 races.
-- Motion-rate test alone for short slow-motion tracks: timing gates 126 → 124.
-- Digits-only CTC decode: P("0") ≈ 0.01 where the OCR reads "U".
-- Integrating cloth speed for gapless back markers: the post camera pans with the leaders, so the integral saturates.
-- Pairwise neighbour test in elimination: #1/#5 predicted 0.16 s apart blocked an unambiguous joint match.
-- Weak-track sd inflation (< 10 reads disagreeing > 0.3 s): inflated HV 04-29 R3's winner, giving a wrong winner; blanket inflation lost HV 06-03 R3's winner.
-- Ruler calibration ×0.90 on the C prior and registration window (fitted on 26 races; 0.88 and 0.82 also tried): passed the gate rule but ST 04-19 R4 lost #5's camera name on 3/6 seeds; registration-only and anchor-only splits each cost hand truth or a race.
-- Tight C prior (relative sd 0.12): 197.33 vs 198.0 non-lateral per seed on both rail variants.
-- Rejecting an anchor pinned at its C bound, or fixing C at the prior: ST 04-26 R1 ρ stays ≈ 0.83.
-- Unconditional (marginal) finish-observation sd: HV 06-03 R8 ρ 0.93 → 0.55.
-- Anchor fitted to crossings without the sd check: ST 04-19 R4 C 800 px/s, clock 2.2 s early.
-- Fixed 75 % recall cutoff for negative evidence: missed a race at 71 % recall.
-- Finish-camera read set = every read cloth for the E-step: removed untested (one run: ST 05-09 R1 finish-n 7 → 7).
-
-Identity
-- Official silk images as raw prototypes: top-1 1/8 (avatar vs jersey domain gap).
-- Per-detection silk cost in the E-step: hand 49–58/79 across weights (53 without), gates 205 = 205, per-race changes in both directions.
-- Silk cost relative to the best positionally plausible candidate: hand 50/79.
-- Silk as a veto: vetoes the true horse on 25 % of 53 camera-named tracklets.
-- Tracklet-averaged official-silk matching: top-1 34/79 vs 40/79 per detection; central crops and legend icons no help.
-- Greedy longest-first labelling with a margin, plus a silk tie-break for tied back-marker groups: turned 72–100 % unanimous labels into 38–99 %; replaced by the MILP with its silk LLR.
-- Elimination as fractional votes in the MILP: back markers never numbered; non-lateral 200.3 → 197.5, hand 68 → 60/79.
-- Draw tie-break for silk ties: 5/15, the same as the EM.
-- Silk tie-break on the brightness-scored rails: non-lateral 197.7 per seed, hand 48/79.
-- Finish-camera registration by relative gaps alone on a packed finish: renamed legend-#2 as #10 on HV 06-03 R8.
-- Cloth linker (identity carried from read runs onto unread cloth boxes, ST 04-19 R4): parked; its self-test was confounded (reads hidden by frame index, constant-velocity gate on a bimodal track).
-- Gaussian draw term in identify: overconfident; changed 24 tracklets and broke HV 05-13 R1 and ST 06-07 R6.
-- Ranking legend votes by own-lane distance: vote consistency 0.85 → 0.52.
-- Set-valued near-level legend votes: 27–33 right / 7–12 wrong vs 31 / 8, not flat in the margin.
-- Leaderboard lag correction (0.3–0.45 s): no hand-truth change.
-
-E-step and association
-- Rank attraction over the whole race: ST 04-19 R3 sectional 0.174 → 0.266; for non-tight horses only: never fired.
-- Negative-legend floor margin 0.6 m: HV 06-03 R3 lost #10/#5 (4, 8 and 16 m equivalent).
-- Hard rank exclusions at 0.6 m: correct labels left unassigned (ST 04-26 R1).
-- 4σ margin on the negative-legend count bound: flips 35 % of its claims; non-lateral −0.17, ρ −0.004 on 6/6 seeds.
-- Union instead of majority of a fragment's exclusions: indistinguishable on ensembles.
-- Camera negative evidence only for horses predicted inside its coverage: non-lateral −1.83 per seed; ST 05-03 R7 #11 crossed 3.66 s early.
-- 3 s grid tail past the data after the EM: finish counts gained on three races, all five −1.33 per seed (SE 0.21).
-- Prior-only grid nodes past the data inside the EM: labels change on most races (up to 4–6 %); a 2 s tail lost a crossing a 1 s tail kept.
-- Waiving the blind cost on a blind horse's own fragment: safe but no gate benefit; EM 2-cycle on ST 05-24 R1.
-- The same waiver on E-step majority alone (no identify label): would have exempted ST 04-19 R4 #9's stolen fragments on 4/6 seeds.
-- Keeping runs shorter than 3 detections: ST 05-24 R1 timing 5/5 → 3/5; singletons near the line drag the camera clock.
-- Tightness cut (sd < 2 m) for the blind cost: does not separate rendered back markers from ST 04-19 R4 #9 (0.81 s early when exempted).
-- General monotone-progress rule: field-wide pose slips are not identity errors.
-- Shadow release mid-race: released 1323 detections of a real horse on HV 04-29 R3 (coverage 94 → 90 %).
-- EM to convergence (30 iterations): identical timing gates on 36 runs, spreads unchanged, 2–3× time.
-- Finish seeds from the first EM iteration: changed races without targets (ST 04-19 R4 common-pair sectional 0.409 → 0.467).
-- Forbidding orphan elimination onto a blind horse: elimination hands the next chain instead.
-- "Rank" association mode: removed; its motivation was a contaminated reading.
-
-Fusion
-- Iterative least squares (lsq_linear, lsmr): 1.5 m error; the acceleration prior makes the system stiff.
-- Takahashi selected inverse for variances: exact, no faster than LAPACK's multi-RHS solve.
-- Along-track velocity prior: decelerated paths toward a stop across end-of-race gaps.
-- χ² association without the log-det term: vague paths accept anything (HV 05-27 R3 #9 1.4–2.0 s early).
-- Log-det association alone on the brightness-scored rails: non-lateral 199.5 per seed, missed its rule.
-
-Final product
-- Final identity pass comparing raw detections with bias-shifted paths: census 87.3 %, hand −4.
-- Official sd 0.1 m: glitch-seconds 55.8 → 85.4.
-- Piecewise-linear official re-timing: a speed jump v·(1/w′₋ − 1/w′₊) at every official boundary; on 5 offA races the largest boundary speed jump was 1.72 m/s (ST 2024-03-24 R8 #1, shift 2.87 s), against 0.24 m/s with the C1 warp, which matches the un-re-timed fused path.
-- Final identity pass started from the official-only skeleton: hand 220 → 164 (no lateral detail; bunched field mislabelled).
-- Field-relative prior over the whole final race: share of held-out errors beyond 2 sd 0.628 → 0.694 (guard +5 points).
-- Field-curve centre without the stiffer width after the start: glitch-seconds 24.3 → 42.4, no held-out gain.
-- Fragments verified by an official crossing restricted to their horse in the final E-step (forbid only): 26 races × 5 seeds, jerk-seconds 7.1 → 4.0 per seed and hand wrong 175 → 170, but on a blind pixel test of 43 disagreements the arm is right on 11 vs 10; 15 of 20 others turn a wrong label into a blank (the verified horse's path is elsewhere, so its detections go to clutter).
-- Keeping the detection path's lateral sd where the final pass falls back to the official skeleton: 26 races × 5 seeds, jerk-seconds +0.7 per seed (one seed 6.8 → 15.6), hand wrong 175 → 180, held-out error on the 24 changed horse-boundaries 0.52 → 0.80 s.
-- Official crossing times as hard label exclusions in the final product: no headroom; 1 of 783 boundary-crossing runs is > 0.3 s off its own horse (the errors sit between boundaries).
-- Leave-one-run-out demotion in the final product (a render run > 4σ and > 2 m from its horse's path refit without it, official crossings kept, made anonymous): one seed, glitch-seconds 24.3 → 36.4; demoted fragments re-associate to other horses and a tailed-off horse loses its only constraint.
-- Stiffer along-track prior in the final product (a_sd_s 1.2 → 0.72 m/s² after the start window; 26 races × 5 seeds, all interior boundaries held out): held-out median 0.0322 → 0.0318 s (bootstrap CI spans 0), faders at the last boundary 0.040 → 0.042 s, hand wrong 175 → 177; glitch-seconds 25.8 → 19.6. At 0.63, unperturbed seed, end of section 2 held out: 0.033 → 0.036 s.
-
-Synchronisation and other evidence
-- Frame-difference threshold or change point for gate opening: cameras pan after the start (ST 04-26 R9 drone fired at 0.04 s).
-- Matching the shared finish-camera replay across feeds: it sits at a different edit position per feed.
-- Drone offset from formation matching: 1.47 s vs 2.46 s measured on HV 06-03 R8.
-- Drone camera fitted to the rails plus horse ICP for positions: the rails register, but along-track tilt is unobservable on straights and the ICP does not lock.
-- Double-box gate as an identity fix (keep the more confident of two boxes with intersection over the smaller ≥ 0.5): wrong hand labels on the 10 races not used to build it 142 → 143 (26 × 6; §6).
-- Lateral projection correction (rail-normal skew or camera tilt): painted cross-track markings map square through pose and rail on 6 home straights; the slope of video-only boundary error against lateral offset (−0.159 m per m pooled, race-bootstrap SE 0.118) comes from 56 errors over 10 m on 13 horses (44 in HV 05-20 R2 and ST 04-19 R4, races with recorded identity errors; 12 untraced), and with race-clustered intervals every robust per-stratum slope contains 0 (finish line −0.005 HV, +0.007 ST; ST bends negative in 5 of 9 races).
-- Free 8-DOF homography for the drone camera: collapsed onto degenerate solutions (every rail pixel snapped to one rail); replaced by a 7-DOF look-at pinhole.
-- TV-feed cloth reads as an identity yardstick: failed its declared criteria (HV 06-03 R3 order 62.5 %); the TV camera follows the leaders, so back markers are rarely read.
-- TV running-order bar: 8 fixed slots, a delayed copy of the render legend.
-- Post-gate patrol silk templates: top-1 0.61 vs 0.63 for in-race TV templates; the colour histogram is the ceiling.
-- Identity-free per-frame registration of drone horse detections to the render detections as an acceptance test: the same median residual gate (1.2 m) passes 23 % of fields from other races and 48 % of the same field 8 s later.
-- Drone horse tracks in place of interpolation across render gaps, for position accuracy when the horse's identity across the gap is given (linked to render tracklets where the render frame is complete): simulated 10 s dropouts on 25 races, drone 0.92 m vs interpolation 0.64 m median (extrapolation 1.85 m); coverage collapses on the worst render races (HV 05-20 R9 0 %), where complete frames are rare.
-- Drone observations (render-gap stretches of drone tracks, labelled by each whole track's majority video-only detection label) in the video-only fusion: on 25 races the unseen-at-boundary timing error fell 11 % (0.128 → 0.114 s, 20 % required), 4 gates flipped to FAIL and jerk-seconds rose 2.7 → 5.0; one horse received two simultaneous drone tracks 13 m apart (the drone tracker switches horses inside long tracks).
-- Drone bridge observations labelled by render coincidence on the same track (within 10 s): in the EM they flip gates and raise jerk; injected after the EM they help where they reach (12 unseen-at-boundary cases 0.126 → 0.085 s, blind pixel A/B 11 of 12 decided) but break where a drone track switches horses; a kinematic junction gate removes the breaks and with them the benefit (0.126 → 0.149 s) — identity across the gap needs evidence from the drone picture, not from the control's labels.
-- Official-silk colour histograms (the render's `silk_feature`) on the drone detector box: chance level (465 units on 25 races, top-1 0.084 and top-3 0.247 against 0.60 / 0.85 required; the render's crops of the same units give 0.41 / 0.68). The box covers the horse's body; the jockey's cap and back lie outside it, ahead in the direction of travel.
-- TV running-order bar as an extra ranking source: it repeats the aerial legend about 2 s late, in 1.2 s pages (runner sets match 0.98–1.00 after the shift; 3 races read), and is removed before the finish.
-- Drone silk colour histograms from a fixed jockey region ahead of the detector box (course direction from the registration): top-1 0.112 and top-3 0.344 on the same 465 units (render 0.41 / 0.68).
-- Hand-built drone jockey descriptors (oriented crop ahead of the box; hue histogram + Lab grid): official-silk match top-1 0.137 (474 units); drone-to-drone enrolment across tracks 0.249 top-1 (3242 windows, chance 0.088, required 0.60).
-- Drone jockey embedding trained with batch-hard triplet loss alone (from scratch, Adam 1e-3, single-race batches): the embedding collapses (loss at the 0.3 margin from ~100 iterations; pairwise spread 2e-3). Enrolment across tracks reached 0.585 top-1 anyway (3245 windows, required 0.60; top-3 0.810, chance 0.088). The idea of a learned embedding is not rejected; only this loss is.
-- Fusion grid extended to cover the latest observation (one extra sample): removes grid-end shorts (0–3 fewer per seed) but flips `winner_ok` in ST 04-26 R1 (seeds 0 and 3; the control's winning margin is 4 ms), because the extra sample moves EM decisions. The defect is fixed by the write-only tail (§2, fusion model); it had also failed the short guard of the drone-correction rules on HV 04-15 R1 #2 (4 cm).
-- Identity-free drone corrections (unmatched drone points assigned to horses without their own render detection by least displacement, injected after the EM): held-out drone agreement improves in every seed (unexplained 0.565 → 0.503), but 7 gate flips — a tailed-off horse (ST 04-19 R4 #3, 7.5 s behind) received pack drone points and got a confident, 5.9 s early finish.
-- The same corrections kept only where the drone track confirms the horse (track purity ≥ 0.9 on control labels, majority = the assigned horse; optionally a learned drone jockey embedding): every gate and guard holds and held-out drone agreement improves (0.565 → 0.510), but official boundary timing shows no gain where the corrections act (25 distinct horse-boundaries, seed-mean median 0.090 → 0.092 s; 5 improved and 6 worsened by > 0.02 s; HV 05-27 R9 #10 0.02 → 0.16 s in every seed).
-- Drone configuration check as a predictor of official boundary-timing error (not tested as a configuration check; a path horse in drone view with no drone point within 2.5 m, one-to-one, in ≥ 50 % of frames within ±1 s of its boundary crossing): AUC 0.630 for official relative boundary error > 0.3 s (0.65 required; 792 horse-boundaries, 19 bad, precision 0.12 against a 0.024 base). Errors at boundaries are rare where the drone sees the field, so the test has little power, and it cannot see configuration errors between markers.
-- Identity by elimination for persistent drone contradictions (a drone horse with no path horse within 5 m for ≥ 4 frames takes the one in-view path horse left over with no video observation): under the current labels, the candidate is determined in ≥ 80 % of frames on 5 of 26 persistent tracks (13 required; seed 0, video-only). In most frames the leftover horse has observations and its nearest drone point within 5 m is held by another observed horse: the conflict is in the video observations themselves, which elimination cannot settle.
-- Soft legend-rank margin 0.6 → 1.13 m (the sd of a difference of two detections; hard part unchanged), against label alternation on one render track (screen on drone outcomes only, not on hand labels or identity score): full EM on the 8 affected races (seed 0) cuts the alternation by two thirds (188 → 62 label changes), but persistent drone contradictions stay (video-only 17 → 17, final 18 → 19), elimination-determined tracks 1 → 2 and 4 → 2, no gate change; on the 4 most affected tracks a blind silk read of the render avatar agrees with the track's new holder on 1 in the video-only labels (HV 05-20 R9's track goes to a third horse) and 2 in the final labels.
-- Film detector (YOLOv8x, torch CPU) in a process pool plus painted-line detection in a process pool: `film.npz` identical on 4 of 4 CPU controls, but CPU 15.2 → 19.1 min on ST 05-09 R1 (wall 149 → 114 s); one measurement script hung with the pool workers idle after a fork (cause not traced). The workers meant to run 3 threads ran 8 (ultralytics resets torch to 8 threads at predictor setup, after the cap), so this does not reject a pool capped after the first predict (untested). The detector's boxes depend on the torch thread count: 1 thread differs from ≥ 2 by up to 9e-5 in box coordinates or confidence (2–8 threads bit-identical), so `film.npz` depends on the thread environment. At equal cores a capped pool gains at most the 13–16 % CPU that capping torch threads saved (see below).
-- ONNX Runtime thread caps for the avatar detector: 1 and 2 intra-op threads agree with each other but differ from 4 and from the default by up to 1.2e-4 in box values (49 panels), so a cap changes `yolo.npz`. Torch thread cap on the YOLOv8x ruler/film detector (ultralytics sets 8 threads at predictor setup): bit-identical at 2 and 4 threads, CPU 150 → 131 / 126 s on 8 frames (−13 / −16 %) for wall 20 → 37 / 72 s.
-
-The off-switches of adopted rules (negative evidence, blind cost, shadow release, anchor check,
-detection EM, paint-pin override, fragment-forbid fraction, rail smoother, local refit) were removed.
-Two off-states are measured: negative legend evidence off raised HV 05-20 R2's sectional 0.147 → 0.187 s;
-the local refit off on the masked pose moved no race by more than 1e-4 s (kept for the straights'
-residual after the camera swing). The others carry no recorded verdict as alternatives.
-- Film detector as the OpenVINO export on CPU (FP32): CPU per call 18.7 → 17.0 s (−9 %) on ST 05-09 R1, leads identical; not worth a second backend. On the iGPU at the plugin's FP16 default, one lead moved 280 px and the 200 m crossing was lost (FP32 is the opt-in above).
-- EM identity pass off (Z11, 26 × 6): non-lateral gates +1.33 per seed and seed unanimity 90.2 → 93.2 %, but by omission: on crossings present in both, horse-boundaries > 0.5 s off official +0.67 per seed; 23 such crossings vanished (ST 04-19 R4's sectional passes because #3 and #12 lose crossings on 5 of 6 seeds); glitch-seconds 21.9 → 28.0; unread hand-wrong 134 → 144 (paired per seed mean +2.0).
-- Blind near-line cost waived on detections behind every non-blind tight posterior (Z11, 26 × 6, video-only and final): 6 finish-short horses gain a finish crossing within 0.5 s of official (on ≥ 4 of 6 seeds), but ST 05-03 R7 #11 and ST 04-19 R4 #3 gain crossings > 0.5 s off and their races lose behind-winner on 6 and 3 seeds (non-lateral −1.50 per seed); the two wrong crossings take other horses' detections (pixel-checked: an identify-blank tracklet and one labelled #2). Its other guard misses were zero-tolerance (ST 04-19 R4 #9 crosses on one seed, 0.013 s from official; unconverged EM passes 83 → 85; common finish error +0.0003 s). Recovering post-finish frames depends on this waiver, so that thread is closed with it.
-- Final-product predictive sd as path sd ⊕ a constant f (0.71 m, k = 1; k and f are not separable since 85 % of held-out rows share a stated sd of 0.167 m), fitted leaving one race out: median z 0.68 but 11.3 % beyond 2 sd against a declared ceiling of 10 % (heavy tail); not written.
