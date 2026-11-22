@@ -323,6 +323,29 @@ def test_identity_assign_global_respects_overlap_and_evidence():
     assert identity.assign_global(members, frames, votes, 3).tolist() == [1, 2, 1]
 
 
+def test_identity_assign_global_scores_are_the_evidence_behind_the_labels():
+    """``scores`` returns the last solve's gain matrix, the reliabilities it was built with and its objective; the
+    labels are unchanged by asking for them, the objective is the gain of the chosen labels, and G reproduces the
+    documented vote formula at the returned rho."""
+    from hkjc.recon import identity
+
+    members = [np.arange(0, 10), np.arange(10, 20), np.arange(20, 30)]
+    frames = np.r_[np.arange(10), np.arange(10), np.arange(100, 110)]
+    votes = np.zeros((3, 4))
+    votes[0, 1], votes[0, 2] = 50, 2
+    votes[1, 1], votes[1, 2] = 2, 25
+    votes[2, 1] = 30
+    sc = {}
+    lab = identity.assign_global(members, frames, votes, 3, scores=sc)
+    assert lab.tolist() == identity.assign_global(members, frames, votes, 3).tolist() == [1, 2, 1]
+    assert sc["G"].shape == (3, 3)
+    assert np.isclose(sc["objective"], sum(sc["G"][t, n - 1] for t, n in enumerate(lab) if n))
+    rho, N = sc["rho"], 3
+    V = votes[:, 1:]
+    G = V * np.log(rho * N) + (V.sum(1, keepdims=True) - V) * np.log((1 - rho) * N / (N - 1))
+    np.testing.assert_allclose(sc["G"], np.where(G > 0, G, 0.0))
+
+
 def test_rails_fixed_rail_gap_finds_the_line_not_the_band_edge():
     """A thin bright line 9.5 m inside the racing rail (ppm 10) is measured at 9.5 m; a bright apron
     beyond the band's far edge must not pull the estimate to the band edge."""

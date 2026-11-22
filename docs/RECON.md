@@ -402,6 +402,10 @@ each unlisted number; ρ and ρₑ are re-estimated from labelled tracklets (cam
 `2.24 − 6.37·TV` (clipped ±3) counts where the legend has spoken; one number per tracklet and per frame; gain
 ≤ 0 stays unlabelled. Unlabelled line-reaching tracklets are then matched by elimination (`finishcam.eliminate`) to
 numbers with no line-reaching tracklet. Camera and elimination names are hard constraints downstream.
+`identify_scores.npz` keeps the evidence behind the labels: the gain matrix G (tracklets x numbers, gain over leaving the
+tracklet unlabelled, as the MILP saw it), rho, rho_e, the MILP objective, the silk LLR term and the labels. `fuse_video`
+writes the same for the EM identity pass (`identify_em_scores.npz`; its tracklet labels are kept nowhere else). Neither
+file is read by the pipeline.
 
 ### fuse_video
 
