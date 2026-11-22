@@ -1229,6 +1229,15 @@ class RaceRun:
         )
 
     def finish_observations(self, paths) -> list:
+        """Finish-camera crossings entered in a fuse: every camera crossing (``finish_camera``) except, in fuse_final,
+        those of horses whose official finish is visible -- the official finish (photo-finish, OFFICIAL_SD) is the
+        better measurement of the same crossing and also fills the camera's anchor role in fusion, while a camera
+        crossing of another cloth, the rider's silk or scenery would pull the path and the final identity pass off it."""
+        fin = self.finish_camera(paths)
+        vis = {h for h, t in (self._official_clock or {}).items() if np.isfinite(t)}
+        return [o for o in fin if o.horse not in vis]
+
+    def finish_camera(self, paths) -> list:
         """Finish-camera proposals: each horse crosses d=0 at t_win + gap/C. The camera fixes ORDER
         and GAPS; C (px/s) and the winner's clock time come from the render-fused paths."""
         if not self.p("finish.npz").exists():
@@ -1780,16 +1789,19 @@ class RaceRun:
 
         A finish observation alone cannot make a path (no lateral, one instant), so without a seed
         the detection-level E-step never considers such a horse. The seed is the camera's crossing
-        (t_w + gap/C, sd as in finish_observations) moving at the field's line speed, sd growing by
-        SEED_V_SD per second away from the line, lateral = mid-course +- half the width; it lives
-        only inside assign_frames, and whatever detection runs it wins become ordinary render obs."""
+        (t_w + gap/C, sd as in finish_camera; in fuse_final a horse with a visible official finish is timed by it,
+        sd OFFICIAL_SD) moving at the field's line speed, sd growing by SEED_V_SD per second away from the line,
+        lateral = mid-course +- half the width; it lives only inside assign_frames, and whatever detection runs it
+        wins become ordinary render obs."""
         if not paths:
             return {}
         quiet, self.log = self.log, (lambda *a, **k: None)
         try:
-            fin = self.finish_observations(paths)
+            fin = self.finish_camera(paths)
         finally:
             self.log = quiet
+        vis = {h: t for h, t in (self._official_clock or {}).items() if np.isfinite(t)}
+        fin = [replace(o, t=np.array([vis[o.horse]]), sd_s=self.OFFICIAL_SD) if o.horse in vis else o for o in fin]
         D = self.info.distance
         v = []
         for p in paths.values():
