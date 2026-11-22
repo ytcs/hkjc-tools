@@ -5,11 +5,13 @@ facts (`hkjc.data`) plus the four replay videos HKJC publishes per race (aerial 
 drone, side-on race film, patrol). Output: per horse, metres-to-finish along the racing rail and
 metres off the racing rail, on the race clock, with posterior uncertainty.
 
-Two products per race:
-- `paths_video.parquet`: from the videos and pre-race facts only (distance, course, draw, silks).
-  The acceptance gates are scored on it against the official results.
-- `paths.parquet` (`run.paths()`): the final product. It also uses the official results
-  (placings, finishing times, sectional times).
+The product, `paths.parquet` (`run.paths()`), is one posterior built from all the information
+available: the videos, the pre-race facts (distance, course, draw, silks), the official records
+(placings, finishing times, sectional times) and the track geometry. `paths_video.parquet` keeps the
+reconstruction from the videos and pre-race facts alone; the fixed acceptance gates are scored on it.
+A race-fact mask (`hkjc.data.Mask`; `RaceRun(mask=...)`, CLI `--mask`, env `HKJC_MASK`) withholds
+official records from every stage, so accuracy is measured where information was held out
+(docs/RECON.md).
 
 ## Install
 
@@ -26,7 +28,7 @@ from hkjc.recon import RaceRun
 
 run = RaceRun(race_info("20260603", "HV", 8))   # downloads the replays on first use
 run.run()                                       # cached stages -> data_cache/recon/20260603_HV_8/
-paths = run.paths()                             # final product: horse_no, t, s, d, lat, sd_s, sd_lat, n_obs
+paths = run.paths()                             # the product: horse_no, t, s, d, lat, sd_s, sd_lat, n_obs
 ```
 
 ```bash
@@ -49,7 +51,7 @@ Environment switches (all optional; unset = CPU):
 | `HKJC_MASK` | `none` (default), `boundary=J` or `outcome`: official outcome data withheld from the reconstruction (validation still scores against the full record; CLI `--mask`). Give a masked run its own root. |
 
 Detector boxes, and so camera poses, depend slightly on the device (CPU vs CUDA on HV 06-03 R8 moves
-final paths by ≤ 0.18 m); the reference baseline is a CUDA run.
+paths by ≤ 0.18 m); the reference baseline is a CUDA run.
 
 ## Layout
 
@@ -84,10 +86,10 @@ src/hkjc/recon/   race info + videos -> paths
     assoc.py      detection-level EM association against the fused continuous paths
     finishcam.py  finish-line camera: cloth OCR, order + spatial gaps, finish identity
     fusion.py     Bayesian path reconstruction from all feeds' proposals (physics + geometry priors)
-    validate.py   video-only product vs the official results, against fixed gates
+    validate.py   fixed gates on the video-only paths vs the full official record
     audit.py      label-free consistency invariants of a reconstruction (audit.json)
     viz.py        synced four-feed video with the reconstructed track map
-docs/RECON.md     method, gates, current state, open items, rejected approaches
+docs/RECON.md     method, mask and held-out evaluation, gates, current state, open problems
 docs/HKJC_*.md    HKJC data sources and track specifications
 models/           detector weights (git-ignored)
 ```
