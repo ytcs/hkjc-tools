@@ -242,13 +242,38 @@ def test_evidence_mask_spec():
     for x in (m, both, Mask(discs=10), Mask(outcome=True, dets={0}), Mask()):
         assert Mask.parse(str(x)) == x
     assert not Mask().evidence_part() and not Mask(boundary=2).evidence_part()
-    for bad in ("dets=", "dets=-1", "dets=a", "discs=0", "discs=10@2", "outcome;boundary=1", "dets=1;dets=2"):
+    lg = Mask(boundary=0, discs=5, legend=10, legend_phase=0)
+    assert str(Mask(legend=10)) == "legend=10" and str(lg) == "boundary=0;discs=5;legend=10@0"
+    assert Mask.parse(str(lg)) == lg and Mask.parse("legend=2.5") == Mask(legend=2.5)
+    for bad in ("dets=", "dets=-1", "dets=a", "discs=0", "discs=10@2", "outcome;boundary=1", "dets=1;dets=2",
+                "legend=0", "legend=10@3", "legend=1;legend=2"):
         with pytest.raises(ValueError):
             Mask.parse(bad)
     w = Mask(discs=10).discs_withheld([0.0, 9.9, 10.0, 19.9, 20.0, -3.0])
     assert w.tolist() == [False, False, True, True, False, True]
     assert Mask(discs=10, discs_phase=0).discs_withheld([0.0, 10.0]).tolist() == [True, False]
     assert not Mask().discs_withheld(np.arange(100.0)).any()
+    assert Mask(legend=10).legend_withheld([0.0, 9.9, 10.0, 19.9, 20.0]).tolist() == [False, False, True, True, False]
+    assert not Mask(discs=10).legend_withheld(np.arange(100.0)).any() and not Mask(legend=10).discs_withheld([15.0])
+
+
+def test_legend_reads_withheld_only_inside_the_masked_blocks(tmp_path):
+    info = _info()
+    full = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask())
+    # race clock zero at frame 100 (overlay clock read on two frames), no start lag; ticks on residues 0 and 2
+    np.savez(full.p("hud.npz"), rows=np.array([[150.0, 2.0, 1200.0], [350.0, 10.0, 1100.0]]))
+    idx = np.sort(np.r_[np.arange(0, 2000, 5), np.arange(2, 2000, 5)])
+    np.savez(full.p("frames_idx.npz"), idx=idx)
+    frames = np.array([110, 330, 362, 610, 880])  # race clock ~0.4, 9.2, 10.5, 20.4, 31.2 s
+    leg = np.c_[frames, np.tile(np.arange(1, 9), (len(frames), 1))].astype(np.int64)
+    np.savez(full.p("legend.npz"), rows=leg)
+    assert np.array_equal(full.legend_rows(), leg)  # unmasked: the file as read
+    held = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(legend=10)).legend_rows()
+    assert held[:, 0].tolist() == frames.tolist()
+    assert (held[:, 1:].sum(1) > 0).tolist() == [True, True, False, True, False]  # [10, 20) and [30, 40) unread
+    even = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(legend=10, legend_phase=0)).legend_rows()
+    assert (even[:, 1:].sum(1) > 0).tolist() == [False, False, True, False, True]
+    assert np.array_equal(np.load(full.p("legend.npz"))["rows"], leg)  # the artifact itself is untouched
 
 
 def test_disc_reads_withheld_only_inside_the_masked_blocks(tmp_path):
@@ -276,6 +301,10 @@ def test_recon_reads_disc_numbers_and_detections_only_where_the_mask_applies():
     # the stages from observe on only through observe's world_dets call, where the detection mask applies
     # (rails and silk are upstream of observe)
     assert readers('self.p("numbers.npz")') == ["_number_reads"]
+    # legend.npz is read in the stages from observe on only through legend_rows (which applies the legend mask);
+    # hud writes it
+    assert readers('self.p("legend.npz")') == ["legend_rows"]
+    assert readers("self.legend_rows()") == ["_em_associate", "_em_identity", "identify"]
     assert readers("self.world_dets()") == ["observe", "rails"]
     assert readers('self.p("dets.npz")') == ["_backfill_yolo", "silk", "world_dets"]
     assert {"rails", "silk", "detect"} & RaceRun._downstream(READS_EVIDENCE) == set()

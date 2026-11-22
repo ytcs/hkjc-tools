@@ -76,9 +76,13 @@ of the reconstruction where the videos are silent:
 - `Mask(discs=P)` counts every disc-number read (circle render) on the race clock's odd `P`-second blocks
   `[kP, (k+1)P)` as unread (`discs_phase=0`: the even blocks), in all three consumers: `observe`'s number
   split, `identify`'s votes and the fusion's blind set (`RaceRun._number_reads`).
+- `Mask(legend=P)` counts every legend read (silk render: the 8 running-order slots of a render tick) on the
+  race clock's odd `P`-second blocks as unread (`legend_phase=0`: the even blocks), its slots read as on the circle
+  render, in all three consumers: `identify`'s legend votes, the EM identity pass and the detection-level E-step
+  (rank costs, negative legend evidence, blind set), all through `RaceRun.legend_rows`.
 
 Select it with `RaceRun(info, mask=...)`, CLI `--mask SPEC`, or env `HKJC_MASK`; a spec is `none` or
-`;`-joined parts `boundary=J` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`
+`;`-joined parts `boundary=J` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`, `legend=P` | `legend=P@PHASE`
 (`HKJC_FINAL_HOLDOUT=j` is an alias for `boundary=j`; setting both is an error). A masked run writes
 `paths.parquet` and `validation.json` like any other, so give it its own `root`: the run dir records a
 non-empty mask in `mask.txt`, and a run refuses a dir whose mask-dependent artifacts were made under another
@@ -579,6 +583,13 @@ gates" the first eight.
 - **Withheld disc reads** (§3, `Mask(discs=10)` and `Mask(discs=10, discs_phase=0)`). Each confident disc
   read is scored once while hidden: among detections with a confident read inside the withheld blocks, the
   share of labelled ones whose label equals the read, and the share left unlabelled.
+- **Withheld legend reads** (§3, `Mask(legend=10)` and `Mask(legend=10, legend_phase=0)`; silk render). Each legend read
+  is scored once while hidden, at least 0.5 s inside its block (the consumers take the nearest legend read within 6
+  frames). In a frame where every runner is detected (boxes within 0.6 m along and 0.4 m across merged as one horse),
+  legend slot r names the unique detection of rank r (1 + detections more than 0.6 m ahead; none within 0.6 m of it); the
+  slot agrees when that detection's label is the listed number. A horse's hidden 10 s block (>= 5 scored frames) is
+  confirmed when >= 80 % of its slots agree. The same reads scored on an unmasked run, which saw them, are the reference;
+  its disagreements sit mostly where two horses are within 1.5 m (legend order vs detection order), not all of them.
 - **Lateral yardstick.** AUC of final-path lateral position against the stewards' comments (WIDE > INSIDE, with
   MID between).
 - **Perturbation ensembles.** Seeds of `HKJC_PERTURB_SEED` (1 % detection drop) per race; arms are compared
@@ -625,6 +636,12 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.75 %, race-bootstrap SE
   0.21 pp), 0.91 % left unlabelled (final 0.85 %, SE 0.20 pp); with every read visible, 99.19 % and 0.49 %. Here a
   confident read is one of a runner's numbers (`RaceRun._number_reads`); the agreement above counts every read.
+- Withheld legend reads (171 silk races, alternate 10 s blocks; video-only labels): 74.4 % of 7,083 horse-blocks confirmed
+  (the 26 development races 80.3 %, the 145 evaluation races 73.4 %); the same reads visible 78.4 % (paired per-race
+  difference -5.5 %, SE 0.6 %; 2 races never have every runner detected). Per slot: 85.9 % agree, 8.7 % the neighbouring
+  slot's horse, 4.5 % another horse, 1.0 % unlabelled (visible 89.2 / 7.7 / 2.1 / 1.1 %); slots whose detection is
+  >= 1.5 m from every other agree 92.5 % (visible 94.7 %), within 1.5 m 80.6 % (84.6 %); detections ranked 9th or later
+  carry a listed number in 4.1 % (visible 1.9 %). Final labels within 0.3 points of these.
 - Lateral yardstick on the final paths: AUC (WIDE > INSIDE) 0.961; MID > INSIDE 0.912, WIDE > MID 0.860 (INSIDE
   400, MID 262, WIDE 453 horse-runs).
 - The finish-clock re-registration (§4 fuse_final) was measured on the 156 evaluation races (196 less the 40

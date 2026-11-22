@@ -98,16 +98,20 @@ class Mask:
     Video evidence (read from ``observe`` on). ``dets``: render detections, as ``dets.npz`` row indices,
     removed as if the detector had missed them. ``discs=P``: disc-number reads (circle render) on the
     race clock's blocks ``[kP, (k+1)P)`` with ``k % 2 == discs_phase`` (default 1, the odd blocks) count
-    as unread.
+    as unread. ``legend=P``: the silk render's legend reads (its 8 running-order slots) on the blocks
+    ``[kP, (k+1)P)`` with ``k % 2 == legend_phase`` count as unread, in the same way.
 
     ``Mask()`` withholds nothing. Spec strings (``parse``, CLI ``--mask``, env ``HKJC_MASK``): ``none``,
-    or ``;``-joined parts ``boundary=J`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``."""
+    or ``;``-joined parts ``boundary=J`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``,
+    ``legend=P`` | ``legend=P@PHASE``."""
 
     boundary: int | None = None
     outcome: bool = False
     dets: frozenset = frozenset()
     discs: float | None = None
     discs_phase: int = 1
+    legend: float | None = None
+    legend_phase: int = 1
 
     def __post_init__(self):
         if self.boundary is not None and (self.outcome or not isinstance(self.boundary, int) or self.boundary < 0):
@@ -117,6 +121,8 @@ class Mask:
             raise ValueError(f"invalid mask {self!r}: dets are dets.npz row indices")
         if self.discs is not None and not (self.discs > 0 and self.discs_phase in (0, 1)):
             raise ValueError(f"invalid mask {self!r}: discs is a block length > 0 s, phase 0 or 1")
+        if self.legend is not None and not (self.legend > 0 and self.legend_phase in (0, 1)):
+            raise ValueError(f"invalid mask {self!r}: legend is a block length > 0 s, phase 0 or 1")
 
     def __bool__(self) -> bool:
         return bool(self.outcome_part() or self.evidence_part())
@@ -132,17 +138,27 @@ class Mask:
             parts.append("dets=" + ",".join(str(i) for i in sorted(self.dets)))
         if self.discs is not None:
             parts.append(f"discs={self.discs:g}" + ("" if self.discs_phase == 1 else f"@{self.discs_phase}"))
+        if self.legend is not None:
+            parts.append(f"legend={self.legend:g}" + ("" if self.legend_phase == 1 else f"@{self.legend_phase}"))
         return ";".join(parts)
 
     def __str__(self) -> str:
         return ";".join(p for p in (self.outcome_part(), self.evidence_part()) if p) or "none"
 
+    @staticmethod
+    def _blocks(t, period, phase) -> np.ndarray:
+        t = np.asarray(t, float)
+        if period is None:
+            return np.zeros(t.shape, bool)
+        return np.floor(t / period).astype(np.int64) % 2 == phase
+
     def discs_withheld(self, t) -> np.ndarray:
         """Per race-clock time: is a disc read at that time withheld?"""
-        t = np.asarray(t, float)
-        if self.discs is None:
-            return np.zeros(t.shape, bool)
-        return np.floor(t / self.discs).astype(np.int64) % 2 == self.discs_phase
+        return self._blocks(t, self.discs, self.discs_phase)
+
+    def legend_withheld(self, t) -> np.ndarray:
+        """Per race-clock time: is a legend read at that time withheld?"""
+        return self._blocks(t, self.legend, self.legend_phase)
 
     @classmethod
     def parse(cls, spec: str | None) -> Mask:
@@ -160,14 +176,15 @@ class Mask:
                 kw["boundary"] = int(val)
             elif key == "dets" and val:
                 kw["dets"] = frozenset(int(i) for i in val.split(","))
-            elif key == "discs" and val:
+            elif key in ("discs", "legend") and val:
                 p, _at, ph = val.partition("@")
-                kw["discs"] = float(p)
+                kw[key] = float(p)
                 if ph:
-                    kw["discs_phase"] = int(ph)
+                    kw[f"{key}_phase"] = int(ph)
             else:
                 raise ValueError(
-                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J | outcome, dets=I,J,..., discs=P[@PHASE]"
+                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J | outcome, dets=I,J,..., discs=P[@PHASE],"
+                    " legend=P[@PHASE]"
                 )
         return cls(**kw)
 
