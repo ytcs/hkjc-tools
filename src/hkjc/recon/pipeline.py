@@ -93,7 +93,7 @@ OUTPUTS = {
 
 # stages that read the official outcome (through the mask); they and their consumers depend on the mask
 READS_OUTCOME = ("fuse_final",)
-# the first stage reading the video evidence an evidence mask withholds (detections, disc-number reads);
+# the first stage reading the video evidence an evidence mask withholds (detections, disc-number and legend reads);
 # it and its consumers depend on the mask's evidence part
 READS_EVIDENCE = ("observe",)
 MASK_FILE = "mask.txt"  # the mask behind a run dir's mask-dependent artifacts; absent = none
@@ -179,7 +179,8 @@ class RaceRun:
     """``info``: the full race record (``truth``, read only by validation). Every stage reads the race
     through ``self.info``, the masked view: pre-race facts plus the official outcome records ``mask``
     leaves visible (default: ``Mask.from_env()``, i.e. ``HKJC_MASK`` / ``HKJC_FINAL_HOLDOUT``; no mask
-    withholds nothing); the mask's evidence part withholds detections and disc reads from ``observe`` on.
+    withholds nothing); the mask's evidence part withholds detections, disc reads and legend reads from ``observe``
+    on.
     A masked run writes artifacts like any other: give it its own ``root``: ``run`` refuses a dir whose
     mask-dependent artifacts were made under another mask."""
 
@@ -1008,7 +1009,7 @@ class RaceRun:
     def identify(self):
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
         mem = [np.asarray(m, int) for m in T["members"]]
-        leg = np.load(self.p("legend.npz"))["rows"]
+        leg = self.legend_rows()
         nmax = max(
             r.no for r in self.info.runners
         )  # saddlecloth numbers may have gaps (scratchings)
@@ -1097,6 +1098,18 @@ class RaceRun:
         if self.mask.discs is not None:
             ok &= ~self.mask.discs_withheld(T["t"])
         return np.where(ok, num, 0)
+
+    def legend_rows(self):
+        """legend.npz rows (frame, 8 slot numbers; silk render); rows whose render tick lies in a block the
+        mask's legend part withholds read as unread (slots 0, as on the circle render)."""
+        leg = np.load(self.p("legend.npz"))["rows"]
+        if self.mask.legend is None or not len(leg):
+            return leg
+        grid = video.tick_grid(np.load(self.p("frames_idx.npz"))["idx"])
+        t = (video.tick_frame(leg[:, 0], grid) - self.clock_f0()) / FPS
+        leg = leg.copy()
+        leg[self.mask.legend_withheld(t), 1:] = 0
+        return leg
 
     def _silk_llr(self, mem, T, nmax):
         """(tracklets x numbers) silk log-likelihood ratio for identity.assign_global (None without
@@ -1437,7 +1450,7 @@ class RaceRun:
         if len(paths) < self.info.n:  # completion needs every horse's posterior
             return None
         mem = [np.asarray(m, int) for m in T["members"]]
-        leg = np.load(self.p("legend.npz"))["rows"]
+        leg = self.legend_rows()
         hs = sorted(paths)
         D = self.info.distance
 
@@ -1812,7 +1825,7 @@ class RaceRun:
         from . import assoc
 
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
-        leg = np.load(self.p("legend.npz"))["rows"]
+        leg = self.legend_rows()
         fr, t, lat = T["rows"][:, 0], T["t"], T["lat"]
         s_run = self.info.distance - T["d"]
         if s_bias is not None:  # final product: the shared render metric bias (see _metric_corrected)

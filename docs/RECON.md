@@ -76,9 +76,13 @@ of the reconstruction where the videos are silent:
 - `Mask(discs=P)` counts every disc-number read (circle render) on the race clock's odd `P`-second blocks
   `[kP, (k+1)P)` as unread (`discs_phase=0`: the even blocks), in all three consumers: `observe`'s number
   split, `identify`'s votes and the fusion's blind set (`RaceRun._number_reads`).
+- `Mask(legend=P)` counts every legend read (silk render: the 8 running-order slots of a render tick) on the
+  race clock's odd `P`-second blocks as unread (`legend_phase=0`: the even blocks), its slots read as on the circle
+  render, in all three consumers: `identify`'s legend votes, the EM identity pass and the detection-level E-step
+  (rank costs, negative legend evidence, blind set), all through `RaceRun.legend_rows`.
 
 Select it with `RaceRun(info, mask=...)`, CLI `--mask SPEC`, or env `HKJC_MASK`; a spec is `none` or
-`;`-joined parts `boundary=J` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`
+`;`-joined parts `boundary=J` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`, `legend=P` | `legend=P@PHASE`
 (`HKJC_FINAL_HOLDOUT=j` is an alias for `boundary=j`; setting both is an error). A masked run writes
 `paths.parquet` and `validation.json` like any other, so give it its own `root`: the run dir records a
 non-empty mask in `mask.txt`, and a run refuses a dir whose mask-dependent artifacts were made under another
