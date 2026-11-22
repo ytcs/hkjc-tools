@@ -52,7 +52,7 @@ results; failures are reported as failures.
 | drone feed | one shot gate to finish | synced viewer only |
 | pre-race facts | distance, course and rail width, runners, official silk images | every stage (course shape, lateral bounds, silk evidence, runner numbers) |
 | draw | stall per runner | `fuse_final` (lateral at t = 0) |
-| official records | cumulative sectional times, finish times, placings | `fuse_final` only (`pipeline.READS_OUTCOME`): official observations, shared metric bias, finish-camera clock, final identity pass, re-timing, placing ties |
+| official records | cumulative sectional times, finish times, placings | `fuse_final` only (`pipeline.READS_OUTCOME`): official observations (interior times as noisy measurements, the finish near-hard), shared metric bias, finish-camera clock, final identity pass, finish re-timing, placing ties |
 | track geometry | `hkjc.data.track_for`: handedness, course widths, home-straight length | `rails` (inner side, movable-rail check, expected fixed-rail gap), `film` (markers inside the home straight), fusion's lateral box |
 
 ## 3. The mask and held-out evaluation
@@ -102,11 +102,11 @@ race, rotating over the boundaries; absolute error of the product's crossing tim
 - The error is almost all shared by the whole field: relative to the race's shared shift at the withheld
   boundary the median is 0.032 s, p90 0.131 s. Order inversions at the withheld boundary: 3.5 % of the pairs
   with an official gap > 0.05 s.
-- Boundary speed kinks in the product: the speed jump at an official interior boundary has median 0.032 m/s,
-  p95 0.216 m/s; at the same instants the video-only paths give 0.004 / 0.023 m/s. Speed and acceleration
-  derived from the product near the official 400 m boundaries are fusion artefacts.
-- Unmasked product on the same 196 races: every winner and finishing order reproduced, every official
-  boundary within 0.02 s.
+- These figures predate the interior-times-as-measurements model (§4 fuse_final); on the 156 evaluation races it
+  leaves them within 0.002 s (median/p90) and 0.016 s (finish p90), with fewer order inversions (§7).
+- Unmasked product: every winner and finishing order reproduced and every finish within 0.02 s of official. The
+  interior sectional times are not reproduced: they enter as measurements with sd 0.6 m (§4), so mid-race gaps
+  follow the render.
 
 ## 4. Pipeline
 
@@ -459,13 +459,17 @@ detections there (the unread one, else fewer detections).
 
 The product: the video-only detections plus the draw and the official records the mask leaves visible.
 1. `RaceRun.official_observations`: the draw fixes lateral at t = 0 (stall 1 at 2.5 m, pitch 1.06 m, measured
-   on HV 06-03 R8's drone start frame; sd 0.4 m; `STALL1_LAT`, `STALL_PITCH`, `DRAW_SD`) and official cumulative
-   sectional times fix crossings at d = 400k with `OFFICIAL_SD` = 0.1 m (their 0.01 s publication precision);
-   runners without sectional times are held to their official finish time. Near-hard official times make a
-   mislabelled render tracklet conflict with the record (and be demoted) instead of bending it.
+   on HV 06-03 R8's drone start frame; sd 0.4 m; `STALL1_LAT`, `STALL_PITCH`, `DRAW_SD`); the official finish times
+   (photo-finish, 0.01 s) fix the crossing at d = 0 with `OFFICIAL_SD` = 0.1 m, near-hard, so a mislabelled render
+   tracklet conflicts with them (and is demoted) instead of bending them; runners without sectional times are held
+   to their official finish time. The official INTERIOR times (d = 400k) are the leader's time plus a margin quantised
+   to 0.04 s; against identity-verified horses their horse-specific error has a robust sd of 0.58-0.59 m (disc races,
+   and silk races where the render legend confirms the horse) after a per race-boundary field-spread term is removed
+   (raw, disc races: about 0.93 m; the spread term is not modelled, §8), so they enter as measurements with
+   `OFFICIAL_INTERIOR_SD` = 0.6 m. The anchor check, the official-only skeleton and its merge test use these sds.
 2. `RaceRun._metric_bias`: at each visible boundary, b = median over ≥ 3 horses of (video-only crossing delay
    × speed); render s is shifted by b interpolated along s. The render metric error is shared by all horses,
-   and hundreds of render observations would otherwise outvote one official time (residual ~5× its sd).
+   and hundreds of render observations would otherwise outvote the official times.
 3. Fuse with the grid running 0.5 s past the later of the last visible official time and the video-only grid's
    end (ending at the last observation leaves HV 04-22 R9 #11 0.8 m short of the line; with the finish withheld
    the last visible official time is 400 m out). Held-out finish: §3.
@@ -484,12 +488,16 @@ The product: the video-only detections plus the draw and the official records th
    the label-free registration) and conflict with the official finish: on ST 2026-11-08 R1 0.48 s, which bent the
    official-only skeleton by up to 47 m and cost the final pass 2,254 correctly read disc detections (now 261). With
    the finish withheld, or fewer than 3 such horses, the camera observations are unchanged.
-6. `RaceRun._official_retime`: each fused path is re-timed so it passes every visible official boundary at the
-   official time. The re-timing (`RaceRun._monotone_warp`) is a strictly increasing C1 cubic Hermite through the
-   (fused crossing, official time) knots with Fritsch–Butland slopes, fixed at the path's first node and
-   continued past the last boundary at the last section's rate, so it adds no speed jump at a boundary;
-   lateral and sd follow the same re-timing. Horses sharing an official finish time keep the official placing,
-   2 ms apart (`TIE_STEP`). Shifts over 0.05 s are logged (they mark identity errors left in the video evidence).
+6. `RaceRun._official_retime`: each fused path is re-timed so it crosses the line at its official finish time; the
+   interior official times are not re-timed onto. The correction is local to the last section
+   (`RaceRun._finish_warp`): the identity up to the path's own crossing of the last sectional boundary before the
+   finish (its position only, also when the mask withholds its time), then one cubic Hermite segment from slope 1 to
+   the finish knot, continued at the segment's secant rate (C1, strictly increasing for a secant >= 1/3; below that
+   the start slope is clipped to 3x the secant), so it adds no speed jump. Without a crossing of that boundary on the
+   path, one segment runs from the path's first node (`RaceRun._monotone_warp`). Lateral and sd follow the same
+   re-timing. Horses sharing an official finish time keep the official placing, 2 ms apart (`TIE_STEP`). Shifts over
+   0.05 s are logged; on the evaluation races 13 of the 14 such races are finish-camera faults (a read of another
+   cloth, the rider's silk or scenery placing the horse 0.2-3.3 s off its official finish).
 
 `fuse_final` leaves `paths_video.parquet` byte-identical.
 
@@ -603,10 +611,10 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 
 ### Measurements (196 races: 145 + 26 silk-render, 25 numbered-disc)
 
-- Held-out official boundary: §3. Unmasked product: every winner and finishing order reproduced, every official
-  boundary within 0.02 s.
+- Held-out official boundary: §3. Unmasked product: every winner and finishing order reproduced, every finish
+  within 0.02 s; interior sectional times are measurements (sd 0.6 m) and are not reproduced (G1' below).
 - Hand truth (video-only labels): 138 of 164 hand-labelled detections on 9 races, 84.1 %.
-- Numbered-disc agreement on the 25 disc races: 99.13 % (video-only labels), 99.21 % (final labels).
+- Numbered-disc agreement on the 25 disc races: 99.13 % (video-only labels), 99.20 % (final labels).
 - Withheld detections (391 stretches, 370 of them beside another horse; video-only paths): along-track RMS
   median 0.25 m, p90 0.84 m, 4.6 % above 2 m; lateral RMS median 0.19 m, p90 0.61 m; the path in the gap overlaps
   another horse in 5.9 % of stretches. With the same detections visible: 0.12 m, 0.27 m, 0 %; 0.12 m, 0.29 m;
@@ -614,8 +622,8 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   gave another horse, in 3 detections the reference left unlabelled, and in 5 none (the path extrapolates); 14 of
   the 18 have median posterior sd ≤ 0.4 m in the gap.
 - Withheld disc reads (25 disc races, alternate 10 s blocks): labels inside the hidden blocks equal the hidden
-  read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.76 %), 0.91 % left
-  unlabelled (final 0.94 %); with every read visible, 99.19 % and 0.49 % (final 99.28 %, 0.47 %). Here a
+  read on 98.58 % of labelled, confidently read detections (video-only labels; final 98.75 %, race-bootstrap SE
+  0.21 pp), 0.91 % left unlabelled (final 0.85 %, SE 0.20 pp); with every read visible, 99.19 % and 0.49 %. Here a
   confident read is one of a runner's numbers (`RaceRun._number_reads`); the agreement above counts every read.
 - Lateral yardstick on the final paths: AUC (WIDE > INSIDE) 0.961; MID > INSIDE 0.912, WIDE > MID 0.860 (INSIDE
   400, MID 262, WIDE 453 horse-runs).
@@ -625,6 +633,22 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   boundary, lateral AUC and boundary kinks unchanged within 0.001 s / 0.001 / 0.001 m/s (order inversions 351 →
   350 of 10,218); horse-time in a physical overlap 5.50 % → 5.42 %; every official boundary still within 0.02 s.
   The §3 and lateral figures above predate it.
+- Interior official times as measurements (sd 0.6 m) with the finish-only local re-timing, on the 156 evaluation
+  races against the code before it (interior times near-hard, every boundary re-timed onto):
+  - G1' (redefined 2026-11-22): at the finish every horse within 0.02 s of official (max 0.003 s), every winner right,
+    0 finish-order inversions. At interior boundaries the horse-specific residual (product - official crossing x speed,
+    the race-boundary field median removed; robust sd = 1.4826 MAD) is compared with the video-only product's on the
+    same horse-boundaries: disc 0.933 m vs 1.051 m video-only (20 races, 668 horse-boundaries; paired race-bootstrap
+    SE 0.027), silk 0.695 m vs 0.865 m (136 races, 4,317; SE 0.017); residuals > 3 m 7 vs 20 (disc), 71 vs 333 (silk),
+    kept as tracked conflicts (render vs official order, identity errors, finish-camera faults).
+  - Boundary speed kinks: interior jump median 0.059 -> 0.009 m/s, p95 0.234 -> 0.035 m/s.
+  - Held-out boundary: interior median 0.102 -> 0.104 s, p90 0.281 -> 0.281 s; finish p90 0.441 -> 0.457 s; order
+    inversions 350 -> 318 of 10,218.
+  - Withheld detections on the product paths: excess over the same-detections-visible floor 0.272 -> 0.241 m
+    (paired -0.031 m, SE 0.060); stretches above 2 m 21 -> 16. The masked score itself falls by 0.163 m, mostly
+    because the product now follows the render the yardstick scores against.
+  - Overlap 5.42 % -> 5.18 % of horse-time; lateral AUC 0.964 -> 0.963. Anchor-check demotions in the unmasked
+    final pass: disc races 53 -> 21, silk races 502 -> 552.
 
 ## 8. Open problems
 
@@ -632,15 +656,20 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   boundaries, interpolated from the other boundaries. Its steps between adjacent boundaries are close to
   independent, so midway between two visible boundaries the shared error is about the held-out figure / √2,
   falling to zero at each boundary.
-- **Boundary speed kinks.** The fused path has a speed corner where it meets an official crossing (§3: median
-  0.032 m/s, p95 0.216, against 0.004 / 0.023 video-only); the re-timing adds nothing to it.
+- **Official interior spread.** Against the render, the official interior times compress the field behind the leader
+  by a factor that varies by race-boundary and season (spread slope 0.03-0.10 by season, sd ~0.09 per
+  race-boundary; at the finish the render matches the photo-finish spread within 2 %). It is not modelled: the disc
+  races' interior residual (0.93 m robust) carries it.
 - **Posterior calibration.** The stated sd is overconfident at intermediate boundaries (error relative to the
   race median well above the stated sd) but not at the finish; more detections do not shrink the gap, so a
   systematic term is missing. Candidates: effective sample size per run, or inflation fitted on held-out
   boundaries.
-- **Identity at official crossings.** Most product glitches where the video-only path is smooth are identity
-  conflicts: a wrong E-step label between boundaries pins the horse and the official time pulls it back. Relative
-  acceleration separates them from genuine faders (faders ≤ 1.25 m/s², conflicts ≥ 2.4 m/s² on five traced cases).
+- **Render-vs-official conflicts.** With the interior times as measurements, a horse whose render path and official
+  interior times disagree by more than ~3 m keeps its render path (tracked conflicts, §7). Of 69 such cases on the
+  evaluation races (outside the finish-camera faults), 10 are identity errors by the legend's rank, 19 put the
+  identity-confirmed horse 2+ places from its official running position (15 of them horses the legend does not list),
+  17 are the unmodelled spread term; the official record is internally consistent for them, so the video alone cannot
+  say which side is wrong.
 - **Silk evidence.** Hand truth is 84.1 % (above). In `identity.assign_global` legend votes add per frame and silk
   once per tracklet (±3), so silk rarely overturns a legend label; a better silk likelihood is the open lever.
   Back markers get only elimination evidence and the weak silk term; draw order agrees with early lateral order
