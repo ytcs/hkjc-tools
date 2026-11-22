@@ -195,9 +195,13 @@ dividend_per_unit(combo) = net_pool × winning_share(combo) / stakes_on(combo)
 - **Unit bet / Flexi:** minimum HK$10 per bet; **Flexi Bet** allows a $1 unit (variable
   minimum ticket total) — buy partial units of a large multi-combination ticket.
 - **Declared dividends are quoted per HK$10 unit** on result pages (decimal odds = dividend / 10).
-- **Rebates:** loss-rebate promotions effectively reduce takeout (e.g. ≥HK$10,000 of
-  losing QIN/QPL on one line has received a 12% rebate) — model as negative takeout on
-  the rebated fraction.
+- **Rebates:** a ticket (cash, card, eWallet) or betline (Telebet, online) that loses HK$10,000 or
+  more on Win, Place, Quinella or Quinella Place (local and overseas races; not outbound commingled
+  pools; All-Up legs at the losing leg's rate) gets a percentage of the losing amount back (HKJC
+  rebate page, special.hkjc.com betting-info / racing / beginners-guide / rebate). The page shows the
+  rates as an image; HKJC's older betting guide lists 10% Win/Place and 12% Quinella/Quinella Place
+  (unconfirmed for the current season). Model it as negative takeout on the rebated fraction, per
+  pool and per betline.
 
 ## 7. Jackpot & carryover mechanics
 
