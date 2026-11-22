@@ -133,28 +133,30 @@ faced** (opponent-strength-adjusted), not in absolute terms.
 
 ### 5.1 Single-race pools
 
-| Pool | Code | Win condition | Field-size rule | Takeout (prior) |
+| Pool | Code | Win condition | Field-size rule | Takeout |
 | --- | --- | --- | --- | --- |
-| **Win** | `WIN` | the 1st horse | — | ~17.5% |
-| **Place** | `PLA` | a paying-place finisher | **≥7 runners → top 3**; **4–6 → top 2**; **≤3 → no pool** | ~17.5% |
-| **Quinella** | `QIN` | 1st & 2nd, any order | small fields may suspend | ~17.5% |
-| **Quinella Place** | `QPL` | any two of the top three | needs a 3-place (≥7) race | ~17.5% |
-| **Forecast** | `FCT` | 1st-2nd, exact order | — | ~19.5% (merged w/ Trio) |
-| **Tierce** | `TCE` | 1st-2nd-3rd, exact order | — | ~22% |
-| **Trio** | `TRI` | top 3, any order | — | ~19.5% (merged w/ FCT) |
-| **First 4** | `FF` | top 4, any order | — | ~25% |
-| **Quartet** | `QTT` | 1st-2nd-3rd-4th, exact order | — | ~25% |
-| **Composite Win** | `CWA/CWB/CWC` | the *group* containing the winner | bracket/coupled/commingled | ~17.5% |
+| **Win** | `WIN` | the 1st horse | — | 17.5% |
+| **Place** | `PLA` | a paying-place finisher | **≥7 runners → top 3**; **4–6 → top 2**; **≤3 → no pool** | 17.5% |
+| **Quinella** | `QIN` | 1st & 2nd, any order | small fields may suspend | 17.5% |
+| **Quinella Place** | `QPL` | any two of the top three | needs a 3-place (≥7) race | 17.5% |
+| **Forecast** | `FCT` | 1st-2nd, exact order | — | 19.5% |
+| **Tierce** | `TCE` | 1st-2nd-3rd, exact order | — | 25% |
+| **Trio** | `TRI` | top 3, any order | — | 23% |
+| **First 4** | `FF` | top 4, any order | — | 25% (merged with Quartet) |
+| **Quartet** | `QTT` | 1st-2nd-3rd-4th, exact order | — | 25% (merged with First 4) |
+| **Composite Win** | `CWA/CWB/CWC` | the *group* containing the winner | bracket/coupled/commingled | not listed on the pools page |
+
+Takeout = 100% minus the share of the pool paid out as dividends, from HKJC's local-pools page
+(special.hkjc.com, betting-info / racing / beginners-guide / local-pools; read 2026-11-21): 82.5% paid out
+for WIN/PLA/QIN/QPL/Double, 80.5% Forecast, 77% Trio, 75% Tierce/First 4/Quartet/Treble/Double Trio/Triple
+Trio/Six Up. The merged Quartet & First 4 pool also deducts 0.5% as a Jackpot Reserve Deduction.
 
 - **Place place-count is field-size-dependent** — the single most important rule to
-  encode right. `simulation.places(horse, k=3)` for 7+ runners, `k=2` for 4–6. A wrong
-  `k` silently corrupts every Place/QPL EV.
-- **Forecast↔Trio (2020 merge)** share a common ~19.5% pool; **First 4↔Quartet** share
-  top-4 liquidity. Treat each pair as economically linked.
+  encode right: 3 places for 7+ runners, 2 for 4–6. A wrong count silently corrupts
+  every Place/QPL expected value.
+- **First 4↔Quartet** are one merged pool; treat them as economically linked.
 - Composite Win minimum dividend is gentler: no dividend below unit + $0.10 (vs +$0.50).
 
-The `simulation.RaceSimulator` predicates map onto these: `wins`→WIN, `places(k)`→PLA,
-`top_set(2)`→QIN, `top_set(3)`→TRI, `exact_order`→FCT/TCE/QTT, `all_place`/`any_place`→QPL.
 
 ### 5.2 Multi-race pools
 
@@ -180,9 +182,9 @@ gross_pool = Σ stakes ;  net_pool = gross_pool × (1 − takeout)
 dividend_per_unit(combo) = net_pool × winning_share(combo) / stakes_on(combo)
 ```
 
-- **Takeout is the operator's only structural edge** and **differs by pool** (~17.5%
-  WIN/PLA/QIN/QPL → ~25% QTT/FF). A 5% model edge is profitable at 17.5%, underwater at
-  25%. A 17.5% takeout applies **only** to the WIN/PLA/QIN/QPL family — use the
+- **Takeout is the operator's only structural edge** and **differs by pool** (17.5%
+  WIN/PLA/QIN/QPL/Double, 19.5% Forecast, 23% Trio, 25% Tierce/First 4/Quartet/Treble and
+  the jackpot pools). A 5% model edge is profitable at 17.5%, underwater at 25%: use the
   per-pool rate.
 - **Dividend is endogenous to the crowd:** your payout falls the more money is on your
   combination. The model predicts *probabilities*; the *odds/dividend* come from the
@@ -203,8 +205,9 @@ Double Trio, Triple Trio and Six Up are **jackpot pools**. A slice is skimmed in
 reserve that **carries forward if nobody wins**:
 
 ```
-Jackpot Reserve Deduction  ≈ 7.5% of pool
-Operator Reserve Deduction ≈ 0.5% of pool
+Triple Trio: Jackpot Reserve Deduction   7.5% of pool
+Double Trio: Operator Reserve Deduction  0.5% of pool (from the Club's revenue)
+Six Up:      Operator Reserve Deduction  2%   of pool (from the Club's revenue)
 ```
 
 - Normal day: ~85% is the net dividend pool; the reserve builds quietly.
@@ -221,7 +224,7 @@ Operator Reserve Deduction ≈ 0.5% of pool
 
 ## 8. Open verification tasks (rules are priors — HKJC tunes them per season)
 
-- [ ] Confirm current-season takeout for **every** pool from the live rule PDFs
+- [ ] Confirm the Composite Win takeout (not on the local-pools page) from the live rule PDFs
       (`hkjc.com/.../template_betting_rule_files/pdf/`).
 - [ ] Confirm exact **Place field-size thresholds** and small-field suspension rules.
 - [ ] Pin down **Triple Trio consolation** and **Six Win Bonus** split formulas.
