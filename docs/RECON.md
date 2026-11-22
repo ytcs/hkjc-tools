@@ -231,10 +231,14 @@ within 4e-7 s. The film stage takes 35–127 s instead of 98–484 s, and 47–9
 The race clock is the aerial's overlay clock, except where that clock starts late. Before the 2025/26 season the
 overlay clock started about 0.4 s after the gates opened (up to ~3 s on some races), so every video-only time was
 early by that much; from 2025/26 it starts with the gates. `start.lag` finds the gate opening in the live start
-film that opens the aerial video: the closed stalls' doors are a band of dark-green pixels that drops when they
-swing open. On an 8 × 6 grid of the quarter-resolution frames it takes the row strip with the largest relative drop
-(≥ 25 %, ≥ 1 point) within 100 frames before the clock zero, provided the drop persists over 40 frames (doors stay
-open) and is shared by ≥ 60 % of the strip's door-bearing columns (not a person crossing). The onset is the 25 %
+film that opens the aerial video: the closed stalls' doors are a band of dark pixels that drops when they swing
+open. The door colour depends on the light: dark green in sun (OpenCV hue 35–95, saturation > 60, value < 110),
+dark teal in shade (hue 96–107 on evening Happy Valley films). The teal band (hue 60–105) is tried only when the
+green band finds no opening. It excludes the turf (hue ≤ 55), which the green band admits where the turf is shaded,
+and the blue banner and night sky (hue ≥ 105). On an 8 × 6 grid of the quarter-resolution frames it takes the row
+strip with the largest relative drop (≥ 25 %, ≥ 1 point) within 100 frames before the clock zero, provided the
+drop persists over 40 frames (doors stay open) and is shared by ≥ 60 % of the strip's door-bearing columns (not a
+person crossing). The onset is the 25 %
 crossing of that step. The detector's convention lag (clock zero − onset where the clock is synced) is 1.4 frames at
 Sha Tin and 2.55 at Happy Valley; a larger net lag of more than 4 frames re-anchors the clock (`RaceRun.clock_f0`
 = overlay zero − lag, used by `observe` and every stage downstream). `film.npz` keeps overlay-clock times and
@@ -247,6 +251,15 @@ correction is −0.12 s median (the film read's own bias, as on synced races) wi
 0.2 s; 6 of 74 pre-2025/26 races give no detection and keep the late clock. No correction on 54 synced-era races;
 on the 26 development races one false correction (HV 06-03 R3, 0.34 s: its doors visibly open about 11 frames
 before a clock zero that matches the official start).
+
+On the 196 held-out races the green band finds no opening on 14. The teal band recovers 8 of them: 3 late (lags
+7.4–10.4 frames) and 5 synced, each onset within about a frame of the first door motion seen in the frames. The
+other 6 stay `none`. On 5 the start film is not on the overlay clock's timeline: the clock zero extrapolates to
+frames 0–2.5, but the doors open 25–60 frames later (on two of them the film after the opening is visibly slow
+motion). The sixth (HV 2026-01-14 R8) is filmed from behind the stalls, so no door band is visible. On 50
+held-out races where the green band works, the teal band alone also finds an opening on every race. Its onset is
+a median 0.56 frames later (IQR 0.36–1.03), so a teal lag reads about 0.02 s short; 2 of the 50 differ by 12–13
+frames (ST 2025-01-05 R6, HV 2023-10-11 R4).
 
 ### observe
 
@@ -910,6 +923,8 @@ Final product
 
 Synchronisation and other evidence
 - Frame-difference threshold or change point for gate opening: cameras pan after the start (ST 04-26 R9 drone fired at 0.04 s).
+- Door hue band reaching down to the turf (lower bound 58 instead of 60): false onset 22 frames early on HV 2026-10-14 R3 (net lag +22 frames on a synced race). Upper bound 110 instead of 105 (admits the banner and night trees, hue 104–113): no opening on HV 2024-05-01 R5, R9 or 2026-04-15 R9. Replacing the green band with the teal band would shift the onset on every race where the green band works, so the teal band is a fallback.
+- Widening the search window after the clock zero for races whose zero extrapolates to frame 0: the doors open 29–49 frames after it, giving a negative lag (status `synced`) on films that are not on the overlay clock's timeline.
 - Matching the shared finish-camera replay across feeds: it sits at a different edit position per feed.
 - Drone offset from formation matching: 1.47 s vs 2.46 s measured on HV 06-03 R8.
 - Drone camera fitted to the rails plus horse ICP for positions: the rails register, but along-track tilt is unobservable on straights and the ICP does not lock.
