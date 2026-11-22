@@ -217,7 +217,10 @@ likelihood ratio in `identify`.
 ### hud
 
 Recognition-only OCR on fixed crops: the race clock on the film panel (every 10th frame), the render's
-odometer and its 8 legend slots (re-read when the crop changes). Race-clock origin:
+odometer and its 8 legend slots (every frame). No read is skipped by a pixel-change test: the legend's number boxes
+are not opaque (the track shows through and around them), so a slot changed by an overtake can differ less from its
+last read than an unchanged slot differs between frames, and a skipped read would hold a stale number. Race-clock
+origin:
 `clock_f0 = median(frame − 25·clock)`. On some Happy Valley broadcasts a sponsor box above the clock pushes it ~45 px below the
 fixed crop (HV 2023-10-18 R8, HV 2024-10-16 R2): when the fixed crop gives fewer than 3 clock reads,
 `ocr.read_clock_located` re-reads the same frames with the crop shifted vertically (−16…+96 px, step 4) and keeps the
@@ -710,7 +713,10 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 - **Leader timing.** The render's odometer is late early in long Sha Tin races (up to ~1 s, both render eras)
   and early on others; in the 0–400 m zone the tick px/m is 1.3–4.8 % above the paint px/m; cause unknown. Beyond
   400 m no reference exists that is neither official nor the odometer. The straights' leader is ~0.2 s early from
-  400 m (odometer/marker scale ratio 1.034–1.036).
+  400 m (odometer/marker scale ratio 1.034–1.036). Not an OCR lag: odometer reads on every frame tick on the same
+  frames as reads behind a pixel-change test (10 races, 5 of them long Sha Tin races).
+- **Legend misreads.** A legend digit d is sometimes read as "1d" (3 → 13, 4 → 14, 1 → 11, 2 → 12) when a vertical edge
+  (a distance post, the rail, a box edge) lies at the left of the slot crop; about 1 slot read in 9,000 (10 races).
 - **Detector artefacts.** The avatar detector often keeps two boxes on one horse (IoU 0.32–0.50, under NMS's
   0.5), and the second box births a second track. The static-overlay filter can delete a real horse the camera
   holds at one panel cell (ST 06-07 R8, 242 frames) and misses disclaimer text below its bar (HV 05-20 R2, 31

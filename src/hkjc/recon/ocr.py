@@ -128,62 +128,36 @@ def _parse_legend(res, n_field: int = 14) -> np.ndarray:
     return row
 
 
-def _legend_boxes(panel, n_slots: int = 8):
-    """Pixels of the legend number boxes (opaque; they change only on overtakes)."""
-    return np.concatenate([c.reshape(-1, 3) for c in _legend_slot_crops(panel, n_slots)])
-
-
-def read_render_hud_cached(
-    cache, *, n_field: int = 14, n_slots: int = 8, clock_every: int = CLOCK_EVERY, legend_every: int = 3
-):
-    """Per unique render frame from a ``video.FrameCache``: [frame, clock|NaN, odometer] and
+def read_render_hud_cached(cache, *, n_field: int = 14, n_slots: int = 8, clock_every: int = CLOCK_EVERY):
+    """Per unique render frame from a ``video.FrameCache``: [frame, clock|NaN, odometer|NaN] and
     [frame, legend slots x8] (left->right = running positions 1..8; 0 = unread; ``n_slots``: slots shown,
-    the field size when under 8). The clock (from the
-    cached left-panel crops) is video-locked, read every ``clock_every`` frames; the odometer is
-    OCR'd only when its crop changes; the legend every ``legend_every`` frames.
-    Two passes (speed, results identical): the re-read rules depend on PIXELS only, so pass 1 picks
-    the crops to read, pass 2 OCRs them in large batches (all crops of one kind share one size, so
-    batch padding is identical)."""
+    the field size when under 8). The clock (from the cached left-panel crops) is video-locked, read every
+    ``clock_every`` frames; the odometer and the legend are read on every frame. No pixel-change test
+    skips a read: the legend's number boxes are not opaque (the track shows through and around them), so a
+    slot changed by an overtake can differ less from its last read than an unchanged slot differs between
+    frames, and a skipped read holds a stale number.
+    The crops are OCR'd in large batches (all crops of one kind share one size, so batch padding is
+    identical and each read equals the crop's read on its own)."""
     x0, _x1, y0, _y1 = cache.box
     oy0, oy1, ox0, ox1 = AVV_ODO
-    clock_crops, odo_crops, leg_crops = [], [], []
-    plan = []  # per frame: (i, clock idx or -1, odo idx (latest), legend idx (latest))
-    prev_o, prev_l, io, il = None, None, -1, -1
+    frames, clock_at, clock_crops, odo_crops, leg_crops = [], [], [], [], []
     for n, (i, p) in enumerate(cache):
-        ic = -1
+        frames.append(i)
         if n % clock_every == 0:
+            clock_at.append(n)
             clock_crops.append(np.asarray(cache.clock[n]))
-            ic = len(clock_crops) - 1
-        oc = p[oy0 - y0 : oy1 - y0, ox0 - x0 : ox1 - x0]
-        if prev_o is None or float(np.abs(oc.astype(np.int16) - prev_o).mean()) > 2.0:
-            odo_crops.append(oc.copy())
-            io = len(odo_crops) - 1
-            prev_o = oc
-        if n % legend_every == 0:
-            # the number boxes are opaque: re-OCR only when they change (overtakes), ~10x fewer calls
-            lb = _legend_boxes(p, n_slots)
-            if (
-                prev_l is None
-                or lb.shape != prev_l.shape
-                or float(np.abs(lb.astype(np.int16) - prev_l).mean()) > 8.0
-            ):
-                leg_crops.append(_legend_slot_crops(p, n_slots))
-                il = len(leg_crops) - 1
-                prev_l = lb
-        plan.append((i, ic, io, il))
-    clocks = [_parse_clock(t, c) for t, c in rec_batch(clock_crops)]
-    odos = [_parse_odometer(t, c) for t, c in rec_batch(odo_crops)]
+        odo_crops.append(p[oy0 - y0 : oy1 - y0, ox0 - x0 : ox1 - x0].copy())
+        leg_crops.append(_legend_slot_crops(p, n_slots))
+    clock = np.full(len(frames), np.nan)
+    for n, (t, c) in zip(clock_at, rec_batch(clock_crops)):
+        x = _parse_clock(t, c)
+        clock[n] = np.nan if x is None else x
+    odo = [_parse_odometer(t, c) for t, c in rec_batch(odo_crops)]
     flat = rec_batch([c for slots in leg_crops for c in slots])
     m = min(8, n_slots)  # crops per legend read; unshown slots stay 0
-    legs = [_parse_legend(flat[m * k : m * k + m], n_field) for k in range(len(leg_crops))]
-    rows, leg = [], []
-    for i, ic, io, il in plan:
-        c = clocks[ic] if ic >= 0 else np.nan
-        o = odos[io] if io >= 0 else np.nan
-        rows.append([i, np.nan if c is None else c, np.nan if o is None else o])
-        leg.append([i, *(legs[il] if il >= 0 else np.zeros(8, int))])
+    rows = [[i, clock[n], np.nan if odo[n] is None else odo[n]] for n, i in enumerate(frames)]
+    leg = [[i, *_parse_legend(flat[m * n : m * n + m], n_field)] for n, i in enumerate(frames)]
     return np.array(rows), np.array(leg)
-
 
 
 def read_clock_located(path, frames, *, box=AVV_CLOCK, shifts=CLOCK_SHIFTS):
