@@ -47,3 +47,21 @@ def test_clock_f0_moves_back_by_the_measured_lag_only(tmp_path):
     assert run.clock_f0() == run.overlay_f0()  # synced: unchanged, exactly
     np.savez(run.p("start.npz"), clock0=69.2, onset=57.2, lag_frames=10.6, status="late")
     assert abs(run.clock_f0() - (run.overlay_f0() - 10.6)) < 1e-9
+
+
+def test_door_hue_bands_separate_doors_from_turf_banner_and_sky():
+    # (H, S, V) measured on start films: sunlit doors (ST 2025-07-13 R8), shaded teal doors (HV 2024-05-01 R5),
+    # shaded turf (ST 2025-07-13 R8), sunlit turf, the blue banner and night trees (HV 2026-11-04 R3)
+    px = np.array([[[83, 141, 85], [101, 131, 77], [48, 109, 108], [44, 89, 179], [113, 223, 68], [112, 210, 51]]])
+    green, teal = (start.door_mask(px.astype(np.uint8), hue).ravel().tolist() for hue in start.DOOR_HUES)
+    assert green == [True, False, True, False, False, False]
+    assert teal == [True, True, False, False, False, False]
+
+
+def test_lag_tries_the_teal_band_only_when_the_green_band_finds_no_opening(monkeypatch):
+    flat = np.full((120, start.NR, start.NC), 0.3)
+    monkeypatch.setattr(start, "door_grid", lambda path, nmax: np.stack([flat, _grid(open_at=50)]))
+    r = start.lag("x.mp4", 69.0, "ST")
+    assert r["status"] == "late" and 48.5 <= r["onset"] <= 50.5
+    monkeypatch.setattr(start, "door_grid", lambda path, nmax: np.stack([_grid(open_at=60), _grid(open_at=50)]))
+    assert 58.5 <= start.lag("x.mp4", 69.0, "ST")["onset"] <= 60.5  # the green band's opening wins
