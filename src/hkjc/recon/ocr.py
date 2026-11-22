@@ -17,6 +17,9 @@ import numpy as np
 from . import video
 
 AVV_ODO = (286, 320, 1606, 1700)  # y0, y1, x0, x1 (absolute, 1080p)
+AVV_CLOCK = (288, 342, 800, 945)  # y0, y1, x0, x1 (absolute, 1080p): the left-panel race clock
+CLOCK_EVERY = 10  # the clock is read on every 10th unique render frame (video-locked)
+CLOCK_SHIFTS = range(-16, 97, 4)  # px: vertical offsets searched when the clock is not at AVV_CLOCK
 _CLOCK = re.compile(r"(\d):(\d\d)[.:](\d\d)")
 _ODO = re.compile(r"(\d{1,4})\s*M", re.IGNORECASE)
 
@@ -97,15 +100,23 @@ def _parse_odometer(txt, conf, max_m: int = 4000) -> float | None:
     return v if v <= max_m else None
 
 
-def _legend_slot_crops(panel) -> list:
+def _legend_slot_x(W: int, n_slots: int = 8) -> list:
+    """Column centres of the legend's number boxes. A field of 8+ shows 8 slots at pitch W/8.8; a smaller
+    field of N spreads its N slots about the same centre (digits centred at 0.466 W) at a wider pitch,
+    (211 - 13 N) / 945 W: the digit centres of a 7-runner (ST 2024-04-14 R8) and a 6-runner legend (ST
+    2025-04-13 R1) on the 945 px panel sit 120 and 133 px apart (the line gives 107 px at N = 8, measured 108)."""
+    if n_slots >= 8:
+        return [int(0.064 * W + k * W / 8.8) for k in range(8)]
+    pitch = (211 - 13 * n_slots) / 945 * W
+    return [int(0.4635 * W + (k - (n_slots - 1) / 2) * pitch) for k in range(n_slots)]
+
+
+def _legend_slot_crops(panel, n_slots: int = 8) -> list:
     lt = video.legend_top(panel)
-    W = panel.shape[1]
-    pitch = W / 8.8
-    out = []
-    for k in range(8):
-        cx = int(0.064 * W + k * pitch)
-        out.append(panel[max(0, lt - 4) : lt + 34, max(0, cx - 22) : cx + 16].copy())
-    return out
+    return [
+        panel[max(0, lt - 4) : lt + 34, max(0, cx - 22) : cx + 16].copy()
+        for cx in _legend_slot_x(panel.shape[1], n_slots)
+    ]
 
 
 def _parse_legend(res, n_field: int = 14) -> np.ndarray:
@@ -117,26 +128,17 @@ def _parse_legend(res, n_field: int = 14) -> np.ndarray:
     return row
 
 
-def _legend_boxes(panel):
-    """Pixels of the 8 legend number boxes (opaque; they change only on overtakes)."""
-    lt = video.legend_top(panel)
-    W = panel.shape[1]
-    pitch = W / 8.8
-    crops = [
-        panel[
-            max(0, lt - 4) : lt + 34,
-            max(0, int(0.064 * W + k * pitch) - 22) : int(0.064 * W + k * pitch) + 16,
-        ]
-        for k in range(8)
-    ]
-    return np.concatenate([c.reshape(-1, 3) for c in crops])
+def _legend_boxes(panel, n_slots: int = 8):
+    """Pixels of the legend number boxes (opaque; they change only on overtakes)."""
+    return np.concatenate([c.reshape(-1, 3) for c in _legend_slot_crops(panel, n_slots)])
 
 
 def read_render_hud_cached(
-    cache, *, n_field: int = 14, clock_every: int = 10, legend_every: int = 3
+    cache, *, n_field: int = 14, n_slots: int = 8, clock_every: int = CLOCK_EVERY, legend_every: int = 3
 ):
     """Per unique render frame from a ``video.FrameCache``: [frame, clock|NaN, odometer] and
-    [frame, legend slots x8] (left->right = running positions 1..8; 0 = unread). The clock (from the
+    [frame, legend slots x8] (left->right = running positions 1..8; 0 = unread; ``n_slots``: slots shown,
+    the field size when under 8). The clock (from the
     cached left-panel crops) is video-locked, read every ``clock_every`` frames; the odometer is
     OCR'd only when its crop changes; the legend every ``legend_every`` frames.
     Two passes (speed, results identical): the re-read rules depend on PIXELS only, so pass 1 picks
@@ -159,20 +161,21 @@ def read_render_hud_cached(
             prev_o = oc
         if n % legend_every == 0:
             # the number boxes are opaque: re-OCR only when they change (overtakes), ~10x fewer calls
-            lb = _legend_boxes(p)
+            lb = _legend_boxes(p, n_slots)
             if (
                 prev_l is None
                 or lb.shape != prev_l.shape
                 or float(np.abs(lb.astype(np.int16) - prev_l).mean()) > 8.0
             ):
-                leg_crops.append(_legend_slot_crops(p))
+                leg_crops.append(_legend_slot_crops(p, n_slots))
                 il = len(leg_crops) - 1
                 prev_l = lb
         plan.append((i, ic, io, il))
     clocks = [_parse_clock(t, c) for t, c in rec_batch(clock_crops)]
     odos = [_parse_odometer(t, c) for t, c in rec_batch(odo_crops)]
     flat = rec_batch([c for slots in leg_crops for c in slots])
-    legs = [_parse_legend(flat[8 * k : 8 * k + 8], n_field) for k in range(len(leg_crops))]
+    m = min(8, n_slots)  # crops per legend read; unshown slots stay 0
+    legs = [_parse_legend(flat[m * k : m * k + m], n_field) for k in range(len(leg_crops))]
     rows, leg = [], []
     for i, ic, io, il in plan:
         c = clocks[ic] if ic >= 0 else np.nan
@@ -181,3 +184,43 @@ def read_render_hud_cached(
         leg.append([i, *(legs[il] if il >= 0 else np.zeros(8, int))])
     return np.array(rows), np.array(leg)
 
+
+
+def read_clock_located(path, frames, *, box=AVV_CLOCK, shifts=CLOCK_SHIFTS):
+    """Race-clock reads at video ``frames`` with the clock crop moved to where the clock is. A sponsor box
+    (LONGINES) above the clock pushes it ~45 px below the fixed crop on some broadcasts. Each vertical
+    shift of ``box`` is scored by the number of reads that agree on the clock's zero frame (frame - 25 clock
+    within 2 frames of their median); the centre of the widest run of best-scoring shifts is kept (the
+    clock whole inside the crop). -> (clock seconds or NaN per frame, shift px; NaN everywhere when no
+    shift gives 2 agreeing reads)."""
+    import av
+
+    y0, y1, x0, x1 = box
+    lo, hi = min(shifts), max(shifts)
+    want = {int(f) for f in frames}
+    strips = {}
+    with av.open(str(path)) as c:
+        c.streams.video[0].thread_type = "AUTO"
+        for i, fr in enumerate(c.decode(video=0)):
+            if i in want:
+                strips[i] = fr.to_ndarray(format="bgr24")[max(0, y0 + lo) : y1 + hi, x0:x1].copy()
+            if i >= max(want):
+                break
+    off = max(0, y0 + lo)
+    blank = np.zeros((y1 - y0, x1 - x0, 3), np.uint8)  # a frame past the video's end reads nothing
+    dys = sorted(shifts)
+    reads, score = [], []
+    for dy in dys:
+        crops = [strips[int(f)][y0 + dy - off : y1 + dy - off] if int(f) in strips else blank for f in frames]
+        v = np.array([np.nan if (x := _parse_clock(t, c)) is None else x for t, c in rec_batch(crops)])
+        ok = np.isfinite(v)
+        z = np.asarray(frames, float)[ok] - 25.0 * v[ok]
+        reads.append(v)
+        score.append(int((np.abs(z - np.median(z)) <= 2.0).sum()) if ok.sum() >= 2 else 0)
+    score = np.array(score)
+    top = np.flatnonzero(score == score.max())
+    run = max(np.split(top, np.flatnonzero(np.diff(top) > 1) + 1), key=len)
+    k = int(run[len(run) // 2])
+    if score[k] < 2:
+        return np.full(len(frames), np.nan), 0
+    return reads[k], dys[k]

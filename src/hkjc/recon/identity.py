@@ -14,8 +14,9 @@ from __future__ import annotations
 import numpy as np
 
 
-def legend_votes(members, frame_of_det, d, legend_rows, numbers, max_rank=8, parts=False):
-    """``numbers``: the runners' saddlecloth numbers (withdrawn numbers leave gaps).
+def legend_votes(members, frame_of_det, d, legend_rows, numbers, max_rank=8, parts=False, field=None):
+    """``numbers``: the runners' saddlecloth numbers (withdrawn numbers leave gaps). ``field``: distinct
+    tracklets a frame must hold for its ranks to vote (default: every runner).
     -> votes (n_tracklets, max(numbers)+1): votes[t, num] = #frames tracklet t sat at the legend slot
     holding saddlecloth ``num``; ranks beyond the legend add 1/|missing| to every unlisted number.
     ``parts=True`` -> (votes, rank, elim, n_elim): the same evidence kept SET-VALUED for
@@ -52,7 +53,7 @@ def legend_votes(members, frame_of_det, d, legend_rows, numbers, max_rank=8, par
         if len(set(tracks)) != len(tracks):
             continue
         present = len(js)
-        if present < len(runners):  # ranks are trusted only when the whole field is tracked
+        if present < (len(runners) if field is None else field):  # ranks are trusted only when `field` are tracked
             continue
         shown = [int(x) for x in slots[:max_rank]]
         for r in range(min(max_rank, present)):  # fields smaller than the legend show fewer ranks

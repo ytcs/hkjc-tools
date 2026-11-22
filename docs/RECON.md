@@ -11,8 +11,8 @@ from hkjc.recon import RaceRun
 run = RaceRun(race_info("20260603", "HV", 8)); run.run(); run.paths()
 ```
 
-CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force stage,...]`. Stages are
-cached under `data_cache/recon/<date>_<venue>_<no>/`; a stage is skipped when its outputs exist.
+CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force stage,...] [--root DIR]`. Stages are
+cached under `data_cache/recon/<date>_<venue>_<no>/` (`--root` moves the run dirs); a stage is skipped when its outputs exist.
 Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `HKJC_NPROC` (workers per
 race), `HKJC_OCR_THREADS`, `HKJC_AVATAR_WEIGHTS` (detector weights), `HKJC_FILM_DEVICE` (the film
 detector alone, e.g. `intel:gpu`; see the film section).
@@ -178,7 +178,22 @@ split in `observe` and the silk likelihood ratio in `identify`.
 
 Recognition-only OCR on fixed crops: the race clock on the film panel (every 10th frame), the render's
 odometer and its 8 legend slots (re-read when the crop changes). Race-clock origin:
-`clock_f0 = median(frame − 25·clock)`.
+`clock_f0 = median(frame − 25·clock)`. On some Happy Valley broadcasts a LONGINES sponsor box sits above the
+clock and pushes it ~45 px below the fixed crop, which then reads nothing (HV 2023-10-18 R8, HV 2024-10-16 R2).
+When the fixed crop gives fewer than 3 clock reads, `ocr.read_clock_located` re-reads the same frames from the
+video with the crop shifted vertically (−16…+96 px, step 4): each shift is scored by the reads that agree on the
+clock zero (within 2 frames of their median) and the centre of the widest run of best shifts is kept. On HV
+2023-10-18 R8 the shifts +24…+44 px read the whole clock and agree on the zero to ±0.25 frame. No race in the
+196-race product has fewer than 3 fixed-crop reads, so the fallback changes none of them. With no clock read at
+all, every stage that needs the clock zero stops with "no race-clock reads" (`start` records `none`).
+
+The legend of a field of 8 or more shows 8 slots at a fixed pitch; a field of N < 8 spreads its N slots about the
+same centre at a wider pitch (digit spacing 120 px for 7 runners, 133 px for 6, on the 945 px panel), so the 8-slot
+crops read at most one slot there (ST 2024-04-14 R8: slot 8 only; ST 2025-04-13 R1: slot 4 only) and `identify` had
+almost no legend votes. The slot crops follow the field size (`ocr._legend_slot_x`, a line through the two measured
+pitches). Fields of 8+ read exactly as before. ST 2025-04-13 R1: 6 of 6 tracklets numbered instead of 2, winner
+and finish-n now pass (leader timing 0.289 s still fails); ST 2024-04-14 R8: 10 of 17 instead of 6, every gate passes
+as before. The product's one other field under 8 (ST 2026-03-01 R7, 6 runners) has not been re-read.
 
 ### rails
 
@@ -201,7 +216,11 @@ all clockwise; straights ≤ 0.28), else the race's handedness (`rails.inner_sid
 `rails.straight_datum` makes the field's inner-edge scaffold the rail and adds a measured per-race
 fence offset `lat0_px` (median over the longest supported DP run: 111, 111, 61 px). Straight-course
 lateral is pack-edge-relative plus that constant; pack-to-fence drift (up to ~1.8 m on ST 06-07 R8)
-is not modelled. On 3 straights × 6 seeds the datum with the constant lifts finish ρ 0.884 → 0.923.
+is not modelled. A "fence" measured more than 1 m (observe's inside-the-rail tolerance) on the field side of the
+inner edge is another ridge, and `observe` treats it as unmeasured (`lat0_px` 0, as when no ridge is supported). On ST 2025-04-13 R1 the
+ridge sat 27 px (1.4 m) inside the field, the real rail runs along the inner edge (pixels), and the gate dropped
+the inner horse on 410 of 480 frames, so no frame tracked the whole field and `identify` numbered nothing. Over
+the product's straights `lat0_px` ranges −2.1 (ST 2025-01-05 R6) to 114 px, so the rule changes none of them. On 3 straights × 6 seeds the datum with the constant lifts finish ρ 0.884 → 0.923.
 
 `rails.movable_rail_check` moves the rail out when a supported ridge sits at the course-table gap
 toward the field and the innermost horses are still outside it (the extracted ridge was the fixed
@@ -335,7 +354,16 @@ neither block the whole-field test nor enter the unlisted set: on HV 04-15 R6 (#
 previous field-size argument cast no legend votes; with the runner numbers it casts 3713–4255 slot
 votes per seed, none for #2 or #4, numbers 11 of 13 tracklets instead of 6 (the 6 old names unchanged; of the new ones, #7 and #8 are
 the reverse of the old EM's labels and match the silks on six seed-0 crops, read with the labels known), and changes no gate on any seed (sectional MAE
-0.002–0.006 s lower on all six). One race chosen by a withdrawal rule, not a held-out claim. The finish camera names tracklets by 1D registration
+0.002–0.006 s lower on all six). One race chosen by a withdrawal rule, not a held-out claim.
+A runner tailed off out of the render camera's view leaves no whole-field frame: on HV 2024-04-17 R7 #7 (first
+section 43.9 s against ~24 s) is never rendered and never listed, at most 9 of 10 horses are tracked, and `identify`
+numbered nothing (`fuse_video` stops with "identify numbered no tracklet" when that happens). When no frame casts a whole-field vote and the legend never
+lists some runner, frames tracking all runners but one vote, the untracked runner taken as one behind the legend
+(its ranks 9+ give the usual set-valued elimination evidence). On HV 2024-04-17 R7 that numbers 14 of 17 tracklets
+(94 % of detections). Races with any whole-field vote are unchanged; in the 196-race product the
+rule applies to one silk race, ST 2025-05-10 R6 (12 runners, #9 never listed): 11 of 14 tracklets numbered
+instead of 3, horses without a path 3 → 0 and finish-short 3 → 1 (both gates now pass), sectional MAE 0.145 → 0.207 s
+(coverage 93 → 83 %), finish ρ 0.98 → 0.99, behind-winner 0.051 → 0.025 s. The finish camera names tracklets by 1D registration
 (`finishcam.identity_match`) of their line crossings to `t_w + gap/C`, scanning C ± 25 % around the
 ruler prior; a name needs residual < 0.08 s with every other prediction ≥ max(2× residual, 0.15 s)
 away, and adds 40 slot votes.
@@ -642,7 +670,7 @@ Gates failed on ≥ 5 of 6 seeds:
   season's opening weeks): 16 → 17 and 13 → 14; (2) the 2026/27 render draws horses as blue
   numbered circles with no silk avatars or legend, so the avatar detector and silk identity do not apply (24 of
   the 36 crashes); (3) a sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no
-  clock is read and `film` fails (2 races); (4) one race (ST 2024-04-07 R5) with pose residuals of 0.05 px and 494
+  clock is read and `film` fails (2 races; the clock is now located, see hud); (4) one race (ST 2024-04-07 R5) with pose residuals of 0.05 px and 494
   loop closures reads as a straight course and gets no paths: its panel box came out full height (letterbox
   bars included), so the HUD mask missed the disclaimer text and pose locked onto it (verified on the inliers). Further crashes are listed in
   the S1 failure log and not yet traced. On the frozen code the lateral check against stewards' comments passes on
