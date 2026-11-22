@@ -15,7 +15,7 @@ CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force stage,..
 are cached under `data_cache/recon/<date>_<venue>_<no>/`; a stage is skipped when its outputs exist.
 Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `HKJC_NPROC` (workers per
 race), `HKJC_OCR_THREADS`, `HKJC_OCR_DEVICE`, `HKJC_MATCH_DEVICE`, `HKJC_AVATAR_WEIGHTS` (detector weights),
-`HKJC_FILM_DEVICE` (the film detector alone, e.g. `intel:gpu`), `HKJC_MASK` (§3), `HKJC_PERTURB_SEED` (§6).
+`HKJC_FILM_DEVICE` (the film detector alone, e.g. `intel:gpu`), `HKJC_MASK` (§3), `HKJC_PERTURB_SEED` (§4 observe, §6).
 
 Race identifiers are `venue MM-DD Rn` for 2026 meetings (ST 05-31 R1 is Sha Tin, 2026-05-31, race 1)
 and carry the full date otherwise.
@@ -33,7 +33,7 @@ no feed acting as a master that the others correct.
 | `paths.parquet` (`run.paths()`) | **The product**: per horse `horse_no, t, s, d, lat, sd_s, sd_lat, n_obs` on a 0.1 s grid, from every source, including the official records the run's mask leaves visible |
 | `paths_video.parquet` | The reconstruction from the videos and pre-race facts only (no official outcome record); the fixed gates score it, and it is the reference for what the videos alone determine |
 | `validation.json` | fixed gates on `paths_video.parquet` against the full official record, plus the product's residual against the official times (`final_official_resid_mae`) |
-| `audit.json` | label-free invariants (§6) |
+| `audit.json` | label-free invariants (§4, validate) |
 | `status.json` | `ok`, `unhealthy` or `failed` (§4, status) |
 | `timings.jsonl` | per stage: wall s, CPU s, peak RSS |
 | `mask.txt` | the run's mask, when not empty (§3) |
@@ -77,9 +77,9 @@ re-timed, so the product's error there is independent of that record.
 
 **Held-out baseline.** 196 races (145 silk-render races from a 200-race sample of 2023-09 to 2026-11 turf
 meetings, the 26 silk-render development races, 25 numbered-disc races); one official boundary withheld per
-race, rotating over the boundaries; error = product crossing time − withheld official time.
+race, rotating over the boundaries; the product's crossing error at the withheld boundary.
 
-| Withheld boundary | Median \|error\| | p90 |
+| Withheld boundary | Median | p90 |
 |---|---|---|
 | first boundary | 0.131 s | 0.315 s |
 | later interior boundaries | 0.097 s | 0.269 s |
@@ -128,8 +128,8 @@ The panel box is a constant of the broadcast layout: the voting frames give a me
 frame keeps its own box unless it differs from that by more than 3 px (antialiased edges jitter 1–2 px). The
 first accepted frame can be the crossfade from the full-screen live shot, whose letterbox is not yet black:
 its box spans the full height (rows 1–1076 instead of 271–806), and with that box the static-overlay mask
-lands in the letterbox and the pose locks on the disclaimer and minimap (HV 10-14 R3: oval folded, 283
-tracklets). HV 05-13 R9 (first frame 7 crossfade rows lower) passes every gate with sectional MAE 0.175 s and
+lands in the letterbox and the pose locks on the disclaimer and minimap (HV 10-14 R3 with that box: oval
+folded, 283 tracklets; with the layout box: 10 tracklets, every gate passes). HV 05-13 R9 (first frame 7 crossfade rows lower) passes every gate with sectional MAE 0.175 s and
 finish ρ 0.93.
 
 Silk render: a frame is render-active when the legend band (0.70–0.86 of the panel) shows a saturated box,
@@ -158,7 +158,10 @@ a run dir with only a YOLO-only `dets.npz` recovers `yolo.npz` from it). ORB (30
 mask: HUD removed, dark (V < 45) and vivid blobs dilated, and the avatar detector's boxes, grown 1.6×, masked.
 The colour mask misses brown and pastel avatars, which are static in the image because the camera follows the
 field, and step matches would lock onto them (ST 04-19 R4: camera "stopped" for 3 ticks, identities rotated).
-Over the 26 development races 2 mid-race pose stalls remain, both at the render start of HV 04-15. Steps
+Over the 26 development races 2 mid-race pose stalls remain, both at the render start of HV 04-15. Scored
+against unmasked poses, the box mask and the frame grid cost 0.67 non-lateral gates per seed (SE 0.33), a
+failure reported as such; they stay because the poses are right on the pixels (no wholesale identity
+rotation on ST 04-19 R4, ST 05-09 R1 blind labels 37/38). Steps
 between frames ≤ 6 video frames apart are RANSAC similarities (1.5 px) refitted by least squares (Umeyama):
 the camera is near-nadir with no tilt and a slow zoom.
 
@@ -195,9 +198,9 @@ survives, and a box recurring at one panel cell on ≥ 4 % of frames there is ov
 
 `detect.silk_feature` per detection drops turf and brown pixels and keeps 12 hue bins (pastel and vivid),
 white and dark. Matching collapses pastel and vivid, because the render desaturates (correct group in the top
-3: 73/79 hand crops collapsed, 63/79 split). `silkmap.SILK_MAP` maps each runner's official silk prototype
+3: 73/79 hand crops). `silkmap.SILK_MAP` maps each runner's official silk prototype
 (`detect.silk_prototype`) into render appearance: a ridge fit on 187 legend-confident tracklets, legend labels
-only (leave-one-race-out top-1 47 %, 33 % unmapped). Consumers: the appearance split in `observe` and the silk
+only (leave-one-race-out top-1 47 %). Consumers: the appearance split in `observe` and the silk
 likelihood ratio in `identify`.
 
 ### hud
@@ -226,8 +229,7 @@ straights ≤ 0.28), else the race's handedness (`rails.inner_side`). On straigh
 mosaic shows the fence only at d ≈ 400–550, so `rails.straight_datum` makes the field's inner-edge scaffold the
 rail and adds a measured per-race fence offset `lat0_px` (median over the longest supported DP run: 111, 111,
 61 px on the three development straights). Straight-course lateral is pack-edge-relative plus that constant;
-pack-to-fence drift (up to ~1.8 m on ST 06-07 R8) is not modelled. On 3 straights × 6 seeds finish ρ is 0.923
-with the constant, 0.884 without.
+pack-to-fence drift (up to ~1.8 m on ST 06-07 R8) is not modelled. On 3 straights × 6 seeds finish ρ is 0.923.
 
 `rails.movable_rail_check` moves the rail out when a supported ridge sits at the course-table gap toward the
 field and the innermost horses are still outside it (the extracted ridge was the fixed rail). Painted markers
@@ -300,7 +302,7 @@ the camera swings 180° at t ≈ 28–32 s and the pose steps ~2.5 % in scale). 
 The constant comes from the film (`film.anchor_offset`): with ≥ 3 crossings the ticks are unpinned and shifted
 by the median offset (+2.4…+11 m) that puts the render leader on the film's crossings (against the film the
 render's painted FINISH pin is a step in the last 50 m; on 26 races leader MAE 0.166 s and sectional 0.197 s
-with film anchoring, 0.213 / 0.243 s without). With fewer crossings, a tick-seeded marker grid
+with film anchoring). With fewer crossings, a tick-seeded marker grid
 (`rails.fit_marker_grid_seeded`: paint scale ≈ tick scale / 1.035 within ±8 %, FINISH within ±60 m, ≥ 4
 markers including FINISH) pins d = 0 when its offset after resolving whole-marker shifts is < 6 m and the
 scales agree within 8 %; a pinned grid also sets the per-race tick convention (Sha Tin ≈ −3.2 m, Happy Valley
@@ -317,11 +319,12 @@ residual on the fused path is +0.006 / +0.004 m on the two residues (−0.17 / +
 **Tracking.** Constant-velocity prediction and per-tick Hungarian assignment in metres (gate 3σ,
 σ = 0.9/0.45 m, coast 20 ticks), then kinematic stitching across gaps ≤ 6 s. `tracking.split_by_appearance`
 cuts a tracklet where its mean silk signature changes (total-variation distance > 0.30, ≥ 40 silk detections
-per side; legend-pure tracklets reach at most 0.28): hand majority 62/79 (58/79 without). Circle render:
+per side; legend-pure tracklets reach at most 0.28): hand majority 62/79. Circle render:
 `tracking.split_by_number` splits tracklets where the disc number changes and stays changed (≥ 8 of the last
 10 confident reads name one other runner number that is not a dropped digit of the current one, and it holds
 for the next 20 reads, ~2 s), because the motion tracker swaps identities where discs touch (ST 2026-10-19 R3:
-#11 and #12 swap at ~60 s, #2's reads become '9' at ~90 s). Swaps between 1 and 11 (or 2 and 12, ...) look like
+#11 and #12 swap at ~60 s, #2's reads become '9' at ~90 s); on the 25 numbered-disc races no gate is worse
+for the split, ST 10-19 R3 has finish ρ 1.00, ST 11-08 R7 ρ 1.00 and behind-winner 0.012 s. Swaps between 1 and 11 (or 2 and 12, ...) look like
 dropped digits and are not caught.
 
 `HKJC_PERTURB_SEED=k` drops 1 % of detections here (seeded) for robustness ensembles.
@@ -342,9 +345,9 @@ track; coinciding numbers keep the longer one. On the overhead camera (Happy Val
 carries the geometry) reads of any number lying on a much better-read track (≥ 10 reads, ≥ 3× the reads it
 claims, on its line within 60 px, its lane within 30 px) are that cloth's misreads and are removed before
 tracks are built (HV 2026-11-18 R6: '3' reads on the #7 cloth would merge with the real #3's reads into a
-track that puts #3 second; official: last). On 197 races camera-order inversions against official are 217 with
-the rule, 228 without, no race worse. On the Sha Tin side-on camera, where horses abreast share one image band,
-the rule makes 4–5 races worse at every setting tried, so it is not applied there.
+track that puts #3 second; official: last). On 197 races camera-order inversions against official are 217, no
+race worse for the rule. On the Sha Tin side-on camera, where horses abreast share one image band,
+the rule makes 4–5 races worse at every threshold, so it is not applied there.
 
 `finishcam.finish_gaps` gives spatial gaps at an instant: crossers are chained from the crosser that links the
 most, and other horses get `gap_h = gap_r + x_h − x_r` from ≥ 2 shared frames, which recovers horses occluded
@@ -367,8 +370,8 @@ the blind set in the fusion.
 probability ρ, else uniform, so evidence grows with the vote count; elimination frames score log(ρₑN/m) for
 each unlisted number; ρ and ρₑ are re-estimated from labelled tracklets (camera votes excluded); the silk LLR
 `2.24 − 6.37·TV` (clipped ±3) counts where the legend has spoken; one number per tracklet and per frame; gain
-≤ 0 stays unlabelled (identity ρ 0.966 and hand majority 113/151, against 0.954 and 108/151 for a greedy
-labeller). Unlabelled line-reaching tracklets are then matched by elimination (`finishcam.eliminate`) to
+≤ 0 stays unlabelled (identity ρ 0.966,
+hand majority 113/151). Unlabelled line-reaching tracklets are then matched by elimination (`finishcam.eliminate`) to
 numbers with no line-reaching tracklet. Camera and elimination names are hard constraints downstream.
 
 ### fuse_video
@@ -414,7 +417,7 @@ rank is 1 + the number of detections more than 0.6 m ahead of it in the frame. C
   pays for its vagueness.
 - Hard legend rank: a detection with ≥ q detections more than 4.5 m ahead (4σ on a difference of two
   detections) cannot be the horse in legend slot q (+50, forbidden). At 0.6 m two detections 0.9 m apart
-  hard-exclude correct horses (ST 04-26 R1); hand 121/151 at 4.5 m, 118/151 at 0.6 m.
+  hard-exclude correct horses (ST 04-26 R1); hand 121/151 at 4.5 m.
 - Soft legend rank: +9 for slot q where the detection's rank, confirmed by the count of tight posteriors
   ahead, differs from q.
 - Negative legend evidence: a horse missing from a fully read top 8 is barred from detections surely inside the
@@ -424,7 +427,7 @@ rank is 1 + the number of detections more than 0.6 m ahead of it in the frame. C
   crossing ("blind") pays CLUTTER, hard, in the last 50 m.
 - Rank attraction: in the last 100 m a detection whose rank equals a listed horse's slot costs that horse at most
   10. Slowing unread horses' real detections sit 7–13 m behind their extrapolated paths at χ² ≈ 22 (ST 04-26
-  R9: finish ρ 1.00 on 6/6 seeds with the term, 0.89 without).
+  R9: finish ρ 1.00 on 6/6 seeds).
 
 `assoc.release_post_finish` makes anonymous any detection of a horse later than its first detection past the
 line and > 3.2 m before it (ST 05-24 R1: two such detections would drag the camera clock and lose the winner).
@@ -444,9 +447,7 @@ The product: the video-only detections plus the draw and the official records th
    on HV 06-03 R8's drone start frame; sd 0.4 m; `STALL1_LAT`, `STALL_PITCH`, `DRAW_SD`) and official cumulative
    sectional times fix crossings at d = 400k with `OFFICIAL_SD` = 0.1 m (their 0.01 s publication precision);
    runners without sectional times are held to their official finish time. Near-hard official times make a
-   mislabelled render tracklet conflict with the record (and be demoted) instead of bending it (at 0.4 m, on the
-   145 silk races of the held-out set the official winner came out wrong on 7, with finish-order inversions on
-   75).
+   mislabelled render tracklet conflict with the record (and be demoted) instead of bending it.
 2. `RaceRun._metric_bias`: at each visible boundary, b = median over ≥ 3 horses of (video-only crossing delay
    × speed); render s is shifted by b interpolated along s. The render metric error is shared by all horses,
    and hundreds of render observations would otherwise outvote one official time (residual ~5× its sd).
@@ -467,6 +468,8 @@ The product: the video-only detections plus the draw and the official records th
    continued past the last boundary at the last section's rate, so it adds no speed jump at a boundary;
    lateral and sd follow the same re-timing. Horses sharing an official finish time keep the official placing,
    2 ms apart (`TIE_STEP`). Shifts over 0.05 s are logged (they mark identity errors left in the video evidence).
+
+`fuse_final` leaves `paths_video.parquet` byte-identical.
 
 ### status
 
@@ -563,13 +566,13 @@ R7, 05-09 R1 (1000 m straight), 05-09 R2, 05-17 R1, 05-24 R1, 05-31 R1, 06-07 R6
 Happy Valley: 04-15 R1/R9, 04-22 R1/R9, 04-29 R3/R9, 05-13 R1/R9, 05-20 R2/R9, 05-27 R3/R9, 06-03 R3/R8. Also
 inspected: HV 04-15 R6 (two withdrawals). 25 numbered-disc development races from 2026/27. A 200-race sample of
 turf races from 2023-09 to 2026-11. The all-weather track is out of scope. The 26 include the 11 races of a
-sealed test set, so a held-out claim on the fixed gates needs races sealed by a metadata-only rule.
+sealed test set run once (all five timing gates on 9/11, 11/11 winners), so a held-out claim on the fixed gates needs races sealed by a metadata-only rule.
 
 ### Development races (26 × 6 seeds)
 
-Video-only gates per seed (tag `recon-baseline-Z12`): non-lateral 201.67, timing 126.67, all five timing gates on 23.67 races, lateral 10
+Video-only gates per seed: non-lateral 201.67, timing 126.67, all five timing gates on 23.67 races, lateral 10
 pass / 3 fail / 13 n/a, finish-short 26–27 horses. HV 06-03 R3 takes a false 0.34 s start correction on all 6
-seeds. Product (seeds 1–5, tag `recon-baseline-Z11`, whose product held official times at sd 0.4 m): hand truth
+seeds. Product (seeds 1–5): hand truth
 1117 correct, 153 wrong, 51 blank of 1321; glitch-seconds 21.9 per seed; seed unanimity 90.2 %; census 97.5 %
 of horse-runs good.
 
@@ -589,7 +592,9 @@ Silk-render races pass all five timing gates on 41 of 70 pre-2025/26 and 28 of 4
 remaining failure classes are leader timing (missed clock lags and 4 gross failures) and finish-only failures
 (15). Lateral check against stewards' comments on the silk render: AUC 0.931 on 91 pre-2025/26 races, 0.947 on
 47 from 2025/26. A sponsor box above the left-panel clock moves it about 45 px below the fixed crop, so no
-clock is read and `film` fails (2 races). Other crashes are not yet traced.
+clock is read and `film` fails (2 races). Other crashes are not yet traced. The `start` stage on 49 races
+not used to set its rules (held out): pre-2025/26 (19) leader timing passes on 14, all five on 12;
+2025/26 on (30) 17 and 14.
 
 ### Persistent failures (development races, ≥ 5 of 6 seeds)
 
@@ -689,12 +694,13 @@ clock is read and `film` fails (2 races). Other crashes are not yet traced.
 - **Static-overlay filter.** In `world_dets` a box recurring in one 8 px panel cell on ≥ 4 % of frames in the top
   band is overlay text. On ST 06-07 R8 the camera holds one horse at panel (460, 115) from 450 m to the line and
   the filter removes it on 242 frames (confidence 0.85–0.90); restoring them changes no gate and no other hand
-  label but puts #4's path on the horse (median lateral offset 0.45 m over the last 450 m, 3.6 m without). On HV
+  label but puts #4's path on the horse (median lateral offset 0.45 m over the last 450 m). On HV
   05-20 R2 it misses 31 pixel-verified disclaimer-text boxes (at most 30 per cell against a bar of 35): never
   labelled, in 1–2 whole-field legend-vote frames per seed, and > 4.5 m ahead of real detections in 31 E-step
   frames, where the hard rank cost has no false-positive allowance (labels there differ from the tracklet's
   neighbouring frames on 14–27 % of detections vs 1.2–1.6 % elsewhere). Removing them (oracle, seeds 0 and 1)
-  changes 1.9 % and 0.9 % of video-only labels and leaves #5's and #12's boundary errors unchanged.
+  changes 1.9 % and 0.9 % of video-only labels, leaves #5's and #12's boundary errors unchanged, and brings seed 0's sectional MAE under its
+  gate (0.247 s instead of 0.261 s; seed 1 passes either way, 0.222 s).
 - **Non-finishers in the results.** `historical._clean_race_data` drops every incident row (DISQ, DNF, FE, ML,
   PU, TNP, TO, UR, VOID, WR, WV, WV-A, WX, WX-A, WXNR), right for withdrawals; a code marking a horse that started
   (the meanings are not documented) would remove a rendered horse from the runners, and the race would pass the
