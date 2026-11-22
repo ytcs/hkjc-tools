@@ -44,7 +44,7 @@ validation. Four replay feeds per race:
 | aerial | split screen: live race film (left, with the race clock) and the AVV 3D render (right) with a HUD odometer and a top-8 running-order legend | world frame, every in-race position, HUD, painted-marker crossings in the film |
 | full | TV broadcast; after the race it replays a fixed finish-line camera | finish order and spatial gaps from saddlecloth OCR |
 | patrol | head-on camera | synced viewer only |
-| drone | one shot gate to finish | synced viewer only (`recon.drone` fits a camera to the rails but is not in the pipeline) |
+| drone | one shot gate to finish | synced viewer only (not in the pipeline) |
 
 **Two products.** `paths_video.parquet` is the VIDEO-ONLY posterior: no official outcome data
 enters it; pre-race facts may. The fixed gates score it, and it stays the independent check.
@@ -766,6 +766,7 @@ Each line: the approach, then the measurement that decided it. "Removed untested
 without a verdict.
 
 Fusion, identity
+- A 0.6 m margin for "ahead of every listed horse" in the detection-level EM (`assoc.FLOOR_EPS`): failed; 4, 8 and 16 m are equivalent (8 m kept).
 - Dropping finish-camera crossings that contradict the horse's own render-observed crossing (offset from the median camera-minus-render offset > max(4 sd, 0.25 s)): fixed HV 2026-11-18 R6 (camera misread '2'/'3', winner and finish ρ 0.59 → 0.99) but failed ST 2026-10-19 R3 behind-winner (ρ 0.88 → 0.53) and silk ST 04-19 R4 finish ρ and behind-winner; the render's own crossing is wrong by up to ~1 s on some horses even with a well-read identity, so a disagreement alone does not say which feed is wrong. Without the median reference it also dropped every crossing on ST 11-08 R1, where camera and render crossings differ by a shared −0.47 s: a common offset of the clock or distance axis, not misreads.
 
 Frames, features, pose

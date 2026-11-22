@@ -46,6 +46,7 @@ Environment switches (all optional; unset = CPU):
 | `HKJC_OCR_THREADS` | OCR threads per process (cap it when running races in parallel). |
 | `HKJC_NPROC` | Worker processes per race (default: all cores). |
 | `HKJC_AVATAR_WEIGHTS` | Path to avatar-detector weights, overriding the lookup in `models/`. |
+| `HKJC_MASK` | `none` (default), `boundary=J` or `outcome`: official outcome data withheld from the reconstruction (validation still scores against the full record; CLI `--mask`). Give a masked run its own root. |
 
 Detector boxes, and so camera poses, depend slightly on the device (CPU vs CUDA on HV 06-03 R8 moves
 final paths by ≤ 0.18 m); the reference baseline is a CUDA run.
