@@ -606,7 +606,17 @@ class RaceRun:
         self.log(f"   silk: {len(rows)} detections, {len(nos)}/{len(self.info.runners)} official silks")
 
     def hud(self):
-        rows, leg = ocr.read_render_hud_cached(self.cache(), n_field=max(14, self.info.n))
+        rows, leg = ocr.read_render_hud_cached(
+            self.cache(), n_field=max(14, self.info.n), n_slots=min(8, self.info.n)
+        )
+        if np.isfinite(rows[:, 1]).sum() < self.HEALTH_CLOCK_READS:
+            # the fixed crop missed the clock (a sponsor box above it moves it down): locate it in the video,
+            # on the same frames (every CLOCK_EVERY-th render frame)
+            sel = np.arange(0, len(rows), ocr.CLOCK_EVERY)
+            loc, dy = ocr.read_clock_located(self.video(), rows[sel, 0])
+            if np.isfinite(loc).sum() > np.isfinite(rows[sel, 1]).sum():
+                rows[sel, 1] = loc
+            self.log(f"   hud: clock not at the fixed crop; located {dy:+d} px: {np.isfinite(loc).sum()} reads")
         if self.render_style() == "circle":  # no legend strip: its slots stay unread
             leg[:, 1:] = 0
         with self.out("hud.npz") as fp:
@@ -762,6 +772,8 @@ class RaceRun:
         """Video frame where the overlay race clock reads zero."""
         r = np.load(self.p("hud.npz"))["rows"]
         ok = ~np.isnan(r[:, 1])
+        if not ok.any():
+            raise RuntimeError(f"{self.info.key}: no race-clock reads (hud): the race clock has no anchor")
         return float(np.median(r[ok, 0] - FPS * r[ok, 1]))
 
     def clock_lag(self) -> float:
@@ -812,6 +824,17 @@ class RaceRun:
         with self.out("film.npz") as fp:
             np.savez(fp, markers=mk, t=tt)
         self.log(f"   film: {len(mk)} marker crossings {dict(zip(mk.tolist(), tt.round(2)))}")
+
+    LAT_GATE = 1.0  # m: detections further inside the racing rail are dropped
+
+    def fence_lat0(self, ppm: float) -> float:
+        """World px from the rail polyline to the racing rail: on straight courses the fence's measured offset
+        inside the field-edge datum (``rail.npz`` lat0_px), else 0. A "fence" more than LAT_GATE on the FIELD
+        side of the field's inner edge is another ridge (observe's gate would drop the inner horses): unmeasured,
+        0 as when no ridge is supported."""
+        z = np.load(self.p("rail.npz"))
+        lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+        return 0.0 if lat0 < -self.LAT_GATE * ppm else lat0
 
     def observe(self):
         rows, X, hist, _P = self.world_dets()
@@ -908,9 +931,12 @@ class RaceRun:
             self.log(f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m")
         # straight courses (the rails stage's decision, recorded as lat0_px): the rail polyline is the
         # field-edge datum and lat0_px the fence's measured offset inside it (rails.straight_datum)
-        lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
+        lat0 = self.fence_lat0(ppm)
+        if "lat0_px" in z.files and lat0 != float(z["lat0_px"]):
+            self.log(f"   observe: straight-course fence measured {-float(z['lat0_px']):.0f} px on the field side "
+                     "of its edge -> rejected")
         lat = (lat_px + lat0) / ppm_loc(s_px)
-        g = lat > -1.0  # nothing races inside the racing rail
+        g = lat > -self.LAT_GATE  # nothing races inside the racing rail
         rows, d, lat, hist, X = rows[g], d[g], lat[g], hist[g], X[g]
         det_idx = self._wd_idx[g]
         t = tick_s(rows[:, 0])
@@ -965,6 +991,15 @@ class RaceRun:
         votes, rank, elim, elim_n = identity.legend_votes(
             mem, T["rows"][:, 0], T["d"], leg, sorted(valid), parts=True
         )
+        listed = {int(x) for x in leg[:, 1:].ravel()} & valid
+        if not rank.any() and not elim_n.any() and listed and listed != valid:
+            # no frame tracks the whole field and the legend never lists some runner (tailed off, out of the
+            # render camera's view behind the field): frames tracking all runners but one vote, the
+            # untracked runner taken as one behind the legend
+            votes, rank, elim, elim_n = identity.legend_votes(
+                mem, T["rows"][:, 0], T["d"], leg, sorted(valid), parts=True, field=len(valid) - 1
+            )
+            self.log(f"   identify: no frame tracks the whole field -> frames tracking {len(valid) - 1} vote")
         fin, _fit = self._finish_identity(T, mem)
         fvotes = np.zeros_like(votes)
         for k, num in fin.items():
@@ -1431,6 +1466,11 @@ class RaceRun:
         import pickle
 
         obs = self.observations()
+        if not any(o.horse for o in obs):
+            raise RuntimeError(
+                f"{self.info.key}: identify numbered no tracklet (no legend, finish-camera or elimination "
+                "evidence), so no horse has a path to fuse"
+            )
         prior = fusion.Prior(width=self.info.width)
         horses = [r.no for r in self.info.runners]
         pv, assign = self._fuse(obs, horses, prior)

@@ -1,5 +1,5 @@
 """CLI: python -m hkjc.recon DATE VENUE RACE_NO [DATE VENUE RACE_NO ...] [--force a,b] [--stages a,b]
-[--mask none|boundary=J|outcome]"""
+[--mask none|boundary=J|outcome] [--root DIR]"""
 
 import argparse
 import sys
@@ -19,6 +19,7 @@ def main(argv=None):
         help="official outcome withheld from the reconstruction: none | boundary=J | outcome "
         "(default: env HKJC_MASK / HKJC_FINAL_HOLDOUT)",
     )
+    ap.add_argument("--root", default="data_cache/recon", help="run directories go under ROOT/<key>/")
     a = ap.parse_args(argv)
     if len(a.race) % 3:
         ap.error("races must be DATE VENUE RACE_NO triples")
@@ -29,9 +30,8 @@ def main(argv=None):
     for k in range(0, len(a.race), 3):
         d, v, n = a.race[k : k + 3]
         try:
-            RaceRun(race_info(d, v, int(n)), log=lambda m: print(m, flush=True), mask=mask).run(
-                stages, force
-            )
+            run = RaceRun(race_info(d, v, int(n)), root=a.root, log=lambda m: print(m, flush=True), mask=mask)
+            run.run(stages, force)
         except Exception as e:  # keep going across races
             print(f"{d} {v} {n}: FAILED {type(e).__name__}: {e}", flush=True)
             ok = False

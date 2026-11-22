@@ -11,7 +11,7 @@ from hkjc.recon import RaceRun
 run = RaceRun(race_info("20260603", "HV", 8)); run.run(); run.paths()
 ```
 
-CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force stage,...] [--mask ...]`. Stages
+CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force stage,...] [--mask ...] [--root DIR]`. Stages
 are cached under `data_cache/recon/<date>_<venue>_<no>/`; a stage is skipped when its outputs exist.
 Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `HKJC_NPROC` (workers per
 race), `HKJC_OCR_THREADS`, `HKJC_OCR_DEVICE`, `HKJC_MATCH_DEVICE`, `HKJC_AVATAR_WEIGHTS` (detector weights),
@@ -202,7 +202,14 @@ likelihood ratio in `identify`.
 
 Recognition-only OCR on fixed crops: the race clock on the film panel (every 10th frame), the render's
 odometer and its 8 legend slots (re-read when the crop changes). Race-clock origin:
-`clock_f0 = median(frame − 25·clock)`.
+`clock_f0 = median(frame − 25·clock)`. On some Happy Valley broadcasts a sponsor box above the clock pushes it ~45 px below the
+fixed crop (HV 2023-10-18 R8, HV 2024-10-16 R2): when the fixed crop gives fewer than 3 clock reads,
+`ocr.read_clock_located` re-reads the same frames with the crop shifted vertically (−16…+96 px, step 4) and keeps the
+centre of the widest run of shifts whose reads agree on the clock zero (within 2 frames); on HV 2023-10-18 R8 the
+reads agree to ±0.25 frame. With no clock read at all, the stages that need the clock zero stop with "no race-clock
+reads". A field of N < 8 spreads its N legend slots about the same centre at a wider pitch (digit spacing 120 px for
+7 runners, 133 px for 6 on the 945 px panel); the slot crops follow the field size (`ocr._legend_slot_x`), fields of
+8+ unchanged (ST 2026-03-01 R7, 6 runners: each slot read in 96–98 % of frames).
 
 ### rails
 
@@ -224,7 +231,10 @@ straights ≤ 0.28), else the race's handedness (`rails.inner_side`). On straigh
 mosaic shows the fence only at d ≈ 400–550, so `rails.straight_datum` makes the field's inner-edge scaffold the
 rail and adds a measured per-race fence offset `lat0_px` (median over the longest supported DP run: 111, 111,
 61 px on the three development straights). Straight-course lateral is pack-edge-relative plus that constant;
-pack-to-fence drift (up to ~1.8 m on ST 06-07 R8) is not modelled.
+pack-to-fence drift (up to ~1.8 m on ST 06-07 R8) is not modelled. A fence measured more than 1 m (observe's inside-the-rail tolerance) on
+the field side of the inner edge is another ridge and counts as unmeasured (`lat0_px` 0): on ST 2025-04-13 R1 it sat
+1.4 m inside the field while the real rail runs along the inner edge, and the gate dropped the inner horse on 410 of
+480 frames.
 
 `rails.movable_rail_check` moves the rail out when a supported ridge sits at the course-table gap toward the
 field and the innermost horses are still outside it (the extracted ridge was the fixed rail). Painted markers
@@ -352,7 +362,10 @@ at the line (sd = robust spread / √n, floor 15 px).
 votes for legend slot r, and ranks 9+ get set-valued elimination evidence ("one of the N − 8 unlisted
 numbers"). It takes the runners' saddlecloth numbers, so withdrawn numbers (gaps) neither block the whole-field
 test nor enter the unlisted set (HV 04-15 R6: #2 and #4 withdrawn, no slot
-votes for either). The finish camera names tracklets by 1D registration
+votes for either). When no frame tracks the whole field and the legend never lists some runner (a horse tailed off out of
+the render camera's view: HV 2024-04-17 R7 #7, ST 2025-05-10 R6 #9), frames tracking all runners but one vote, the
+untracked runner taken as one behind the legend; `fuse_video` stops with "identify numbered no tracklet" if identify
+numbers nothing. The finish camera names tracklets by 1D registration
 (`finishcam.identity_match`) of their line crossings to `t_w + gap/C`, scanning C ± 25 % around the ruler
 prior; a name needs residual < 0.08 s with every other prediction ≥ max(2× residual, 0.15 s) away, and adds
 40 slot votes. Circle render: each confident disc-number read (OCR confidence ≥ 0.6, a runner's number) adds
