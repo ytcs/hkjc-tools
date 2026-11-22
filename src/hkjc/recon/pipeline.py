@@ -89,6 +89,10 @@ OUTPUTS = {
     "validate": ["validation.json"],
 }
 
+# stages that read the official outcome (through the mask); they and their consumers depend on the mask
+READS_OUTCOME = ("fuse_final",)
+MASK_FILE = "mask.txt"  # the mask behind a run dir's outcome-dependent artifacts; absent = none
+
 
 # stage -> the stages whose artifacts it reads (directly or through the helpers it calls)
 DEPS = {
@@ -171,7 +175,7 @@ class RaceRun:
     through ``self.info``, the masked view: pre-race facts plus the official outcome records ``mask``
     leaves visible (default: ``Mask.from_env()``, i.e. ``HKJC_MASK`` / ``HKJC_FINAL_HOLDOUT``; no mask
     withholds nothing). A masked run writes ``fuse_final``/``validate`` artifacts like any other: give it
-    its own ``root``."""
+    its own ``root``: ``run`` refuses a dir whose outcome-dependent artifacts were made under another mask."""
 
     def __init__(
         self, info: RaceInfo, root: str | Path = "data_cache/recon", log=print, mask: Mask | None = None
@@ -232,10 +236,34 @@ class RaceRun:
         done = self.done_set()
         return [st for st in stages if st not in done or st in forced]
 
+    def outcome_stages(self) -> set:
+        """READS_OUTCOME and every stage depending on one of them (transitively)."""
+        dep = set(READS_OUTCOME)
+        for st in STAGES:
+            if any(d in dep for d in DEPS[st]):
+                dep.add(st)
+        return dep
+
+    def mask_guard(self, todo):
+        """One run dir holds one mask's outcome-dependent artifacts: never reuse or overwrite them under
+        another mask. Records a non-empty mask before any outcome-dependent stage runs."""
+        rec = self.p(MASK_FILE)
+        have = rec.read_text().strip() if rec.exists() else "none"
+        dep = self.outcome_stages()
+        if have != str(self.mask) and any(self.p(o).exists() for st in dep for o in OUTPUTS[st]):
+            raise ValueError(f"{self.info.key}: {self.dir} holds artifacts made under mask '{have}', this run's "
+                             f"mask is '{self.mask}': give the run its own root")
+        if dep & set(todo):
+            if self.mask:
+                rec.write_text(f"{self.mask}\n")
+            elif rec.exists():
+                rec.unlink()
+
     def run(self, stages=STAGES, force=()):
         import multiprocessing as mp
 
         todo = self.plan(stages, force)
+        self.mask_guard(todo)
         bg, launched, finished = {}, set(), set()
 
         def launch(st):

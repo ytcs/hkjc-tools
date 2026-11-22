@@ -201,3 +201,22 @@ def test_recon_reads_outcome_only_through_the_masked_view():
         if pat.search(line)
     ]
     assert hits == ["self.truth = info", "res = _v.validate(self, self.truth)"]
+
+
+def test_run_dir_refuses_artifacts_of_another_mask(tmp_path):
+    info = _info()
+    plain = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask())
+    assert plain.outcome_stages() == {"fuse_final", "validate"}
+    plain.p("paths.parquet").write_bytes(b"x")  # unmasked product
+    masked = RaceRun(info, root=tmp_path, log=lambda *a: None, mask=Mask(outcome=True))
+    with pytest.raises(ValueError, match="own root"):
+        masked.mask_guard(["fuse_final"])
+    plain.mask_guard(["fuse_final"])  # same mask: fine, and no record for the empty mask
+    assert not plain.p("mask.txt").exists()
+    other = tmp_path / "masked"
+    m2 = RaceRun(info, root=other, log=lambda *a: None, mask=Mask(boundary=1))
+    m2.mask_guard(["fuse_final", "validate"])
+    assert m2.p("mask.txt").read_text().strip() == "boundary=1"
+    m2.p("paths.parquet").write_bytes(b"x")
+    with pytest.raises(ValueError):
+        RaceRun(info, root=other, log=lambda *a: None, mask=Mask()).mask_guard(["validate"])

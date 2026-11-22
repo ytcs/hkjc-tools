@@ -26,7 +26,8 @@ index is the finish, which also withholds finish times and placings); `Mask(outc
 official outcome data (results, finish times, placings, sectionals, running positions). Select it with
 `RaceRun(info, mask=...)`, CLI `--mask none|boundary=J|outcome`, or env `HKJC_MASK` (`HKJC_FINAL_HOLDOUT=j`
 is an alias for `boundary=j`). A masked run writes `paths.parquet` and `validation.json` like any other, so
-give it its own `root`.
+give it its own `root`: the run dir records a non-empty mask in `mask.txt`, and a run refuses a dir whose
+`fuse_final`/`validate` artifacts were made under another mask.
 
 Race identifiers below are `venue MM-DD Rn` (2026 meetings), e.g. ST 05-31 R1 is Sha Tin,
 2026-05-31, race 1.
