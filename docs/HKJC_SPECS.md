@@ -198,10 +198,9 @@ dividend_per_unit(combo) = net_pool × winning_share(combo) / stakes_on(combo)
 - **Rebates:** a ticket (cash, card, eWallet) or betline (Telebet, online) that loses HK$10,000 or
   more on Win, Place, Quinella or Quinella Place (local and overseas races; not outbound commingled
   pools; All-Up legs at the losing leg's rate) gets a percentage of the losing amount back (HKJC
-  rebate page, special.hkjc.com betting-info / racing / beginners-guide / rebate). The page shows the
-  rates as an image; HKJC's older betting guide lists 10% Win/Place and 12% Quinella/Quinella Place
-  (unconfirmed for the current season). Model it as negative takeout on the rebated fraction, per
-  pool and per betline.
+  rebate page, special.hkjc.com betting-info / racing / beginners-guide / rebate): local races 10%
+  Win/Place, 12% Quinella/Quinella Place (overseas Win/Place 6% in HKJC's older guide, unconfirmed).
+  Model it as negative takeout on the rebated fraction, per pool and per betline.
 
 ## 7. Jackpot & carryover mechanics
 
