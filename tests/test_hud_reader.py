@@ -78,3 +78,10 @@ def test_hud_reads_equal_per_frame_reads(monkeypatch):
     # the clock: video-locked, every CLOCK_EVERY-th frame, NaN between
     assert rows[0, 1] == 0.0 and np.isnan(rows[1:, 1]).all()
     assert rows[:, 0].tolist() == cache.idx.tolist()
+
+
+def test_parse_legend_ignores_non_ascii_digits():
+    from hkjc.recon.ocr import _parse_legend
+
+    row = _parse_legend([("④", 0.99), ("1④2", 0.99), ("7", 0.99)], n_field=14)
+    assert list(row[:3]) == [0, 12, 7]

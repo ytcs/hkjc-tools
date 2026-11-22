@@ -122,7 +122,7 @@ def _legend_slot_crops(panel, n_slots: int = 8) -> list:
 def _parse_legend(res, n_field: int = 14) -> np.ndarray:
     row = np.zeros(8, int)
     for k, (txt, conf) in enumerate(res):
-        dg = "".join(ch for ch in txt if ch.isdigit())
+        dg = "".join(ch for ch in txt if "0" <= ch <= "9")  # ASCII only: str.isdigit() admits "④", which int() rejects
         if dg and conf > 0.6 and 1 <= int(dg) <= n_field:
             row[k] = int(dg)
     return row
