@@ -703,9 +703,10 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
   post-finish ticks (in the 3 s after the winner's crossing, 96 of 780 on-grid frames kept over 26 races), but
   keeping them gains no crossing: fusion does not label the stragglers' detections. The blind near-line cost also
   removes correctly placed unread back markers.
-- **Render geometry.** The render draws the Sha Tin B fixed rail ~2.1 m further in than the course table (6.6 m
-  vs 4.5 m), and the B racing rail ~6.5 m out from the A rail against the official 4.5 m, failing the
-  lateral-scale gate there. Some races carry a common-mode render scale error between boundaries (HV 04-22 R9:
+- **Render geometry.** On three Sha Tin course settings the render draws the fixed rail at a constant offset from
+  the course table's racing-to-fixed rail gap: A+3 +0.83 m, B +2.24 m (6.7 m vs 4.5 m), B+2 +1.19 m (measured minus
+  table), the same in every season and both render styles, so `lateral_scale_err` fails there although the lateral
+  scale itself is consistent; the B racing rail also sits ~6.5 m out from the A rail against the official 4.5 m. Some races carry a common-mode render scale error between boundaries (HV 04-22 R9:
   +0.44 s at 800 m, −0.17 s at the line) that the film window is too short to measure.
 - **Leader timing.** The render's odometer is late early in long Sha Tin races (up to ~1 s, both render eras)
   and early on others; in the 0–400 m zone the tick px/m is 1.3–4.8 % above the paint px/m; cause unknown. Beyond
