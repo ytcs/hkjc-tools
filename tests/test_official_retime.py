@@ -53,3 +53,33 @@ def test_a_withheld_boundary_is_not_retimed():
     q = run._official_retime({1: p})[0][1]
     assert abs(crossing(q.t, 1200.0 - q.s, None, 400.0) - 47.0) > 0.05  # not snapped onto the official time
     assert abs(crossing(q.t, 1200.0 - q.s, None, 0.0) - 70.5) < 5e-3  # the others are
+
+
+def test_retime_adds_no_speed_jump_at_the_boundaries():
+    secs = pl.DataFrame({"runner": [1, 1, 1], "section": [1, 2, 3], "section_time": [24.0, 23.0, 23.5]})
+    res = pl.DataFrame({"HorseNo": [1], "Pla": [1], "FinishTime": [70.5]})
+    info = SimpleNamespace(sectionals=secs, distance=1200.0, results=res)
+    t = np.round(np.arange(0, 80.0001, 0.05), 2)
+    p = Path(1, t, 15.5 * t, np.full_like(t, 3.0), np.full_like(t, 0.2), np.full_like(t, 0.3), np.ones_like(t))
+    run = RaceRun.__new__(RaceRun)
+    run.info = MaskedRace(info)
+    q = run._official_retime({1: p})[0][1]
+    v = np.gradient(q.s, q.t)
+    k = q.t <= 71.0  # beyond: the warped path runs past the input's end
+    # a piecewise-linear warp jumps ~0.7 m/s at 800 m / 400 m (section rates 0.930 / 0.891 / 0.911);
+    # a smooth one changes speed by < 0.005 m/s per 0.05 s node (the warp's curvature), boundaries included
+    assert np.max(np.abs(np.diff(v[k]))) < 5e-3
+
+
+def test_monotone_warp_is_strictly_increasing_and_c1():
+    rng = np.random.default_rng(0)
+    for _ in range(50):
+        n = rng.integers(2, 7)
+        kt = np.cumsum(rng.uniform(0.05, 30.0, n))
+        kw = kt[0] + np.concatenate([[0.0], np.cumsum(rng.uniform(0.01, 40.0, n - 1))])
+        t = np.linspace(kt[0] - 5, kt[-1] + 5, 20001)
+        w = RaceRun._monotone_warp(kt, kw, t)
+        assert np.all(np.diff(w) > 0)
+        assert np.allclose(RaceRun._monotone_warp(kt, kw, kt), kw)
+        dw = np.diff(w) / np.diff(t)
+        assert np.max(np.abs(np.diff(dw))) < 0.05 * np.max(dw)  # no slope jump at a knot
