@@ -254,7 +254,9 @@ before a clock zero that matches the official start).
 
 On the 196 held-out races the green band finds no opening on 14. The teal band recovers 8 of them: 3 late (lags
 7.4–10.4 frames) and 5 synced, each onset within about a frame of the first door motion seen in the frames. The
-other 6 stay `none`. On 5 the start film is not on the overlay clock's timeline: the clock zero extrapolates to
+late lags (0.30, 0.29, 0.42 s) match those races' video-only whole-race errors before the fix (field-median
+sectional error −0.51, −0.30, −0.39 s). The 5 synced races, all 2025/26 or later, already had errors of −0.01 to
++0.09 s. The other 6 stay `none`. On 5 the start film is not on the overlay clock's timeline: the clock zero extrapolates to
 frames 0–2.5, but the doors open 25–60 frames later (on two of them the film after the opening is visibly slow
 motion). The sixth (HV 2026-01-14 R8) is filmed from behind the stalls, so no door band is visible. On 50
 held-out races where the green band works, the teal band alone also finds an opening on every race. Its onset is
