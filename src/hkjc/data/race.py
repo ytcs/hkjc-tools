@@ -1,13 +1,19 @@
 """One race's facts, bundled: meeting/course geometry, runners (number, brand id, draw) and the
 official outcome. Pre-race facts (distance, course, draw, silks) may feed any product; the official
 outcome (placings, times, sectionals, running positions) must not feed the video-only product (the
-final product may use it)."""
+final product may use it).
+
+The reconstruction reads the race through a :class:`MaskedRace`: the pre-race facts plus the official
+outcome records a :class:`Mask` leaves visible (accuracy is measured on what the mask withholds).
+Validation scores against the full :class:`RaceInfo`."""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 
 from .tracks import TrackGeometry, track_for
@@ -53,6 +59,129 @@ class RaceInfo:
     @property
     def n(self) -> int:
         return len(self.runners)
+
+
+def official_boundaries(info) -> tuple[list, dict]:
+    """Full official record: (distance-to-go at each sectional end, {runner: cumulative times there})."""
+    sec = info.sectionals
+    nsec = sec["section"].n_unique()
+    bnd = [400.0 * (nsec - 1 - k) for k in range(nsec)]  # distance-to-go at section ends
+    w = sec.pivot(index="runner", on="section", values="section_time").sort("runner")
+    cols = [c for c in w.columns if c != "runner"]
+    cum = np.cumsum(w.select(cols).to_numpy(), axis=1)
+    return bnd, dict(zip(w["runner"].to_list(), cum))
+
+
+def official_finish(info) -> dict:
+    """Full official record: {horse: finish time s} (results FinishTime), in result order."""
+    out = {}
+    for h, ft in info.results.select(["HorseNo", "FinishTime"]).iter_rows():
+        if h is not None and ft is not None and np.isfinite(ft):
+            out[int(h)] = float(ft)
+    return out
+
+
+def official_order(info) -> list:
+    """Full official record: horse numbers in placing order (the results' row order)."""
+    return [int(x) for x in info.results["HorseNo"].to_list() if x is not None]
+
+
+@dataclass(frozen=True)
+class Mask:
+    """Official outcome information withheld from the reconstruction.
+
+    ``boundary=j``: the cumulative official time at sectional boundary j (0 = the first section end;
+    the last index is the finish, which also withholds the finish times and placings).
+    ``outcome=True``: every official outcome record (results, finish times, placings, sectionals,
+    running positions); pre-race facts (distance, course, draw, runners, silks) stay visible.
+    ``Mask()`` withholds nothing. Spec strings (``parse``, CLI ``--mask``, env ``HKJC_MASK``):
+    ``none``, ``boundary=J``, ``outcome``."""
+
+    boundary: int | None = None
+    outcome: bool = False
+
+    def __post_init__(self):
+        if self.boundary is not None and (self.outcome or not isinstance(self.boundary, int) or self.boundary < 0):
+            raise ValueError(f"invalid mask {self!r}: boundary is a non-negative index, exclusive of outcome")
+
+    def __bool__(self) -> bool:
+        return self.outcome or self.boundary is not None
+
+    def __str__(self) -> str:
+        return "outcome" if self.outcome else "none" if self.boundary is None else f"boundary={self.boundary}"
+
+    @classmethod
+    def parse(cls, spec: str | None) -> Mask:
+        s = (spec or "").strip().lower()
+        if s in ("", "none"):
+            return cls()
+        if s == "outcome":
+            return cls(outcome=True)
+        if s.startswith("boundary="):
+            return cls(boundary=int(s.split("=", 1)[1]))
+        raise ValueError(f"mask spec {spec!r}: expected none | boundary=J | outcome")
+
+    @classmethod
+    def from_env(cls) -> Mask:
+        """``HKJC_MASK`` (a spec string); ``HKJC_FINAL_HOLDOUT=j`` is an alias for ``boundary=j``.
+        Setting both is an error."""
+        spec, hold = os.environ.get("HKJC_MASK"), os.environ.get("HKJC_FINAL_HOLDOUT")
+        if spec is not None and hold is not None:
+            raise ValueError("set HKJC_MASK or HKJC_FINAL_HOLDOUT, not both")
+        return cls(boundary=int(hold)) if hold is not None else cls.parse(spec)
+
+
+class MaskedRace:
+    """The race as the reconstruction sees it: every pre-race fact of ``info`` (``PRE_RACE``) and the
+    official outcome only through ``official_boundaries`` / ``official_finish`` / ``official_order``,
+    with what ``mask`` withholds removed. It has no ``results`` / ``sectionals``."""
+
+    PRE_RACE = (
+        "date", "venue", "race_no", "distance", "course", "surface", "going", "race_class",
+        "runners", "key", "geometry", "width", "n",
+    )
+
+    def __init__(self, info, mask: Mask = Mask()):
+        self._info = info
+        self.mask = mask
+
+    def __getattr__(self, name):
+        if name in MaskedRace.PRE_RACE:
+            return getattr(self._info, name)
+        raise AttributeError(f"MaskedRace has no {name!r}: official outcome is read through its accessors")
+
+    def _finish_withheld(self) -> bool:
+        """The outcome, or the last boundary (the finish), is withheld."""
+        j = self.mask.boundary
+        return self.mask.outcome or (j is not None and j == self._info.sectionals["section"].n_unique() - 1)
+
+    def official_boundaries(self) -> tuple[list, dict]:
+        """(distance-to-go at each sectional end, {runner: cumulative official times}); a withheld
+        boundary is NaN for every runner; ([], {}) when the outcome is withheld."""
+        if self.mask.outcome:
+            return [], {}
+        bnd, cum = official_boundaries(self._info)
+        j = self.mask.boundary
+        if j is not None and j < len(bnd):
+            hidden = {}
+            for h, c in cum.items():
+                c = np.array(c, dtype=float)
+                c[j] = np.nan
+                hidden[h] = c
+            cum = hidden
+        return bnd, cum
+
+    def official_finish(self) -> dict:
+        """{horse: official finish time s}; empty when the outcome or the finish boundary is withheld."""
+        if self._finish_withheld():
+            return {}
+        return official_finish(self._info)
+
+    def official_order(self) -> list:
+        """Horse numbers in official placing order; empty when the outcome or the finish is withheld."""
+        if self._finish_withheld():
+            return []
+        return official_order(self._info)
 
 
 def _cached(path: Path, fetch):

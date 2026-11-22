@@ -10,9 +10,9 @@
 Other HKJC sources (racecards, live odds/pools, trackwork, barrier trials, dividends, horse form): fetch recipes in
 docs/HKJC_DATA.md and docs/HKJC_SPECS.md.
 """
-from .race import RaceInfo, Runner, race_info
+from .race import Mask, MaskedRace, RaceInfo, Runner, race_info
 from .tracks import TrackGeometry, track_for
 from .video import FEEDS, download_race, download_replay, replay_path, replay_url
 
-__all__ = ["RaceInfo", "Runner", "race_info", "TrackGeometry", "track_for", "FEEDS",
+__all__ = ["Mask", "MaskedRace", "RaceInfo", "Runner", "race_info", "TrackGeometry", "track_for", "FEEDS",
            "download_race", "download_replay", "replay_path", "replay_url"]

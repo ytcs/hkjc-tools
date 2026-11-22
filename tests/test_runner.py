@@ -103,15 +103,12 @@ def test_is_straight_survives_a_fold_back():
     assert not rails.is_straight(tangents(folded))
 
 
-def test_final_holdout_withholds_the_boundary_from_metric_bias(monkeypatch):
-    """HKJC_FINAL_HOLDOUT=j removes boundary j from the shared render-metric bias too (a held-out
+def test_withheld_boundary_is_withheld_from_metric_bias():
+    """Mask(boundary=j) removes boundary j from the shared render-metric bias too (a held-out
     boundary must not set the bias it is scored against)."""
-    from types import SimpleNamespace
-
-    import numpy as np
     import polars as pl
 
-    from hkjc.recon.pipeline import RaceRun
+    from hkjc.data import Mask, MaskedRace
 
     secs = pl.DataFrame(
         {
@@ -123,11 +120,10 @@ def test_final_holdout_withholds_the_boundary_from_metric_bias(monkeypatch):
     info = SimpleNamespace(sectionals=secs, distance=1200.0)
     t = np.linspace(0, 80, 801)
     paths = {h: SimpleNamespace(t=t, s=15.0 * t, sd_s=np.full_like(t, 0.2)) for h in (1, 2, 3)}
-    run = SimpleNamespace(info=info, log=lambda *a: None)
-    monkeypatch.delenv("HKJC_FINAL_HOLDOUT", raising=False)
+    run = SimpleNamespace(info=MaskedRace(info), log=lambda *a: None)
     sb, _b = RaceRun._metric_bias(run, paths)
     assert len(sb) == 3
-    monkeypatch.setenv("HKJC_FINAL_HOLDOUT", "1")
+    run.info = MaskedRace(info, Mask(boundary=1))
     sb1, _b1 = RaceRun._metric_bias(run, paths)
     assert len(sb1) == 2 and 1200.0 - 400.0 not in sb1.tolist()
 
