@@ -766,6 +766,8 @@ Each line: the approach, then the measurement that decided it. "Removed untested
 without a verdict.
 
 Fusion, identity
+- Relaxing the official re-timing's rate to 1 beyond the last official time (time constant 1 s) instead of keeping the last section's rate: held-out finish (196 races, finish withheld) median +1.6 %, p90 −2.2 % on top of the final grid running past the video-only grid: below the 5 % adoption threshold.
+- The race clock's zero from the official times in the final product (video clock offset = median field crossing delay at the visible boundaries, fused in the video clock, metric bias measured in it): held-out first boundary 0.131 → 0.132 s, interior 0.114 → 0.113 s (196 races); the official points already absorb a whole-race clock offset.
 - Official times reaching the final paths only through the C1 re-timing (out of the path fuses; still in the skeleton and the final identity pass): removes the boundary speed kinks (interior jump median 0.087 → 0.006 m/s on 5 races) but worsens the held-out boundary on 196 races (one boundary withheld per race: interior median 0.114 → 0.119 s, p90 0.287 → 0.307; finish median 0.135 → 0.160): the official points inside the fuse carry real information to neighbouring boundaries.
 - A constant metric bias (instead of interpolating it between official boundaries) against the boundary speed kinks: interior jump median 0.087 → 0.141 m/s on 5 races.
 - A 0.6 m margin for "ahead of every listed horse" in the detection-level EM (`assoc.FLOOR_EPS`): failed; 4, 8 and 16 m are equivalent (8 m kept).
