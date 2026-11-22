@@ -285,23 +285,6 @@ def _speed_consistent(got, vmin=12.0, vmax=22.0):
     return keep
 
 
-def leader_finish(film_t, *, vmin=12.0, vmax=22.0):
-    """Extrapolate the film leader to the line from the last two markers (constant speed) ->
-    (t_line, speed) or None. BIASED EARLY (leaders slow in the last 100 m, ~0.3-0.6 s), so use it
-    only as a physical bound."""
-    mk = sorted(film_t)
-    if len(mk) < 2:
-        return None
-    a, b = mk[0], mk[1]  # nearest the line, next
-    dt = film_t[a] - film_t[b]
-    if dt <= 0:
-        return None
-    v = (b - a) / dt
-    if not (vmin <= v <= vmax):
-        return None
-    return film_t[a] + a / v, v
-
-
 FILM_MIN = 3  # crossings needed to anchor the metric on the film (else: the render-paint pin)
 
 

@@ -3,7 +3,7 @@
 Each check is a one-line physical or evidential invariant, computed per race and returned with
 violation locations:
 
-RAIL (after ``rails``; BLOCKING -- downstream runs must not start on a rail that fails these)
+RAIL (after ``rails``; ``rail_blocking`` lists the violations that flag the rail as unusable)
   rail_off_map     rail stations inside the observed span where the mosaic has no pixels (a rail
                    cannot leave the image)
   markers          painted-marker grid found (>= 3 markers)
@@ -24,7 +24,9 @@ IDENTITY / FUSION (after ``fuse``)
   ghost_crossing   horses whose path crosses the line TIGHTLY (sd < 1.5 m) although their own
                    detections end > 3 s earlier and the finish camera did not read them
   finish_order     clear finish-camera order pairs (gap > 150 px) the fused crossings invert
-Thresholds are first measured values; they are to be replaced by null-derived ones.
+Thresholds are measured values. The pipeline writes the results (with ``rail_blocking``) to
+``audit.json`` beside the validation gates and logs any rail-blocking violations; the audit never
+fails or stops a run.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ FIELD_GAP_M = 4.0
 SLIDE_MS = 0.8
 SD_TIGHT = 1.5
 FLOOR_M = 8.0  # = assoc.FLOOR_EPS
-# contiguous off-map stations that block (~10 m): accepted rails reach 44, a known bad bulge 699
+# contiguous off-map stations that flag the rail (~10 m): accepted rails reach 44, a known bad bulge 699
 OFF_MAP_RUN = 100
 
 
@@ -208,7 +210,7 @@ def audit(run, stages=("rail", "field", "identity")) -> dict:
 
 
 def rail_blocking(res) -> list:
-    """Rail violations that must block downstream runs (BLOCKING list; empty = pass)."""
+    """Rail violations that flag the rail as unusable (list of messages; empty = pass)."""
     bad = []
     runs = [b - a + 1 for a, b in res.get("rail_off_map_at", [])]
     if runs and max(runs) > OFF_MAP_RUN:

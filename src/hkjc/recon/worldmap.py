@@ -47,14 +47,6 @@ class Mosaic:
     def image(self) -> np.ndarray:
         return (self.acc / np.maximum(self.cnt, 1e-3)[..., None]).clip(0, 255).astype(np.uint8)
 
-    def to_px(self, xy):
-        """world px -> mosaic px"""
-        xy = np.atleast_2d(xy)
-        return (xy - [self.x0, self.y0]) * self.sc
-
-    def to_world(self, uv):
-        return np.atleast_2d(uv) / self.sc + [self.x0, self.y0]
-
 
 def bounds_of(G, shape, pad: float = 50) -> tuple:
     h, w = shape

@@ -88,10 +88,6 @@ class Match:
     n_inl: int
     resid: float  # median inlier residual (px)
 
-    @property
-    def scale(self):
-        return float(np.hypot(self.S[0, 0], self.S[1, 0]))
-
 
 def match(
     a: Feats,

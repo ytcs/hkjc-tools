@@ -36,16 +36,6 @@ class PoseGraph:
         return np.c_[xs.ravel(), ys.ravel()]
 
 
-def _p2m(p):
-    """params (lnS, th, tx, ty) -> 3x3"""
-    return register.sim_matrix(np.exp(p[0]), p[1], p[2], p[3])
-
-
-def _m2p(M):
-    s = np.hypot(M[0, 0], M[1, 0])
-    return np.array([np.log(s), np.arctan2(M[1, 0], M[0, 0]), M[0, 2], M[1, 2]])
-
-
 def chain(steps: list) -> np.ndarray:
     """Compose consecutive panel_{k-1}->panel_k similarities into world<-panel_k poses."""
     K = len(steps)

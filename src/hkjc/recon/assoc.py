@@ -24,14 +24,14 @@ RANK_EPS = 0.6  # m: a detection is "clearly ahead" if > RANK_EPS m closer to th
 RANK_COST = 50.0
 RANK_SOFT = 9.0  # 3 sigma: confident-rank mismatch with the legend
 def _collapse(a):
-    """v2 silk signature -> hue (pastel + vivid) + white + dark."""
+    """Silk signature -> hue (pastel + vivid) + white + dark."""
     nh = (a.shape[-1] - 2) // 2
     return np.concatenate([a[..., :nh] + a[..., nh : 2 * nh], a[..., 2 * nh :]], -1)
 
 
 RANK_ATTR = 10.0  # cost cap: final-stretch detection at a listed horse's legend rank
 RANK_ATTR_M = 100.0  # m before the line where the rank attraction applies
-FLOOR_EPS = 8.0  # m: 'ahead of every listed horse' margin (4/8/16 m equivalent; 0.6 m failed)
+FLOOR_EPS = 8.0  # m: 'ahead of every listed horse' margin
 
 
 def _legend_at(legend_rows):

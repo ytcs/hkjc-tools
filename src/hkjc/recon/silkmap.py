@@ -1,4 +1,4 @@
-"""Learned OFFICIAL-silk -> RENDER-silk appearance map (collapsed v2 signature, ``assoc._collapse``).
+"""Learned OFFICIAL-silk -> RENDER-silk appearance map (collapsed silk signature, ``assoc._collapse``).
 
 The render draws silks on small top-down avatars, desaturated and lit differently from the official
 silk images. This ridge map (alpha 1, with intercept) is fitted on legend-confident tracklets (top

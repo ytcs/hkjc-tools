@@ -143,37 +143,3 @@ def summary_line(key, res) -> str:
         f"[{mark[g['winner_ok']]}]  behind-winner {res.get('behind_winner_mae', float('nan')):.3f}s "
         f"[{mark[g['behind_winner_mae']]}]" + extra
     )
-
-
-def report(
-    root="data_cache/recon",
-    dev=("20260603_HV_8", "20260603_HV_3", "20260520_HV_2", "20260527_HV_3"),
-):
-    """Markdown table of every race's validation.json under ``root`` (dev races marked)."""
-    import json
-    from pathlib import Path
-
-    def f(v, fmt):
-        return "—" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, fmt)
-
-    mk = {True: "✅", False: "❌", None: "·"}
-    rows = [
-        "| race | set | leader s | sectional s (cov) | finish ρ (n) | winner | behind s | paths short | lateral scale m | gates |",
-        "|---|---|---|---|---|---|---|---|---|---|",
-    ]
-    for p in sorted(Path(root).glob("*/validation.json")):
-        r = json.loads(p.read_text())
-        g = r["gates"]
-        n_ok = sum(v is True for v in g.values())
-        n_all = sum(v is not None for v in g.values())
-        rows.append(
-            f"| {p.parent.name} | {'dev' if p.parent.name in dev else 'held-out'} "
-            f"| {f(r['leader_timing_mae'], '.3f')} {mk[g['leader_timing_mae']]} "
-            f"| {f(r['sectional_mae'], '.3f')} ({f(r['sectional_coverage'], '.0%')}) {mk[g['sectional_mae']]}{mk[g['sectional_coverage']]} "
-            f"| {f(r.get('finish_rho'), '.2f')} ({r['finish_n']}) {mk[g['finish_rho']]} "
-            f"| {r['winner']['reconstructed']}/{r['winner']['official']} {mk[g['winner_ok']]} "
-            f"| {f(r.get('behind_winner_mae'), '.3f')} {mk[g['behind_winner_mae']]} "
-            f"| {r['horses_with_path_short']} {mk[g['horses_with_path_short']]} "
-            f"| {f(r.get('lateral_scale_err'), '.2f')} {mk[g['lateral_scale_err']]} | {n_ok}/{n_all} |"
-        )
-    return "\n".join(rows)

@@ -194,7 +194,7 @@ def split_by_number(members, t, num):
 def split_by_appearance(members, t, F, *, thr=SPLIT_TV, min_n=40):
     """Split tracker tracklets at APPEARANCE change points (identity switches the motion tracker
     cannot see, e.g. in the render's camera swings). Binary segmentation on the tracklet's per-
-    detection collapsed v2 silk signatures ``F`` (rows = detections): the split maximising the
+    detection collapsed silk signatures ``F`` (rows = detections): the split maximising the
     total-variation distance between the left and right mean signatures (>= ``min_n`` silk-bearing
     detections per side) is taken while that distance exceeds ``thr``; recursive. Catches switches
     between distinct silks, not between similar ones. Returns new members."""

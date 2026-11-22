@@ -51,7 +51,7 @@ def test_force_reruns_consumers(tmp_path):
     R.p("frames.bin").unlink()
     assert R.plan() == ["frames"]
     R.p("frames.bin").touch()
-    # a stage that never ran (a new stage, e.g. start) re-runs every consumer: their artifacts predate it
+    # a stage that never ran (e.g. start) re-runs every consumer: their artifacts predate it
     R.p("start.npz").unlink()
     assert R.plan() == ["start", "observe", "identify", "fuse_video", "fuse_final", "validate"]
     # ... but only when it is requested
