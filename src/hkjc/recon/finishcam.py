@@ -10,7 +10,7 @@ Per horse: the cloth's x over unique-frame index u is ~linear across the line (c
 ~1 s), so a robust line fit gives the index u* at which it crosses the finish line. The cloth sits a
 near-constant distance behind the nose for every horse, so cloth-crossing gaps = nose-crossing gaps
 (speed differences of ~1 m/s shift this by < 0.01 s). Real time per unique frame (k) and the absolute
-offset are not observable here; they are fitted against the other feeds' arrival times (``calibrate``).
+offset are not observable here; they are fitted against the other feeds' arrival times (``anchor``).
 """
 
 from __future__ import annotations
@@ -542,24 +542,6 @@ def read_numbers(sc) -> set:
     R = np.asarray(sc["reads"])
     nreads = {n: len(T[n][0]) for n in T}
     return {int(n) for n in T if not any(_digit_drop(n, m, R, T, nreads) for m in T)}
-
-
-def calibrate(gaps, ref_behind, *, c_bounds=(200.0, 6000.0)):
-    """Fit C (px per second = speed x scale) so that gap_px / C matches reference time-behind-winner
-    {num: s} from another feed (robust, through the origin). Returns (C, {num: seconds behind})."""
-    nums = [
-        n
-        for n in gaps
-        if n in ref_behind
-        and np.isfinite(gaps[n])
-        and np.isfinite(ref_behind[n])
-        and ref_behind[n] > 0.02
-    ]
-    if len(nums) < 3:
-        return None
-    ratios = np.array([gaps[n] / ref_behind[n] for n in nums])
-    C = float(np.clip(np.median(ratios), *c_bounds))
-    return C, {n: (g / C if np.isfinite(g) else np.nan) for n, g in gaps.items()}
 
 
 def anchor(gaps, t_cross, *, c_bounds=(800.0, 4000.0), c_prior=None, c_prior_rel=0.30, t_sd=0.10):

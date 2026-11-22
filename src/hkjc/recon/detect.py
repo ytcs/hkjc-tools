@@ -139,7 +139,7 @@ def silk_hist(panel, det, bins: int = 12) -> np.ndarray:
     return hist / t if t > 0 else hist
 
 
-SILK_NH = 12  # hue bins (x2: pastel / vivid) of the v2 silk feature
+SILK_NH = 12  # hue bins (x2: pastel / vivid) of the silk feature
 
 
 def _silk_bins(hsv, dark_w):
@@ -160,7 +160,7 @@ def _silk_bins(hsv, dark_w):
 
 
 def silk_feature(panel, det) -> np.ndarray:
-    """v2 silk signature of a render avatar: pastel/vivid hue bins + white + (down-weighted) dark,
+    """Silk signature of a render avatar: pastel/vivid hue bins + white + (down-weighted) dark,
     excluding turf and horse-brown pixels (in ``silk_hist`` the brown body dominated and pastel silks
     counted as white, leaving self-vs-other matching at chance)."""
     import cv2
@@ -261,11 +261,3 @@ def bgsub_blobs(panel, back, valid, *, thr=60, min_a=40, max_a=1500, merge_px=16
             merged = True
     res = [[x, y, 2.4 * np.sqrt(a), 2.4 * np.sqrt(a), 0.5, 1.0] for x, y, a in c]
     return np.array(res).reshape(-1, 6)
-
-
-def merge(yolo, bg, r=10.0):
-    """Union of YOLO and background-subtraction detections (bg blobs near a YOLO box dropped)."""
-    if len(bg) == 0 or len(yolo) == 0:
-        return np.vstack([yolo.reshape(-1, 6), bg.reshape(-1, 6)])
-    d = np.hypot(bg[:, None, 0] - yolo[None, :, 0], bg[:, None, 1] - yolo[None, :, 1]).min(1)
-    return np.vstack([yolo, bg[d > r]])

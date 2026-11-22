@@ -1,4 +1,4 @@
-"""Small parsing helpers shared by the HKJC readers (HTML tables, safe casts, date checks)."""
+"""Helpers shared by the HKJC readers: HTTP GET with retries and HKJC HTML-table parsing."""
 import time
 
 import polars as pl

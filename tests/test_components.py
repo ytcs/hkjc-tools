@@ -120,8 +120,6 @@ def test_film_marker_crossings_need_a_sweeping_line():
     # only the static stripe: nothing
     static = [dict(r, lines=[(528.0, 0, 528.0, 900, 528.0)]) for r in rows]
     assert film.crossings_from_rows(static, lambda f: 310.0, f0=0.0) == {}
-    t, v = film.leader_finish({200: 60.0, 100: 66.0})
-    assert abs(v - 100 / 6.0) < 1e-9 and abs(t - 72.0) < 1e-9
 
 
 def test_film_anchor_offset_recovers_constant():
@@ -534,7 +532,7 @@ def test_assoc_release_post_finish_frees_detections_of_a_finished_horse():
 def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count():
     """ST 04-26 R1: the legend's 3rd and 4th horses are level (detections 0.9 m apart). Counting the
     second detection as "clearly" 4th with a 0.6 m margin hard-excluded the legend's 3rd horse from
-    it; the hard part now needs 4 sigma (4.5 m) on the difference of two detections."""
+    it; the hard part needs 4 sigma (4.5 m) on the difference of two detections."""
     from hkjc.recon import assoc, fusion
 
     tg = np.arange(0.0, 2.01, 0.1)
