@@ -1603,16 +1603,16 @@ class RaceRun:
         self._write_paths(pf, "paths.parquet")
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
 
-    TIE_STEP = 0.002  # s between horses sharing an official finish time, in placing order
+    TIE_STEP = 0.002  # s between horses sharing an official finish time, in placing order (dead heats: none)
 
     def _official_finish(self) -> dict:
         """{horse: official finish time s} (empty where the mask withholds it)."""
         return self.info.official_finish()
 
     def _official_place(self, h) -> int:
-        """Index of horse ``h`` in the official result (placing order; unplaced last)."""
-        hs = self.info.official_order()
-        return hs.index(h) if h in hs else len(hs)
+        """Official placing of horse ``h`` (dead heats share one; unplaced after every placed horse)."""
+        pl_ = self.info.official_placing()
+        return pl_.get(h, max(pl_.values(), default=0) + 1)
 
     def _official_retime(self, paths):
         """FINAL product: each horse crosses the line at its official finish time (photo-finish, exact). The
@@ -1633,8 +1633,9 @@ class RaceRun:
             if h in targets and targets[h][0] and targets[h][0][-1] == 0.0 and np.isfinite(targets[h][1][-1]):
                 groups.setdefault(round(targets[h][1][-1], 2), []).append(h)
         for tie in groups.values():
-            for i, h in enumerate(sorted(tie, key=self._official_place)):
-                targets[h][1][-1] += i * self.TIE_STEP
+            places = sorted({self._official_place(h) for h in tie})
+            for h in tie:
+                targets[h][1][-1] += places.index(self._official_place(h)) * self.TIE_STEP
         out, warp = {}, {}
         for h, p in paths.items():
             if h not in targets:
