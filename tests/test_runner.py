@@ -148,3 +148,14 @@ def test_health_flags_an_unreadable_render(tmp_path):
     assert st["status"] == "unhealthy"
     assert set(st["unhealthy"]) == {"render_ticks_per_s", "markers_per_runner", "course_shape"}
     assert st["checks"]["clock_reads"]["ok"]
+
+
+def test_official_clock_offset_is_a_robust_median():
+    off = RaceRun.official_clock_offset
+    # three horses 0.48 s late against the official finish, one camera misread far off
+    cam = {1: 109.16, 2: 109.40, 3: 109.90, 4: 120.0}
+    official = {1: 109.64, 2: 109.88, 3: 110.38, 4: 110.50, 5: 111.0}
+    assert abs(off(cam, official) - 0.48) < 1e-9
+    assert off({1: 10.0, 2: 10.5}, {1: 10.5, 2: 11.0}) is None  # fewer than 3 matched horses
+    assert off({1: 10.0, 2: 10.5, 3: 11.0}, {1: 10.5, 2: float("nan"), 3: 11.5}) is None
+    assert off(cam, {}) is None  # finish withheld by the mask

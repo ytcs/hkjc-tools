@@ -1292,6 +1292,11 @@ class RaceRun:
             f"finisher #{order[0]} at t={t_w:.2f}s ({src}, {n_used} horses); "
             f"sd {min(sds.values()):.3f}..{max(sds.values()):.3f} s"
         )
+        if self._official_clock:  # fuse_final: the visible official finish times own the finish clock
+            dt = self.official_clock_offset({h: t_w + gaps[h] / C for h in sds}, self._official_clock)
+            if dt is not None:
+                t_w += dt
+                self.log(f"   finish: camera clock {dt:+.3f} s onto the official finish")
         return [
             fusion.Obs(
                 np.array([t_w + gaps[h] / C]),
@@ -1518,10 +1523,30 @@ class RaceRun:
             f"   fuse_video: {len(pv)}/{len(horses)} horses; anonymous tracklets associated {n_ass}/{n_anon}"
         )
 
+    # {horse: official finish time} while fuse_final runs: the finish camera's clock is re-registered onto it
+    _official_clock = None
+    CLOCK_MIN_HORSES = 3
+
+    @classmethod
+    def official_clock_offset(cls, t_cam: dict, official: dict):
+        """Shift (s) putting the finish camera's crossing times ``t_cam`` {horse: s} on the official clock:
+        the median of official - camera over horses with both, or None with fewer than CLOCK_MIN_HORSES."""
+        dt = [official[h] - t for h, t in t_cam.items() if np.isfinite(official.get(h, np.nan))]
+        return float(np.median(dt)) if len(dt) >= cls.CLOCK_MIN_HORSES else None
+
     def fuse_final(self):
         """FINAL product: the video-only observations + the official records (draw + sectional
         times), with the shared metric bias, a field-relative start prior and a final identity pass.
-        Its grid runs past the last official finish (else the slowest finisher ends a few cm short)."""
+        Its grid runs past the last official finish (else the slowest finisher ends a few cm short).
+        The finish camera's clock is moved onto the visible official finish times (median offset over
+        the horses with both, >= 3) in every fuse here; the camera keeps the order and the gaps."""
+        self._official_clock = self._official_finish()
+        try:
+            self._fuse_final()
+        finally:
+            self._official_clock = None
+
+    def _fuse_final(self):
         import pickle
 
         with open(self.p("fuse_video.pkl"), "rb") as f:
