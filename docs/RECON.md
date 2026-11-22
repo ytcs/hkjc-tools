@@ -713,8 +713,8 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 - **Leader timing.** The render's odometer is late early in long Sha Tin races (up to ~1 s, both render eras)
   and early on others; in the 0–400 m zone the tick px/m is 1.3–4.8 % above the paint px/m; cause unknown. Beyond
   400 m no reference exists that is neither official nor the odometer. The straights' leader is ~0.2 s early from
-  400 m (odometer/marker scale ratio 1.034–1.036). Not an OCR lag: odometer reads on every frame tick on the same
-  frames as reads behind a pixel-change test (10 races, 5 of them long Sha Tin races).
+  400 m (odometer/marker scale ratio 1.034–1.036). Not an OCR lag: on the silk render, odometer reads on every frame
+  tick on the same frames as reads behind a pixel-change test (10 races, 5 of them long Sha Tin races).
 - **Legend misreads.** A legend digit d is sometimes read as "1d" (3 → 13, 4 → 14, 1 → 11, 2 → 12) when a vertical edge
   (a distance post, the rail, a box edge) lies at the left of the slot crop; about 1 slot read in 9,000 (10 races).
 - **Detector artefacts.** The avatar detector often keeps two boxes on one horse (IoU 0.32–0.50, under NMS's
