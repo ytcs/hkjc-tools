@@ -1260,7 +1260,7 @@ class RaceRun:
         bnd, cum = _cum_official(self.info)
         hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: withhold boundary index j (held-out check)
         for h, ft in self._official_finish().items():  # runners without sectional times: the finish only
-            if h not in cum:
+            if h not in cum and not (hold is not None and int(hold) == len(bnd) - 1):
                 out.append(fusion.Obs(np.array([ft]), np.array([D]), None, self.OFFICIAL_SD, 1.0, "official",
                                       horse=h, tid=30_000 + h))
         for h, c in cum.items():
@@ -1485,13 +1485,16 @@ class RaceRun:
         bnd, cum = _cum_official(self.info)
         D = self.info.distance
         fin = self._official_finish()
-        targets = {h: (list(bnd), list(c)) for h, c in cum.items()}
-        for h, ft in fin.items():
-            targets.setdefault(h, ([0.0], [ft]))
+        hold = os.environ.get("HKJC_FINAL_HOLDOUT")  # DIAGNOSTIC: the withheld boundary is not re-timed
+        keep = [j for j in range(len(bnd)) if hold is None or j != int(hold)]
+        targets = {h: ([bnd[j] for j in keep], [c[j] for j in keep]) for h, c in cum.items()}
+        if hold is None or int(hold) != len(bnd) - 1:
+            for h, ft in fin.items():
+                targets.setdefault(h, ([0.0], [ft]))
         # equal official finish times (0.01 s resolution) keep the official placing: spaced inside the interval
         groups = {}
         for h in fin:
-            if h in targets and np.isfinite(targets[h][1][-1]):
+            if h in targets and targets[h][0] and targets[h][0][-1] == 0.0 and np.isfinite(targets[h][1][-1]):
                 groups.setdefault(round(targets[h][1][-1], 2), []).append(h)
         for tie in groups.values():
             for i, h in enumerate(sorted(tie, key=self._official_place)):
