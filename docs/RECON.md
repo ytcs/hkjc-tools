@@ -405,7 +405,7 @@ numbers with no line-reaching tracklet. Camera and elimination names are hard co
 `identify_scores.npz` keeps the evidence behind the labels: the gain matrix G (tracklets x numbers, gain over leaving the
 tracklet unlabelled, as the MILP saw it), rho, rho_e, the MILP objective, the silk LLR term and the labels. `fuse_video`
 writes the same for the EM identity pass (`identify_em_scores.npz`; its tracklet labels are kept nowhere else). Neither
-file is read by the pipeline.
+file is read by the pipeline, and neither is a stage output (telemetry is never a cache key: a run dir without them is not re-run).
 
 ### fuse_video
 

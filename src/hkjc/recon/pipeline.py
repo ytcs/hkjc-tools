@@ -72,6 +72,7 @@ STAGES = (
     "fuse_final",
     "validate",
 )
+# telemetry (identify_scores.npz, identify_em_scores.npz) is written but is NOT a stage output: never a cache key
 OUTPUTS = {
     "frames": ["frames.bin", "frames_idx.npz", "frames_clock.npy"],
     "features": ["feats.npz", "yolo.npz"],  # + the avatar detections (read by detect)
@@ -84,9 +85,9 @@ OUTPUTS = {
     "worldmap": ["map.png", "map_cnt.npy", "map_meta.npz"],
     "rails": ["rail.npz", "metric.npz"],
     "observe": ["tracks.npz"],
-    "identify": ["labels.npz", "identify_scores.npz"],
+    "identify": ["labels.npz"],
     "finish": ["finish.npz"],
-    "fuse_video": ["paths_video.parquet", "fuse_video.pkl", "identify_em_scores.npz"],
+    "fuse_video": ["paths_video.parquet", "fuse_video.pkl"],
     "fuse_final": ["paths.parquet"],
     "validate": ["validation.json"],
 }
