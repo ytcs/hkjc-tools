@@ -244,10 +244,10 @@ def tick_grid(idx):
     frames or are not 2-3 frames apart (not a 10 Hz render).
 
     When the vote over all frames fails, only frames that follow the previous one by 2-3 frames (the
-    10 Hz cadence) vote. Live film that passes the render gate (start-gate shots before the render on
-    5 of 329 replays, e.g. ST 2024-12-29 R8) changes on every frame, so a few seconds of it put the
-    top two residues below 90 % of all frames; without a grid, ``grid_keep`` keeps every video
-    keyframe re-encode and ``tick_frame`` leaves tick times unshifted."""
+    10 Hz cadence) vote. Live film that passes the render gate (``film_keep``; e.g. ST 2024-12-29 R8)
+    changes on every frame, so a few seconds of it put the top two residues below 90 % of all frames;
+    without a grid, ``grid_keep`` keeps every video keyframe re-encode and ``tick_frame`` leaves tick
+    times unshifted."""
     idx = np.asarray(idx, dtype=np.int64)
     grid = _residue_vote(idx)
     if grid is None and len(idx) > 1:
@@ -296,6 +296,56 @@ def grid_keep(idx) -> np.ndarray:
         while g % 5 not in top:  # the latest on-grid frame before this one = its tick's start
             g -= 1
         keep[k] = g not in have
+    return keep
+
+
+FILM_RUN = 10  # consecutive panel changes 1 frame apart (0.4 s): live film, never the 10 Hz render
+RENDER_LOCK = 10  # consecutive gaps alternating 2 and 3 frames (1 s of 10 Hz ticks): the render runs
+
+
+def _render_lock(gap):
+    """Index of the first frame of the first ``RENDER_LOCK`` consecutive inter-frame gaps that
+    alternate 2 and 3 frames (``gap = diff(idx)``); None if there is none."""
+    gap = np.asarray(gap)
+    if len(gap) < RENDER_LOCK:
+        return None
+    ok = (gap == 2) | (gap == 3)
+    alt = ok[:-1] & ok[1:] & (gap[:-1] + gap[1:] == 5)  # gaps k and k + 1 alternate
+    run = 0
+    for k, a in enumerate(alt):
+        run = run + 1 if a else 0
+        if run == RENDER_LOCK - 1:
+            return k + 2 - RENDER_LOCK
+    return None
+
+
+def film_keep(idx) -> np.ndarray:
+    """Boolean keep-mask over yielded frame indices: drop live film that passed the render gate
+    before the render.
+
+    On 9 of 329 replays (e.g. ST 2024-12-29 R8) 0.6-5 s of live start film in the right panel pass the
+    silk render gate. The render changes every 2-3 frames (10 Hz in 25 fps video) and never on two
+    consecutive frame pairs; film changes on every frame, except where a static gate shot falls under
+    the de-dup tolerance. The render runs from its first ``RENDER_LOCK`` gaps alternating 2 and 3
+    frames. Fires only if a run of ``FILM_RUN`` consecutive 1-frame gaps precedes that point; then
+    every frame up to the end of the last run of >= 2 consecutive 1-frame gaps before it is dropped
+    (the film's slow parts included). Nothing is dropped otherwise, or when the stream never shows
+    the 10 Hz cadence. Filtering the de-dup stream afterwards is exact: the film ends at a render-gate
+    dropout or differs from the first render frame by far more than the de-dup tolerance."""
+    idx = np.asarray(idx, dtype=np.int64)
+    keep = np.ones(len(idx), bool)
+    gap = np.diff(idx)
+    lock = _render_lock(gap)
+    if lock is None:
+        return keep
+    run, longest, last = 0, 0, -1
+    for k in range(lock):  # gaps before the render lock
+        run = run + 1 if gap[k] == 1 else 0
+        longest = max(longest, run)
+        if run >= 2:
+            last = k + 1  # frame position at the end of this run
+    if longest >= FILM_RUN:
+        keep[: last + 1] = False
     return keep
 
 
@@ -378,6 +428,10 @@ class FrameCache:
             bufs.append(buf.tobytes())
             y0, y1, x0, x1 = clock_box
             clocks.append(full[y0:y1, x0:x1].copy())
+        film = film_keep(idx)
+        if not film.all():  # live film leaked through the render gate before the render
+            keep = np.flatnonzero(film)
+            idx, bufs, clocks = [idx[k] for k in keep], [bufs[k] for k in keep], [clocks[k] for k in keep]
         keep = np.flatnonzero(grid_keep(idx))
         idx, bufs, clocks = [idx[k] for k in keep], [bufs[k] for k in keep], [clocks[k] for k in keep]
         off = [0]
