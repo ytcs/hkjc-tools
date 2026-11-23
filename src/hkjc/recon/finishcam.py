@@ -29,7 +29,8 @@ def line_x(img):
     import cv2
 
     hsv = cv2.cvtColor(img[LINE_ROWS[0] : LINE_ROWS[1]], cv2.COLOR_BGR2HSV)
-    white = ((hsv[..., 1] < 70) & (hsv[..., 2] > 160)).mean(0)
+    m = cv2.inRange(hsv, (0, 0, 161), (255, 69, 255))  # s < 70, v > 160
+    white = cv2.reduce(m // 255, 0, cv2.REDUCE_SUM, dtype=cv2.CV_32S)[0] / m.shape[0]  # per-column fraction
     x = int(np.argmax(white))
     return x if white[x] > 0.6 else None
 
@@ -37,27 +38,28 @@ def line_x(img):
 RING_MIN = 0.40  # white fraction of the ring around a digit; higher loses small far-side cloths
 
 
-def _white_cloths(img, y_min):
+def _white_cloths(img, y_min, hsv=None):
     """Candidate boxes of DARK DIGITS ON WHITE saddlecloths (Sha Tin side-on finish camera; HV's
     overhead camera shows yellow digits on dark cloth): dark components of digit size whose
     surrounding ring is mostly white, grouped side by side for two-digit numbers (the whole white
     cloth is not segmented: it merges with white breeches and grey horses)."""
     import cv2
 
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    s, v = hsv[..., 1].astype(int), hsv[..., 2].astype(int)
-    white = (s < 70) & (v > 175)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV) if hsv is None else hsv
+    w255 = cv2.inRange(hsv, (0, 0, 176), (255, 69, 255))  # s < 70, v > 175
+    white = w255 > 0
     # digits = dark strokes INSIDE the closed white cloth (closing fills the digit holes)
-    wc = cv2.morphologyEx(white.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
-    dark = (wc.astype(bool) & ~white & (v < 150)).astype(np.uint8)
+    wc = cv2.morphologyEx(w255 & 1, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+    # closed cloth, not white, v < 150 (0/1)
+    dark = cv2.bitwise_and(cv2.bitwise_and(wc, cv2.inRange(hsv, (0, 0, 0), (255, 255, 149))), cv2.bitwise_not(w255))
     dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
     dark[: max(y_min, 200)] = 0  # the disclaimer overlay band
     n, _lab, st, _cen = cv2.connectedComponentsWithStats(dark)
-    H, W = v.shape
+    H, W = hsv.shape[:2]
     digs = []
-    for x, y, w, hh, a in st[1:]:
-        if not (9 <= hh <= 70 and 3 <= w <= 0.9 * hh and a >= 0.15 * w * hh):
-            continue
+    cw, ch, ca = st[1:, 2], st[1:, 3], st[1:, 4]
+    size_ok = (ch >= 9) & (ch <= 70) & (cw >= 3) & (cw <= 0.9 * ch) & (ca >= 0.15 * cw * ch)  # digit-sized
+    for x, y, w, hh, a in st[1:][size_ok]:
         m = max(4, hh // 4)
         x0, y0, x1, y1 = max(0, x - m), max(0, y - m), min(W, x + w + m), min(H, y + hh + m)
         ring = white[y0:y1, x0:x1].copy()
@@ -87,17 +89,16 @@ def cloth_reads(img, *, y_min=150, n_field=14, x_center=None, x_half=700, white=
     import cv2
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, s, v = [hsv[..., i].astype(int) for i in range(3)]
-    yel = ((h > 18) & (h < 40) & (s > 110) & (v > 140)).astype(np.uint8)
-    yel &= cv2.dilate((v < 90).astype(np.uint8), np.ones((15, 15), np.uint8))
+    yel = cv2.inRange(hsv, (19, 111, 141), (39, 255, 255)) & 1  # 18 < h < 40, s > 110, v > 140
+    yel &= cv2.dilate(cv2.inRange(hsv, (0, 0, 0), (255, 255, 89)) & 1, np.ones((15, 15), np.uint8))  # v < 90
     yel[:y_min] = 0
     yel = cv2.dilate(yel, np.ones((5, 9), np.uint8))  # join the digits of "11"
     n, _lab, st, _cen = cv2.connectedComponentsWithStats(yel)
-    boxes = [
-        (x, y, w, hh) for x, y, w, hh, a in st[1:] if 12 <= hh <= 70 and 8 <= w <= 90 and a > 60
-    ]
+    c = st[1:]
+    keep = (c[:, 3] >= 12) & (c[:, 3] <= 70) & (c[:, 2] >= 8) & (c[:, 2] <= 90) & (c[:, 4] > 60)
+    boxes = [(x, y, w, hh) for x, y, w, hh, _a in c[keep]]
     if white:  # Sha Tin side-on camera; HV's overhead camera has yellow-on-dark cloths only
-        boxes += _white_cloths(img, y_min)
+        boxes += _white_cloths(img, y_min, hsv)
     if (
         x_center is not None
     ):  # only cloths near the line matter for crossings/gaps (OCR is the cost)
