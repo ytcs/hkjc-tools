@@ -474,14 +474,29 @@ additions is a stage output or cache key.
   the line, the horse's final path is firm there (sd_s < 1.5 m) and overlaps no other firm path (2.0 m along, 0.7
   across), and, on the disc render, its tracklet's majority confident disc read is the label. Flagged detections bridged
   over gaps ≤ 0.5 s form stretches of ≥ 10 detections and ≥ 2 s; on the silk render a stretch also needs the legend to
-  confirm the horse's rank on ≥ 3 and ≥ 80 % of its legend-read frames. Masked reads count as unread. The flag is
-  validated against disc reads only (circle render); on the silk render no per-detection truth exists.
+  confirm the horse's rank on ≥ 3 and ≥ 80 % of its legend-read frames. Masked reads count as unread. So do the
+  frames of a frozen running-order list (`contract.legend_frozen`, from the list reads alone): the same near-cloth read
+  (every slot the field fills read, at least 6, and at most one inversion against ascending order, e.g. 2,1,3,…,8)
+  held for ≥ 5 s of race time, from its first to its last read; reads with an unread slot neither break nor extend
+  the hold. No stretch spans such a window: its detections are not flagged, so the stretches on either side must
+  each meet the criteria on their own. A list frozen in any other order cannot be told from a strung-out field by its
+  reads and is not caught.
+  The flag is validated against disc reads only (circle render); on the silk render no per-detection truth exists.
+- `pos_ok`: the position flag. A crossing of a horse at an official boundary the run sees passes when the horse is
+  observed there (a render detection with its final label within 0.5 s of the final path's crossing time), the final
+  path is firm (sd_s < 1.5 m), and the video-only path agrees with the official time within 1.25 m field-relative: its
+  crossing error (t − t_official) × its speed, minus that boundary's median over ≥ 3 horses. A node is `pos_ok` when
+  the horse is observed (as above, at the node's t) and firm at the node, and the identity check (the 1.25 m test)
+  holds at both bounding visible boundaries (the last at or behind the node and the first ahead of it; the single
+  neighbouring one before the first and after the last; no visible boundary: false). A withheld boundary is not a
+  bounding boundary, so masked runs read the next visible ones.
 - `free`: no other horse's path node at the same t within one length along (2.4 m) and one render abreast spacing
   across (2.6 render units).
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
-- `contract.json`: the definitions, the run's flagged stretches, and `NOISE_TABLE`, the per-detection noise of the
+- `contract.json`: the definitions, the run's flagged stretches, its frozen-list windows, every visible crossing's
+  position verdict (observed, firm, r_v, identity check, pass), and `NOISE_TABLE`, the per-detection noise of the
   detection-only state-space model by feed and region (white sd and a frame-common AR(1) term); a row whose split
   between the two is not identified carries `split_identified` false.
 

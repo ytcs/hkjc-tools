@@ -1560,8 +1560,10 @@ class RaceRun:
             tt, fr = free[h]
             cols["free"].append(fr[np.searchsorted(tt, np.round(p.t, 2))])
         P = P.with_columns(**{k: pl.Series(np.concatenate(v)) for k, v in cols.items()})
+        crossings, pos = ct.position_flag(self, P)
+        P = P.with_columns(pos_ok=pl.Series(pos))
         with self.out("contract.json") as fp:
-            fp.write_text(json.dumps(ct.describe(stretches), indent=1, default=float))
+            fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings), indent=1, default=float))
         return P
 
     # Lateral in metres (HKJC_LAT_METRES=1). The render spreads the field laterally (RECON 8), more in the compact field
