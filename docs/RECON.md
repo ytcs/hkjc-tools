@@ -134,6 +134,9 @@ inputs: forcing a stage re-runs every requested stage downstream of it. A reques
 some outputs (large files deleted for space) is regenerated without invalidating its consumers (the pipeline
 is deterministic). Artifacts are written to a temporary file and renamed, so a killed stage never reads as
 done; a failed stage terminates the background stages.
+Stages that read a later part of a replay (film, finish, silk, the shifted clock search) seek to the IDR keyframe
+before the first frame they need (`video.decode_from`; same frame indices and pixels as decoding from frame 0, else
+it decodes from frame 0).
 
 ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off (`ortsession.no_spin`): same
 threads and work split, identical outputs, CPU about a third (avatar detector) and a half (OCR).
