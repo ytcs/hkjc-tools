@@ -37,15 +37,21 @@ class Mosaic:
         T2[1, 2] -= y0
         m = mask.astype(np.float32)
         self.acc[y0:y1, x0:x1] += cv2.warpAffine(
-            panel.astype(np.float32) * m[..., None],
+            np.multiply(panel, mask[..., None], dtype=np.float32),  # float32(panel) * float32(mask), one pass
             T2[:2],
             (x1 - x0, y1 - y0),
             flags=cv2.INTER_LINEAR,
         )
         self.cnt[y0:y1, x0:x1] += cv2.warpAffine(m, T2[:2], (x1 - x0, y1 - y0))
 
-    def image(self) -> np.ndarray:
-        return (self.acc / np.maximum(self.cnt, 1e-3)[..., None]).clip(0, 255).astype(np.uint8)
+    def image(self, rows: int = 256) -> np.ndarray:
+        """The mean image (uint8), computed in blocks of ``rows`` rows (element-wise: same values, no full-size
+        float temporaries)."""
+        out = np.empty((self.H, self.W, 3), np.uint8)
+        for r in range(0, self.H, rows):
+            a, c = self.acc[r : r + rows], self.cnt[r : r + rows]
+            out[r : r + rows] = (a / np.maximum(c, 1e-3)[..., None]).clip(0, 255).astype(np.uint8)
+        return out
 
 
 def bounds_of(G, shape, pad: float = 50) -> tuple:
