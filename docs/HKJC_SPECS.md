@@ -29,23 +29,27 @@ geometry is *not* fixed per venue. The `Course` field (`A`, `A+2`, `B`, `B+2`, `
 | C+3 | 18.3 m | 19.5 m |
 
 `hkjc.data.tracks` holds a `TrackGeometry` per *venue × surface × configuration* (the
-`TRACKS` dict) with a resolver `track_for(venue, distance, surface)`. The four encoded
-geometries:
+`TRACKS` dict) with a resolver `track_for(venue, distance, surface)`. Widths and home
+straights are official. The turf bend segments are measured from the rendered rail's
+curvature (> 1 mrad/m, 201 races; method in the `hkjc.data.tracks` docstring), with
+distances on the odometer's line about 4 m outside the rail. The encoded geometries:
 
-- **Happy Valley** — turf, ~1,450 m circuit, right-handed, **bend-dominated** (near-
-  continuous turning: home straight ~[0,300]; Sanatorium/Crescent/"The Rock" bends
-  ~[300,770]; back straight ~[770,920]; HKFC/Stable bends + top turn ~[920,1450]).
+- **Happy Valley** — turf, right-handed, ~1,480 m lap on the odometer's line (measured;
+  ~1,450 m is the figure usually quoted). It is **bend-dominated**: home straight [0,315];
+  home bend [315,590]; back straight [590,920] (The Rock and Back Straight sampling points
+  lie on it); HKFC + Stable bends [920,1480], running to the winning post.
   ⇒ **the strongest draw bias in HK** (low draws hold the short inner path). Distances
   1000 / 1200 / 1650 / 1800 / 2200 m.
 - **Sha Tin turf** — ~1,900 m galloping oval, right-handed, **430 m home straight**.
-  Long straights ⇒ a **weaker** geometric draw bias than HV. Bend boundaries are a
-  two-turn reconstruction from circumference + home straight (the straight/turn split
-  and total are firm; the exact bend split is approximate).
+  Long straights ⇒ a **weaker** geometric draw bias than HV. Measured: home bend
+  [430,900]; back straight [900,1385]; far bend [1385,1900], run only from the 2,000 m+
+  starts. The 1,200–1,800 m starts are on the back straight's extension, so those races
+  run the home bend only (`track_for("ST", 1200…1800)` returns that variant).
 - **Sha Tin straight 1000 m** — a separate sprint **chute with no bends** ⇒ **no bend-
   geometry draw bias** (only a cross-track watering/going gradient, deliberately not
   modelled as geometry). `track_for("ST",1000)` returns this, not the oval.
 - **Sha Tin AWT** — dirt, 1,560 m, right-handed, 365 m home straight, **fixed single
-  rail** (uniform 22.8 m). Surface inferred from the "ALL WEATHER TRACK" label (going
+  rail** (uniform 22.8 m). Its bend segments are a reconstruction, not measured. Surface inferred from the "ALL WEATHER TRACK" label (going
   codes alone are ambiguous — both scales have GOOD). AWT has distinct physics: lower
   achievable speeds, kickback, and **ability that may not transfer from turf**.
 
