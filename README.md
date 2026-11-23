@@ -3,7 +3,8 @@
 Reconstructs every horse's 2D path in a Hong Kong Jockey Club race from public data: the race
 facts (`hkjc.data`) plus the four replay videos HKJC publishes per race (aerial virtual view,
 drone, side-on race film, patrol). Output: per horse, metres-to-finish along the racing rail and
-metres off the racing rail, on the race clock, with posterior uncertainty.
+the offset from the racing rail (render units; metres where validated), on the race clock, with posterior
+uncertainty.
 
 The product, `paths.parquet` (`run.paths()`), is one posterior built from all the information
 available: the videos, the pre-race facts (distance, course, draw, silks), the official records
@@ -89,7 +90,7 @@ src/hkjc/recon/   race info + videos -> paths
     validate.py   fixed gates on the video-only paths vs the full official record
     audit.py      label-free consistency invariants of a reconstruction (audit.json)
     viz.py        synced four-feed video with the reconstructed track map
-docs/RECON.md     method, mask and held-out evaluation, gates, current state, open problems
+docs/RECON.md     architecture: stages, artifacts, mask and held-out evaluation, gates, switches, known limitations
 docs/HKJC_*.md    HKJC data sources and track specifications
 models/           detector weights (git-ignored)
 ```

@@ -9,8 +9,9 @@
 CLI: ``python -m hkjc.recon 20260603 HV 8 [--force stage,...] [--stages ...]``
 
 Coordinates: ``d`` metres to the finish along the racing rail, ``s`` = distance - d metres run,
-``lat`` metres OUTWARD of the racing (movable) rail, ``t`` race-clock seconds (0 = gates open).
-Method + validated state: docs/RECON.md.
+``lat`` OUTWARD of the racing (movable) rail in the render's lateral units (``lat_m``: metres where a validated map
+exists), ``t`` race-clock seconds (0 = gates open).
+Architecture and design: docs/RECON.md.
 """
 
 from .pipeline import STAGES, RaceRun
