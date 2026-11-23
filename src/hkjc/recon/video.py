@@ -510,7 +510,11 @@ class FrameCache:
         return cv2.imdecode(np.asarray(self._bin[self.off[k] : self.off[k + 1]]), cv2.IMREAD_COLOR)
 
     def __iter__(self):
-        for k in range(len(self.idx)):
+        return self.items(range(len(self.idx)))
+
+    def items(self, ks):
+        """Yield ``(frame_idx, panel)`` for cache positions ``ks`` in order (only those panels are decoded)."""
+        for k in ks:
             yield int(self.idx[k]), self.panel(k)
 
     @staticmethod

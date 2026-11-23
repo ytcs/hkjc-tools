@@ -105,7 +105,7 @@ DEPS = {
     "frames": (),
     "features": ("frames",),
     "pose": ("features",),
-    "worldmap": ("frames", "pose"),
+    "worldmap": ("frames", "features", "pose"),  # features: the legend rows (feats.npz lrow)
     "detect": ("frames", "features", "pose", "worldmap"),
     "silk": ("frames", "detect"),
     "hud": ("frames",),
@@ -438,9 +438,21 @@ class RaceRun:
             self._style = str(z["style"]) if "style" in z.files else "silk"
         return self._style
 
-    def legend_row(self, panel) -> int:
-        """Top row of the silk-legend strip (panel-relative); the circle render has none."""
+    def legend_row(self, panel, frame: int | None = None) -> int:
+        """Top row of the silk-legend strip (panel-relative); the circle render has none. With the panel's
+        video ``frame``, the row the features stage computed for it (feats.npz ``lrow``), when present."""
+        if frame is not None:
+            lr = self._lrows()
+            if lr is not None and frame in lr:
+                return lr[frame]
         return panel.shape[0] if self.render_style() == "circle" else video.legend_top(panel)
+
+    def _lrows(self):
+        """{video frame: legend row} from feats.npz (the same ``legend_row`` of the same cached panel), or None."""
+        if getattr(self, "_lrow_cache", None) is None and self.p("feats.npz").exists():
+            z = np.load(self.p("feats.npz"))
+            self._lrow_cache = dict(zip(z["idx"].tolist(), z["lrow"].tolist()))
+        return getattr(self, "_lrow_cache", None)
 
     def cache(self):
         return video.FrameCache(self.dir)
@@ -485,6 +497,7 @@ class RaceRun:
                 steps=np.array(steps),
                 shape=np.array(res[0][3]),
             )
+        self._lrow_cache = None  # legend rows are read back from the new feats.npz
         nb = 14  # silk_hist length
         with self.out("yolo.npz") as fp:
             np.savez(
@@ -544,7 +557,7 @@ class RaceRun:
             for i, p in cache:
                 if i not in k_of:
                     continue
-                lt = self.legend_row(p)
+                lt = self.legend_row(p, i)
                 back = cv2.warpAffine(
                     img_map,
                     (A @ P["G"][k_of[i]])[:2],
@@ -655,7 +668,7 @@ class RaceRun:
         mo = worldmap.Mosaic(worldmap.bounds_of(G, shape), scale)
         for i, p in self.cache():
             if i in k_of:
-                mo.add(p, video.hud_mask(p, self.legend_row(p)), G[k_of[i]])
+                mo.add(p, video.hud_mask(p, self.legend_row(p, i)), G[k_of[i]])
         with self.out("map.png") as fp:
             cv2.imwrite(str(fp), mo.image())
         with self.out("map_cnt.npy") as fp:
@@ -677,10 +690,10 @@ class RaceRun:
             return self._map()
         mo = worldmap.Mosaic(worldmap.bounds_of(G[sel], tuple(P["shape"])), 1.0)
         keep = set(sel.tolist())
-        for i, p in self.cache():
-            k = k_of.get(i)
-            if k is not None and k in keep:
-                mo.add(p, video.hud_mask(p, self.legend_row(p)), G[k])
+        cache = self.cache()
+        pos = [n for n, i in enumerate(cache.idx.tolist()) if k_of.get(i) in keep]  # decode only those
+        for i, p in cache.items(pos):
+            mo.add(p, video.hud_mask(p, self.legend_row(p, i)), G[k_of[i]])
         img, cnt = mo.image(), mo.cnt
         del mo
         x0, y0 = worldmap.bounds_of(G[sel], tuple(P["shape"]))[:2]
@@ -721,6 +734,12 @@ class RaceRun:
         return rows, X, hist, P
 
     def rails(self):
+        try:
+            self._rails()
+        finally:
+            rails.release_planes()
+
+    def _rails(self):
         img, cnt, to_px = self._map()
         rows, X, _h, P = self.world_dets()
         out = rails.extract_racing_rail(

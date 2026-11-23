@@ -64,6 +64,27 @@ def right_normal(T):
     return np.c_[-T[:, 1], T[:, 0]]
 
 
+_PLANES = None  # (img, cnt, L, S, covered): the map planes ``sample_profiles`` last converted
+
+
+def _planes(img, cnt):
+    """HLS lightness and saturation and the 0/1 coverage mask of a map, converted once per map: the rails stage
+    samples the same map several times. Released by ``release_planes``."""
+    import cv2
+
+    global _PLANES
+    if _PLANES is None or _PLANES[0] is not img or _PLANES[1] is not cnt:
+        _PLANES = None
+        hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+        _PLANES = (img, cnt, hls[..., 1].copy(), hls[..., 2].copy(), (cnt > 0.5).astype(np.uint8))
+    return _PLANES[2:]
+
+
+def release_planes():
+    global _PLANES
+    _PLANES = None
+
+
 def sample_profiles(img, cnt, to_px, P, Nin, offs):
     """Bilinear-sample map luminance/saturation + coverage along INWARD normals.
     img: BGR mosaic, cnt: coverage, to_px: world->mosaic px. offs: offsets (world px), +ve = inward.
@@ -73,10 +94,10 @@ def sample_profiles(img, cnt, to_px, P, Nin, offs):
     X = P[:, None, :] + offs[None, :, None] * Nin[:, None, :]
     uv = to_px(X.reshape(-1, 2)).astype(np.float32)
     mx, my = uv[:, 0].reshape(len(P), -1), uv[:, 1].reshape(len(P), -1)
-    hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
-    L = cv2.remap(hls[..., 1], mx, my, cv2.INTER_LINEAR).astype(np.float32)
-    S = cv2.remap(hls[..., 2], mx, my, cv2.INTER_LINEAR).astype(np.float32)
-    V = cv2.remap((cnt > 0.5).astype(np.float32), mx, my, cv2.INTER_NEAREST)
+    hl, hs, cov = _planes(img, cnt)
+    L = cv2.remap(hl, mx, my, cv2.INTER_LINEAR).astype(np.float32)
+    S = cv2.remap(hs, mx, my, cv2.INTER_LINEAR).astype(np.float32)
+    V = cv2.remap(cov, mx, my, cv2.INTER_NEAREST).astype(np.float32)  # 0/1 nearest: as on a float32 mask
     return L, S, V
 
 
