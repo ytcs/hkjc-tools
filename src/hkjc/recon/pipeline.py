@@ -151,8 +151,11 @@ _STEP_NN = {}  # fork-shared bfmatch cross-check tables for the step matches (em
 _STYLE = "silk"  # render style of the race being processed (fork-shared with the feature workers)
 
 
+_DETECT_HERE = "detect here"  # _feat_job: run this worker's own avatar detector (else: the detector pool's boxes)
+
+
 def _feat_job(args):
-    k, nfeat = args
+    k, nfeat, raw = args
     i, p = _CACHE.idx[k], _CACHE.panel(k)
     if _STYLE == "circle":  # numbered discs, no legend strip
         from . import circles
@@ -163,7 +166,7 @@ def _feat_job(args):
     else:
         lt = video.legend_top(p)
         # the avatar detector's boxes (+ shadows) are masked too: the colour mask misses brown horses
-        rs = _DET.panel(p, lt)
+        rs = _DET.panel(p, lt) if isinstance(raw, str) else _detect.AvatarDetector.drop_legend(raw, lt)
         hist = [_detect.silk_hist(p, r) for r in rs]
     m = register.mask_boxes(register.world_mask(p, video.hud_mask(p, lt)), rs)
     f = register.extract(p, m, nfeat)
@@ -177,6 +180,10 @@ def _det_init():
     global _DET
     if _STYLE != "circle":
         _DET = _detect.AvatarDetector()
+
+
+def _det_job(k):
+    return _DET.raw(_CACHE.panel(k))
 
 
 def _step_job(k):
@@ -483,20 +490,33 @@ class RaceRun:
         """ORB features of every unique render frame + the sequential step matches. Per-frame work
         is independent and OpenCV's RANSAC seeds its RNG per call, so the process pool gives results
         identical to a sequential loop. The avatar detections made for the mask are saved for
-        ``detect`` (yolo.npz)."""
+        ``detect`` (yolo.npz). With ``HKJC_MATCH_HELPER=1`` the avatar detector runs in its own pool (one process
+        on an accelerator) and feeds up to 4 feature workers frame by frame (on an accelerator the default runs the
+        detector and the per-frame CPU work in one process)."""
         import multiprocessing as mp
 
         cache = self.cache()
         from . import bfmatch
 
+        bfmatch.warm()  # HKJC_MATCH_HELPER=1: the CUDA matcher's interpreter starts now (closed after pose)
         global _CACHE, _FEATS_PAR, _STYLE, _STEP_NN
         _CACHE = cache
         _STYLE = self.render_style()
-        # one avatar detector per worker; one accelerator context
         accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
-        nw = 1 if accel else min(_nproc(), 4)
-        with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
-            res = pool.map(_feat_job, [(k, nfeat) for k in range(len(cache))], chunksize=8)
+        K = len(cache)
+        if bfmatch.helper_on():  # detector pool feeding the feature workers; one accelerator context
+            nw = min(_nproc(), 4)
+            with mp.get_context("fork").Pool(nw) as pool:
+                if _STYLE == "circle":  # no avatar detector
+                    res = pool.map(_feat_job, [(k, nfeat, None) for k in range(K)], chunksize=8)
+                else:
+                    with mp.get_context("fork").Pool(1 if accel else nw, initializer=_det_init) as dpool:
+                        raws = dpool.imap(_det_job, range(K), chunksize=8)
+                        res = list(pool.imap(_feat_job, ((k, nfeat, r) for k, r in enumerate(raws)), chunksize=8))
+        else:  # one avatar detector per worker; one accelerator context
+            nw = 1 if accel else min(_nproc(), 4)
+            with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
+                res = pool.map(_feat_job, [(k, nfeat, _DETECT_HERE) for k in range(K)], chunksize=8)
         # a NEW pool: workers fork the parent's state, so the features must exist before forking
         _FEATS_PAR = [r[2] for r in res]
         pairs = [k for k in range(1, len(res)) if res[k][0] - res[k - 1][0] <= 6]
@@ -546,8 +566,13 @@ class RaceRun:
         self.log(f"   features: {len(reads)} discs, {100 * ok:.0f}% numbers read")
 
     def pose(self):
+        from . import bfmatch
+
         z = dict(np.load(self.p("feats.npz")))
-        G, info = pose.solve_race(z)
+        try:
+            G, info = pose.solve_race(z)
+        finally:
+            bfmatch.close()  # pose is the matcher's last consumer: free its GPU memory
         with self.out("pose.npz") as fp:
             np.savez(fp, idx=z["idx"], G=G, shape=z["shape"], **info)
         self.log(f"   pose: {info['summary']}")

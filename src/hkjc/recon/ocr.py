@@ -40,6 +40,9 @@ def _engine():
     if dev.startswith("intel:"):  # the SAME PP-OCRv4 recogniser compiled for the Intel iGPU/NPU
         eng.text_rec.session = _OVSession(eng.text_rec.session.session._model_path, dev)
     if os.environ.get("HKJC_OCR_DEVICE", "cpu").startswith("cuda"):  # opt-in; NOT bit-exact vs CPU
+        from .cudasched import blocking_sync
+
+        blocking_sync(os.environ["HKJC_OCR_DEVICE"])
         eng.text_rec.session = _CudaSession(eng.text_rec.session.session._model_path)
     return eng
 

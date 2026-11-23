@@ -15,7 +15,8 @@ CLI: `uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force stage,..
 are cached under `data_cache/recon/<date>_<venue>_<no>/`; a stage is skipped when its outputs exist.
 Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `HKJC_NPROC` (workers per
 race), `HKJC_OCR_THREADS`, `HKJC_OCR_DEVICE`, `HKJC_MATCH_DEVICE`, `HKJC_AVATAR_WEIGHTS` (detector weights),
-`HKJC_FILM_DEVICE` (the film detector alone, e.g. `intel:gpu`), `HKJC_MASK` (§3), `HKJC_PERTURB_SEED` (§4 observe, §6).
+`HKJC_FILM_DEVICE` (the film detector alone, e.g. `intel:gpu`), `HKJC_MASK` (§3), `HKJC_PERTURB_SEED` (§4 observe, §6),
+`HKJC_MATCH_HELPER`, `HKJC_CUDA_BLOCKING_SYNC` (§4, opt-in, off by default).
 
 Race identifiers are `venue MM-DD Rn` for 2026 meetings (ST 05-31 R1 is Sha Tin, 2026-05-31, race 1)
 and carry the full date otherwise.
@@ -137,6 +138,13 @@ done; a failed stage terminates the background stages.
 Stages that read a later part of a replay (film, finish, silk, the shifted clock search) seek to the IDR keyframe
 before the first frame they need (`video.decode_from`; same frame indices and pixels as decoding from frame 0, else
 it decodes from frame 0).
+
+Two opt-in switches (default off) change only how the CUDA work is scheduled. `HKJC_MATCH_HELPER=1` keeps one matcher
+helper interpreter per race (started with features, closed after pose; otherwise a fresh one per table request), and
+in features runs the avatar detector in its own process feeding up to 4 feature workers (otherwise, on CUDA, one
+process detects and does the per-frame CPU work). `HKJC_CUDA_BLOCKING_SYNC=1` puts the CUDA primary context in
+blocking-sync mode (`recon.cudasched`): a process waiting for the GPU sleeps instead of spinning. Their CPU paths give
+features artifacts identical to the default (HV 05-27 R9); the CUDA paths await a pod A/B.
 
 ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off (`ortsession.no_spin`): same
 threads and work split, identical outputs, CPU about a third (avatar detector) and a half (OCR).

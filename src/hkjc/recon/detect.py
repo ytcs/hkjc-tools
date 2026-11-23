@@ -63,15 +63,21 @@ class AvatarDetector:
     def __init__(self, weights: str | None = None, imgsz: int = 960):
         from ultralytics import YOLO
 
+        from .cudasched import blocking_sync
         from .ortsession import no_spin
 
         no_spin()
+        blocking_sync(os.environ.get("HKJC_DEVICE", "cpu"))
         self.model = YOLO(weights or default_weights())
         self.imgsz = imgsz
 
     def panel(self, panel, legend_row: int) -> np.ndarray:
         """Detect on the render PANEL (945x535; ~2x fewer pixels than the letterboxed half frame).
         -> (N, 6) [cx, cy, w, h, conf, 0] in panel px; legend icon band dropped."""
+        return self.drop_legend(self.raw(panel), legend_row)
+
+    def raw(self, panel):
+        """The detector's boxes on the render panel: (xyxy (N, 4), conf (N,)) arrays, or None for no box."""
         dev = os.environ.get("HKJC_DEVICE", "cpu")
         ov = dev.startswith("intel:")
         r = self.model.predict(
@@ -84,9 +90,15 @@ class AvatarDetector:
             device=dev,
         )[0]
         if len(r.boxes) == 0:
+            return None
+        return r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy()
+
+    @staticmethod
+    def drop_legend(raw, legend_row: int) -> np.ndarray:
+        """``raw`` boxes -> (N, 6) [cx, cy, w, h, conf, 0] in panel px; legend icon band dropped."""
+        if raw is None:
             return np.zeros((0, 6))
-        xyxy = r.boxes.xyxy.cpu().numpy()
-        cf = r.boxes.conf.cpu().numpy()
+        xyxy, cf = raw
         cx, cy = (xyxy[:, 0] + xyxy[:, 2]) / 2, (xyxy[:, 1] + xyxy[:, 3]) / 2
         keep = ~((cy > legend_row - 4) & (cy < legend_row + LEGEND_BAND))
         out = np.c_[cx, cy, xyxy[:, 2] - xyxy[:, 0], xyxy[:, 3] - xyxy[:, 1], cf, np.zeros(len(cf))]

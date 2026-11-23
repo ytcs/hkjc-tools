@@ -134,6 +134,9 @@ def horse_scale(frames_imgs, line_x):
             os.rename(p, ov_dir)
         m, kw = YOLO(ov_dir, task="detect"), dict(imgsz=(544, 960), device=dev)
     else:
+        from .cudasched import blocking_sync
+
+        blocking_sync(dev)  # ultralytics picks the GPU when one is present
         m, kw = YOLO(COCO_WEIGHTS), dict(imgsz=960)
     w = []
     for img in frames_imgs:

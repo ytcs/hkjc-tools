@@ -50,3 +50,11 @@ def test_helper_interpreter_gives_the_in_process_tables():
     a, b = bfmatch._tables("cpu", des, jobs), bfmatch._tables_subprocess("cpu", des, jobs)
     assert a.keys() == b.keys()
     assert all(np.array_equal(np.asarray(a[k]), np.asarray(b[k])) for k in a)
+    # the helper is kept: a second request is served by the same interpreter, with the same tables
+    pid = bfmatch._HELPER[0].pid
+    c = bfmatch._tables_subprocess("cpu", des[::-1], jobs)
+    assert bfmatch._HELPER[0].pid == pid
+    d = bfmatch._tables("cpu", des[::-1], jobs)
+    assert all(np.array_equal(np.asarray(c[k]), np.asarray(d[k])) for k in d)
+    bfmatch._close()
+    assert bfmatch._HELPER is None
