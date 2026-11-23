@@ -59,8 +59,14 @@ results; failures are reported as failures.
 
 Every stage reads the race through `RaceRun.info`, a `hkjc.data.MaskedRace`: the pre-race facts plus the
 official outcome records that the run's `hkjc.data.Mask` leaves visible, read only through
-`official_boundaries()` (cumulative sectional times), `official_finish()`, `official_order()` and
-`official_placing()` (placings; a dead heat shares one). `validate` scores against the full record (`RaceRun.truth`).
+`official_boundaries()` (cumulative sectional times), `official_subsplits()` (cumulative times at the 200 m
+sub-split points), `official_finish()`, `official_order()` and `official_placing()` (placings; a dead heat shares
+one). `validate` scores against the full record (`RaceRun.truth`).
+
+HKJC prints each horse's two 200 m halves of the race's last two 400 m sections; `official_subsplits()` returns
+their points (`[600.0, 200.0]` m to go) and the cumulative time at each (section-start time plus the first half),
+separate from `official_boundaries()`, whose indices the mask keys on. Sectionals cached before the sub-splits were
+parsed have no sub-split columns and give no points. No stage reads them yet.
 
 The runners are every horse that started; withdrawn horses (WV, WV-A, WX, WX-A, WXNR) are not runners. A horse
 that started and did not finish (FE, UR, PU, DNF, TNP) is a runner with no finish time and no placing; its
@@ -69,7 +75,8 @@ its finish time and sectionals and has no placing.
 
 - `Mask()` withholds nothing (the default).
 - `Mask(boundary=j)` withholds the cumulative official time at sectional boundary j for every runner (0 is the
-  first section end; the last index is the finish, which also withholds finish times and placings).
+  first section end; the last index is the finish, which also withholds finish times and placings), and the
+  sub-split points within 200 m of it (a sub-split time is the previous boundary's time plus a 200 m half).
 - `Mask(outcome=True)` withholds all official outcome data (results, finish times, placings, sectionals,
   running positions); pre-race facts, the draw included, stay visible.
 

@@ -3,7 +3,9 @@
 The "Sectional Time & Position" page is server-rendered only with ``racedate`` as DD/MM/YYYY and
 ``RaceNo`` (no ``Racecourse``; the date selects the meeting); any other date format yields an empty
 "released shortly" page. A complete section cell reads ``position margin time [sub-splits]``; the
-position and section time are parsed, margins and sub-splits are not.
+position, section time and sub-splits are parsed, margins are not. Sub-splits are printed on the race's
+last two 400 m sections: the time over the section's first and second 200 m (``sub1``, ``sub2``; null
+on the other sections).
 
 Rows: every horse that started (as in :mod:`~hkjc.data.historical`). ``finish_order`` is the placing's
 leading integer (both horses of a dead heat, "5 DH", get 5) and null for an unplaced horse (FE, UR, PU,
@@ -27,6 +29,7 @@ _BRAND = re.compile(r"\(([A-Z]{1,2}\d+)\)")
 _LEAD_INT = re.compile(r"^\s*(\d+)")
 # a complete section cell: position, an optional margin token, then the section time
 _SECTION = re.compile(r"^\s*(\d+)\s+(?:\S+\s+)??(\d+\.\d\d)\b")
+_SPLIT = re.compile(r"^\d{1,2}\.\d\d$")
 
 
 def _to_ddmmyyyy(date: str) -> str:
@@ -52,10 +55,21 @@ def _time_to_sec(t: str):
         return None
 
 
+def _subsplits(td) -> tuple:
+    """(first 200 m, second 200 m) of a section cell (``p.sectional_200`` > ``span.color_blue2`` > two
+    spans), None where absent."""
+    p = td.find("p", class_="sectional_200")
+    blue = p.find("span", class_="color_blue2") if p is not None else None
+    spans = [s.get_text(strip=True) for s in blue.find_all("span")] if blue is not None else []
+    vals = [float(s) if _SPLIT.match(s) else None for s in spans[:2]]
+    return tuple(vals + [None] * (2 - len(vals)))
+
+
 def _parse_sectional_table(table) -> list[dict]:
     out = []
     for tr in table.find_all("tr"):
-        cells = [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"])]
+        tds = tr.find_all(["td", "th"])
+        cells = [c.get_text(" ", strip=True) for c in tds]
         if len(cells) < 4 or not cells[1].isdigit():
             continue                                 # skip headers / non-data rows
         code = cells[0].split()[0] if cells[0].split() else ""
@@ -69,14 +83,16 @@ def _parse_sectional_table(table) -> list[dict]:
         horse_id = brand.group(1) if brand else None
         horse = _BRAND.sub("", name_brand).strip()
         total_time = _time_to_sec(cells[-1])
-        for i, cell in enumerate(cells[3:-1], start=1):
+        for i, (cell, td) in enumerate(zip(cells[3:-1], tds[3:-1]), start=1):
             m = _SECTION.match(cell)
             if m is None:
                 continue                             # empty, or a partial cell (sub-split only)
+            sub1, sub2 = _subsplits(td)
             out.append({
                 "finish_order": finish_order, "runner": runner, "horse_id": horse_id,
                 "horse": horse, "total_time": total_time, "section": i,
                 "position": int(m.group(1)), "section_time": float(m.group(2)),
+                "sub1": sub1, "sub2": sub2,
             })
     return out
 
@@ -85,8 +101,8 @@ def get_sectional_times(date: str, race_no: int) -> pl.DataFrame:
     """Per-horse, per-section running position + section time for one race.
 
     ``date`` may be ``YYYY-MM-DD`` / ``YYYY/MM/DD`` / ``DD/MM/YYYY``. Columns: ``date/race_no/runner``,
-    ``horse_id``, ``finish_order``, ``total_time``, ``section``, ``position``, ``section_time`` (s).
-    Empty if sectionals aren't published for that race.
+    ``horse_id``, ``finish_order``, ``total_time``, ``section``, ``position``, ``section_time`` (s),
+    ``sub1`` / ``sub2`` (s, the section's two 200 m halves; null where not printed). Empty if sectionals aren't published for that race.
     """
     dd = _to_ddmmyyyy(date)
     resp = get(SECTIONAL_URL.format(date=dd, race=race_no), headers=_HEADERS, timeout=20)
@@ -97,6 +113,7 @@ def get_sectional_times(date: str, race_no: int) -> pl.DataFrame:
 _SCHEMA = {
     "finish_order": pl.Int64, "runner": pl.Int64, "horse_id": pl.String, "horse": pl.String,
     "total_time": pl.Float64, "section": pl.Int64, "position": pl.Int64, "section_time": pl.Float64,
+    "sub1": pl.Float64, "sub2": pl.Float64,
 }
 
 
