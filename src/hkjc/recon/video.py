@@ -82,16 +82,18 @@ def legend_top(panel) -> int:
     import cv2
 
     h = panel.shape[0]
-    hsv = cv2.cvtColor(panel, cv2.COLOR_BGR2HSV)
-    vivid = (
-        (hsv[..., 1] > 110) & (hsv[..., 2] > 110) & ((hsv[..., 0] < 25) | (hsv[..., 0] > 80))
-    ).astype(np.uint8)
+    top = int(0.65 * h)  # the strip is searched below this row only: convert only those rows
+    hsv = cv2.cvtColor(panel[top:], cv2.COLOR_BGR2HSV)
+    # s > 110, v > 110, h < 25 or h > 80, as 0/1
+    vivid = cv2.bitwise_or(
+        cv2.inRange(hsv, (0, 111, 111), (24, 255, 255)), cv2.inRange(hsv, (81, 111, 111), (255, 255, 255))
+    )
+    vivid &= 1
     band = vivid.sum(1).astype(float)
-    band[: int(0.65 * h)] = 0
-    if band.max() < 0.05 * panel.shape[1]:
+    if band.max(initial=0.0) < 0.05 * panel.shape[1]:
         return int(0.80 * h)
     rows = np.where(band > 0.30 * band.max())[0]
-    return int(rows.min())
+    return int(rows.min()) + top
 
 
 def hud_mask(panel, legend_row: int | None = None) -> np.ndarray:
@@ -116,8 +118,24 @@ ODO_YELLOW_MIN = 0.05  # circle render: yellow fraction of the odometer box
 
 def _green_frac(hsv_band) -> float:
     """Fraction of a HSV band that is turf-green (hue 35-90, sat>60)."""
-    h, s = hsv_band[:, :, 0], hsv_band[:, :, 1]
-    return float(((h > 35) & (h < 90) & (s > 60)).mean())
+    import cv2
+
+    n = cv2.countNonZero(cv2.inRange(hsv_band, (36, 61, 0), (89, 255, 255)))  # 35 < h < 90, s > 60
+    return n / (hsv_band.shape[0] * hsv_band.shape[1])
+
+
+def _texture_var_at_least(gray, thr: float) -> bool:
+    """``cv2.Laplacian(gray, CV_64F).var() >= thr``. The 3x3 Laplacian of 8-bit pixels is an integer below 2^11, so
+    the 16-bit Laplacian holds the same values and ``meanStdDev`` sums them exactly; its variance can differ from
+    numpy's only by rounding (~1e-15 relative), so it decides unless it lies within 1e-6 of ``thr``, where numpy's
+    variance of the float64 Laplacian decides as before."""
+    import cv2
+
+    _m, sd = cv2.meanStdDev(cv2.Laplacian(gray, cv2.CV_16S))
+    v = float(sd[0, 0]) ** 2
+    if abs(v - thr) > 1e-6 * thr:
+        return v >= thr
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= thr
 
 
 def render_active(panel, *, relaxed: bool = False, style: str = "silk") -> bool:
@@ -145,8 +163,11 @@ def render_active(panel, *, relaxed: bool = False, style: str = "silk") -> bool:
     def legend_boxes(lo, hi):
         # colour conversions are per-pixel: convert ONLY the strips the gates read
         hs = cv2.cvtColor(panel[int(lo * ph) : int(hi * ph)], cv2.COLOR_BGR2HSV)
-        h, s, v = hs[:, :, 0], hs[:, :, 1], hs[:, :, 2]
-        nongreen = ((s > 110) & (v > 110) & ((h < 35) | (h > 90))).astype("uint8")
+        # s > 110, v > 110, h < 35 or h > 90, as 0/1
+        nongreen = cv2.bitwise_or(
+            cv2.inRange(hs, (0, 111, 111), (34, 255, 255)), cv2.inRange(hs, (91, 111, 111), (255, 255, 255))
+        )
+        nongreen &= 1
         nongreen = cv2.morphologyEx(nongreen, cv2.MORPH_CLOSE, np.ones((3, 7), np.uint8))
         n, _lbl, st, _c = cv2.connectedComponentsWithStats(nongreen, 8)
         return sum(
@@ -179,7 +200,7 @@ def render_active(panel, *, relaxed: bool = False, style: str = "silk") -> bool:
     if style == "circle":  # no texture floor: the smoother 2026/27 render sits below the silk
         return True  # render's (median Laplacian var ~230)
     gray = cv2.cvtColor(panel[int(0.34 * ph) : int(0.70 * ph)], cv2.COLOR_BGR2GRAY)
-    return float(cv2.Laplacian(gray, cv2.CV_64F).var()) >= TRACK_LAP_MIN
+    return _texture_var_at_least(gray, TRACK_LAP_MIN)
 
 
 def layout(path, n_runners: int, fracs=tuple(np.linspace(0.2, 0.85, 12))):

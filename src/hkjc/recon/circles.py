@@ -18,9 +18,7 @@ def blue_mask(panel) -> np.ndarray:
     import cv2
 
     hsv = cv2.cvtColor(panel, cv2.COLOR_BGR2HSV)
-    return (
-        (hsv[..., 0] >= 100) & (hsv[..., 0] <= 125) & (hsv[..., 1] > 120) & (hsv[..., 2] > 110)
-    ).astype(np.uint8)
+    return cv2.inRange(hsv, (100, 121, 111), (125, 255, 255)) & 1  # 100 <= h <= 125, s > 120, v > 110 as 0/1
 
 
 _DISC = None
