@@ -100,7 +100,9 @@ faced** (opponent-strength-adjusted), not in absolute terms.
   cell); `DISQ` keeps its finish time and sections; withdrawn codes (`WV`, `WV-A`, `WX`, `WX-A`,
   `WXNR`, `WR`) and `VOID` rows are dropped. `WXNR` = declared a non-runner by the stewards after the
   start (e.g. denied a fair start); the horse may still have run the race. On the sectional page a
-  non-finisher's last cell holds only a sub-split (no position), which is not a section time.
+  non-finisher's last cell holds only a sub-split (no position), which is not a section time. The last two
+  400 m sections' cells also print the two 200 m halves (`22.79 11.41 11.38`: section, first, second 200 m;
+  `p.sectional_200 > span.color_blue2 > span x2`), on 2,743 of 2,744 pages checked 2023-09 to 2026-11.
 - **Time strings differ by page** (parse each with its own rule):
 
   | Page | Field | Format | Unit of last part |

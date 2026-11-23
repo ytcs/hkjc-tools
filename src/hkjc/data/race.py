@@ -73,6 +73,37 @@ def official_boundaries(info) -> tuple[list, dict]:
     return bnd, dict(zip(w["runner"].to_list(), cum))
 
 
+SUBSPLIT_HALF = 200.0  # m: a sub-split point sits mid-way through a 400 m section
+
+
+def official_subsplits(info) -> tuple[list, dict]:
+    """Full official record of the 200 m sub-splits: (distance-to-go at each sub-split point,
+    {runner: cumulative official times there}), points in race order (e.g. ``[600.0, 200.0]``).
+
+    HKJC prints each horse's time over the first and second 200 m of the race's last two 400 m sections;
+    the point is the section's midpoint and its time the cumulative time at the section start plus the
+    first 200 m. NaN where a horse has no sub-split or no time at the section start (a non-finisher's
+    partial cell gives no section row, hence no sub-split). ``([], {})`` when the sectionals carry no
+    sub-split columns (parsed before they were read). Separate from :func:`official_boundaries`, whose
+    indices ``Mask(boundary=j)`` refers to."""
+    sec = info.sectionals
+    if "sub1" not in sec.columns:
+        return [], {}
+    bnd, cum = official_boundaries(info)
+    sub1 = {(int(r), int(s)): v for r, s, v in sec.select("runner", "section", "sub1").iter_rows() if v is not None}
+    pts, secs = [], []
+    for i in sorted({s for _r, s in sub1}):  # 1-based section; it starts at boundary i - 2 (the start for i = 1)
+        start = bnd[i - 2] if i >= 2 else float(info.distance)
+        if abs(start - bnd[i - 1] - 2 * SUBSPLIT_HALF) < 1e-6:
+            pts.append(start - SUBSPLIT_HALF)
+            secs.append(i)
+    out = {}
+    for h, c in cum.items():
+        t0 = [0.0 if i == 1 else float(c[i - 2]) for i in secs]
+        out[h] = np.array([a + sub1[(h, i)] if (h, i) in sub1 else np.nan for a, i in zip(t0, secs)], dtype=float)
+    return pts, out
+
+
 def official_finish(info) -> dict:
     """Full official record: {horse: finish time s} (results FinishTime), in result order. Horses
     without a time (non-finishers) are absent; a disqualified horse keeps the time it ran."""
@@ -103,7 +134,8 @@ class Mask:
     """Information withheld from the reconstruction: official outcome records and video evidence.
 
     Official outcome. ``boundary=j``: the cumulative official time at sectional boundary j (0 = the first
-    section end; the last index is the finish, which also withholds the finish times and placings).
+    section end; the last index is the finish, which also withholds the finish times and placings), and
+    the 200 m sub-split points within 200 m of it.
     ``outcome=True``: every official outcome record (results, finish times, placings, sectionals,
     running positions); pre-race facts (distance, course, draw, runners, silks) stay visible.
 
@@ -212,8 +244,8 @@ class Mask:
 
 class MaskedRace:
     """The race as the reconstruction sees it: every pre-race fact of ``info`` (``PRE_RACE``) and the
-    official outcome only through ``official_boundaries`` / ``official_finish`` / ``official_order`` /
-    ``official_placing``, with what ``mask`` withholds removed. It has no ``results`` / ``sectionals``."""
+    official outcome only through ``official_boundaries`` / ``official_subsplits`` / ``official_finish`` /
+    ``official_order`` / ``official_placing``, with what ``mask`` withholds removed. It has no ``results`` / ``sectionals``."""
 
     PRE_RACE = (
         "date", "venue", "race_no", "distance", "course", "surface", "going", "race_class",
@@ -249,6 +281,21 @@ class MaskedRace:
                 hidden[h] = c
             cum = hidden
         return bnd, cum
+
+    def official_subsplits(self) -> tuple[list, dict]:
+        """(distance-to-go at each 200 m sub-split point, {runner: cumulative official times}); a point
+        within 200 m of a withheld boundary is NaN for every runner (its time is the previous boundary's
+        time plus a 200 m split, so the points on either side of a boundary give it away); ([], {}) when
+        the outcome is withheld."""
+        if self.mask.outcome:
+            return [], {}
+        pts, cum = official_subsplits(self._info)
+        j = self.mask.boundary
+        bnd = official_boundaries(self._info)[0] if j is not None and pts else []
+        if j is not None and j < len(bnd):
+            hide = np.array([abs(p - bnd[j]) <= SUBSPLIT_HALF + 1e-6 for p in pts])
+            cum = {h: np.where(hide, np.nan, c) for h, c in cum.items()}
+        return pts, cum
 
     def official_finish(self) -> dict:
         """{horse: official finish time s}; empty when the outcome or the finish boundary is withheld."""
