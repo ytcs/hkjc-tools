@@ -1,5 +1,6 @@
-"""Runtime switches: HKJC_MATCH_HELPER (per-race matcher helper + detector feeding the feature workers; on unless 0)
-and HKJC_CUDA_BLOCKING_SYNC (CUDA primary context in blocking-sync mode; opt-in)."""
+"""Runtime switches: HKJC_MATCH_HELPER (per-race matcher helper + detector feeding the feature workers; on unless 0),
+HKJC_CUDA_BLOCKING_SYNC (CUDA primary context in blocking-sync mode; opt-in) and HKJC_LAT_METRES (metre lateral columns;
+opt-in, tests/test_lat_metres.py)."""
 
 import numpy as np
 import pytest
@@ -109,3 +110,14 @@ def test_blocking_sync_sets_the_primary_context_flag(monkeypatch):
     monkeypatch.setattr(cudasched, "_DONE", False)
     with pytest.raises(RuntimeError, match="CUresult 708"):
         cudasched.blocking_sync("cuda")
+
+
+def test_lat_metres_is_opt_in(monkeypatch):
+    from hkjc.recon.pipeline import lat_metres_on
+
+    monkeypatch.delenv("HKJC_LAT_METRES", raising=False)
+    assert not lat_metres_on()
+    monkeypatch.setenv("HKJC_LAT_METRES", "0")
+    assert not lat_metres_on()
+    monkeypatch.setenv("HKJC_LAT_METRES", "1")
+    assert lat_metres_on()

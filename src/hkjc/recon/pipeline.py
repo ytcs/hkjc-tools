@@ -121,6 +121,12 @@ DEPS = {
 }
 
 
+def lat_metres_on() -> bool:
+    """``HKJC_LAT_METRES=1`` (opt-in): the written paths gain lat_m / sd_lat_m, the lateral in metres where a validated
+    map exists (``RaceRun.lat_m_scope``), NaN elsewhere; every other column and artifact is unchanged. Off: as before."""
+    return os.environ.get("HKJC_LAT_METRES", "0") == "1"
+
+
 def upstream(stage: str) -> set:
     """Every stage ``stage`` depends on, transitively."""
     out, todo = set(), list(DEPS[stage])
@@ -1514,6 +1520,7 @@ class RaceRun:
     def _write_paths(self, paths, name):
         import polars as pl
 
+        metres = lat_metres_on()
         recs = [
             pl.DataFrame(
                 {
@@ -1525,12 +1532,40 @@ class RaceRun:
                     "sd_s": p.sd_s,
                     "sd_lat": p.sd_l,
                     "n_obs": p.n_obs,
+                    **(self.lat_metres(p) if metres else {}),
                 }
             )
             for h, p in paths.items()
         ]
         with self.out(name) as fp:
             pl.concat(recs).write_parquet(fp)
+
+    # Lateral in metres (HKJC_LAT_METRES=1). The render spreads the field laterally (RECON 8); the only validated map is
+    # the Sha Tin home straight, true = a + b x render lateral (pooled over the disc and the drone-era silk render; it
+    # passed a reserved drone test for both).
+    LAT_MAP = (-0.019562873395157165, 0.645046455287541)
+    # race dates the reserved test's population spans: drone feeds from 2026-01-07 to the test's inventory date; later
+    # races may come from a changed render and need their own test
+    LAT_M_DATES = ("20260107", "20261123")
+
+    def lat_m_scope(self, d) -> np.ndarray:
+        """Nodes (distance-to-go ``d``) where lat_m is defined: Sha Tin turf oval (not the 1000 m straight) within
+        LAT_M_DATES, and 0 <= d < the home straight's length."""
+        d = np.asarray(d, float)
+        info = self.info
+        g = info.geometry
+        lo, hi = self.LAT_M_DATES
+        if not (info.venue == "ST" and info.surface == "turf" and g.handedness != "straight"
+                and lo <= info.date <= hi):
+            return np.zeros(d.shape, bool)
+        return (d >= 0.0) & (d < g.home_straight(info.course))
+
+    def lat_metres(self, p) -> dict:
+        """{"lat_m", "sd_lat_m"} of path ``p``: the map applied to lat and sd_lat inside ``lat_m_scope``, NaN outside.
+        sd_lat_m is the mapped posterior sd only (the map's own uncertainty is not added)."""
+        a, b = self.LAT_MAP
+        m = self.lat_m_scope(self.info.distance - p.s)
+        return {"lat_m": np.where(m, a + b * p.lat, np.nan), "sd_lat_m": np.where(m, b * p.sd_l, np.nan)}
 
     def _em_identity(self, paths):
         """Second identity pass: legend votes on frames with undetected horses, ranks completed by the

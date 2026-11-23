@@ -16,7 +16,8 @@ are cached under `data_cache/recon/<date>_<venue>_<no>/`; a stage is skipped whe
 Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `HKJC_NPROC` (workers per
 race), `HKJC_OCR_THREADS`, `HKJC_OCR_DEVICE`, `HKJC_MATCH_DEVICE`, `HKJC_AVATAR_WEIGHTS` (detector weights),
 `HKJC_FILM_DEVICE` (the film detector alone, e.g. `intel:gpu`), `HKJC_MASK` (§3), `HKJC_PERTURB_SEED` (§4 observe, §6),
-`HKJC_MATCH_HELPER` (§4, on unless `0`), `HKJC_CUDA_BLOCKING_SYNC` (§4, opt-in).
+`HKJC_MATCH_HELPER` (§4, on unless `0`), `HKJC_CUDA_BLOCKING_SYNC` (§4, opt-in), `HKJC_LAT_METRES` (§4 lateral in
+metres, opt-in).
 
 Race identifiers are `venue MM-DD Rn` for 2026 meetings (ST 05-31 R1 is Sha Tin, 2026-05-31, race 1)
 and carry the full date otherwise.
@@ -31,7 +32,7 @@ no feed acting as a master that the others correct.
 
 | Artifact | Content |
 |---|---|
-| `paths.parquet` (`run.paths()`) | **The product**: per horse `horse_no, t, s, d, lat, sd_s, sd_lat, n_obs` on a 0.1 s grid, from every source, including the official records the run's mask leaves visible |
+| `paths.parquet` (`run.paths()`) | **The product**: per horse `horse_no, t, s, d, lat, sd_s, sd_lat, n_obs` on a 0.1 s grid, from every source, including the official records the run's mask leaves visible; `lat` is in the render's lateral units (§8); with `HKJC_LAT_METRES=1` also `lat_m, sd_lat_m` (§4) |
 | `paths_video.parquet` | The reconstruction from the videos and pre-race facts only (no official outcome record); the fixed gates score it, and it is the reference for what the videos alone determine |
 | `validation.json` | fixed gates on `paths_video.parquet` against the full official record, plus the product's residual against the official times (`final_official_resid_mae`) |
 | `audit.json` | label-free invariants (§4, validate) |
@@ -574,6 +575,22 @@ The product: the video-only detections plus the draw and the official records th
 
 `fuse_final` leaves `paths_video.parquet` byte-identical.
 
+### Lateral in metres (`HKJC_LAT_METRES=1`, opt-in)
+
+`lat` and `sd_lat` are in the render's lateral units everywhere (§8). With the switch on, both parquets gain `lat_m` and
+`sd_lat_m` (`RaceRun.lat_metres`); every other column and every artifact is unchanged.
+- `lat_m = a + b × lat` and `sd_lat_m = b × sd_lat`, with a = -0.020 m and b = 0.645 (`LAT_MAP`). This is the Sha Tin
+  home-straight map, pooled over the disc and the drone-era silk render.
+- It passed a reserved drone test on both styles: corrected/drone field sd ratio 0.954 (disc, 7 races) and 1.094
+  (silk, 6 races).
+- `sd_lat_m` is the mapped posterior sd only. The map's own uncertainty is not added: b's 90 % race-bootstrap interval
+  is 0.609-0.660, and the leave-one-race-out field-shape residual is about 0.7 m.
+- Defined only where that test applies (`RaceRun.lat_m_scope`); NaN everywhere else:
+  - Sha Tin turf oval (not the 1000 m straight);
+  - race date in `LAT_M_DATES` (2026-01-07, when drone feeds begin, to 2026-11-23, the test's inventory date; later races
+    need their own test);
+  - nodes from 430 m out (the home straight) to the post.
+
 ### status
 
 `run()` always writes `status.json` (not a stage artifact): `failed` with the stage and error when a stage
@@ -738,13 +755,21 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 
 ## 8. Open problems
 
-- **Lateral scale.** Lateral positions are in the render's units, and the render spreads the field: its discs do not
-  overlap, so horses running abreast sit 2.2-2.6 m apart instead of about 1.1 m. Against rail-to-rail rulers on the
-  drone feed (Sha Tin, disc render; the drone's stall pitch reads 0.94 m), the field is about 2x wider in compact
-  fields and 1.4-1.5x in the fanned-out home straight, and horses on the rail sit at 1.9-2.4 m instead of 0.7-1.3 m.
-  `fuse_final` carries this unchanged (the draw prior acts only at t = 0, and the lateral box never binds), so
-  wide-running distance is overstated by about 4-7 m per horse at Sha Tin. The silk render and Happy Valley are
-  unmeasured. Lateral order is reliable; lateral metres are not.
+- **Lateral scale.** Lateral positions (`lat`) are in the render's units, and the render spreads the field.
+  - Against rail-to-rail rulers on the drone feed (whose gate stall pitch reads 0.94 m) the field is about 1.4-2x too
+    wide: about 2x in compact fields (start, back straight, bends) and 1.4-1.5x in the fanned-out home straight.
+  - Horses on the rail sit at 1.9-2.4 m instead of 0.7-1.3 m.
+  - Both render styles and both venues show it.
+  - `fuse_final` carries this unchanged (the draw prior acts only at t = 0, and the lateral box never binds).
+  - Wide-running distance, which accrues on the bends, is overstated by about 4-7 m per horse at Sha Tin and 7-13 m
+    at Happy Valley.
+  - Metres exist only in `lat_m` (§4): the Sha Tin home straight, drone-era races. Every other segment, venue and
+    season has no validated scale. Fitted bend maps (slope 0.54-0.59) were not testable: too few reserved races had
+    measurable bend frames.
+  - The draw's stall pitch (`STALL_PITCH` 1.06 m) is in neither unit system for certain: the drone reads the gate's
+    bays at 0.947 m. Render lateral per draw step at the first render frame is 0.5-1.0 m, but the field has already
+    closed up by then, so it does not settle the render's own stall spacing.
+  - Lateral order is reliable; lateral metres outside the home straight are not.
 - **Shared metric error.** The held-out error is almost all common to the field (§3): the render metric between
   boundaries, interpolated from the other boundaries. Its steps between adjacent boundaries are close to
   independent, so midway between two visible boundaries the shared error is about the held-out figure / √2,
