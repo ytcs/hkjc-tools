@@ -35,7 +35,7 @@ no feed acting as a master that the others correct.
 | `validation.json` | fixed gates on `paths_video.parquet` against the full official record, plus the product's residual against the official times (`final_official_resid_mae`) |
 | `audit.json` | label-free invariants (§4, validate) |
 | `status.json` | `ok`, `unhealthy` or `failed` (§4, status) |
-| `timings.jsonl` | per stage: wall s, CPU s, peak RSS |
+| `timings.jsonl` | per stage: wall s, CPU s (the stage's process and its own children; background stages count only in their own record), peak RSS |
 | `mask.txt` | the run's mask, when not empty (§3) |
 
 Computer vision is validated by reprojecting the reconstruction onto raw frames (`viz.reproject`, the

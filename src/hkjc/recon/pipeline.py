@@ -132,6 +132,14 @@ def upstream(stage: str) -> set:
     return out
 
 
+def _cpu_total() -> float:
+    """CPU seconds of this process and of its reaped children (user + system)."""
+    import resource
+
+    r = [resource.getrusage(w) for w in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN)]
+    return sum(x.ru_utime + x.ru_stime for x in r)
+
+
 def _nproc() -> int:
     """Worker processes per race (env HKJC_NPROC; default: all cores / parallel races)."""
     return max(1, int(os.environ.get("HKJC_NPROC", "0")) or (os.cpu_count() or 4))
@@ -289,20 +297,25 @@ class RaceRun:
         todo = self.plan(stages, force)
         self.mask_guard(todo)
         bg, launched, finished = {}, set(), set()
+        self._bg, self._bg_cpu = bg, {}  # telemetry: _timed keeps background CPU out of foreground stages
 
         def launch(st):
             launched.add(st)
+            total = mp.get_context("fork").Value("d", -1.0)
 
             def work():
                 import signal
                 import sys
 
                 signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))  # pools shut down cleanly
+                self._bg = {}  # siblings are not this process's children
                 self._timed(st, background=True)
+                total.value = _cpu_total()  # this process + its reaped children, as the parent will receive it
 
             pr = mp.get_context("fork").Process(target=work)
             pr.start()
             bg[st] = pr
+            self._bg_cpu[st] = total
 
         def wait(st):
             pr = bg.pop(st)
@@ -392,15 +405,24 @@ class RaceRun:
             json.dump(rec, fh, indent=1)
 
     def _timed(self, st, background=False):
+        """Run stage ``st`` and append its telemetry to timings.jsonl. ``cpu_s`` = CPU of this process and of the
+        children reaped during the stage, minus the background stages reaped meanwhile (multiprocessing reaps
+        finished children whenever it starts a process; their CPU is in their own record)."""
         import resource
 
-        def cpu():
-            r = [resource.getrusage(w) for w in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN)]
-            return sum(x.ru_utime + x.ru_stime for x in r)
+        bgs = dict(getattr(self, "_bg", {}))
 
-        t0, c0 = time.time(), cpu()
+        def reap():  # join finished background stages now: their CPU enters RUSAGE_CHILDREN at a known point
+            for pr in bgs.values():
+                pr.join(0)
+            return {b for b, pr in bgs.items() if pr.exitcode is None}
+
+        running = reap()
+        t0, c0 = time.time(), _cpu_total()
         getattr(self, st)()
         dt = time.time() - t0
+        reaped = running - reap()
+        bg_cpu = sum(max(0.0, self._bg_cpu[b].value) for b in reaped if b in getattr(self, "_bg_cpu", {}))
         self.log(f"{self.info.key} {st}: {dt:.0f}s" + (" (background)" if background else ""))
         own, kids = (
             resource.getrusage(w).ru_maxrss // 1024
@@ -409,7 +431,7 @@ class RaceRun:
         rec = dict(
             stage=st,
             s=round(dt, 1),
-            cpu_s=round(cpu() - c0, 1),  # this process + its finished workers
+            cpu_s=round(_cpu_total() - c0 - bg_cpu, 1),  # this process + its own finished workers
             background=background,
             end=round(time.time(), 1),
             maxrss_mb=own,

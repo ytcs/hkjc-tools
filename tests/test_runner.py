@@ -77,6 +77,38 @@ def test_failed_stage_terminates_background(tmp_path):
     assert mp.active_children() == []
 
 
+def _burn(sec):
+    t = time.process_time()
+    while time.process_time() - t < sec:
+        pass
+
+
+class _Telemetry(RaceRun):
+    def frames(self):
+        pass
+
+    def hud(self):  # background: burns CPU and ends while features runs
+        _burn(1.0)
+
+    def features(self):
+        t0 = time.time()
+        while '"hud"' not in (self.p("timings.jsonl").read_text() if self.p("timings.jsonl").exists() else ""):
+            assert time.time() - t0 < 60
+            time.sleep(0.05)
+        time.sleep(0.5)  # the background process exits after writing its record
+        p = mp.get_context("fork").Process(target=_burn, args=(0.3,))  # starting a process reaps finished children
+        p.start()
+        p.join()
+
+
+def test_background_cpu_stays_out_of_the_foreground_stage(tmp_path):
+    R = _run(tmp_path, _Telemetry)
+    R.run(stages=("frames", "hud", "features"))
+    rec = {r["stage"]: r for r in map(json.loads, open(R.p("timings.jsonl")))}
+    assert rec["hud"]["background"] and rec["hud"]["cpu_s"] >= 0.9
+    assert 0.2 <= rec["features"]["cpu_s"] < 0.7  # its own worker's 0.3 s, not the reaped background stage's 1 s
+
+
 def test_yolo_backfilled_from_yolo_only_dets(tmp_path):
     R = _run(tmp_path)
     R.p("feats.npz").touch()
