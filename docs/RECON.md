@@ -291,8 +291,11 @@ The refinement snaps to the ridge nearest the DP rail, not the strongest in its 
 ~0.95 m, Happy Valley ~0.55 m), the strongest alternated between the two, and the rail wandered ±0.3–0.5 m at a
 ~50 m wavelength, about half the time on the inner line. The DP already takes the line nearest the field, the one the
 horses run against. On the 23 Sha Tin A races the straight-line wobble fell from 0.19 to 0.04 m (median; other
-courses 0.04 m), and the innermost horse's median lateral from 2.62 to 1.92 m (other courses 1.99 m); rail.npz and
-metric.npz are byte-identical on 34 sampled races of the other courses.
+courses 0.04 m), and the innermost horse's median lateral from 2.62 to 1.92 m (other courses 1.99 m). On other courses
+the rail is not byte-identical to the strongest-ridge snap: on 34 sampled races 30 differ in value and 5 change line by
+more than 0.3 m (straight-line wobble unchanged, 0.0424 to 0.0423 m median); the nearest-ridge snap is better where the
+old rail strayed into the grass and worse where a crossing or chute marking breaks the rail line (a Happy Valley
+junction).
 `rails.RailFrame` takes positions and normals from a 121-station (~12 m) cubic fit, because snap wobble
 (~0.1 m) makes normals noisy at wide lanes; projection uses a time-ordered station hint for revisited ground.
 
