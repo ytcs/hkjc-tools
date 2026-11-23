@@ -25,6 +25,26 @@ def test_track_widths_by_course():
     assert {c: hv.width(c) for c in official_hv} == official_hv
 
 
+def test_bend_segments_measured():
+    # measured from rendered rail curvature (> 1 mrad/m), journal 0249
+    hv, st, st_back = track_for("HV", 1650), track_for("ST", 2000), track_for("ST", 1600)
+    assert hv.bend_segments == ((315.0, 590.0), (920.0, 1480.0)) and hv.circumference == 1480.0
+    assert st.bend_segments == ((430.0, 900.0), (1385.0, 1900.0)) and st.circumference == 1900.0
+    assert st_back.bend_segments == ((430.0, 900.0),)
+    assert track_for("ST", 1200) is st_back and track_for("ST", 1800) is st_back
+    assert track_for("ST", 2200) is st and track_for("ST") is st
+    assert not hv.is_bend(750.0) and hv.is_bend(450.0)  # HV back straight, home bend
+    assert not st_back.is_bend(1700.0) and st.is_bend(1700.0)  # 1,800 m start straight vs 2,000 m far bend
+    # sanity: the measured home straight (start of the first turn) matches the official course-A figure
+    # within the threshold sensitivity of the measurement (10 m)
+    for g in (hv, st):
+        assert abs(g.bend_segments[0][0] - g.home_straight("A")) <= 10.0
+    # turns are inside one lap and do not overlap
+    for g in (hv, st, st_back):
+        ends = [x for seg in g.bend_segments for x in seg]
+        assert ends == sorted(ends) and 0 < ends[0] and ends[-1] <= g.circumference
+
+
 @pytest.mark.skipif(
     not Path("data_cache/race_official/20260603HV8_results.parquet").exists(), reason="no cache"
 )
