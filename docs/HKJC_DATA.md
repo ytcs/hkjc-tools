@@ -597,6 +597,9 @@ player even mis-guesses the drone filename. The four feeds we use, each a DIFFER
 | `replay-patrol` | **Patrol** | real, FIXED high mount, head-on early | **FIXED camera ⇒ CONSTANT homography** (no per-frame rail jitter); **head-on ⇒ lateral = horizontal image coordinate directly**; the stewards' INTERFERENCE camera (bump/carried-wide events cross-check the official running commentary). Cleanest LATERAL geometry. Limits: 720p, head-on occlusion, identity head-on (bridge from finish), straight-only coverage. |
 
 Also live: `replay-aerial-virtual`, `trackwork`.
+Some races' `replay-aerial` file carries live race film with no render (e.g. 2025-01-15 HV R3: every sampled
+frame is TV film; `replay-full` and `replay-patrol` are the usual feeds and `replay-aerial-virtual` is 404). Such a
+race has no render to reconstruct from; the frames stage stops with "unknown render style".
 The official per-horse **running commentary / stewards' trip notes** (the external lateral
 ground-truth: "caught wide", "bumped", "shifted across") are in the **results page HTML**
 (`...results...`) and, as one free-text line per runner, on the **`corunning`** page (recipe §2.2).
