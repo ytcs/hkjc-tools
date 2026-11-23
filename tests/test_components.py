@@ -310,6 +310,70 @@ def test_video_keyframe_reencode_after_live_film_gets_its_tick_time():
     assert not set(keys) & set(kept.tolist()) and set(starts) <= set(kept.tolist())
 
 
+def _render_stream(lo, hi, res=(1, 3), keys=50):
+    """De-dup stream of a 10 Hz render: tick starts at residues ``res`` of frame % 5 in [lo, hi),
+    plus a keyframe re-encode every ``keys`` frames where that is not a tick start."""
+    a, b = res
+    starts = [f for f in range(lo, hi) if f % 5 in (a, b)]
+    return sorted(starts + [f for f in range(lo, hi) if f % keys == 0 and f not in starts])
+
+
+def _build(tmp_path, monkeypatch, idx):
+    """Run ``FrameCache.build`` on a synthetic de-dup stream; returns the stored frame indices."""
+    from hkjc.recon import video
+
+    full = np.full((400, 1000, 3), 100, np.uint8)  # panel box = the right half
+
+    def fake(path, **kw):
+        for i in idx:
+            yield i, np.full((8, 8, 3), i % 256, np.uint8), full
+
+    monkeypatch.setattr(video, "iter_unique_render", fake)
+    n = video.FrameCache.build("unused.mp4", tmp_path)
+    stored = np.load(tmp_path / "frames_idx.npz")["idx"]
+    assert n == len(stored) == len(np.load(tmp_path / "frames_clock.npy"))
+    return stored
+
+
+def test_video_live_film_before_the_render_is_not_cached(tmp_path, monkeypatch):
+    """Live start film that passes the render gate (5 of 329 replays) changes on every frame; the
+    render changes every 2-3 frames. Film frames are never cached: ST 2024-12-29 R8 (93 film frames,
+    a render-gate dropout, the render at {1, 3} from an off-grid first frame), HV 2023-10-29 R6 (a
+    static gate shot that the de-dup thins to 2-3 frame gaps, a dropout inside the film) and
+    ST 2025-01-05 R6 (only 8 frames between the film and the render)."""
+    st8_film = list(range(121, 204)) + [205, 206, 207, 208, 210, 211, 212, 213]
+    st8_render = [272] + _render_stream(273, 900)
+    hv6_film = [5, 6, 8, 11, 13, 15, 18, 20, 22, 24, 26] + list(range(27, 88)) + list(range(95, 130))
+    hv6_render = [333] + _render_stream(334, 900, (2, 4))
+    st6_film = list(range(172, 307))
+    st6_render = [314] + _render_stream(315, 900, (3, 0))
+    for film, render in ((st8_film, st8_render), (hv6_film, hv6_render), (st6_film, st6_render)):
+        stored = _build(tmp_path, monkeypatch, film + render)
+        assert stored[0] == render[0] and not set(film) & set(stored.tolist())
+
+
+def test_video_film_keep_leaves_render_streams_alone():
+    """Streams without a leading film run keep every frame: keyframe re-encodes every 50 or 100
+    frames, an off-grid first frame, a render-gate dropout, a short dissolve at the render start,
+    film after the render has started, and streams without the 10 Hz cadence."""
+    from hkjc.recon import video
+
+    cases = [
+        _render_stream(250, 1500),
+        _render_stream(250, 1500, (2, 4), keys=100),
+        [303] + _render_stream(304, 1500, (2, 4)),
+        [f for f in _render_stream(300, 1500) if not 600 <= f < 650] + [651],
+        [295, 296, 297, 298] + _render_stream(299, 1500, (3, 0)),
+        list(range(0, 9)) + _render_stream(300, 1500),  # 8 one-frame gaps < FILM_RUN
+        _render_stream(250, 1200) + list(range(1250, 1350)),
+        list(range(0, 200)),
+        [1, 2, 3, 4, 5, 6, 7],
+        [],
+    ]
+    for idx in cases:
+        assert video.film_keep(idx).all(), idx[:12]
+
+
 def test_video_tick_frame_puts_ticks_on_the_uniform_grid():
     """Ticks at residues {2, 4}: 2 -> 4 is a 2-frame step, 4 -> 7 a 3-frame step. Tick times move
     the first residue -0.25 and the second +0.25 frame, so every interval is 2.5 frames; off-grid

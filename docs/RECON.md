@@ -165,17 +165,29 @@ the top strip is the dark HUD box (turf-green fraction ≤ 0.30) and the track b
 ≥ 240). Once the strict test has passed, ≥ 5 boxes in a band widened to 0.60 also pass (on ST 04-19 R4 and ST
 04-26 R9 the legend sits higher and the strict gate drops up to 13 s of race). The render updates at 10 Hz in
 25 fps video; a frame within mean |diff| 3.0 of the last kept frame is a duplicate. Panels are cached as JPEG
-with their video index as timestamp. `video.grid_keep` drops off-grid re-encodes of a kept tick (HV 04-22
-R1/R9 have a keyframe every 100 frames that would enter as a zero-motion tick). The tick grid (`video.tick_grid`)
-is the two residues of `frame % 5` holding ≥ 90 % of the frames; when that vote fails, only frames 2–3 frames
-after the previous one (the 10 Hz cadence) vote. On 5 of 329 replays (ST 2024-12-29 R8, ST 2024-04-07 R5,
-HV 2023-10-29 R6, HV 2024-07-04 R4, ST 2025-01-05 R6) 3–5 s of live start film pass the silk render gate and
-change on every frame, which puts the all-frame vote at 0.85–0.89. Without a grid, the keyframe every 50 frames
-(2 s) entered as a copy of the previous tick stamped 1–2 frames late (0.75–1.75 frames after that tick's time on
-the uniform grid), and tick times were not moved onto the uniform grid. The film frames still pass the gate; on
-those replays only their on-grid frames are kept. Open: the avatar detector fires on the film, identity labels
-some of those detections (ST 2024-12-29 R8: 40 of 73), and they shape the path between the gate and the first
-render frame.
+with their video index as timestamp.
+
+On 9 of 329 replays live start film in the right panel passes the silk render gate before the render: 3–5 s
+on ST 2024-12-29 R8, ST 2024-04-07 R5, HV 2023-10-29 R6, HV 2024-07-04 R4 and ST 2025-01-05 R6, 0.6–2.5 s on
+HV 2023-12-20 R1, ST 2024-04-14 R8, HV 2026-01-14 R3 and HV 2026-01-14 R8. `video.film_keep` drops it from the
+de-dup stream. The render changes every 2–3 frames and never on two consecutive frame pairs; film changes on
+every frame, except in static gate shots that the de-dup thins to 2–3 frame gaps. The render is taken to run from
+its first 10 inter-frame gaps alternating 2 and 3 frames (1 s of ticks). The rule fires only when a run of ≥ 10
+consecutive 1-frame gaps precedes that point. It then drops every frame up to the end of the last run of ≥ 2
+consecutive 1-frame gaps before it, which includes the slow parts of the film and the dissolve into the render.
+Before this rule the avatar detector fired on the film and identity labelled part of it (ST 2024-12-29 R8: 40
+of 73 detections), which shaped the path between the gate and the first render frame. The film also set the pose
+gauge, which is frame 0's chained pose. On ST 2024-12-29 R8 that put the render at 1.37 world px per panel px,
+so the painted markers (about 26 world px/m) fell outside the 14–24 px/m search and were not found. With the film
+dropped they are found (ppm 19.3) and the finish is pinned to them.
+
+`video.grid_keep` then drops off-grid re-encodes of a kept tick (HV 04-22 R1/R9 have a keyframe every 100
+frames that would enter as a zero-motion tick). The tick grid (`video.tick_grid`) is the two residues of
+`frame % 5` holding ≥ 90 % of the frames; when that vote fails, only frames 2–3 frames after the previous one
+(the 10 Hz cadence) vote. Without a grid, the keyframe every 50 frames (2 s) entered as a copy of the previous
+tick stamped 1–2 frames late (0.75–1.75 frames after that tick's time on the uniform grid), and tick times were
+not moved onto the uniform grid. This happened on the five replays with 3–5 s of film, which put the all-frame
+vote at 0.85–0.89.
 
 Circle render: the render's yellow odometer text (fraction ≥ 0.05 of its box; live film and the dissolve
 ≤ 0.02, the render 0.10–0.33; without it the start gate's blue banner passes as discs) plus ≥ 2 discs; the
