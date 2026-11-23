@@ -733,12 +733,6 @@ class RaceRun:
         return rows, X, hist, P
 
     def rails(self):
-        try:
-            self._rails()
-        finally:
-            rails.release_planes()
-
-    def _rails(self):
         img, cnt, to_px = self._map()
         rows, X, _h, P = self.world_dets()
         out = rails.extract_racing_rail(
@@ -772,6 +766,7 @@ class RaceRun:
         with self.out("rail.npz") as fp:
             np.savez(fp, frame_idx=P["idx"], **out)
         rf = rails.RailFrame.from_points(out["rail"], int(out["inner"]))
+        rails.release_planes()  # the map's converted planes: not held while the final-pass mosaic is built
         # painted markers are drawn only near the END of the race: profile them on a FINAL-PASS
         # mosaic (rail station in the last 9000 px); on trips passing the finish area twice (HV 2200)
         # an all-frames mean fades them below detection
@@ -793,6 +788,7 @@ class RaceRun:
         gap, gsup = rails.fixed_rail_gap(
             img, cnt, to_px, out["rail"], int(out["inner"]), ppm, expected
         )
+        rails.release_planes()
         with self.out("metric.npz") as fp:
             np.savez(
                 fp,
