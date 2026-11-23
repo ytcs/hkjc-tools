@@ -735,6 +735,13 @@ five timing gates on 9/11, 11/11 winners), so a further sealed claim needs races
 
 ## 8. Open problems
 
+- **Lateral scale.** Lateral positions are in the render's units, and the render spreads the field: its discs do not
+  overlap, so horses running abreast sit 2.2-2.6 m apart instead of about 1.1 m. Against rail-to-rail rulers on the
+  drone feed (Sha Tin, disc render; the drone's stall pitch reads 0.94 m), the field is about 2x wider in compact
+  fields and 1.4-1.5x in the fanned-out home straight, and horses on the rail sit at 1.9-2.4 m instead of 0.7-1.3 m.
+  `fuse_final` carries this unchanged (the draw prior acts only at t = 0, and the lateral box never binds), so
+  wide-running distance is overstated by about 4-7 m per horse at Sha Tin. The silk render and Happy Valley are
+  unmeasured. Lateral order is reliable; lateral metres are not.
 - **Shared metric error.** The held-out error is almost all common to the field (§3): the render metric between
   boundaries, interpolated from the other boundaries. Its steps between adjacent boundaries are close to
   independent, so midway between two visible boundaries the shared error is about the held-out figure / √2,
