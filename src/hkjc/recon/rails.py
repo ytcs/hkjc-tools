@@ -606,8 +606,13 @@ def despike_world(W, ok, *, win=241, thr=10.0, iters=4):
     return fill_world(W, ok), ok
 
 
-def refine_rail(img, cnt, to_px, Rail, inner, ok, half=25.0):
-    """Snap the rail to the sub-pixel ridge peak along its own normals; keep coarse where unsupported."""
+def refine_rail(img, cnt, to_px, Rail, inner, ok, half=25.0, nearest=False):
+    """Snap the rail to the sub-pixel ridge peak along its own normals; keep coarse where unsupported.
+    The peak is the strongest ridge within ``half`` px, or with ``nearest`` the supported ridge peak
+    nearest the coarse rail: where the render draws two parallel rail lines inside the window (A
+    courses: a second line ~0.95 m inside the racing rail at Sha Tin, ~0.55 m at Happy Valley), the
+    strongest one alternates along the track and the snap would switch lines; the nearest keeps the
+    line the DP chose."""
     from scipy.ndimage import gaussian_filter1d
 
     T = np.gradient(Rail, axis=0)
@@ -616,9 +621,15 @@ def refine_rail(img, cnt, to_px, Rail, inner, ok, half=25.0):
     offs = np.arange(-half, half + 0.01, 0.5)
     L, S, V = sample_profiles(img, cnt, to_px, Rail, Nn, offs)
     R = ridge_response(L, S, V, half_w=3, ctx=10)
-    k = np.argmax(R, axis=1)
-    pk = R[np.arange(len(R)), k]
-    sup = (pk >= 4.0) & (k > 0) & (k < len(offs) - 1)
+    if nearest:
+        Rm = R[:, 1:-1]
+        peak = (Rm >= R[:, :-2]) & (Rm > R[:, 2:]) & (Rm >= 4.0)
+        k = np.argmin(np.where(peak, np.abs(offs[1:-1]), np.inf), axis=1) + 1
+        sup = peak.any(axis=1)
+    else:
+        k = np.argmax(R, axis=1)
+        pk = R[np.arange(len(R)), k]
+        sup = (pk >= 4.0) & (k > 0) & (k < len(offs) - 1)
     km = np.clip(k, 1, len(offs) - 2)
     a, b, c = (R[np.arange(len(R)), km + d] for d in (-1, 0, 1))
     den = a - 2 * b + c
@@ -637,7 +648,8 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
       A. stations along the (extended) camera-centre path; innermost-horse offsets per station;
       B. re-station along the field's INNER EDGE (parallel to the racing rail by construction);
          thin-bright-ridge profiles -2..+14 m inward; Viterbi DP (stiff: rails are smooth);
-      C. sub-px refinement along the rail's own normals.
+      C. sub-px refinement along the rail's own normals, to the ridge nearest the DP rail (the DP
+         chose the line nearest the field; see ``refine_rail``).
     Also returns each camera frame's station index (time-ordered -> disambiguates revisited ground).
     """
     from scipy.ndimage import gaussian_filter1d
@@ -673,7 +685,7 @@ def extract_racing_rail(img, cnt, to_px, G, shape, X, handedness=None):
     n_ = np.arange(len(Ps))
     ro = gaussian_filter1d(np.interp(n_, n_[ok], rail_off[ok]), 5)
     Rail0, ok = despike_world(Ps + ro[:, None] * Nin, ok)
-    Rail, ok = refine_rail(img, cnt, to_px, Rail0, inner, ok)
+    Rail, ok = refine_rail(img, cnt, to_px, Rail0, inner, ok, nearest=True)
     Rail, ok = despike_world(Rail, ok)
     Rail = smooth_rail(Rail, ok)
     return dict(

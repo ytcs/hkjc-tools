@@ -274,6 +274,13 @@ the brighter fixed rail ~6.6 m inside. Then a world-space despike (> 0.55 m off 
 sub-pixel refinement and `rails.smooth_rail`, a support-weighted Huber Whittaker smoother with a
 third-difference penalty (arcs are free; ~20 m cutoff; unsupported stations weight 0.1; end runs continue
 straight): no 4 m-chord kink > 8° on ST 05-24 R1, marker grid found on all 26 development races.
+The refinement snaps to the ridge nearest the DP rail, not the strongest in its ±1.4 m window
+(`refine_rail(nearest=True)`): on A courses the render draws a second rail line inside the racing rail (Sha Tin
+~0.95 m, Happy Valley ~0.55 m), the strongest alternated between the two, and the rail wandered ±0.3–0.5 m at a
+~50 m wavelength, about half the time on the inner line. The DP already takes the line nearest the field, the one the
+horses run against. On the 23 Sha Tin A races the straight-line wobble fell from 0.19 to 0.04 m (median; other
+courses 0.04 m), and the innermost horse's median lateral from 2.62 to 1.92 m (other courses 1.99 m); rail.npz and
+metric.npz are byte-identical on 34 sampled races of the other courses.
 `rails.RailFrame` takes positions and normals from a 121-station (~12 m) cubic fit, because snap wobble
 (~0.1 m) makes normals noisy at wide lanes; projection uses a time-ordered station hint for revisited ground.
 
