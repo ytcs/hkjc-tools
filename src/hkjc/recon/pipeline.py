@@ -641,8 +641,9 @@ class RaceRun:
         self.log(f"   silk: {len(rows)} detections, {len(nos)}/{len(self.info.runners)} official silks")
 
     def hud(self):
+        circle = self.render_style() == "circle"  # no legend strip: its slots are not read
         rows, leg = ocr.read_render_hud_cached(
-            self.cache(), n_field=max(14, self.info.n), n_slots=min(8, self.info.n)
+            self.cache(), n_field=max(14, self.info.n), n_slots=0 if circle else min(8, self.info.n)
         )
         if np.isfinite(rows[:, 1]).sum() < self.HEALTH_CLOCK_READS:
             # the fixed crop missed the clock (a sponsor box above it moves it down): locate it in the video,
@@ -652,8 +653,6 @@ class RaceRun:
             if np.isfinite(loc).sum() > np.isfinite(rows[sel, 1]).sum():
                 rows[sel, 1] = loc
             self.log(f"   hud: clock not at the fixed crop; located {dy:+d} px: {np.isfinite(loc).sum()} reads")
-        if self.render_style() == "circle":  # no legend strip: its slots stay unread
-            leg[:, 1:] = 0
         with self.out("hud.npz") as fp:
             np.savez(fp, rows=rows)
         with self.out("legend.npz") as fp:

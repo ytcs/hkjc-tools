@@ -133,8 +133,8 @@ def _parse_legend(res, n_field: int = 14) -> np.ndarray:
 def read_render_hud_cached(cache, *, n_field: int = 14, n_slots: int = 8, clock_every: int = CLOCK_EVERY):
     """Per unique render frame from a ``video.FrameCache``: [frame, clock|NaN, odometer|NaN] and
     [frame, legend slots x8] (left->right = running positions 1..8; 0 = unread; ``n_slots``: slots shown,
-    the field size when under 8). The clock (from the cached left-panel crops) is video-locked, read every
-    ``clock_every`` frames; the odometer and the legend are read on every frame. No pixel-change test
+    the field size when under 8; 0: no legend, every slot unread). The clock (from the cached left-panel
+    crops) is video-locked, read every ``clock_every`` frames; the odometer and the legend are read on every frame. No pixel-change test
     skips a read: the legend's number boxes are not opaque (the track shows through and around them), so a
     slot changed by an overtake can differ less from its last read than an unchanged slot differs between
     frames, and a skipped read holds a stale number.
@@ -149,7 +149,7 @@ def read_render_hud_cached(cache, *, n_field: int = 14, n_slots: int = 8, clock_
             clock_at.append(n)
             clock_crops.append(np.asarray(cache.clock[n]))
         odo_crops.append(p[oy0 - y0 : oy1 - y0, ox0 - x0 : ox1 - x0].copy())
-        leg_crops.append(_legend_slot_crops(p, n_slots))
+        leg_crops.append(_legend_slot_crops(p, n_slots) if n_slots > 0 else [])
     clock = np.full(len(frames), np.nan)
     for n, (t, c) in zip(clock_at, rec_batch(clock_crops)):
         x = _parse_clock(t, c)
