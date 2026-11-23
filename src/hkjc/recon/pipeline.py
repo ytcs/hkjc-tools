@@ -608,7 +608,7 @@ class RaceRun:
         last = max(want) if want else -1
         with av.open(str(self.video())) as c:
             c.streams.video[0].thread_type = "AUTO"
-            for i, fr in enumerate(c.decode(video=0)):
+            for i, fr in video.decode_from(c, min(want) if want else 0):
                 if i > last:
                     break
                 if i not in want:

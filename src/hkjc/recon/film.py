@@ -190,10 +190,13 @@ def _film_frames(video, f_start, f_stop, step, keep=None):
     in ``keep`` when given)."""
     import av
 
+    from .video import decode_from
+
     y0, y1, x0, x1 = FILM_BOX
+    first = f_start if keep is None else max(f_start, min(keep))
     with av.open(str(video)) as c:
         c.streams.video[0].thread_type = "AUTO"
-        for i, fr in enumerate(c.decode(video=0)):
+        for i, fr in decode_from(c, first):
             if i > f_stop:
                 break
             if i < f_start or (i - f_start) % step or (keep is not None and i not in keep):

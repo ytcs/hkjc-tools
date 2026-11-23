@@ -159,13 +159,17 @@ def scan(path, *, start_s=100.0, stop_s=160.0, fps=25.0, n_field=14, min_run=40,
     """Find the finish-camera segment (finish line present at a stable x over many unique frames;
     of several candidate runs keep the one with the most cloth reads) and read the cloths on its
     unique frames. Returns dict(line_x, frames, reads=[(u, frame, x, y, num, conf)])."""
+    import math
+
     import av
+
+    from .video import decode_from
 
     runs, cur = [], None
     prev = None
     with av.open(str(path)) as c:
         c.streams.video[0].thread_type = "AUTO"  # frame-threaded decode: same pixels, ~3x faster
-        for i, fr in enumerate(c.decode(video=0)):
+        for i, fr in decode_from(c, math.ceil(start_s * fps)):
             if i < start_s * fps:
                 continue
             if i > stop_s * fps:

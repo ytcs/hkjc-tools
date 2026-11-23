@@ -177,7 +177,7 @@ def read_clock_located(path, frames, *, box=AVV_CLOCK, shifts=CLOCK_SHIFTS):
     strips = {}
     with av.open(str(path)) as c:
         c.streams.video[0].thread_type = "AUTO"
-        for i, fr in enumerate(c.decode(video=0)):
+        for i, fr in video.decode_from(c, min(want)):
             if i in want:
                 strips[i] = fr.to_ndarray(format="bgr24")[max(0, y0 + lo) : y1 + hi, x0:x1].copy()
             if i >= max(want):

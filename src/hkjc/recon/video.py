@@ -320,6 +320,85 @@ def grid_keep(idx) -> np.ndarray:
     return keep
 
 
+def _idr(packet, nal_len: int) -> bool:
+    """Does an AVCC (length-prefixed) H.264 packet hold an IDR slice (NAL type 5)?"""
+    b, p = bytes(packet), 0
+    while p + nal_len < len(b):
+        n = int.from_bytes(b[p : p + nal_len], "big")
+        if b[p + nal_len] & 0x1F == 5:
+            return True
+        p += nal_len + n
+    return False
+
+
+def _seek_point(c, st, start: int):
+    """(packets, step) to decode frames from ``start`` on without decoding the frames before it, or None.
+
+    Frame index = pts / step (one frame per ``step`` time-base units at 25 fps). Only when the decode is the
+    same as decoding from frame 0: H.264 in AVCC form, the packets before the seek keyframe have exactly the
+    pts 0, step, ..., (k - 1) step (so the k-th decoded frame is frame k), and that keyframe is an IDR (no later
+    frame references a frame before it). ``packets`` iterates the demuxed packets from the keyframe on."""
+    from fractions import Fraction
+
+    step = Fraction(1, 25) / st.time_base if st.time_base else None
+    ex = bytes(st.codec_context.extradata or b"")
+    if step is None or step.denominator != 1 or st.codec_context.name != "h264" or len(ex) < 6 or ex[0] != 1:
+        return None
+    step, nal_len = int(step), (ex[4] & 3) + 1
+    key = None  # pts of the last IDR keyframe at or before start
+    seen = []
+    for pk in c.demux(st):
+        if pk.pts is None:
+            continue
+        if pk.pts > start * step and key is not None:
+            break
+        if pk.is_keyframe and pk.pts <= start * step and _idr(pk, nal_len):
+            key = pk.pts
+        seen.append(pk.pts)
+    if key is None or key % step:
+        return None
+    before = sorted(p for p in seen if p < key)
+    if before != list(range(0, key, step)):
+        return None
+    c.seek(key, stream=st, backward=True, any_frame=False)
+
+    def packets():
+        first = True
+        for pk in c.demux(st):
+            if first and pk.pts is not None:
+                if pk.pts != key or not pk.is_keyframe:
+                    raise RuntimeError(f"seek landed on pts {pk.pts}, not the keyframe {key}")
+                first = False
+            yield pk
+
+    return packets(), step
+
+
+def decode_from(c, start: int = 0):
+    """Yield ``(i, frame)`` for the frames ``i >= start`` of open container ``c``'s video stream, ``i`` the
+    frame's position in the decode from frame 0 (``enumerate(c.decode(video=0))``), with the same pixels.
+    Seeks to the IDR keyframe at or before ``start`` when ``_seek_point`` allows it; else decodes from 0."""
+    st = c.streams.video[0]
+    sp = _seek_point(c, st, start) if start > 0 else None
+    if sp is None:
+        if start > 0:
+            c.seek(0, stream=st, backward=True, any_frame=False)
+        for i, fr in enumerate(c.decode(st)):
+            if i >= start:
+                yield i, fr
+        return
+    pkts, step = sp
+    nxt = None
+    for pk in pkts:
+        for fr in st.codec_context.decode(pk):
+            i = fr.pts // step
+            if fr.pts % step or (nxt is not None and i != nxt):
+                raise RuntimeError(f"frame pts {fr.pts} breaks the {step}-unit frame grid")
+            nxt = i + 1
+            if i >= start:
+                yield i, fr
+
+
 FILM_RUN = 10  # consecutive panel changes 1 frame apart (0.4 s): live film, never the 10 Hz render
 RENDER_LOCK = 10  # consecutive gaps alternating 2 and 3 frames (1 s of 10 Hz ticks): the render runs
 
