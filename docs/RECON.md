@@ -444,15 +444,25 @@ The product: the video-only detections plus the draw and the official records th
 
 ### Lateral in metres (`HKJC_LAT_METRES=1`, opt-in)
 
-With the switch on, both parquets gain `lat_m = a + b × lat` and `sd_lat_m = b × sd_lat` (`RaceRun.lat_metres`);
-every other column and artifact is unchanged.
-- a = -0.020 m, b = 0.645 (`LAT_MAP`): the Sha Tin home-straight map, pooled over the disc and the drone-era silk
-  render, the only map that passed a reserved drone test.
+With the switch on, both parquets gain `lat_m = a + b(d) × lat` and `sd_lat_m = b(d) × sd_lat`
+(`RaceRun.lat_metres`); every other column and artifact is unchanged.
+- One map for both venues and both drone-era render styles, continuous in the distance to go d (`RaceRun.lat_b`).
+  With x = d − the home straight's length, b = `LAT_MAP`'s 0.645 for x ≤ 0 (the home straight), `LAT_B_FAR` for
+  x ≥ 400 m, linear between (`LAT_RAMP`); a = −0.020 m throughout. In the home straight it is the Sha Tin
+  home-straight map. The render spreads a compact field more than a fanned-out one; b follows the field's typical
+  fan-out through the race, not the local spacing of abreast horses.
 - `sd_lat_m` is the mapped posterior sd only; the map's own uncertainty is not added.
-- Defined only where that test applies (`RaceRun.lat_m_scope`), NaN elsewhere: the Sha Tin turf oval (not the
-  1000 m straight); race dates in `LAT_M_DATES` (2026-01-07, when drone feeds begin, to 2026-11-23, the test's
-  inventory date; later races need their own test); nodes from the home straight's start (`track_for`, 430 m) to
-  the post.
+- Defined only where the map passed its drone test (`RaceRun.lat_m_scope`), NaN elsewhere: turf oval races (not
+  the 1000 m straight) with dates in `LAT_M_DATES` (2026-01-07, when drone feeds begin, to 2026-11-23; later races
+  need their own test); from the first render frame to the post, in the segments of `LAT_M_SEGMENTS` for the venue
+  and render style (disc from 2026-09-01, silk before). Segments (`RaceRun.lat_m_segment`): start (the first 6 s
+  after the first render frame), bend (`is_bend`), home straight, other straight.
+  - Sha Tin disc: straight, bend, home straight.
+  - Sha Tin silk: start, straight, bend, home straight.
+  - Happy Valley disc: start, straight.
+  - Happy Valley silk: straight, bend.
+- The slope changes continuously along a path, so `lat_m` has no step anywhere it is defined. Where a path leaves
+  the scope (an untested segment), `lat_m` is NaN, never render units.
 
 ### status
 
@@ -588,8 +598,9 @@ identical. Not bit-exact:
   least in the fanned-out home straight), on both render styles and both venues.
 - **Rail offset.** Horses on the rail sit about 2 m out in `lat`.
 - **Wide-running distance.** Distance run wide on the bends is overstated by the same spread.
-- **Lateral metres.** Metres exist only in `lat_m` (§4), on the Sha Tin home straight for drone-era races; lateral
-  order is usable everywhere, lateral metres nowhere else.
+- **Lateral metres.** Metres exist only in `lat_m` (§4), for drone-era turf races in the tested segments; lateral
+  order is usable everywhere, lateral metres nowhere else. Not covered: the Sha Tin disc start, the Happy Valley
+  disc bends and home straight, the Happy Valley silk start and home straight, and every pre-2026 season.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the

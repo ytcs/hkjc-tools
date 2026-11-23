@@ -1521,6 +1521,7 @@ class RaceRun:
         import polars as pl
 
         metres = lat_metres_on()
+        t_r0 = self.render_t0() if metres else None
         recs = [
             pl.DataFrame(
                 {
@@ -1532,7 +1533,7 @@ class RaceRun:
                     "sd_s": p.sd_s,
                     "sd_lat": p.sd_l,
                     "n_obs": p.n_obs,
-                    **(self.lat_metres(p) if metres else {}),
+                    **(self.lat_metres(p, t_r0) if metres else {}),
                 }
             )
             for h, p in paths.items()
@@ -1540,32 +1541,68 @@ class RaceRun:
         with self.out(name) as fp:
             pl.concat(recs).write_parquet(fp)
 
-    # Lateral in metres (HKJC_LAT_METRES=1). The render spreads the field laterally (RECON 8); the only validated map is
-    # the Sha Tin home straight, true = a + b x render lateral (pooled over the disc and the drone-era silk render; it
-    # passed a reserved drone test for both).
+    # Lateral in metres (HKJC_LAT_METRES=1). The render spreads the field laterally (RECON 8), more in the compact field
+    # before the home turn than in the fanned-out home straight. One map, continuous in the distance to go d, for both
+    # venues and both drone-era render styles: true = a + b(x) x render lateral, x = d - home straight length,
+    # b = LAT_MAP's b at x <= LAT_RAMP[0], LAT_B_FAR at x >= LAT_RAMP[1], linear between. In the home straight it is the
+    # Sha Tin home-straight map.
     LAT_MAP = (-0.019562873395157165, 0.645046455287541)
-    # race dates the reserved test's population spans: drone feeds from 2026-01-07 to the test's inventory date; later
-    # races may come from a changed render and need their own test
+    LAT_B_FAR = 0.5390915106662988
+    LAT_RAMP = (0.0, 400.0)
+    # segments (venue, render style) where the map passed its drone test; lat_m is NaN in every other segment
+    LAT_M_SEGMENTS = {
+        ("ST", "disc"): ("straight", "bend", "home"),
+        ("ST", "silk"): ("start", "straight", "bend", "home"),
+        ("HV", "disc"): ("start", "straight"),
+        ("HV", "silk"): ("straight", "bend"),
+    }
+    LAT_M_START = 6.0  # s after the first render frame: the start segment
+    # race dates the drone test's population spans: drone feeds from 2026-01-07 to the test's inventory date; later
+    # races may come from a changed render and need their own test. Disc render from 2026-09-01, silk before.
     LAT_M_DATES = ("20260107", "20261123")
+    LAT_M_DISC_FROM = "20260901"
 
-    def lat_m_scope(self, d) -> np.ndarray:
-        """Nodes (distance-to-go ``d``) where lat_m is defined: Sha Tin turf oval (not the 1000 m straight) within
-        LAT_M_DATES, and 0 <= d < the home straight's length."""
+    def lat_b(self, d) -> np.ndarray:
+        """The map's slope b at distance-to-go ``d`` (continuous, piecewise linear in d)."""
+        x = np.asarray(d, float) - self.info.geometry.home_straight(self.info.course)
+        x0, x1 = self.LAT_RAMP
+        w = np.clip((x1 - x) / (x1 - x0), 0.0, 1.0)
+        bh, bf = self.LAT_MAP[1], self.LAT_B_FAR
+        return np.where(w >= 1.0, bh, np.where(w <= 0.0, bf, bf + (bh - bf) * w))  # the end values exactly
+
+    def lat_m_segment(self, d, t, t_r0) -> np.ndarray:
+        """Segment of each node: "start" (t_r0 <= t < t_r0 + LAT_M_START), "bend", "home" (d < home straight),
+        "straight"; "" before the first render frame (t < t_r0) or past the post (d < 0)."""
+        d, t = np.asarray(d, float), np.asarray(t, float)
+        g = self.info.geometry
+        bend = np.array([g.is_bend(v) if np.isfinite(v) else False for v in d.ravel()], bool).reshape(d.shape)
+        seg = np.where(bend, "bend", np.where(d < g.home_straight(self.info.course), "home", "straight"))
+        seg = np.where(t < t_r0 + self.LAT_M_START, "start", seg)
+        return np.where((t >= t_r0) & (d >= 0.0), seg, "")
+
+    def lat_m_scope(self, d, t, t_r0) -> np.ndarray:
+        """Nodes (distance-to-go ``d``, race time ``t``; ``t_r0`` the first render frame) where lat_m is defined: turf
+        oval (not the 1000 m straight) within LAT_M_DATES, in a segment listed in LAT_M_SEGMENTS for the venue and
+        render style."""
         d = np.asarray(d, float)
         info = self.info
-        g = info.geometry
         lo, hi = self.LAT_M_DATES
-        if not (info.venue == "ST" and info.surface == "turf" and g.handedness != "straight"
-                and lo <= info.date <= hi):
+        if not (info.surface == "turf" and info.geometry.handedness != "straight" and lo <= info.date <= hi):
             return np.zeros(d.shape, bool)
-        return (d >= 0.0) & (d < g.home_straight(info.course))
+        segs = self.LAT_M_SEGMENTS.get((info.venue, "disc" if info.date >= self.LAT_M_DISC_FROM else "silk"), ())
+        return np.isin(self.lat_m_segment(d, t, t_r0), list(segs))
 
-    def lat_metres(self, p) -> dict:
-        """{"lat_m", "sd_lat_m"} of path ``p``: the map applied to lat and sd_lat inside ``lat_m_scope``, NaN outside.
+    def render_t0(self) -> float:
+        """Race time of the first render frame (tracks.npz)."""
+        return float(np.load(self.p("tracks.npz"))["t"].min())
+
+    def lat_metres(self, p, t_r0) -> dict:
+        """{"lat_m", "sd_lat_m"} of path ``p``: a + b(d) x lat and b(d) x sd_lat inside ``lat_m_scope``, NaN outside.
         sd_lat_m is the mapped posterior sd only (the map's own uncertainty is not added)."""
-        a, b = self.LAT_MAP
-        m = self.lat_m_scope(self.info.distance - p.s)
-        return {"lat_m": np.where(m, a + b * p.lat, np.nan), "sd_lat_m": np.where(m, b * p.sd_l, np.nan)}
+        d = self.info.distance - p.s
+        b = self.lat_b(d)
+        m = self.lat_m_scope(d, p.t, t_r0)
+        return {"lat_m": np.where(m, self.LAT_MAP[0] + b * p.lat, np.nan), "sd_lat_m": np.where(m, b * p.sd_l, np.nan)}
 
     def _em_identity(self, paths):
         """Second identity pass: legend votes on frames with undetected horses, ranks completed by the
