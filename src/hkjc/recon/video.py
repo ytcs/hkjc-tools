@@ -225,11 +225,9 @@ def is_duplicate(a, b, tol: float = 3.0) -> bool:
     return float(np.abs(a[::4, ::4].astype(np.int16) - b[::4, ::4]).mean()) < tol
 
 
-def tick_grid(idx):
-    """(a, b): the two residues of ``frame % 5`` at which 10 Hz render ticks start, with
-    b = a + 2 (mod 5), by majority vote; None if the top two hold < 90 % of the frames or are not
-    2-3 frames apart (not a 10 Hz render)."""
-    idx = np.asarray(idx, dtype=np.int64)
+def _residue_vote(idx):
+    """(a, b) with b = a + 2 (mod 5): the top two residues of ``idx % 5``; None if they hold < 90 %
+    of ``idx`` or are not 2-3 frames apart."""
     if len(idx) == 0:
         return None
     cnt = np.bincount(idx % 5, minlength=5)
@@ -238,6 +236,24 @@ def tick_grid(idx):
     if cnt[top].sum() < 0.9 * len(idx) or (a - b) % 5 not in (2, 3):
         return None
     return (a, b) if (b - a) % 5 == 2 else (b, a)
+
+
+def tick_grid(idx):
+    """(a, b): the two residues of ``frame % 5`` at which 10 Hz render ticks start, with
+    b = a + 2 (mod 5), by majority vote over all frames; None if the top two hold < 90 % of the
+    frames or are not 2-3 frames apart (not a 10 Hz render).
+
+    When the vote over all frames fails, only frames that follow the previous one by 2-3 frames (the
+    10 Hz cadence) vote. Live film that passes the render gate (start-gate shots before the render on
+    5 of 329 replays, e.g. ST 2024-12-29 R8) changes on every frame, so a few seconds of it put the
+    top two residues below 90 % of all frames; without a grid, ``grid_keep`` keeps every video
+    keyframe re-encode and ``tick_frame`` leaves tick times unshifted."""
+    idx = np.asarray(idx, dtype=np.int64)
+    grid = _residue_vote(idx)
+    if grid is None and len(idx) > 1:
+        gap = np.diff(idx)
+        grid = _residue_vote(idx[1:][(gap == 2) | (gap == 3)])
+    return grid
 
 
 def tick_frame(f, grid) -> np.ndarray:
@@ -257,8 +273,8 @@ def grid_keep(idx) -> np.ndarray:
     that is already kept.
 
     The render updates at exactly 10 Hz in 25 fps video, so new ticks start at two fixed residues of
-    ``frame % 5`` for a whole replay (found by majority vote; nothing is dropped if the top two hold
-    < 90 % of the frames or are not 2-3 frames apart, i.e. not a 10 Hz render).
+    ``frame % 5`` for a whole replay (``tick_grid``; nothing is dropped when it finds no grid, i.e.
+    not a 10 Hz render).
 
     An off-grid frame is dropped only when the on-grid start of its tick (the latest on-grid frame
     at or before it) was yielded too: then it is a re-encode of that tick (e.g. a video keyframe

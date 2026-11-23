@@ -287,6 +287,29 @@ def test_video_grid_keep_drops_off_grid_reencodes():
     assert video.grid_keep([1, 2, 3, 4, 5, 6, 7]).all()  # no dominant phase -> keep everything
 
 
+def test_video_keyframe_reencode_after_live_film_gets_its_tick_time():
+    """ST 2024-12-29 R8: 93 frames of live start film pass the render gate (every frame differs), then
+    the render ticks at residues {1, 3} and every 50th frame (a video keyframe, residue 0) re-encodes
+    the previous tick past the de-dup tolerance. The film outvotes the grid over all frames; the
+    cadence vote still finds it, the re-encodes are dropped, and every kept render frame is stamped
+    with the time of the tick it shows (tick k starts at 1 + floor(2.5 k) and shows 0.75 + 2.5 k)."""
+    from hkjc.recon import video
+
+    film = list(range(121, 214))
+    starts = [1 + (5 * k) // 2 for k in range(100, 610)]  # tick starts 251 .. 1523
+    keys = [f for f in range(300, 1524, 50) if f not in starts]
+    idx = np.array(sorted(film + starts + keys))
+    shown = {f: max(k for k, s in enumerate(starts) if s <= f) for f in starts + keys}  # tick on screen
+    kept = idx[video.grid_keep(idx)]
+    grid = video.tick_grid(kept)  # the stages downstream vote on the stored (kept) frames
+    render = kept[kept >= starts[0]]
+    np.testing.assert_allclose(
+        video.tick_frame(render, grid), [0.75 + 2.5 * (100 + shown[int(f)]) for f in render]
+    )
+    assert video.tick_grid(idx) == grid == (1, 3)
+    assert not set(keys) & set(kept.tolist()) and set(starts) <= set(kept.tolist())
+
+
 def test_video_tick_frame_puts_ticks_on_the_uniform_grid():
     """Ticks at residues {2, 4}: 2 -> 4 is a 2-frame step, 4 -> 7 a 3-frame step. Tick times move
     the first residue -0.25 and the second +0.25 frame, so every interval is 2.5 frames; off-grid
