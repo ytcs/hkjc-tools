@@ -25,7 +25,7 @@ no feed acting as a master that the others correct.
 
 | Artifact | Content |
 |---|---|
-| `paths.parquet` (`run.paths()`) | **The product**: per horse `horse_no, t, s, d, lat, sd_s, sd_lat, n_obs` on a 0.1 s grid, from every source, including the official records the run's mask leaves visible; with `HKJC_LAT_METRES=1` also `lat_m, sd_lat_m` (§4) |
+| `paths.parquet` (`run.paths()`) | **The product**: per horse `horse_no, t, s, d, lat, sd_s, sd_lat, n_obs` on a 0.1 s grid, from every source, including the official records the run's mask leaves visible; with `HKJC_LAT_METRES=1` also `lat_m, sd_lat_m` (§4); with `HKJC_CONTRACT=1` the contract columns (§4) |
 | `paths_video.parquet` | The reconstruction from the videos and pre-race facts only (no official outcome record); the fixed gates score it, and it is the reference for what the videos alone determine |
 | `validation.json` | fixed gates on `paths_video.parquet` against the full official record, plus the product's residual against the official times (`final_official_resid_mae`) |
 | `audit.json` | label-free invariants (§4, validate) |
@@ -464,6 +464,27 @@ With the switch on, both parquets gain `lat_m = a + b(d) × lat` and `sd_lat_m =
 - The slope changes continuously along a path, so `lat_m` has no step anywhere it is defined. Where a path leaves
   the scope (an untested segment), `lat_m` is NaN, never render units.
 
+### Output contract (`HKJC_CONTRACT=1`, opt-in)
+
+For modelling on the paths (`recon.contract`). With the switch on, `fuse_final` appends columns to `paths.parquet`
+after every existing column and writes two artifacts; every existing column and artifact is unchanged, and none of the
+additions is a stage output or cache key.
+- `valid`: the node lies in a validity-flagged stretch of the horse (`contract.flag_stretches`). A detection is
+  flagged when its video-only and final labels agree, it is at least 1 s after the first render detection and before
+  the line, the horse's final path is firm there (sd_s < 1.5 m) and overlaps no other firm path (2.0 m along, 0.7
+  across), and, on the disc render, its tracklet's majority confident disc read is the label. Flagged detections bridged
+  over gaps ≤ 0.5 s form stretches of ≥ 10 detections and ≥ 2 s; on the silk render a stretch also needs the legend to
+  confirm the horse's rank on ≥ 3 and ≥ 80 % of its legend-read frames. Masked reads count as unread. The flag is
+  validated against disc reads only (circle render); on the silk render no per-detection truth exists.
+- `free`: no other horse's path node at the same t within one length along (2.4 m) and one render abreast spacing
+  across (2.6 render units).
+- `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
+  cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
+  unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
+- `contract.json`: the definitions, the run's flagged stretches, and `NOISE_TABLE`, the per-detection noise of the
+  detection-only state-space model by feed and region (white sd and a frame-common AR(1) term); a row whose split
+  between the two is not identified carries `split_identified` false.
+
 ### status
 
 `run()` always writes `status.json` (not a stage artifact): `failed` with the stage and error when a stage
@@ -573,6 +594,7 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
 - `HKJC_FILM_DEVICE`: the film detector alone, e.g. `intel:gpu`.
 - `HKJC_MASK`, `HKJC_FINAL_HOLDOUT`: the mask (§3). `HKJC_PERTURB_SEED`: seeded 1 % detection drop in `observe`.
   `HKJC_LAT_METRES=1`: adds `lat_m, sd_lat_m` (§4).
+  `HKJC_CONTRACT=1`: adds the output-contract columns and artifacts (§4).
 - `HKJC_MATCH_HELPER` (scheduling only; on unless `0`): one matcher helper interpreter serves the race from
   features to pose, and features runs the avatar detector in its own process feeding up to 4 feature workers (a
   CUDA context per race from features to pose). `0` starts a fresh helper per table request and has each worker run

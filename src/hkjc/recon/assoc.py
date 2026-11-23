@@ -62,6 +62,7 @@ def assign_frames(
     n_field=None,
     forbid_out=None,
     s_line=None,
+    margin_out=None,
 ):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
     ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
@@ -71,6 +72,8 @@ def assign_frames(
     ``s_line`` = race distance (metres run at the line): enables the final-stretch rank attraction.
     ``forbid_out`` (dict, optional) receives {detection index: set of horses} excluded by the HARD
     legend costs, so later stages (fusion's anonymous association) cannot hand them back.
+    ``margin_out`` (float array over detections, optional) receives, per labelled detection, the frame's optimal cost
+    with that detection forbidden from its horse minus the optimal cost (-2 log-likelihood units); read-only.
     Returns per-detection horse number (0 = clutter/unassigned) and per-detection chi^2."""
     from scipy.optimize import linear_sum_assignment
 
@@ -182,6 +185,14 @@ def assign_frames(
             if k < m and C[i, k] < CLUTTER:
                 lab[js[i]] = ok[k]
                 chi[js[i]] = C[i, k]
+        if margin_out is not None:
+            best = M[r, c].sum()
+            for i, k in zip(r, c):
+                if k < m and C[i, k] < CLUTTER:
+                    M2 = M.copy()
+                    M2[i, k] = 1e6
+                    r2, c2 = linear_sum_assignment(M2)
+                    margin_out[js[i]] = M2[r2, c2].sum() - best
     return lab, chi
 
 

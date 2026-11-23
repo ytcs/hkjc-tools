@@ -1517,7 +1517,9 @@ class RaceRun:
             self.log(f"   fuse: anchor check demoted {st['demoted']} render tracklets")
         return paths, assign
 
-    def _write_paths(self, paths, name):
+    def _write_paths(self, paths, name, contract=False):
+        """``contract`` (HKJC_CONTRACT=1, fuse_final only): the contract columns are appended after every existing
+        column, and contract.json is written."""
         import polars as pl
 
         metres = lat_metres_on()
@@ -1538,8 +1540,29 @@ class RaceRun:
             )
             for h, p in paths.items()
         ]
+        P = pl.concat(recs)
+        if contract:
+            P = self._contract_columns(P, paths)
         with self.out(name) as fp:
-            pl.concat(recs).write_parquet(fp)
+            P.write_parquet(fp)
+
+    def _contract_columns(self, P, paths):
+        """The contract columns (``contract``) appended to the final paths ``P``; writes contract.json."""
+        import polars as pl
+
+        from . import contract as ct
+
+        stretches, _rows = ct.flag_stretches(self, P)
+        free = ct.node_free(P)
+        cols = {k: [] for k in ("valid", "free")}
+        for h, p in paths.items():
+            cols["valid"].append(ct.node_valid(stretches, h, p.t))
+            tt, fr = free[h]
+            cols["free"].append(fr[np.searchsorted(tt, np.round(p.t, 2))])
+        P = P.with_columns(**{k: pl.Series(np.concatenate(v)) for k, v in cols.items()})
+        with self.out("contract.json") as fp:
+            fp.write_text(json.dumps(ct.describe(stretches), indent=1, default=float))
+        return P
 
     # Lateral in metres (HKJC_LAT_METRES=1). The render spreads the field laterally (RECON 8), more in the compact field
     # before the home turn than in the fanned-out home straight. One map, continuous in the distance to go d, for both
@@ -1786,7 +1809,9 @@ class RaceRun:
             big = {h: round(w, 2) for h, w in warp.items() if w > 0.05}
             self.log(f"   fuse_final: re-timed onto the official finish (max shift {max(warp.values()):.3f} s"
                      + (f"; > 0.05 s: {big}" if big else "") + ")")
-        self._write_paths(pf, "paths.parquet")
+        from .contract import contract_on
+
+        self._write_paths(pf, "paths.parquet", contract=contract_on())
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
 
     TIE_STEP = 0.002  # s between horses sharing an official finish time, in placing order (dead heats: none)
@@ -2067,6 +2092,10 @@ class RaceRun:
                 blind = [h for h in horses if h not in read and h not in shown]
                 if blind:
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
+        from .contract import contract_on
+
+        margins = [None] if (contract_on() and out_name == "det_labels_final.npz") else None
+
         def em_pass(paths, targets, tag):
             """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""
             prev = lab = obs = None
@@ -2074,6 +2103,8 @@ class RaceRun:
             for it in range(self.EM_ITERS):
                 forbid = {}
                 seeds = {}
+                if margins is not None:
+                    margins[0] = np.full(len(t), np.nan)
                 if targets:
                     seeds = {h: p for h, p in self._finish_seeds(paths, prior).items() if h in targets}
                 lab, _chi = assoc.assign_frames(
@@ -2087,6 +2118,7 @@ class RaceRun:
                     n_field=len(horses),
                     forbid_out=forbid,
                     s_line=self.info.distance,
+                    margin_out=None if margins is None else margins[0],
                 )
                 lab, n_pf = assoc.release_post_finish(lab, t, s_run, self.info.distance, forbid)
                 obs = assoc.runs_to_obs(lab, t, s_run, lat)
@@ -2176,6 +2208,9 @@ class RaceRun:
             self.log(f"   em-assoc: shadow paths -> {int(drop.sum())} detections released")
         with self.out(out_name) as fp:
             np.savez(fp, labels=lab)  # per-detection EM identity (viz, audit)
+        if margins is not None:  # contract: the last E-step's margins of the labels kept (not a stage output)
+            with self.out("det_margins_final.npz") as fp:
+                np.savez(fp, margin=np.where(lab > 0, margins[0], np.nan), labels=lab)
         return obs, paths
 
     def paths(self):
