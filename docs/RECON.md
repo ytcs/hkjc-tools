@@ -582,6 +582,8 @@ identical. Not bit-exact:
 
 ## 8. Known limitations
 
+- **All-weather track.** Not supported: on the brown dirt the avatar detector misses horses, so races on the all-weather
+  track are not reconstructed reliably.
 - **Lateral scale.** `lat` is in render units; the render spreads the field about 1.4–2× (most in compact fields,
   least in the fanned-out home straight), on both render styles and both venues.
 - **Rail offset.** Horses on the rail sit about 2 m out in `lat`.
