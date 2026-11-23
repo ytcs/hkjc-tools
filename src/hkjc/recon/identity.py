@@ -90,6 +90,7 @@ def assign_global(
     extra=None,
     valid=None,
     max_rank=8,
+    scores=None,
 ):
     """Number the tracklets by the global maximum-likelihood assignment, with the set-valued
     elimination evidence and the silk LLR.
@@ -111,7 +112,9 @@ def assign_global(
     elimination vote as evidence against every candidate, so back-markers could never be numbered.)
     ``extra``: finish-camera votes, added as slot evidence but kept out of the rho estimate (their
     many agreeing votes would pin rho at its bound). ``valid``: runner numbers (scratched numbers are
-    not in the universe)."""
+    not in the universe). ``scores``: a dict, filled with the evidence behind the returned labels -- ``G``
+    (tracklets x numbers 1..n_field, the gain matrix of the last solve, as the MILP saw it), ``rho`` and ``rho_e``
+    (the reliabilities it was built with) and ``objective`` (its maximum)."""
     from scipy.optimize import Bounds, LinearConstraint, milp
 
     T = len(members)
@@ -145,6 +148,7 @@ def assign_global(
     lab = np.zeros(T, int)
     rho = 0.5
     for _ in range(iters):
+        rho_g, rho_e_g = rho, rho_e
         lr_in, lr_out = np.log(rho * Nu), np.log((1 - rho) * Nu / (Nu - 1))
         G = (V + X) * lr_in + (tot + totx - V - X) * lr_out
         if sets:
@@ -190,6 +194,8 @@ def assign_global(
             if sets and ne[lt].sum() > 0:
                 agree_e = E[lt, new[lt] - 1].sum() / ne[lt].sum()
                 rho_e = float(np.clip(agree_e, (m_set + 0.5) / Nu, 0.99))
+        if scores is not None:
+            scores.update(G=G, rho=rho_g, rho_e=rho_e_g, objective=float(-res.fun))
         if np.array_equal(new, lab):
             break
         lab = new

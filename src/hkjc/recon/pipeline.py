@@ -84,9 +84,9 @@ OUTPUTS = {
     "worldmap": ["map.png", "map_cnt.npy", "map_meta.npz"],
     "rails": ["rail.npz", "metric.npz"],
     "observe": ["tracks.npz"],
-    "identify": ["labels.npz"],
+    "identify": ["labels.npz", "identify_scores.npz"],
     "finish": ["finish.npz"],
-    "fuse_video": ["paths_video.parquet", "fuse_video.pkl"],
+    "fuse_video": ["paths_video.parquet", "fuse_video.pkl", "identify_em_scores.npz"],
     "fuse_final": ["paths.parquet"],
     "validate": ["validation.json"],
 }
@@ -1042,16 +1042,19 @@ class RaceRun:
                     votes[k] += c
                     fvotes[k] += c
         # joint ML assignment: set-valued legend evidence + silk evidence
+        silk = self._silk_llr(mem, T, nmax)
+        sc = {}
         lab = identity.assign_global(
             mem,
             T["rows"][:, 0],
             rank,
             nmax,
-            silk_llr=self._silk_llr(mem, T, nmax),
+            silk_llr=silk,
             elim=elim,
             n_elim=elim_n,
             extra=fvotes,
             valid=valid,
+            scores=sc,
         )
         lab = np.array([x if x in valid else 0 for x in lab])
         n_elim, el_ok = 0, []
@@ -1075,6 +1078,7 @@ class RaceRun:
         extra = dict(rank=rank, elim=elim, n_elim=elim_n, fvotes=fvotes)
         with self.out("labels.npz") as fp:
             np.savez(fp, labels=lab, votes=votes, fixed=fixed, **extra)
+        self._save_scores("identify_scores.npz", sc, silk, len(mem), nmax, labels=lab)
         self.log(
             f"   identify: finish-camera named {len(fin)} + {n_elim} by elimination; "
             f"numbered {int((lab > 0).sum())}/{len(mem)} tracklets "
@@ -1110,6 +1114,22 @@ class RaceRun:
         leg = leg.copy()
         leg[self.mask.legend_withheld(t), 1:] = 0
         return leg
+
+    def _save_scores(self, name, sc, silk, n_trk, nmax, labels=None):
+        """identity.assign_global's evidence behind a label set: ``G`` (tracklets x numbers 1..nmax, the gain over
+        leaving the tracklet unlabelled, as the MILP saw it), ``rho``, ``rho_e``, ``objective``, the ``silk`` LLR
+        term inside G (zeros without silk.npz) and the tracklet ``labels`` it led to (the EM pass's are kept nowhere
+        else). Empty G and labels when assign_global did not run."""
+        with self.out(name) as fp:
+            np.savez(
+                fp,
+                G=sc.get("G", np.zeros((0, nmax))),
+                rho=float(sc.get("rho", np.nan)),
+                rho_e=float(sc.get("rho_e", np.nan)),
+                objective=float(sc.get("objective", np.nan)),
+                silk=np.zeros((n_trk, nmax)) if silk is None else silk,
+                labels=np.zeros(0, int) if labels is None else np.asarray(labels, int),
+            )
 
     def _silk_llr(self, mem, T, nmax):
         """(tracklets x numbers) silk log-likelihood ratio for identity.assign_global (None without
@@ -1489,17 +1509,21 @@ class RaceRun:
             )
         r1 = L["rank"].copy()
         r1[:, :k] += v2[:, :k]
+        silk = self._silk_llr(mem, T, nmax)
+        sc = {}
         lab = identity.assign_global(
             mem,
             T["rows"][:, 0],
             r1,
             nmax,
-            silk_llr=self._silk_llr(mem, T, nmax),
+            silk_llr=silk,
             elim=L["elim"],
             n_elim=L["n_elim"],
             extra=L["fvotes"],
             valid=valid,
+            scores=sc,
         )
+        self._em_scores = (sc, silk, len(mem), nmax)
         lab = np.array([x if x in valid else 0 for x in lab])
         fixed = L["fixed"] if "fixed" in L.files else np.zeros(len(mem), int)
         for k in np.where(fixed > 0)[0]:  # finish-camera names win over time-overlapping rivals
@@ -1507,6 +1531,7 @@ class RaceRun:
                 if u != k and identity.time_overlap(T["rows"][mem[k], 0], T["rows"][mem[u], 0]):
                     lab[u] = 0
             lab[k] = fixed[k]
+        self._em_scores = (*self._em_scores, lab)
         cov = lambda lb: sum(len(m) for i, m in enumerate(mem) if lb[i]) / len(T["d"])  # noqa: E731
         self.log(
             f"   identify (EM pass): numbered {int((lab > 0).sum())}/{len(mem)} tracklets, "
@@ -1528,6 +1553,7 @@ class RaceRun:
         prior = fusion.Prior(width=self.info.width)
         horses = [r.no for r in self.info.runners]
         pv, assign = self._fuse(obs, horses, prior)
+        self._em_scores = None
         lab2 = self._em_identity(pv)  # EM pass: legend votes completed by the first posterior
         if lab2 is not None:
             obs = self.observations(lab2)
@@ -1538,6 +1564,8 @@ class RaceRun:
         )
         with self.out("fuse_video.pkl") as tmp, open(tmp, "wb") as fp:
             pickle.dump((obs, pv), fp, protocol=pickle.HIGHEST_PROTOCOL)
+        nmax = max(r.no for r in self.info.runners)
+        self._save_scores("identify_em_scores.npz", *(self._em_scores or ({}, None, 0, nmax)))
         n_anon = sum(1 for o in obs if o.horse == 0)
         n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
         self.log(
