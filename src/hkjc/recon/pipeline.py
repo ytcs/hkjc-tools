@@ -490,15 +490,15 @@ class RaceRun:
         """ORB features of every unique render frame + the sequential step matches. Per-frame work
         is independent and OpenCV's RANSAC seeds its RNG per call, so the process pool gives results
         identical to a sequential loop. The avatar detections made for the mask are saved for
-        ``detect`` (yolo.npz). With ``HKJC_MATCH_HELPER=1`` the avatar detector runs in its own pool (one process
-        on an accelerator) and feeds up to 4 feature workers frame by frame (on an accelerator the default runs the
-        detector and the per-frame CPU work in one process)."""
+        ``detect`` (yolo.npz). The avatar detector runs in its own pool (one process on an accelerator) and feeds up
+        to 4 feature workers frame by frame (``HKJC_MATCH_HELPER=0``: each worker runs its own detector, one process on
+        an accelerator)."""
         import multiprocessing as mp
 
         cache = self.cache()
         from . import bfmatch
 
-        bfmatch.warm()  # HKJC_MATCH_HELPER=1: the CUDA matcher's interpreter starts now (closed after pose)
+        bfmatch.warm()  # the CUDA matcher's interpreter starts now (closed after pose)
         global _CACHE, _FEATS_PAR, _STYLE, _STEP_NN
         _CACHE = cache
         _STYLE = self.render_style()

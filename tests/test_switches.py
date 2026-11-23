@@ -1,11 +1,11 @@
-"""Opt-in runtime switches: HKJC_MATCH_HELPER (per-race matcher helper + detector feeding the feature workers) and
-HKJC_CUDA_BLOCKING_SYNC (CUDA primary context in blocking-sync mode). Both are off by default."""
+"""Runtime switches: HKJC_MATCH_HELPER (per-race matcher helper + detector feeding the feature workers; on unless 0)
+and HKJC_CUDA_BLOCKING_SYNC (CUDA primary context in blocking-sync mode; opt-in)."""
 
 import numpy as np
 import pytest
 
 
-def test_match_helper_is_off_by_default_and_routes_the_cuda_tables(monkeypatch):
+def test_match_helper_is_on_by_default_and_routes_the_cuda_tables(monkeypatch):
     from hkjc.recon import bfmatch
 
     calls = []
@@ -14,13 +14,14 @@ def test_match_helper_is_off_by_default_and_routes_the_cuda_tables(monkeypatch):
     monkeypatch.setattr(bfmatch, "_helper", lambda dev: calls.append("warm"))
     monkeypatch.setenv("HKJC_MATCH_DEVICE", "cuda")
     des = [np.zeros((5, 32), np.uint8)] * 2
-    monkeypatch.delenv("HKJC_MATCH_HELPER", raising=False)
+    monkeypatch.setenv("HKJC_MATCH_HELPER", "0")
     assert not bfmatch.helper_on()
     bfmatch.warm()
     bfmatch.tables(des, [(0, 1, True)])
-    assert calls == ["oneshot"]  # no helper started, a fresh interpreter per call (as before the switch)
+    assert calls == ["oneshot"]  # no helper started, a fresh interpreter per call
     calls.clear()
-    monkeypatch.setenv("HKJC_MATCH_HELPER", "1")
+    monkeypatch.delenv("HKJC_MATCH_HELPER", raising=False)
+    assert bfmatch.helper_on()
     bfmatch.warm()
     bfmatch.tables(des, [(0, 1, True)])
     assert calls == ["warm", "kept"]

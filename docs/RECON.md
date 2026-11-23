@@ -16,7 +16,7 @@ are cached under `data_cache/recon/<date>_<venue>_<no>/`; a stage is skipped whe
 Runtime environment: `HKJC_DEVICE` (`cpu`, `cuda`, `intel:…` for OpenVINO), `HKJC_NPROC` (workers per
 race), `HKJC_OCR_THREADS`, `HKJC_OCR_DEVICE`, `HKJC_MATCH_DEVICE`, `HKJC_AVATAR_WEIGHTS` (detector weights),
 `HKJC_FILM_DEVICE` (the film detector alone, e.g. `intel:gpu`), `HKJC_MASK` (§3), `HKJC_PERTURB_SEED` (§4 observe, §6),
-`HKJC_MATCH_HELPER`, `HKJC_CUDA_BLOCKING_SYNC` (§4, opt-in, off by default).
+`HKJC_MATCH_HELPER` (§4, on unless `0`), `HKJC_CUDA_BLOCKING_SYNC` (§4, opt-in).
 
 Race identifiers are `venue MM-DD Rn` for 2026 meetings (ST 05-31 R1 is Sha Tin, 2026-05-31, race 1)
 and carry the full date otherwise.
@@ -139,12 +139,13 @@ Stages that read a later part of a replay (film, finish, silk, the shifted clock
 before the first frame they need (`video.decode_from`; same frame indices and pixels as decoding from frame 0, else
 it decodes from frame 0).
 
-Two opt-in switches (default off) change only how the CUDA work is scheduled. `HKJC_MATCH_HELPER=1` keeps one matcher
-helper interpreter per race (started with features, closed after pose; otherwise a fresh one per table request), and
-in features runs the avatar detector in its own process feeding up to 4 feature workers (otherwise, on CUDA, one
-process detects and does the per-frame CPU work). `HKJC_CUDA_BLOCKING_SYNC=1` puts the CUDA primary context in
-blocking-sync mode (`recon.cudasched`): a process waiting for the GPU sleeps instead of spinning. Their CPU paths give
-features artifacts identical to the default (HV 05-27 R9); the CUDA paths await a pod A/B.
+Two switches change only how the work is scheduled; artifacts are identical either way. By default one matcher
+helper interpreter serves the race (started with features, closed after pose), and features runs the avatar detector
+in its own process feeding up to 4 feature workers; `HKJC_MATCH_HELPER=0` starts a fresh helper per table request and
+has each worker run its own detector (on CUDA, one process detects and does the per-frame CPU work). On RTX 4090 pods
+the default is about 20 % faster per race but holds a CUDA context per race from features to pose (more GPU memory
+when many races start together). `HKJC_CUDA_BLOCKING_SYNC=1` (opt-in) puts the CUDA primary context in blocking-sync
+mode (`recon.cudasched`): a process waiting for the GPU sleeps instead of spinning (no gain measured at 4 races per pod).
 
 ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off (`ortsession.no_spin`): same
 threads and work split, identical outputs, CPU about a third (avatar detector) and a half (OCR).
