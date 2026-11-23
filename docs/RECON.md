@@ -166,7 +166,16 @@ the top strip is the dark HUD box (turf-green fraction ≤ 0.30) and the track b
 04-26 R9 the legend sits higher and the strict gate drops up to 13 s of race). The render updates at 10 Hz in
 25 fps video; a frame within mean |diff| 3.0 of the last kept frame is a duplicate. Panels are cached as JPEG
 with their video index as timestamp. `video.grid_keep` drops off-grid re-encodes of a kept tick (HV 04-22
-R1/R9 have a keyframe every 100 frames that would enter as a zero-motion tick).
+R1/R9 have a keyframe every 100 frames that would enter as a zero-motion tick). The tick grid (`video.tick_grid`)
+is the two residues of `frame % 5` holding ≥ 90 % of the frames; when that vote fails, only frames 2–3 frames
+after the previous one (the 10 Hz cadence) vote. On 5 of 329 replays (ST 2024-12-29 R8, ST 2024-04-07 R5,
+HV 2023-10-29 R6, HV 2024-07-04 R4, ST 2025-01-05 R6) 3–5 s of live start film pass the silk render gate and
+change on every frame, which puts the all-frame vote at 0.85–0.89. Without a grid, the keyframe every 50 frames
+(2 s) entered as a copy of the previous tick stamped 1–2 frames late (0.75–1.75 frames after that tick's time on
+the uniform grid), and tick times were not moved onto the uniform grid. The film frames still pass the gate; on
+those replays only their on-grid frames are kept. Open: the avatar detector fires on the film, identity labels
+some of those detections (ST 2024-12-29 R8: 40 of 73), and they shape the path between the gate and the first
+render frame.
 
 Circle render: the render's yellow odometer text (fraction ≥ 0.05 of its box; live film and the dissolve
 ≤ 0.02, the render 0.10–0.33; without it the start gate's blue banner passes as discs) plus ≥ 2 discs; the
