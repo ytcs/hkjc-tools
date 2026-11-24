@@ -373,6 +373,28 @@ def test_lane_units_count_the_race_abreast_pitch_from_the_rail_runner():
     assert np.isnan(c2["lane_units"][:2]).all() and np.isnan(c2["lane"][:2]).all()
 
 
+def test_lane_units_beyond_the_second_lane_count_the_depth3_pitch():
+    from hkjc.recon import contract as ct
+
+    # five abreast (gaps 2, 1.6, 2, 2: pitch 2; the third from the inside sits 1.6 outside the second) and a probe far ahead
+    lats, dd = (1.0, 3.0, 4.6, 6.6, 8.6, 3.9), (0.0, 0.5, 0.2, 0.4, 0.1, 30.0)
+    t, d, lat = _lane_field(n_t=120, lats=lats, dd=dd)  # 24 grid steps: 24 depth-3 gaps >= LANE_MIN_GAPS
+    sd, seg = np.full(len(t), 0.3), np.full(len(t), "bend")
+    cols, used = ct.lane_columns(t, d, lat, sd, seg, "ST", "20261101")
+    b = used["bend"]
+    assert b["pitch"] == 2.0 and b["origin"] == 1.0 and b["n_gaps3"] == 24
+    assert b["pitch3_source"] == "race" and np.isclose(b["pitch3"], 1.6)
+    u = cols["lane_units"].reshape(6, -1)[:, 0]
+    # up to 2 the race pitch; beyond, 2 + (lat - origin - pitch) / pitch3
+    assert np.allclose(u, [1.0, 2.0, 3.0, 4.25, 5.5, 2.5625])
+    assert cols["lane"].reshape(6, -1)[:, 0].tolist() == [1.0, 2.0, 3.0, 3.0, 3.0, 3.0]  # the probe is 2.45 by pitch alone
+    # fewer than LANE_MIN_GAPS depth-3 gaps: pitch3 is the pitch, lane_units linear
+    t, d, lat = _lane_field(n_t=60, lats=lats, dd=dd)
+    cols, used = ct.lane_columns(t, d, lat, np.full(len(t), 0.3), np.full(len(t), "bend"), "ST", "20261101")
+    assert used["bend"]["pitch3_source"] == "pitch" and used["bend"]["pitch3"] == used["bend"]["pitch"] == 2.0
+    assert np.allclose(cols["lane_units"].reshape(6, -1)[:, 0], 1.0 + (np.array(lats) - 1.0) / 2.0)
+
+
 def test_lane_pitch_falls_back_to_the_pooled_period_value_and_start_uses_straight():
     from hkjc.recon import contract as ct
 

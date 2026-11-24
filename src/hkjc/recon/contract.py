@@ -549,11 +549,14 @@ def lat_m_err(venue, seg, sd_lat_m, dev, x) -> dict:
 # use the straight class), on firm nodes (sd_lat < LANE_FIRM) at whole multiples of LANE_GRID s:
 #   pitch  = median over nodes of the nearest-abreast lateral gap (another firm node at the same time within LANE_ABREAST
 #            m along); with < LANE_MIN_GAPS gaps, the pooled median LANE_PITCH_POOL for venue x period x class;
-#   origin = median over time steps of the innermost firm node's lat.
-# lane_units = 1 + (lat - origin) / pitch on firm in-race nodes (NaN elsewhere); lane = 1 rail (< 1.5), 2 two-wide
-# (< 2.5), 3 three-plus. Scored against the official running comments' explicit lane statements (window means of
-# lane_units, 459 races, 2023-09 to 2026-11): agreement 0.83, 0.90 in 2026/27; stated three-plus horses read low (about
-# 2.6 mid-race).
+#   origin = median over time steps of the innermost firm node's lat;
+#   pitch3 = median inner gap of the depth-3 nodes (third from the inside among the firm nodes of the class at the same
+#            time within LANE_ABREAST m along; the gap to the nearest of those inside it); the race pitch where the class
+#            has < LANE_MIN_GAPS such gaps or a pooled pitch. The lane beyond the second is about 0.94 pitch wide.
+# lane_units = 1 + (lat - origin) / pitch up to 2, then 2 + (lat - origin - pitch) / pitch3, on firm in-race nodes (NaN
+# elsewhere); lane = 1 rail (< 1.5), 2 two-wide (< 2.5), 3 three-plus. Scored against the official running comments'
+# explicit lane statements (window means of lane_units, 340 races, 2023-09 to 2026-11): agreement 0.83, 0.90 in
+# 2026/27; stated three-plus horses read low (recall 0.78).
 LANE_GRID, LANE_FIRM, LANE_ABREAST, LANE_MIN_GAPS = 0.5, 1.5, 1.0, 20
 LANE_CUTS = (1.5, 2.5)
 # period start dates (render eras); a race before the first has no pooled pitch
@@ -591,7 +594,7 @@ def lane_columns(t, d, lat, sd_lat, seg, venue, date):
     firm = sd_lat < LANE_FIRM
     tk = np.round(t / LANE_GRID).astype(np.int64)
     grid = np.abs(t / LANE_GRID - tk) < 1e-6
-    gap = np.full(len(t), np.nan)
+    gap, gap3 = np.full(len(t), np.nan), np.full(len(t), np.nan)
     gi = np.flatnonzero(grid)
     order = gi[np.argsort(tk[gi], kind="stable")]
     for idx in np.split(order, np.flatnonzero(np.diff(tk[order])) + 1):
@@ -601,31 +604,41 @@ def lane_columns(t, d, lat, sd_lat, seg, venue, date):
         ab &= firm[idx][:, None] & firm[idx][None, :]
         g = np.where(ab, np.abs(lat[idx][:, None] - lat[idx][None, :]), np.inf).min(1)
         gap[idx] = np.where(np.isfinite(g), g, np.nan)
+        inside = ab & (seg[idx][:, None] == seg[idx][None, :]) & (lat[idx][None, :] < lat[idx][:, None])
+        dep3 = inside.sum(1) == 2
+        gap3[idx[dep3]] = lat[idx][dep3] - np.where(inside, lat[idx][None, :], -np.inf).max(1)[dep3]
     cls = {}
     for c in ("bend", "home", "straight"):
         sel = grid & firm & (seg == c)
         if not sel.any():
             continue
-        g = gap[sel & np.isfinite(gap)]
+        g, g3 = gap[sel & np.isfinite(gap)], gap3[sel & np.isfinite(gap3)]
         k, lo = tk[sel], lat[sel]
         o = np.argsort(k, kind="stable")
         cut = np.flatnonzero(np.diff(k[o])) + 1
         inner = np.array([v.min() for v in np.split(lo[o], cut)])
-        cls[c] = {"pitch": float(np.median(g)) if len(g) else None, "n_gaps": int(len(g)), "origin": float(np.median(inner))}
+        cls[c] = {"pitch": float(np.median(g)) if len(g) else None, "n_gaps": int(len(g)), "origin": float(np.median(inner)),
+                  "pitch3": float(np.median(g3)) if len(g3) else None, "n_gaps3": int(len(g3))}
     pool = LANE_PITCH_POOL.get((venue, lane_period(date)), {})
     used = {}
     for c in ("bend", "home", "straight"):
         v = cls.get(c)
         if v and v["n_gaps"] >= LANE_MIN_GAPS:
-            used[c] = {"pitch": v["pitch"], "origin": v["origin"], "pitch_source": "race", "n_gaps": v["n_gaps"]}
+            own3 = v["n_gaps3"] >= LANE_MIN_GAPS
+            used[c] = {"pitch": v["pitch"], "origin": v["origin"], "pitch_source": "race", "n_gaps": v["n_gaps"],
+                       "pitch3": v["pitch3"] if own3 else v["pitch"], "pitch3_source": "race" if own3 else "pitch",
+                       "n_gaps3": v["n_gaps3"]}
         else:
             o = v["origin"] if v else (cls.get("straight") or cls.get("bend") or {}).get("origin", np.nan)
-            used[c] = {"pitch": pool.get(c, np.nan), "origin": o, "pitch_source": "pooled", "n_gaps": v["n_gaps"] if v else 0}
+            p = pool.get(c, np.nan)
+            used[c] = {"pitch": p, "origin": o, "pitch_source": "pooled", "n_gaps": v["n_gaps"] if v else 0,
+                       "pitch3": p, "pitch3_source": "pitch", "n_gaps3": v["n_gaps3"] if v else 0}
     units = np.full(len(t), np.nan)
     for c in ("start", "bend", "home", "straight"):
         u = used["straight" if c == "start" else c]
         sel = firm & (seg == c)
-        units[sel] = 1.0 + (lat[sel] - u["origin"]) / u["pitch"]
+        x = 1.0 + (lat[sel] - u["origin"]) / u["pitch"]
+        units[sel] = np.where(x <= 2.0, x, 2.0 + (x - 2.0) * u["pitch"] / u["pitch3"])
     lane = np.where(np.isfinite(units), np.where(units < LANE_CUTS[0], 1.0, np.where(units < LANE_CUTS[1], 2.0, 3.0)),
                     np.nan)
     return {"lane_units": units, "lane": lane}, used
@@ -639,9 +652,12 @@ def describe_lane(used, period=None) -> dict:
                     "(sd_lat < firm_sd_lat) at multiples of grid_s: pitch = median nearest-abreast lateral gap (another "
                     "firm node at the same time within abreast_m along), or the pooled venue x period x class median "
                     "(pitch_source 'pooled') with < min_gaps gaps; origin = median over time of the innermost firm "
-                    "node's lat; lane_units = 1 + (lat - origin) / pitch on firm in-race nodes, NaN elsewhere; lane = 1 "
-                    "rail (< cuts[0]), 2 two-wide (< cuts[1]), 3 three-plus",
-            "status": "agreement with the official running comments' explicit lane statements (window means, 459 "
+                    "node's lat; pitch3 = median inner gap of the depth-3 nodes (third from the inside among the "
+                    "class's firm nodes at the same time within abreast_m along), or the pitch (pitch3_source 'pitch') "
+                    "with < min_gaps such gaps or a pooled pitch; lane_units = 1 + (lat - origin) / pitch up to 2, then "
+                    "2 + (lat - origin - pitch) / pitch3, on firm in-race nodes, NaN elsewhere; lane = 1 rail "
+                    "(< cuts[0]), 2 two-wide (< cuts[1]), 3 three-plus",
+            "status": "agreement with the official running comments' explicit lane statements (window means, 340 "
                       "races 2023-09..2026-11) 0.83 overall, 0.90 in 2026/27; stated three-plus horses read low"}
 
 

@@ -595,10 +595,15 @@ none of the additions is a stage output or cache key.
     - pitch: the median nearest-abreast lateral gap, to another firm node at the same time within 1 m along;
     - fallback: with fewer than 20 gaps, the pitch is `LANE_PITCH_POOL`, the median race pitch for venue × period ×
       class (`LANE_PERIODS`; none before 2023-09-01, so NaN there);
-    - origin: the median over time of the innermost firm node's `lat`.
-  - `lane_units` = 1 + (lat − origin) / pitch on firm in-race nodes. It is NaN where sd_lat ≥ 1.5 or outside the race
-    (before the first render frame, past the post), and `lane` is null there.
-  - contract.json `lane` holds the run's pitch, origin, gap count and pitch source per class, with the rule and the cuts.
+    - origin: the median over time of the innermost firm node's `lat`;
+    - pitch3: the median inner gap of the depth-3 nodes (third from the inside among the class's firm nodes at the
+      same time within 1 m along), or the pitch where the class has fewer than 20 such gaps or a pooled pitch. The
+      lane beyond the second is about 0.94 pitch wide.
+  - `lane_units` = 1 + (lat − origin) / pitch up to 2, then 2 + (lat − origin − pitch) / pitch3, on firm in-race nodes.
+    It is NaN where sd_lat ≥ 1.5 or outside the race (before the first render frame, past the post), and `lane` is null
+    there.
+  - contract.json `lane` holds the run's pitch, pitch3, origin, gap counts and sources per class, with the rule and the
+    cuts.
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
@@ -748,7 +753,7 @@ identical. Not bit-exact:
   and home straight only, from a 7–9-race drone comparison; NaN at Happy Valley and in every other segment. Its
   race-level scale term (`sd_lat_m_scale`) is shared per race and segment and defined wherever `lat_m` is.
 - **Lane category.** Against the official running comments' explicit lane statements, `lane` agrees about 0.83 of the
-  time (0.90 in 2026/27), and stated three-plus horses read low.
+  time (0.90 in 2026/27), and stated three-plus horses read low (recall 0.78). No season reaches 90 %.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the
