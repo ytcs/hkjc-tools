@@ -63,3 +63,13 @@ information; fastest wall time, small subsets). Seen before this: 0285 (floor, s
   per venue; det_labels_final changes per race.
 
 6. Resources: one process at a time, 2 threads, scripts/capped.sh 2 G, waited on by PID, no pod; sealed 25 excluded.
+
+AMENDMENT 1 (after the off-arm scorer check, before any on-arm number was read). Body md5 at first write
+9b1f656880995fbd8fa943e9065ba442 (commit 02d0403).
+- The scorer check missed its tolerance: off_U all-halves p90 1.490 % vs 1.18 % (+0.31 pp, tol 0.3); sub-split e_rel SD
+  2.54 m (within 1 m of 2.1: ok).
+- Diagnosis (scorer_check2.py): 0272's own rows (s_score/sub.parquet, sub_flag.py method) restricted to these 40
+  races give 1.490 %, n 1882, the same rows and value as this scorer on the stored products and on off_U. The scorer
+  is exact; 1.18 % is the pooled dev201 + gate149 + B2 figure, and this 40-race sample sits higher (dev 1.40 %,
+  gate 1.60 %). The off replay at this branch reproduces the stored products on this statistic.
+- Decision: proceed. The check's purpose (scorer correctness) is met by exact reproduction; nothing else changes.
