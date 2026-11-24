@@ -198,7 +198,7 @@ def split_by_appearance(members, t, F, *, thr=SPLIT_TV, min_n=40):
     total-variation distance between the left and right mean signatures (>= ``min_n`` silk-bearing
     detections per side) is taken while that distance exceeds ``thr``; recursive. Catches switches
     between distinct silks, not between similar ones. Returns new members."""
-    from .assoc import _collapse
+    from .silkmap import collapse as _collapse
 
     out = []
     stack = [np.asarray(m, int) for m in members]

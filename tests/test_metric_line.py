@@ -45,25 +45,3 @@ def test_shape_bias_keeps_the_boundaries_and_takes_the_line_metric_shape_between
 
     want = np.interp(mid, bias[0], bias[1]) + ds(mid) - np.interp(mid, bias[0][:2], ds(bias[0][:2]))
     assert abs(np.interp(mid, grid, shift) - want) < 0.02
-
-
-def test_shaped_moves_raw_biased_render_observations_onto_the_shape(tmp_path, monkeypatch):
-    from dataclasses import dataclass
-
-    @dataclass
-    class Ob:
-        feed: str
-        s: object
-
-    run = _run(tmp_path)
-    raw = (np.array([450.0, 1650.0]), np.array([1.0, 0.0]))
-    grid = np.arange(0.0, 1700.0, 1.0)
-    shape = (grid, np.interp(grid, *raw) + 0.5 * np.sin(grid / 200.0))
-    monkeypatch.setattr(run, "_shape_bias", lambda b: shape if b is raw else b)
-    s_raw = np.array([500.0, 900.0, 1300.0])
-    obs = [Ob("render", s_raw + np.interp(s_raw, *raw)), Ob("official", np.array([1.0]))]
-    out = run._shaped(obs, raw)
-    assert np.allclose(out[0].s, s_raw + np.interp(s_raw, *shape), atol=1e-3)  # labels untouched, s on the shape
-    assert out[1] is obs[1]
-    monkeypatch.setattr(run, "_shape_bias", lambda b: b)
-    assert run._shaped(obs, raw) is obs

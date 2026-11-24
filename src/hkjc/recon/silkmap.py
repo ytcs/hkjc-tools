@@ -1,10 +1,20 @@
-"""Learned OFFICIAL-silk -> RENDER-silk appearance map (collapsed silk signature, ``assoc._collapse``).
+"""Learned OFFICIAL-silk -> RENDER-silk appearance map (collapsed silk signature, ``collapse``).
 
 The render draws silks on small top-down avatars, desaturated and lit differently from the official
 silk images. This ridge map (alpha 1, with intercept) is fitted on legend-confident tracklets (top
 vote >= 20 and >= 3x the runner-up; labels from the render LEGEND, no official outcome data);
 leave-one-race-out top-1 47 % vs 33 % unmapped. render_signature ~ [official_signature, 1] @ SILK_MAP.
 """
+
+import numpy as np
+
+
+def collapse(a):
+    """Silk signature -> hue (pastel + vivid) + white + dark: the render desaturates, so pastel and vivid merge."""
+    a = np.asarray(a)
+    nh = (a.shape[-1] - 2) // 2
+    return np.concatenate([a[..., :nh] + a[..., nh : 2 * nh], a[..., 2 * nh :]], -1)
+
 
 SILK_MAP = [
     [0.18474, 0.19800, -0.04996, -0.01046, -0.01699, -0.03400, -0.06810, -0.04995, -0.02818, -0.03842, -0.00215, 0.22705, -0.22040, -0.00659],
@@ -24,10 +34,10 @@ SILK_MAP = [
     [0.06212, 0.13169, 0.06729, 0.01036, 0.03381, 0.03214, 0.03192, 0.03151, 0.02264, 0.03380, 0.02394, 0.05551, 0.26256, 0.11168],
 ]
 
-# Tracklet-level silk LOG-LIKELIHOOD RATIO as a function of the total-variation distance between the
-# tracklet's mean render signature and the MAPPED official prototype: LLR(tv) = A + B * tv, clipped to
-# +-CLIP. Fitted on true/false pairs of legend-confident tracklets (labels from the legend): +2.3 nats
-# at tv 0.1, 0 at tv 0.35, -3 beyond.
+# Silk LOG-LIKELIHOOD RATIO as a function of the total-variation distance between a mean render signature and
+# the MAPPED official prototype: LLR(tv) = A + B * tv, clipped to +-CLIP (the core applies it per segment). Fitted on
+# true/false pairs of legend-confident tracklets (labels from the legend): +2.3 nats at tv 0.1, 0 at tv 0.35, -3
+# beyond.
 SILK_LLR_A = 2.24
 SILK_LLR_B = -6.37
 SILK_LLR_CLIP = 3.0

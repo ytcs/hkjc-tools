@@ -38,7 +38,7 @@ KINK_CHORD = 40  # stations (2 px each)
 FIELD_GAP_M = 4.0
 SLIDE_MS = 0.8
 SD_TIGHT = 1.5
-FLOOR_M = 8.0  # = assoc.FLOOR_EPS
+FLOOR_M = 8.0  # m: an unlisted horse this far ahead of the rearmost tight listed horse contradicts the list
 # contiguous off-map stations that flag the rail (~10 m): accepted rails reach 44, a known bad bulge 699
 OFF_MAP_RUN = 100
 
@@ -149,8 +149,8 @@ def identity_checks(run) -> dict:
         order = sorted(dd, key=dd.get)
         rk = {h: i for i, h in enumerate(order)}
         if len(listed) == 8:
-            # an unlisted horse clearly AHEAD of the rearmost tight listed horse (the E-step's floor
-            # rule, FLOOR_EPS): ranks among tight horses alone over-count when listed horses are vague
+            # an unlisted horse clearly AHEAD of the rearmost tight listed horse (FLOOR_M): ranks among
+            # tight horses alone over-count when listed horses are vague
             tight_listed = [dd[h] for h in listed if h in dd]
             if tight_listed:
                 rear = max(tight_listed)

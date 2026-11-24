@@ -179,57 +179,28 @@ def test_only_a_horse_coded_as_stopping_is_barred_and_only_with_the_finish_visib
     assert run._stopped(run.info.official_nonfinish()) == {4: 1150.0}
 
 
-def test_an_unseated_horse_keeps_off_other_avatars_and_keeps_its_own():
+def test_an_excluded_horse_takes_no_segment_even_where_its_evidence_is_strongest():
+    """A stopped horse's bar (``core.Evidence.forbid``, set by ``RaceRun._core_product`` from ``_stopped``) is hard in
+    the assignment: the segment goes to another horse or to clutter, never to the barred one."""
+    from types import SimpleNamespace
+
+    from hkjc.recon import core
+
+    ev = SimpleNamespace(links=np.zeros((0, 3)), seg_lo=np.array([0, 0]), seg_hi=np.array([9, 9]),
+                         forbid=np.array([[False, True], [False, False]]))
+    U = np.array([[-5.0, -50.0], [-40.0, -1.0]])  # segment 0 looks most like horse 1 (barred there)
+    lab = core.milp(U, ev)
+    assert lab[0] != 1 and lab.tolist() == [-1, 0]
+
+
+def test_a_non_finishers_path_ends_at_its_last_labelled_detection(tmp_path):
     run = RaceRun.__new__(RaceRun)
-    run.info = MaskedRace(_info())
-    run._unseated = {4}
-    members = [np.array([0, 1]), np.array([2]), np.array([3])]
-    deny = run._unseated_deny(members, [4, 3, 0])
-    assert deny[0] == deny[1] == {1, 2, 3}  # nobody else takes the unseated horse's own fragment
-    assert deny[2] == {4}  # it does not take another runner's fragment
-    assert 3 not in deny  # an unlabelled fragment is open to all
-    assert run._excluded({}, np.array([0.0, 1.0]), deny, [0, 1]) == {1, 2, 3}  # travels with the fragment
-    assert run._excluded({}, np.array([0.0]), deny, [3]) == frozenset()
-
-
-def test_assign_frames_deny_is_hard_and_reported():
-    from hkjc.recon import assoc
-
-    paths = {h: _path(h, 15.0) for h in (3, 4)}
-    paths[4].lat[:] = 6.0
-    t, s, lat = np.array([40.0, 40.0]), np.array([600.0, 600.0]), np.array([3.0, 6.0])
-    forbid = {}
-    lab, _chi = assoc.assign_frames(np.array([1, 1]), t, s, lat, paths, np.zeros((0, 9), int), deny={0: {3}},
-                                    forbid_out=forbid)
-    assert lab.tolist() == [0, 4] and 3 in forbid[0]
-
-
-def test_an_excluded_horse_takes_no_detection_past_its_bar_even_on_the_legend_rank():
-    from hkjc.recon import assoc
-
-    paths = {h: _path(h, 15.0) for h in (1, 4)}
-    paths[4].lat[:] = 6.0
-    t = np.array([60.0, 60.0, 78.0, 78.0])
-    s = np.array([900.0, 900.0, 1170.0, 1170.0])
-    lat = np.array([3.0, 6.0, 3.0, 6.0])
-    leg = np.array([[f, 4, 1, 0, 0, 0, 0, 0, 0] for f in (1, 2)])  # the legend still lists the faller first
-    forbid = {}
-    lab, _chi = assoc.assign_frames(np.array([1, 1, 2, 2]), t, s, lat, paths, leg,
-                                    s_line=1200.0, exclude={4: 1150.0}, forbid_out=forbid)
-    assert lab[0] == 1 and lab[1] == 4  # before the bar: unchanged
-    assert lab[3] == 0 and 4 in forbid[3] and 4 in forbid[2]
-
-
-def test_a_non_finishers_path_ends_at_its_last_observation():
-    from hkjc.recon import fusion
-
-    run = RaceRun.__new__(RaceRun)
+    run.dir = tmp_path
     run._nonfin = {4: 1150.0, 2: -np.inf}
     paths = {h: _path(h, 15.0) for h in (1, 2, 4)}
-    obs = [fusion.Obs(np.array([10.0, 50.0]), np.array([150.0, 750.0]), None, 0.8, 0.35, "render", horse=4, tid=1),
-           fusion.Obs(np.array([0.0]), np.array([0.0]), np.array([2.0]), 0.3, 0.4, "draw", horse=2, tid=2),
-           fusion.Obs(np.array([60.0]), np.array([900.0]), None, 0.8, 0.35, "render", horse=0, tid=3)]
-    out = run._end_at_last_obs(paths, obs, {3: 4})
-    assert 2 not in out  # nothing after the draw: no path
-    assert out[4].t[-1] == 60.0 and len(out[4].s) == len(out[4].t)  # the fragment fusion assigned counts
+    np.savez(tmp_path / "tracks.npz", t=np.array([10.0, 50.0, 60.0, 70.0]))
+    np.savez(tmp_path / "det_labels_final.npz", labels=np.array([4, 4, 4, 1]))
+    out = run._end_at_last_label(paths)
+    assert 2 not in out  # no labelled detection: no path
+    assert out[4].t[-1] == 60.0 and len(out[4].s) == len(out[4].t)
     assert len(out[1].t) == 1601

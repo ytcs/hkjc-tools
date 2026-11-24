@@ -322,155 +322,143 @@ tracks are built; not on the Sha Tin side-on camera, where horses abreast share 
 most, and other horses get `gap_h = gap_r + x_h − x_r` from ≥ 2 shared frames, which recovers horses occluded
 at the line (sd = robust spread / √n, floor 15 px).
 
-### identify
+### The core: identify, fuse_video, fuse_final (`recon.core`)
 
-`identity.legend_votes` uses frames where every runner is tracked by distinct tracklets: the tracklet at rank r
-votes for legend slot r, and ranks 9+ get set-valued elimination evidence ("one of the N − 8 unlisted
-numbers"). It takes the runners' saddlecloth numbers, so withdrawn numbers (gaps) neither block the whole-field
-test nor enter the unlisted set. When no frame tracks the whole field and the legend never lists some runner (a
-horse tailed off out of the render camera's view), frames tracking all runners but one vote, the untracked runner
-taken as one behind the legend; `fuse_video` stops with "identify numbered no tracklet" if identify numbers
-nothing. The finish camera names tracklets by 1D registration (`finishcam.identity_match`) of their line crossings
-to `t_w + gap/C`, scanning C ± 25 % around the ruler prior; a name needs residual < 0.08 s with every other
-prediction ≥ max(2× residual, 0.15 s) away, and adds 40 slot votes (`RaceRun.FINISH_VOTES`). Circle render: each
-confident disc-number read (OCR confidence ≥ 0.6, a runner's number) adds one vote for that number to its
-tracklet, about one legend frame's worth; late-frame numbers count as shown for the blind set in the fusion.
+Design memo (Stage A of the core redesign: render-only evidence). The three stages share one model and one objective.
+The video-only product and the final product run the same code; they differ only in which observations the mask
+leaves visible (the final product adds the draw, the official times and the metric bias). Nothing is decided
+before the output: labels stay soft inside the solve, and the argmax is taken only when the label files are written.
 
-`identity.assign_global` solves the global maximum-likelihood assignment as a MILP: a vote is right with
-probability ρ, else uniform, so evidence grows with the vote count; elimination frames score log(ρₑN/m) for
-each unlisted number; ρ and ρₑ are re-estimated from labelled tracklets (camera votes excluded); the silk LLR
-`2.24 − 6.37·TV` (clipped ±3) counts where the legend has spoken; one number per tracklet and per frame; gain
-≤ 0 stays unlabelled. Unlabelled line-reaching tracklets are then matched by elimination (`finishcam.eliminate`) to
-numbers with no line-reaching tracklet. Camera and elimination names are hard constraints downstream.
+**Unit of identity: segments.** `core.segments` cuts each tracker tracklet (observe's `members`) into segments at:
+- stitched gaps > `CUT_GAP` (1 s);
+- lateral jumps > `CUT_JUMP_LAT` (0.6 units) within `CUT_JUMP_T` (0.2 s);
+- encounters: another tracklet starts or ends within `ENC_T`/`ENC_S`/`ENC_LAT` (0.2 s, 3 m, 1.5 units);
+- render camera transitions (`core.camera_transitions`: the sequential pose step into the frame is missing or has a
+  residual > `CAM_RESID` px);
+- an occluder's edge: the box enters or leaves `EDGE_PX` of the list band (silk render) or the disclaimer band.
 
-Telemetry: `identify_scores.npz` (gain matrix tracklets × numbers as the MILP saw it, rho, rho_e, objective, silk
-LLR term, labels) and, from `fuse_video`, the same for the EM identity pass (`identify_em_scores.npz`, the only
-record of its labels). The pipeline reads neither, and neither is a stage output or cache key.
+Tracker continuity across a cut is a link with a reward in the objective: `LINK_TRACK` (4) at gaps and encounters,
+`LINK_WEAK` (1) at jumps, camera transitions and occluder edges, `LINK_CROSS` (2) for an end-to-start continuation
+between segments (≤ 1 s, ≤ 3 m at the segment's speed, ≤ 1 unit across). Exclusivity is per frame: one segment per
+horse per frame. A segment's detections are summarised by their means per `CHUNK` (0.5 s), sd
+√(0.8²/n + `SD_S_COMMON`²) along and √(0.35²/n + `SD_L_COMMON`²) across, plus `CAM_SD_S`/`CAM_SD_L` within `CAM_WIN`
+of a camera transition. The within-chunk scatter is a label-independent cost of a labelled chunk. The hard
+appearance and number splits of `observe` still cut tracklets; in the core they are only extra cuts with no link.
 
-### fuse_video
+**Per-box P(horse).** `core.p_horse` gives `P_GHOST` (0.01) to a short-lived box (tracklet < 50 detections) in an
+overlay zone: the list's icon band or the dark corner beside it (confidence < 0.75, silk render), the disclaimer band
+at glyph size, or the left edge far outside its frame's field. Any other box overlapping an occluder band gets
+`P_EDGE` (0.5); every other box gets `P_HORSE0` (0.97). A labelled detection costs −2 log(P/`P_HORSE0`). An
+unlabelled one costs `CLUTTER` − 2 log((1 − P)/(1 − `P_HORSE0`)). Rank counts weight each detection by P.
 
-Writes `paths_video.parquet` and persists its observations and paths (`fuse_video.pkl`); `fuse_final` reads
-them, so a change to the official-record stage re-runs only `fuse_final`.
+**Detection term.** Per render frame, a local affine map from (s, lat) to panel px is fitted to the frame's horse
+boxes (`core.view_maps`: ≥ 4 boxes with P ≥ 0.5, else the nearest frame's map). A runner's P(in view) is the
+probability that its posterior projects inside the visible panel, between the disclaimer text and the list band
+(silk render), with `VIEW_PX` px added to the projected sd (`core.in_view`). Occluded or off-panel runners are
+unobserved, so their missing box is no evidence.
 
-**Model** (`fusion.smooth`, `fusion.Prior`). Per horse, s and lat on a 0.1 s grid with second-difference priors:
-along-track acceleration sd 6 m/s² for t < 6 s, 1.2 m/s² after; lateral 0.25 m/s² plus a 2 m/s lateral-velocity
-term; no along-track velocity term. Observations enter at their own times by linear interpolation; render sd 0.8 m
-along, 0.35 m lateral. Lateral is boxed to [0.3, width − 0.3]. The MAP is a banded Cholesky solve with violating
-nodes pinned by a stiff penalty (≤ 8 rounds), declared non-exact against an exact sparse LU solve. Posterior sd comes
-from the unconstrained normal equations at every 10th node, interpolated. The grid is shared by all horses and ends
-at the race's latest observation. `paths_video.parquet` adds a 0.5 s prior-only tail per path (`fusion.with_tail`:
-s at the end-node speed, lat held, sd_s grown by the acceleration prior), so a horse a few cm short of the line at
-the last observation still crosses; tail crossings are extrapolations, and the fusion, EM and `fuse_video.pkl`
-never see the tail.
+The frame's detection probability is estimated from its own count: p_f = (boxes + 1)/(runners in view + 2), clipped
+to [`P_DET_MIN`, `P_DET_MAX`]. The detector's recall varies by frame (camera, zoom), so a frame that boxes half the
+field makes a miss cheap. A runner labelled in the frame costs −2 log p_f. An unlabelled one costs
+−2 log(1 − p_f) × P(in view) (`core.miss_terms`). This keeps a path from floating unobserved through a part of the
+panel where the detector boxes the field.
 
-**Association** (`fusion.fuse_race`). Anonymous tracklets are scored against each posterior by mean χ² plus
-log-det ratio; the best must be < 9, beat the runner-up 2×, not overlap that horse's same-feed tracklets in time
-and not be in the tracklet's forbidden set. Orphans (unassigned anonymous tracklets of ≥ 5 observations) are
-stitched into chains and offered, largest first, to the horses without a covered path (none, or observations on
-≤ 30 % of the grid): a chain goes to the horse whose non-render anchors (finish camera; official times in
-`fuse_final`) it matches (χ² < 9, beating the runner-up 2×), never to a horse in its forbidden set; when exactly
-one such horse remains and the chain has no usable anchor against it, the chain goes to that horse by elimination.
-The anchor check demotes up to 3 render tracklets whose removal at least halves a horse-specific anchor conflict
-above 4σ (field median residual subtracted; never below half the horse's render data), then re-fuses once.
+**State.** Every runner has s and lat at every node of the 0.1 s grid, seen or not. Along-track positions form one
+joint banded Gaussian over all runners, ordered node-major with lower bandwidth 2H. Its terms are:
+- the physics prior of `fusion.Prior` (6 / 1.2 m/s²);
+- a proper start prior: s at the first node, sd 1 m at the gate, else 100 m; speed sd 8 m/s;
+- the chunk observations;
+- the extra observations: finish camera, draw, official times;
+- the list's pairwise order factors.
 
-**Finish observations** (`RaceRun.finish_observations`, a second pass inside every fuse). Each gapped horse
-crosses d = 0 at `t_w + gap/C`. `finishcam.anchor` fits t_w and C (800–4000 px/s) to fused crossings with sd ≤
-3 m (`RaceRun.ANCHOR_SD`), with a soft prior C = line speed × ruler px/m (relative sd 0.30). When the label-free
-registration is sound (not at the edge of its C scan, matching at least half the runners) and disagrees by > 0.4 s
-or > 30 % in C, the registration is used (t_w sd 0.15 s, its bias); if neither is usable, no finish observations are
-emitted. In `fuse_final` the registration's clock is first shifted into the bias-shifted render frame
-(`RaceRun.registration_shift`). Per-horse sd is conditional on the fitted clock.
+The mode comes from Newton with line search. The fault-state posteriors are the factors' weights (EM). Lateral
+uses one box-bounded banded smoother per runner. An unseen runner carries the posterior that the order factors
+shape, behind the horses the list puts ahead of it, with its own sd. The assignment step sees that sd.
 
-**EM identity pass** (`RaceRun._em_identity`). Legend votes on frames with undetected horses, ranks completed by
-the first posterior where every sd < 2 m, are added and `assign_global` re-run.
+**Order evidence.** `core.statements` turns each list row into pairwise facts "a ahead of b" at the row's render
+time − `LAG` (0.3 s): adjacent read slots, and the last listed horse ahead of every unlisted runner on fully read
+rows. Each fact has probability (1 − ε)Φ(Δ/`SIG_AB`) + ε/2, with ε = `EPS_LIST` (0.02) for misreads and `SIG_AB`
+(1 m) the order noise of a pair abreast. In the fault chains a fact's likelihood is taken relative to a clearly kept
+order. Two persistent fault chains act on top (`core.list_chains`, forward-backward):
+- a list-level frozen state, in which the row says nothing (each adjacent fact a coin flip). Only a row identical to
+  the previous full row can be frozen (`P_FROZEN_IN`, `P_FROZEN_STAY` per row);
+- per runner, an omission state, in which its unlisted facts say nothing (`P_OMIT_IN`, `P_OMIT_STAY`).
 
-**Detection-level EM** (`assoc.assign_frames`). The tracker fragments are only the initialisation. Per frame,
-one Hungarian assignment of all detections to all horses, clutter cost 16 (`assoc.CLUTTER`, 4σ). A detection's
-rank is 1 + the number of detections more than 0.6 m ahead of it in the frame. Costs:
-- Gaussian −2 log-likelihood against each posterior including the log-det ratio, so a vague out-of-view path
-  pays for its vagueness.
-- Hard legend rank: a detection with ≥ q detections more than 4.5 m ahead (4σ on a difference of two
-  detections) cannot be the horse in legend slot q (+50, forbidden).
-- Soft legend rank: +9 for slot q where the detection's rank, confirmed by the count of tight posteriors
-  ahead, differs from q.
-- Negative legend evidence: a horse missing from a fully read top 8 is barred from detections surely inside the
-  top 8 (detections ahead + undetected horses + 1 < 8) or > 8 m ahead of the rearmost tight listed horse.
-- Finish-camera negative evidence: with recall r ≥ 0.5 (capped 0.95), detections in the last 15 m cost
-  −2 log(1 − r) for unread horses; a horse unread and absent from the legend in the 8 s before the first
-  crossing ("blind") pays CLUTTER, hard, in the last 50 m.
-- Rank attraction: in the last 100 m a detection whose rank equals a listed horse's slot costs that horse at most
-  10 (slowing unread horses' real detections fall well behind their extrapolated paths).
+The fact API is source-agnostic: (time, ordered pair, source fault model).
 
-`assoc.release_post_finish` makes anonymous any detection of a horse later than its first detection past the
-line and > 3.2 m before it (it would drag the camera clock). `assoc.runs_to_obs` splits runs at gaps > 1 s and
-drops runs of < 3. Unassigned detections stay anonymous per tracker fragment and carry the hard exclusions held on
-≥ 50 % of their detections, else fusion's association would reassign them to an excluded horse. Up to 8
-iterations, stopping below 0.2 % label change.
+**Objective.** J(z) = −2 log p(z, observations, list), with the paths integrated out (Laplace at the joint mode).
+It is the sum of:
+- the along-track term: the mode's misfit, physics and order factors, plus the log det of the Laplace Hessian minus
+  the prior's;
+- the lateral term;
+- the list's chain log-likelihood;
+- per detection, the horse-prior or clutter cost;
+- the labelled chunks' scatter;
+- the detection term;
+- the rewards of broken links;
+- disc reads: per detection, error `READ_ERR`, `READ_ERR_TOUCH` with another disc within 50 px, `READ_ERR_DROP`
+  between dropped-digit partners;
+- silk: −2 × the clipped `silkmap` LLR of each segment with ≥ 10 features;
+- hard exclusions (stopped non-finishers after their last section).
 
-`RaceRun._finish_seeds`: horses the camera read but still path-less after the EM get an E-step-only seed path
-(camera crossing, field line speed, sd growing 1 m/s away from the line) and the EM runs again. Shadow release:
-two tight paths within 0.8 m along and 0.5 m lateral for ≥ 0.5 s in the last 3 s lose the weaker horse's
-detections there (the unread one, else fewer detections).
+**Inference (`core.solve`).**
+1. Start-free solve: one MILP over segments × runners on the label-free evidence. This is the list's rank-count vote
+   with undetected horses ahead at `P_AHEAD_UNSEEN`, plus reads and silk. It keeps only segments with a positive
+   gain.
+2. Repeat:
+   - Assignment step: a MILP over segments × runners minimises J's increments, linearised at the current state.
+     Each increment combines the block predictive of the segment's chunks against each runner's posterior (leave
+     the segment out for its owner), the rank-count vote, the horse/clutter prior, reads, silk and links.
+   - State step: J is evaluated at the proposal. The proposal is kept if J falls. Otherwise its changes are tried
+     one segment at a time, in order of predicted gain, and the first that lowers J is kept.
+3. When neither the proposal nor any of its five best single-segment changes lowers J, window proposals follow
+   (`WINDOWS`, 10 s then 30 s). Each is a MILP whose kinematic term leaves out each horse's own observations within
+   the window around the segment. Its evidence farther away, the extra observations and the order curvature stay.
+   The window MILP leaves out the rank votes. A list omission shifts every horse behind the omitted one at once, and
+   only such a move reaches that labelling.
+4. The loop ends when no proposal lowers J. There is no iteration cap. Every accepted step lowers J; the log prints J
+   after each.
 
-### fuse_final
+Each product solves twice: without the finish camera, then with its crossings (`finish_camera` from the first
+state), the first solve's labels being a candidate start. `fuse_final` also offers the video labels as a start. The
+lowest J among the starts is kept.
 
-The product: the video-only detections plus the draw and the official records the mask leaves visible.
-1. `RaceRun.official_observations`: the draw fixes each runner at t = 0 to s = 0 (sd 0.3 m) and lateral
-   `STALL1_LAT + (draw − 1) × STALL_PITCH` (2.5 m, 1.06 m, from the drone's top-down start frame; sd `DRAW_SD`
-   0.4 m). The official finish times (photo-finish, 0.01 s) fix the crossing at d = 0 with `OFFICIAL_SD` = 0.1 m,
-   near-hard, so a mislabelled render tracklet conflicts with them (and is demoted) instead of bending them;
-   runners without sectional times are held to their official finish time. The official interior times
-   (d = 400k) are the leader's time plus a margin quantised to 0.04 s, so they enter as measurements with
-   `OFFICIAL_INTERIOR_SD` = 0.6 m (their horse-specific error once a per race-boundary field-spread term is removed;
-   that term is not modelled, §8). A non-finisher gets its interior times up to its last complete section and no
-   finish observation. The anchor check, the official-only skeleton and its merge test use these sds.
-2. `RaceRun._metric_bias`: at each visible boundary, b = median over ≥ 3 horses of (video-only crossing delay
-   × speed); render s is shifted by b interpolated along s. The render metric error is shared by all horses,
-   and hundreds of render observations would otherwise outvote the official times. Every fuse up to and including
-   the final identity pass (step 5) uses this bias. At Happy Valley (turf ovals; w = `METRIC_W` 3.10 m, frozen from
-   the pooled HUD tick loss alone) the LAST fuse of step 5 takes the shape bias instead (`RaceRun._shaped`): ds(s) +
-   the bias left at the visible boundaries after ds, interpolated (`RaceRun._shape_bias`), ds = the s' metric's render
-   s minus the rail-s metric's for the same detections. The product keeps its values at every visible boundary and
-   takes the s' metric's shape between them; the labels (`det_labels_final.npz`), `paths_video.parquet` and the
-   video-only gates do not depend on it.
-3. Fuse with the grid running 0.5 s past the later of the last visible official time and the video-only grid's
-   end (else the slowest finisher ends short of the line; with the finish withheld the last visible official time
-   is 400 m out).
-4. Field-relative start prior: until the video-only grid's start + 1 s there is no video, so acceleration has sd
-   0.63 m/s² per node (`Prior.a_sd_rel`, the horse-specific acceleration) about the field's median curve from
-   step 3; the zero-mean 6 m/s² prior would extrapolate a late-seen horse backwards out of the gate.
-5. Final identity pass: `RaceRun._skeleton_merge` keeps the step-4 path except where it conflicts with the
-   horse's official-only skeleton (absent when every official time is withheld) by > 4 combined σ; the E-step is
-   re-run from there with the official observations in every fuse and bias-shifted detections
-   (`det_labels_final.npz`).
-   Non-finishers, by their visible placing code (`MaskedRace.official_nonfinish`; nothing with the finish withheld):
-   a horse that stops (`STOPPED`: PU, FE, DNF) takes no detection from `NONFIN_BLIND` = 50 m before the first visible
-   boundary it has no time for (the finish when every interior time exists; a boundary the mask withholds is no
-   evidence) to the end, nor any anonymous fragment holding one, gets no finish-camera crossing, and its path ends at
-   its last observation (no path without one after the draw) (`RaceRun._stopped`, `_end_at_last_obs`). It stops
-   somewhere in that section, so only the last stretch is barred: there the detections are the finishers'. A horse
-   whose rider was unseated (`UNSEATED`: UR) may gallop on riderless and still be drawn, so it is not barred; instead
-   it cannot take a detection of a fragment `identify` labels as another runner, and no other runner can take a
-   detection of a fragment `identify` labels as it (`RaceRun._unseated_deny`): its label stays off the finishers'
-   avatars and its own avatar is not freed. TNP is unchanged.
-   Finish camera, in every fuse of steps 3–5 (`RaceRun.finish_observations`; the camera's proposals are
-   `RaceRun.finish_camera`): a horse whose official finish is visible gets no camera crossing, its official finish
-   being the better measurement of the same crossing; a camera-read horse without a path still gets an E-step seed,
-   timed by its official finish (sd `OFFICIAL_SD`); the camera's read set (negative evidence, blind set, shadow
-   tie-break) is unchanged. Remaining camera crossings move onto the official clock by the median over ≥ 3 horses
-   of (official finish − camera crossing) (`RaceRun.official_clock_offset`), keeping order, gaps and sd. With the
-   finish withheld every camera crossing enters, unchanged.
-6. `RaceRun._official_retime`: each fused path with a visible official finish is re-timed to cross the line at
-   that time; interior official times are not re-timed onto, and non-finishers are not re-timed. The warp
-   (`RaceRun._finish_warp`) is the identity up to the path's own crossing of the last sectional boundary before the
-   finish (its position only, also when that time is withheld), then one cubic Hermite segment from slope 1 to the
-   finish knot, continued at the segment's secant rate (C1, strictly increasing for a secant >= 1/3; below that the
-   start slope is clipped to 3x the secant), so it adds no speed jump. Without that boundary crossing, one segment
-   runs from the path's first node (`RaceRun._monotone_warp`). Lateral and sd follow the same re-timing. Horses
-   sharing an official finish time keep the official placing, 2 ms apart (`TIE_STEP`). Shifts over 0.05 s are
-   logged.
+**Outputs.**
+- `segs.npz` (identify): segments, links, P(horse), camera-transition detections.
+- `det_labels.npz` / `det_labels_final.npz`: per tracks row, `labels` (argmax, 0 = clutter), `p` (its probability)
+  and `marg` (P per runner, last column clutter). `core.marginals` computes the marginals per segment, from its
+  conditional given the other labels, with swaps against overlapping holders.
+- `core_video.npz` / `core_final.npz`: segment labels, marginals, the final unaries, J per accepted step.
+- `det_margins_final.npz`: 2 log(p/(1 − p)) of the kept label.
+- `paths_video.parquet`, `fuse_video.pkl` (segment labels, finish observations, paths), `paths.parquet` and the
+  contract, as before.
 
-`fuse_final` leaves `paths_video.parquet` byte-identical.
+`fuse_final` then:
+1. sets the render metric bias at the visible boundaries from the video paths (`_metric_bias`), as a shift of chunk s;
+2. runs the core with the draw, the official times and the stopped horses' exclusions;
+3. re-evaluates the state once on the metric-line shape (HV), labels fixed;
+4. ends stopped horses at their last labelled detection;
+5. re-times onto the official finish (`_official_retime`).
+
+**Decision points of 0316 §6, status in this slice.**
+- **Gone:**
+  - 1: atomic tracklets;
+  - 2: argmax between stages;
+  - 3: whole-field gating;
+  - 7: anchor demotion;
+  - 9: the iteration cap;
+  - 10: greedy association and orphans;
+  - 11: shadow and post-finish release;
+  - 13: the RANK_ATTR cap;
+  - 8: skeleton replacement (official times are observations in J).
+- **Pending:**
+  - 4: the silk term is still the per-segment clipped histogram LLR (Stage B);
+  - 5: observe's appearance and number splits;
+  - 6: finish-camera handling: the anchor-or-registration clock inside `finish_camera`, camera crossings computed
+    once from the first state. The camera's `fixed` names, line elimination and blind veto are gone;
+  - 12: the metric bias and HV shape as point estimates;
+  - 14: top-1 OCR integers;
+  - the unseated rule (UR) is not ported.
 
 ### Lateral in metres
 

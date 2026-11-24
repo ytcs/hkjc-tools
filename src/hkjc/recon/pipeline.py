@@ -40,7 +40,6 @@ from . import (
     film,
     finishcam,
     fusion,
-    identity,
     ocr,
     pose,
     rails,
@@ -85,7 +84,7 @@ OUTPUTS = {
     "worldmap": ["map.png", "map_cnt.npy", "map_meta.npz"],
     "rails": ["rail.npz", "metric.npz"],
     "observe": ["tracks.npz"],
-    "identify": ["labels.npz"],
+    "identify": ["segs.npz"],
     "finish": ["finish.npz"],
     "fuse_video": ["paths_video.parquet", "fuse_video.pkl"],
     "fuse_final": ["paths.parquet"],
@@ -1109,86 +1108,32 @@ class RaceRun:
         )
 
     def identify(self):
-        T = np.load(self.p("tracks.npz"), allow_pickle=True)
-        mem = [np.asarray(m, int) for m in T["members"]]
-        leg = self.legend_rows()
-        nmax = max(
-            r.no for r in self.info.runners
-        )  # saddlecloth numbers may have gaps (scratchings)
-        valid = {r.no for r in self.info.runners}
-        votes, rank, elim, elim_n = identity.legend_votes(
-            mem, T["rows"][:, 0], T["d"], leg, sorted(valid), parts=True
-        )
-        listed = {int(x) for x in leg[:, 1:].ravel()} & valid
-        if not rank.any() and not elim_n.any() and listed and listed != valid:
-            # no frame tracks the whole field and the legend never lists some runner (tailed off, out of the
-            # render camera's view behind the field): frames tracking all runners but one vote, the
-            # untracked runner taken as one behind the legend
-            votes, rank, elim, elim_n = identity.legend_votes(
-                mem, T["rows"][:, 0], T["d"], leg, sorted(valid), parts=True, field=len(valid) - 1
-            )
-            self.log(f"   identify: no frame tracks the whole field -> frames tracking {len(valid) - 1} vote")
-        fin, _fit = self._finish_identity(T, mem)
-        fvotes = np.zeros_like(votes)
-        for k, num in fin.items():
-            if num <= nmax:
-                votes[k, num] += self.FINISH_VOTES
-                fvotes[k, num] += self.FINISH_VOTES
-        nums = self._number_reads(T)  # circle render: the number printed on each disc
-        if nums is not None:
-            for k, m in enumerate(mem):
-                v = nums[m]
-                v = v[(v > 0) & (v <= nmax)]
-                if len(v):
-                    c = np.bincount(v, minlength=nmax + 1).astype(votes.dtype) * self.NUMBER_VOTE
-                    votes[k] += c
-                    fvotes[k] += c
-        # joint ML assignment: set-valued legend evidence + silk evidence
-        silk = self._silk_llr(mem, T, nmax)
-        sc = {}
-        lab = identity.assign_global(
-            mem,
-            T["rows"][:, 0],
-            rank,
-            nmax,
-            silk_llr=silk,
-            elim=elim,
-            n_elim=elim_n,
-            extra=fvotes,
-            valid=valid,
-            scores=sc,
-        )
-        lab = np.array([x if x in valid else 0 for x in lab])
-        n_elim, el_ok = 0, []
-        if _fit is not None:  # ELIMINATION at the line: leftover tracklets vs leftover numbers
-            at_line = {k for k in _fit["tc"] if lab[k]}
-            el = finishcam.eliminate(_fit, at_line, {int(lab[k]) for k in at_line})
-            for k, num in el.items():
-                if num in valid and not any(
-                    identity.time_overlap(T["rows"][mem[k], 0], T["rows"][mem[u], 0])
-                    for u in np.where(lab == num)[0]
-                ):
-                    lab[k] = num
-                    el_ok.append(k)
-                    n_elim += 1
-        fixed = np.zeros(len(mem), int)  # finish-camera names: hard constraints for the EM pass
-        for k, num in fin.items():
-            if lab[k] == num:
-                fixed[k] = num
-        for k in el_ok:
-            fixed[k] = lab[k]
-        extra = dict(rank=rank, elim=elim, n_elim=elim_n, fvotes=fvotes)
-        with self.out("labels.npz") as fp:
-            np.savez(fp, labels=lab, votes=votes, fixed=fixed, **extra)
-        self._save_scores("identify_scores.npz", sc, silk, len(mem), nmax, labels=lab)
-        self.log(
-            f"   identify: finish-camera named {len(fin)} + {n_elim} by elimination; "
-            f"numbered {int((lab > 0).sum())}/{len(mem)} tracklets "
-            f"({sum(len(m) for k, m in enumerate(mem) if lab[k]) / len(T['d']):.0%} of detections)"
-        )
+        """The core's label-free evidence (``core.build_evidence``): segments, links, P(horse), camera transitions.
+        Written for inspection; every fuse rebuilds it (deterministic)."""
+        ev = self._evidence()
+        with self.out("segs.npz") as fp:
+            np.savez(fp, seg=ev.seg, links=ev.links, p_horse=ev.p_horse, cam=ev.cam)
+        self.log(f"   identify: {ev.n_seg} segments, {len(ev.links)} links, "
+                 f"{int((ev.p_horse < 0.5).sum())} overlay boxes (P(horse) < 0.5), {int(ev.cam.sum())} detections at "
+                 "camera transitions")
 
-    FINISH_VOTES = 40.0  # one finish-camera match ~ 4 s of unanimous legend votes
-    NUMBER_VOTE = 1.0  # one disc number read (circle render) ~ one legend frame vote
+    def _evidence(self, T=None):
+        """core.Evidence of this run (tracks.npz s = distance - d)."""
+        from . import core
+
+        T = np.load(self.p("tracks.npz"), allow_pickle=True) if T is None else T
+        horses = sorted(r.no for r in self.info.runners)
+        silk = None
+        if self.p("silk.npz").exists():
+            zs = np.load(self.p("silk.npz"))
+            silk = (zs["feat"][T["det_idx"]], zs["proto_no"], zs["proto"])
+        box = np.load(self.p("frames_idx.npz"))["box"]
+        Td = dict(rows=T["rows"], t=T["t"], s=self.info.distance - T["d"], lat=T["lat"])
+        return core.build_evidence(horses, Td, [np.asarray(m, int) for m in T["members"]],
+                                   np.load(self.p("pose.npz")), float(box[3] - box[2]),
+                                   self.render_style() == "silk", nums=self._number_reads(T), silk=silk,
+                                   panel_w=float(box[1] - box[0]))
+
     NUMBER_CONF = 0.6  # minimum OCR confidence of a disc number read
 
     def _number_reads(self, T):
@@ -1216,51 +1161,6 @@ class RaceRun:
         leg = leg.copy()
         leg[self.mask.legend_withheld(t), 1:] = 0
         return leg
-
-    def _save_scores(self, name, sc, silk, n_trk, nmax, labels=None):
-        """identity.assign_global's evidence behind a label set: ``G`` (tracklets x numbers 1..nmax, the gain over
-        leaving the tracklet unlabelled, as the MILP saw it), ``rho``, ``rho_e``, ``objective``, the ``silk`` LLR
-        term inside G (zeros without silk.npz) and the tracklet ``labels`` it led to (the EM pass's are kept nowhere
-        else). Empty G and labels when assign_global did not run."""
-        with self.out(name) as fp:
-            np.savez(
-                fp,
-                G=sc.get("G", np.zeros((0, nmax))),
-                rho=float(sc.get("rho", np.nan)),
-                rho_e=float(sc.get("rho_e", np.nan)),
-                objective=float(sc.get("objective", np.nan)),
-                silk=np.zeros((n_trk, nmax)) if silk is None else silk,
-                labels=np.zeros(0, int) if labels is None else np.asarray(labels, int),
-            )
-
-    def _silk_llr(self, mem, T, nmax):
-        """(tracklets x numbers) silk log-likelihood ratio for identity.assign_global (None without
-        silk.npz): mapped official prototype vs the tracklet's mean render signature."""
-        if not self.p("silk.npz").exists():
-            self.log("   identify: WARNING silk.npz missing -> no appearance term")
-            return None
-        from .assoc import _collapse
-        from .silkmap import SILK_LLR_A, SILK_LLR_B, SILK_LLR_CLIP, SILK_MAP
-
-        Bm = np.asarray(SILK_MAP)
-        zs = np.load(self.p("silk.npz"))
-        F = zs["feat"][T["det_idx"]].astype(float)
-        proto = {}
-        for h, p in zip(zs["proto_no"], zs["proto"]):
-            q = np.clip(np.r_[_collapse(p), 1.0] @ Bm, 1e-9, None)
-            proto[int(h)] = q / q.sum()
-        out = np.zeros((len(mem), nmax))
-        for k, m in enumerate(mem):
-            f = F[m]
-            f = f[f.sum(1) > 0]
-            if len(f) < 10:
-                continue
-            sig = _collapse((f / f.sum(1, keepdims=True)).mean(0))
-            for h, q in proto.items():
-                if 1 <= h <= nmax:
-                    tv = 0.5 * np.abs(q - sig).sum()
-                    out[k, h - 1] = np.clip(SILK_LLR_A + SILK_LLR_B * tv, -SILK_LLR_CLIP, SILK_LLR_CLIP)
-        return out
 
     def _finish_identity(self, T=None, mem=None):
         """({tracklet index: number}, label-free fit) from the finish camera (1D registration of the
@@ -1457,32 +1357,6 @@ class RaceRun:
             for h in sds
         ]
 
-    def observations(self, lab=None) -> list:
-        """Render-tracklet proposals as fusion.Obs (horse = identify label, 0 = anonymous)."""
-        T = np.load(self.p("tracks.npz"), allow_pickle=True)
-        lab = np.load(self.p("labels.npz"))["labels"] if lab is None else lab
-        D = self.info.distance
-        out = []
-        for k, m in enumerate(T["members"]):
-            m = np.asarray(m, int)
-            if len(m) < 3:
-                continue
-            o = np.argsort(T["t"][m])
-            m = m[o]
-            out.append(
-                fusion.Obs(
-                    T["t"][m],
-                    D - T["d"][m],
-                    T["lat"][m],
-                    0.8,
-                    0.35,
-                    "render",
-                    horse=int(lab[k]),
-                    tid=k,
-                )
-            )
-        return out
-
     # gate geometry from the drone's top-down start frame (HV 06-03 R8): 40.2 px stall pitch at
     # 38.0 px/m (racing -> outer rail 855 px = 22.5 m on course C); stall 1 abuts the racing rail
     STALL_PITCH = 1.06  # m between stall centres
@@ -1523,7 +1397,6 @@ class RaceRun:
                     out.append(fusion.Obs(c[ok], D - b[ok], None, sd, 1.0, "official", horse=int(h), tid=tid + int(h)))
         return out
 
-    ANCHOR_CHECK = True
     # official finish times are photo-finish, published to 0.01 s (~0.1 m at race speed): near-hard in the final
     # product, so a mislabelled render tracklet conflicts with them (and is demoted) instead of bending them
     OFFICIAL_SD = 0.1
@@ -1531,25 +1404,6 @@ class RaceRun:
     # their horse-specific error has a robust sd of 0.58-0.59 m (disc and legend-confirmed silk races) once a per
     # race-boundary field-spread term is removed (raw, disc races: ~0.93 m); that term is not modelled
     OFFICIAL_INTERIOR_SD = 0.6
-
-    def _fuse(self, obs, horses, prior, t_end=None):
-        """Render-fused posterior, then + finish camera. ``t_end``: the grid runs at least to this
-        time (the FINAL product: past the last official finish)."""
-        ac = self.ANCHOR_CHECK
-        st = {}
-        paths, assign = fusion.fuse_race(obs, horses, prior, anchor_check=ac, stats=st)
-        fin = self.finish_observations(paths)  # second pass: + finish camera
-        tr = None
-        if t_end is not None:
-            ts = np.concatenate([o.t for o in obs + fin])
-            tr = (float(ts.min()), max(float(ts.max()), t_end))
-        if fin or tr is not None:
-            paths, assign = fusion.fuse_race(
-                obs + fin, horses, prior, anchor_check=ac, stats=st, t_range=tr
-            )
-        if st.get("demoted"):
-            self.log(f"   fuse: anchor check demoted {st['demoted']} render tracklets")
-        return paths, assign
 
     def _write_paths(self, paths, name, contract=None):
         """``contract`` (fuse_final only): {"anchors": s of the visible boundaries the metric bias was set at}; the
@@ -1691,107 +1545,111 @@ class RaceRun:
         m = self.lat_m_scope(d, p.t, t_r0)
         return {"lat_m": np.where(m, self.LAT_MAP[0] + b * p.lat, np.nan), "sd_lat_m": np.where(m, b * p.sd_l, np.nan)}
 
-    def _em_identity(self, paths):
-        """Second identity pass: legend votes on frames with undetected horses, ranks completed by the
-        first fused posterior (only frames where every horse's posterior is tight)."""
-        T = np.load(self.p("tracks.npz"), allow_pickle=True)
-        L = np.load(self.p("labels.npz"))
-        if len(paths) < self.info.n:  # completion needs every horse's posterior
-            return None
-        mem = [np.asarray(m, int) for m in T["members"]]
-        leg = self.legend_rows()
-        hs = sorted(paths)
-        D = self.info.distance
-
-        def field(t):
-            dd = np.array([D - np.interp(t, paths[h].t, paths[h].s) for h in hs])
-            sd = np.array([np.interp(t, paths[h].t, paths[h].sd_s) for h in hs])
-            return dd, sd
-
-        v2 = identity.legend_votes_completed(
-            mem,
-            T["rows"][:, 0],
-            T["t"],
-            T["d"],
-            leg,
-            field,
-            nmax=max(r.no for r in self.info.runners),
-        )
-        v1 = L["votes"]
-        v = v1.copy()
-        k = min(v.shape[1], v2.shape[1])
-        v[:, :k] += v2[:, :k]
-        nmax = max(r.no for r in self.info.runners)
-        valid = {r.no for r in self.info.runners}
-        if "rank" not in L.files:  # stale-cache guard: labels.npz without set-valued votes
-            raise RuntimeError(
-                "labels.npz has no set-valued legend votes (written before baseline Z5): "
-                "re-run the identify stage"
-            )
-        r1 = L["rank"].copy()
-        r1[:, :k] += v2[:, :k]
-        silk = self._silk_llr(mem, T, nmax)
-        sc = {}
-        lab = identity.assign_global(
-            mem,
-            T["rows"][:, 0],
-            r1,
-            nmax,
-            silk_llr=silk,
-            elim=L["elim"],
-            n_elim=L["n_elim"],
-            extra=L["fvotes"],
-            valid=valid,
-            scores=sc,
-        )
-        self._em_scores = (sc, silk, len(mem), nmax)
-        lab = np.array([x if x in valid else 0 for x in lab])
-        fixed = L["fixed"] if "fixed" in L.files else np.zeros(len(mem), int)
-        for k in np.where(fixed > 0)[0]:  # finish-camera names win over time-overlapping rivals
-            for u in np.where(lab == fixed[k])[0]:
-                if u != k and identity.time_overlap(T["rows"][mem[k], 0], T["rows"][mem[u], 0]):
-                    lab[u] = 0
-            lab[k] = fixed[k]
-        self._em_scores = (*self._em_scores, lab)
-        cov = lambda lb: sum(len(m) for i, m in enumerate(mem) if lb[i]) / len(T["d"])  # noqa: E731
-        self.log(
-            f"   identify (EM pass): numbered {int((lab > 0).sum())}/{len(mem)} tracklets, "
-            f"{cov(L['labels']):.0%} -> {cov(lab):.0%} of detections"
-        )
-        return lab
-
     def fuse_video(self):
-        """VIDEO-ONLY posterior (no official outcome data; what the gates validate). Persists its
-        observations and paths (fuse_video.pkl) for ``fuse_final``."""
+        """VIDEO-ONLY posterior (no official outcome data; what the gates validate): the core (``core.solve``) on the
+        render evidence and the list, then again with the finish camera's crossings. Persists the labels, the finish
+        observations and the paths (fuse_video.pkl) for ``fuse_final``."""
         import pickle
 
-        obs = self.observations()
-        if not any(o.horse for o in obs):
-            raise RuntimeError(
-                f"{self.info.key}: identify numbered no tracklet (no legend, finish-camera or elimination "
-                "evidence), so no horse has a path to fuse"
-            )
+        res, fin, paths = self._core_product(product="video")
         prior = fusion.Prior(width=self.info.width)
-        horses = [r.no for r in self.info.runners]
-        pv, assign = self._fuse(obs, horses, prior)
-        self._em_scores = None
-        lab2 = self._em_identity(pv)  # EM pass: legend votes completed by the first posterior
-        if lab2 is not None:
-            obs = self.observations(lab2)
-            pv, assign = self._fuse(obs, horses, prior)
-        obs, pv = self._em_associate(pv, horses, prior)
-        self._write_paths(
-            {h: fusion.with_tail(p, prior) for h, p in pv.items()}, "paths_video.parquet"
-        )
+        self._write_paths({h: fusion.with_tail(p, prior) for h, p in paths.items()}, "paths_video.parquet")
         with self.out("fuse_video.pkl") as tmp, open(tmp, "wb") as fp:
-            pickle.dump((obs, pv), fp, protocol=pickle.HIGHEST_PROTOCOL)
-        nmax = max(r.no for r in self.info.runners)
-        self._save_scores("identify_em_scores.npz", *(self._em_scores or ({}, None, 0, nmax)))
-        n_anon = sum(1 for o in obs if o.horse == 0)
-        n_ass = sum(1 for o in obs if o.horse == 0 and o.tid in assign)
-        self.log(
-            f"   fuse_video: {len(pv)}/{len(horses)} horses; anonymous tracklets associated {n_ass}/{n_anon}"
-        )
+            pickle.dump(dict(seg_lab=res.seg_lab, fin=fin, paths=paths, n_seg=len(res.seg_lab)), fp,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+        self.log(f"   fuse_video: {len(paths)}/{self.info.n} horses")
+
+    def _core_product(self, product, start=(), extra=(), s_shift=None, t_end=None, exclude=None):
+        """One product of the core: evidence, list, grid, model; the solve without the finish camera, the camera's
+        crossings from that state, then the solve with them (the first solve's labels a candidate start).
+        -> (core.Result, finish fusion.Obs list, {horse: fusion.Path})."""
+        from . import core
+
+        T = np.load(self.p("tracks.npz"), allow_pickle=True)
+        ev = self._evidence(T)
+        horses = ev.horses
+        col = {int(h): c for c, h in enumerate(horses)}
+        if exclude:  # horses that take no detection at s >= s_from (stopped non-finishers)
+            for h, s0 in exclude.items():
+                if int(h) in col:
+                    hit = np.bincount(ev.seg, (ev.s >= s0).astype(float), ev.n_seg) > 0
+                    ev.forbid[hit, col[int(h)]] = True
+        fr, t = T["rows"][:, 0], T["t"]
+        o = np.argsort(fr, kind="stable")
+        tick = lambda f: np.interp(np.asarray(f, float), fr[o].astype(float), t[o])  # noqa: E731
+        Lr = core.list_rows(self.legend_rows(), tick, horses)
+        ts = [float(t.min()), float(t.max())]
+        if len(Lr.tau):
+            ts += [float(Lr.tau.min())]
+        ex_s, ex_l = self._core_obs(extra, col)
+        if len(ex_s.t):
+            ts += [float(ex_s.t.min()), float(ex_s.t.max())]
+        t0, t1 = min(ts), max(ts) if t_end is None else max(max(ts), t_end)
+        tg = np.arange(t0, t1 + fusion.DT / 2, fusion.DT)
+        model = core.Model(ev, Lr, tg, self.info.width)
+        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, s_shift=s_shift, log=self.log)
+        paths = self._core_paths(res, ev, model, s_shift)
+        quiet, self.log = self.log, (lambda *a, **k: None)
+        try:
+            fin = self.finish_observations(paths)
+        finally:
+            self.log = quiet
+        if fin:
+            from .validate import crossing
+
+            f_s, _f_l = self._core_obs(fin, col)
+            dts = {o.horse: round(float(o.t[0]) - crossing(paths[o.horse].t, self.info.distance - paths[o.horse].s,
+                                                           None, 0.0), 2) for o in fin if o.horse in paths}
+            self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
+            res = core.solve(model, start=(res.seg_lab, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
+                             s_shift=s_shift, log=self.log)
+            paths = self._core_paths(res, ev, model, s_shift)
+        lab = np.where(res.seg_lab[ev.seg] >= 0, horses[np.maximum(res.seg_lab[ev.seg], 0)], 0)
+        p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]
+        name = "det_labels.npz" if product == "video" else "det_labels_final.npz"
+        with self.out(name) as fp:
+            np.savez(fp, labels=lab, p=p, marg=res.marg[ev.seg], horses=horses)
+        if product == "final":  # contract: -2 log odds of the kept label against the rest (not a stage output)
+            with self.out("det_margins_final.npz") as fp:
+                pc = np.clip(p, 1e-12, 1 - 1e-12)
+                np.savez(fp, margin=np.where(lab > 0, 2.0 * np.log(pc / (1 - pc)), np.nan), labels=lab)
+        with self.out(f"core_{product}.npz") as fp:
+            np.savez(fp, seg_lab=res.seg_lab, marg=res.marg, U=res.U, J=np.array([h[1] for h in res.log]))
+        return res, fin, paths
+
+    @staticmethod
+    def _core_obs(obs, col):
+        """fusion.Obs (draw, official, finish camera) -> core.Obs (s, lat) over runner columns."""
+        from . import core
+
+        ps, pl_ = [], []
+        for o in obs:
+            if int(o.horse) not in col:
+                continue
+            c = col[int(o.horse)]
+            if o.s is not None:
+                m = np.isfinite(o.s)
+                ps.append(core.Obs(np.full(m.sum(), c), o.t[m], o.s[m], np.full(m.sum(), float(o.sd_s))))
+            if o.lat is not None:
+                m = np.isfinite(o.lat)
+                pl_.append(core.Obs(np.full(m.sum(), c), o.t[m], o.lat[m], np.full(m.sum(), float(o.sd_l))))
+        return core.Obs.cat(ps), core.Obs.cat(pl_)
+
+    def _core_paths(self, res, ev, model, s_shift=None) -> dict:
+        """{horse: fusion.Path} of every runner with an observation, from the core's state (posterior sd from the
+        per-horse marginal bands)."""
+        st = res.state
+        sds, sdl = st.sdS, st.sdL
+        lab = res.seg_lab[ev.seg]
+        out = {}
+        for c, h in enumerate(ev.horses):
+            if not st.has_obs[c]:
+                continue
+            k = np.round((ev.t[lab == c] - model.tg[0]) / fusion.DT).astype(int)
+            cnt = np.bincount(k[(k >= 0) & (k < len(model.tg))], minlength=len(model.tg))
+            out[int(h)] = fusion.Path(int(h), model.tg, st.S[c], st.L[c], sds[c], sdl[c], cnt,
+                                      {"render": int((lab == c).sum())})
+        return out
 
     # {horse: official finish time} while fuse_final runs: the finish camera's clock is re-registered onto it
     _official_clock = None
@@ -1855,87 +1713,37 @@ class RaceRun:
             out[h] = self.info.distance - bnd[i0] - self.NONFIN_BLIND
         return out
 
-    def _unseated_deny(self, members, id_labels) -> dict:
-        """{detection index: horses it cannot be} keeping an unseated horse's label off the finishers' avatars without
-        freeing its own: it cannot take a detection of a fragment identify labels as another runner, and no other
-        runner can take a detection of a fragment identify labels as it."""
-        if not self._unseated:
-            return {}
-        runners = {r.no for r in self.info.runners}
-        out = {}
-        for k, m in enumerate(members):
-            lab = int(id_labels[k])
-            if lab in self._unseated:
-                no = runners - {lab}
-            elif lab > 0:
-                no = self._unseated - {lab}
-            else:
-                continue
-            if no:
-                for j in np.asarray(m, int):
-                    out[int(j)] = no
-        return out
-
-    def _end_at_last_obs(self, paths, obs, assign) -> dict:
-        """Stopped horses' paths end at their last observation (no prior-only extension to the grid's end); one
-        with no observation after the draw has no path."""
-        out = dict(paths)
-        for h in self._nonfin:
-            if h not in out:
-                continue
-            ts = [float(o.t.max()) for o in obs if assign.get(o.tid, o.horse) == h and o.feed != "draw" and len(o.t)]
-            p = out[h]
-            k = int(np.searchsorted(p.t, max(ts), side="right")) if ts else 0
-            if k < 2:
-                del out[h]
-            elif k < len(p.t):
-                out[h] = replace(p, t=p.t[:k], s=p.s[:k], lat=p.lat[:k], sd_s=p.sd_s[:k], sd_l=p.sd_l[:k],
-                                 n_obs=p.n_obs[:k])
-        return out
-
     def _fuse_final(self):
         import pickle
 
         with open(self.p("fuse_video.pkl"), "rb") as f:
-            obs, pv = pickle.load(f)
-        prior = fusion.Prior(width=self.info.width)
+            V = pickle.load(f)
+        pv = V["paths"]
         horses = [r.no for r in self.info.runners]
         offi = self.official_observations()
-        # the grid runs past the last official time AND the video-only grid's end, else the slowest
-        # finisher ends short of the line (the official finish may be withheld by the mask)
         t_off = max((float(o.t.max()) for o in offi if o.feed == "official" and len(o.t)), default=None)
         t_vid = max((float(p.t[-1]) for p in pv.values()), default=None)
         ends = [x for x in (t_off, t_vid) if x is not None]
         t_end = max(ends) + 0.5 if ends else None
         raw_bias = self._metric_bias(pv)
-        bias = raw_bias  # identity (every fuse up to the E-step) runs on the raw bias; the line shape enters last
-        self._render_bias = bias
-        obs_f = self._metric_corrected(obs, pv, bias)
-        pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
-        # the gate -> first render frame stretch has no video evidence: a field-relative start prior
-        # about the field's median curve (else a horse first seen late is extrapolated back out of the
-        # gate at its later speed)
-        if pf:
-            P0 = next(iter(pf.values()))
-            if all(len(p.t) == len(P0.t) for p in pf.values()):
-                t_v0 = min(float(p.t[0]) for p in pv.values()) if pv else 0.0
-                prior = replace(
-                    prior, ref_t=P0.t, ref_s=np.median([p.s for p in pf.values()], axis=0),
-                    ref_until=t_v0 + 1.0,
-                )
-                pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
-        # FINAL identity pass: the E-step re-run with the official records in every fuse, detections
-        # carrying the final metric bias, starting from the detection paths except where a horse's
-        # path conflicts with its own official skeleton (> 4 combined sigma); video-only unaffected.
-        # No official times (all withheld by the mask): no skeleton
-        sk = self._fuse(offi, horses, prior, t_end=t_end)[0] if t_off is not None else {}
-        start = self._skeleton_merge(pf, sk)
-        obs_e, _pe = self._em_associate(
-            start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias, exclude=self._nonfin
-        )
-        obs_e = self._shaped(obs_e, raw_bias)  # labels fixed: only the last fuse takes the metric-line shape
-        pf, a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
-        pf = self._end_at_last_obs(pf, obs_e + offi, a)
+        self._render_bias = raw_bias
+        shift = None if raw_bias is None else (lambda s, b=raw_bias: np.interp(s, *b))
+        res, _fin, pf = self._core_product("final", start=(V["seg_lab"],), extra=offi, s_shift=shift, t_end=t_end,
+                                           exclude=self._nonfin)
+        shape = self._shape_bias(raw_bias)
+        if shape is not raw_bias:  # labels fixed: the last state takes the metric-line shape
+            from . import core
+
+            ev = self._evidence()
+            st = res.state
+            sh = lambda s, g=shape: np.interp(s, *g)  # noqa: E731
+            col = {int(h): c for c, h in enumerate(ev.horses)}
+            o_s, o_l = self._core_obs(offi + self.finish_observations(pf), col)
+            model = core.Model(ev, core.list_rows(self.legend_rows(), self._tick_of_tracks(), ev.horses),
+                               st.tg, self.info.width)
+            res.state = core.evaluate(model, res.seg_lab, o_s, o_l, X0=st.S, s_shift=sh)
+            pf = self._core_paths(res, ev, model, sh)
+        pf = self._end_at_last_label(pf)
         pf, warp = self._official_retime(pf)
         if warp:
             big = {h: round(w, 2) for h, w in warp.items() if w > 0.05}
@@ -1944,6 +1752,33 @@ class RaceRun:
         ctr = {"anchors": [] if raw_bias is None else [float(x) for x in raw_bias[0]]}
         self._write_paths(pf, "paths.parquet", contract=ctr)
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
+
+    def _tick_of_tracks(self):
+        T = np.load(self.p("tracks.npz"), allow_pickle=True)
+        fr, t = T["rows"][:, 0], T["t"]
+        o = np.argsort(fr, kind="stable")
+        return lambda f: np.interp(np.asarray(f, float), fr[o].astype(float), t[o])
+
+    def _end_at_last_label(self, paths) -> dict:
+        """Stopped horses' paths end at their last labelled detection (no prior-only extension to the grid's end); one
+        with no labelled detection has no path."""
+        out = dict(paths)
+        if not self._nonfin:
+            return out
+        T = np.load(self.p("tracks.npz"), allow_pickle=True)
+        lab = np.load(self.p("det_labels_final.npz"))["labels"]
+        for h in self._nonfin:
+            if h not in out:
+                continue
+            p = out[h]
+            tl = T["t"][lab == h]
+            k = int(np.searchsorted(p.t, tl.max(), side="right")) if len(tl) else 0
+            if k < 2:
+                del out[h]
+            elif k < len(p.t):
+                out[h] = replace(p, t=p.t[:k], s=p.s[:k], lat=p.lat[:k], sd_s=p.sd_s[:k], sd_l=p.sd_l[:k],
+                                 n_obs=p.n_obs[:k])
+        return out
 
     TIE_STEP = 0.002  # s between horses sharing an official finish time, in placing order (dead heats: none)
 
@@ -2060,31 +1895,6 @@ class RaceRun:
             out.append(ob)
         return out
 
-    @staticmethod
-    def _skeleton_merge(paths, skeleton, z_max=4.0):
-        """Per horse: the detection-based path, except where it conflicts with the horse's own
-        official skeleton by > z_max combined sigma -- there the skeleton (vague between boundaries)
-        replaces it, so detections that dragged the path onto another horse are not re-taken."""
-        out = {}
-        for h, p in paths.items():
-            k = skeleton.get(h)
-            if k is None:
-                out[h] = p
-                continue
-            ks = np.interp(p.t, k.t, k.s)
-            ksd = np.interp(p.t, k.t, k.sd_s)
-            bad = np.abs(p.s - ks) > z_max * np.hypot(p.sd_s, ksd)
-            if not bad.any():
-                out[h] = p
-                continue
-            out[h] = replace(
-                p,
-                s=np.where(bad, ks, p.s),
-                sd_s=np.where(bad, ksd, p.sd_s),
-                sd_l=np.where(bad, np.maximum(p.sd_l, np.interp(p.t, k.t, k.sd_l)), p.sd_l),
-            )
-        return out
-
     def _metric_bias(self, paths):
         """(s at the official boundaries, shared render metric bias b there, m) or None; a boundary the
         mask withholds sets no bias."""
@@ -2114,19 +1924,6 @@ class RaceRun:
         self.log(f"   fuse: render metric bias at boundaries (m): {np.round(b, 2).tolist()}")
         return sb, b
 
-    def _shaped(self, obs, bias):
-        """Render observations already carrying the raw bias ``bias`` moved onto the metric-line shape
-        (``_shape_bias``): s += shape - raw, evaluated at the bias-shifted s. ``obs`` unchanged when there is no
-        shape (w = 0 or no visible boundary)."""
-        shape = self._shape_bias(bias)
-        if shape is bias:
-            return obs
-        grid, shift = shape
-        raw = np.interp(grid, *bias)
-        x, dlt = grid + raw, shift - raw
-        return [replace(ob, s=ob.s + np.interp(ob.s, x, dlt)) if ob.feed == "render" and ob.s is not None else ob
-                for ob in obs]
-
     def _shape_bias(self, bias):
         """With ``metric_w`` > 0 the bias table (s, shift) becomes ds(s) + the bias left at the visible
         boundaries after ds, interpolated: ds(s) = the offset-line tick metric's s minus the rail-s metric's for the same
@@ -2152,56 +1949,7 @@ class RaceRun:
                  f"{np.ptp(ds):.1f} m)")
         return grid, shift
 
-    EM_ITERS = 8
-    SEED_BACK = 3.0  # s before its finish-camera crossing that a path-less horse is seeded
-    SEED_V_SD = 1.0  # m/s: speed uncertainty of a seeded horse (grows the seed's sd away from the line)
 
-    def _finish_seeds(self, paths, prior) -> dict:
-        """E-step-only SEED paths for horses the finish camera READ but that have no fused path.
-
-        A finish observation alone cannot make a path (no lateral, one instant), so without a seed
-        the detection-level E-step never considers such a horse. The seed is the camera's crossing
-        (t_w + gap/C, sd as in finish_camera; in fuse_final a horse with a visible official finish is timed by it,
-        sd OFFICIAL_SD) moving at the field's line speed, sd growing by SEED_V_SD per second away from the line,
-        lateral = mid-course +- half the width; it lives only inside assign_frames, and whatever detection runs it
-        wins become ordinary render obs."""
-        if not paths:
-            return {}
-        quiet, self.log = self.log, (lambda *a, **k: None)
-        try:
-            fin = self.finish_camera(paths)
-        finally:
-            self.log = quiet
-        vis = {h: t for h, t in (self._official_clock or {}).items() if np.isfinite(t)}
-        fin = [replace(o, t=np.array([vis[o.horse]]), sd_s=self.OFFICIAL_SD) if o.horse in vis else o for o in fin]
-        D = self.info.distance
-        v = []
-        for p in paths.values():
-            k = np.where((D - p.s > 0) & (D - p.s < 30) & (p.sd_s <= self.ANCHOR_SD))[0]
-            if len(k) > 5:
-                v.append(np.median(np.gradient(p.s[k], p.t[k])))
-        v_line = float(np.median(v)) if v else 16.5
-        out = {}
-        for o in fin:
-            h = o.horse
-            if h in paths:
-                continue
-            tc, sd0 = float(o.t[0]), float(o.sd_s)
-            tg = np.arange(tc - self.SEED_BACK, tc + 0.6, fusion.DT)
-            dt = tg - tc
-            sd_s = np.sqrt(sd0**2 + (self.SEED_V_SD * dt) ** 2)
-            w = prior.width
-            out[h] = fusion.Path(
-                h,
-                tg,
-                D + v_line * dt,
-                np.full(len(tg), 0.5 * w),
-                sd_s,
-                np.full(len(tg), 0.5 * w),
-                np.zeros(len(tg)),
-                {"seed": 1},
-            )
-        return out
     ANCHOR_SD = 3.0  # m: a fused crossing anchors the finish clock only where the path is tight
 
     def finish_sc(self, zf) -> dict:
@@ -2212,192 +1960,6 @@ class RaceRun:
     def _fc_read(self, zf) -> set:
         """Horses the finish camera read (negative evidence / shadow-path tie-break): those with a GAP."""
         return {int(k) for k in finishcam.finish_gaps(self.finish_sc(zf))[1]}
-
-    @staticmethod
-    def _excluded(exclude, s, deny=None, j=()) -> frozenset:
-        """Horses a fragment with detections ``j`` at ``s`` cannot be: those of ``exclude`` {horse: s_from} it reaches,
-        and every horse ``deny`` {detection: horses} bars on any of its detections."""
-        out = frozenset(h for h, s0 in (exclude or {}).items() if (s >= s0).any())
-        if deny:
-            out = out.union(*(deny.get(int(x), ()) for x in j))
-        return out
-
-    def _em_associate(
-        self, paths, horses, prior, extra=None, out_name="det_labels.npz", s_bias=None, exclude=None
-    ):
-        """Detection-level EM (``assoc``): every detection re-assigned per frame against the
-        continuous fused paths (+ one-sided legend rank constraint), paths re-fused; the tracker's
-        fragments are only the initialisation. Unassigned detections stay anonymous (grouped by
-        their tracker fragment) so association/orphan logic can still place path-less horses. ``exclude``
-        {horse: s_from} (fuse_final's stopped horses): the horse takes no detection at s >= s_from, nor any
-        anonymous fragment holding one."""
-        from . import assoc
-
-        T = np.load(self.p("tracks.npz"), allow_pickle=True)
-        leg = self.legend_rows()
-        fr, t, lat = T["rows"][:, 0], T["t"], T["lat"]
-        s_run = self.info.distance - T["d"]
-        if s_bias is not None:  # final product: the shared render metric bias (see _metric_corrected)
-            s_run = s_run + np.interp(s_run, *s_bias)
-        frag = np.full(len(t), -1)
-        for k, m in enumerate(T["members"]):
-            frag[np.asarray(m, int)] = k
-        obs = []
-        # finish camera NEGATIVE evidence: with recall r (fraction of the field it read), a horse
-        # that IS at the line goes unread with probability ~(1 - r), so detections in the last 15 m
-        # cost -2 log(1 - r) for unread horses
-        near = None
-        if self.p("finish.npz").exists():
-            zf = np.load(self.p("finish.npz"))
-            read = self._fc_read(zf)
-            r = min(len(read) / max(self.info.n, 1), 0.95)
-            if read and r >= 0.5:
-                cost = float(-2.0 * np.log(1.0 - r))
-                near = [(self.info.distance - 15.0, {h: cost for h in horses if h not in read})]
-                # BLIND horses (unread by the camera AND absent from the legend top 8 in the 8 s
-                # before the first horse reaches the line) have no identity evidence at the line:
-                # final-50 m detections cost them CLUTTER, so they extrapolate with honest
-                # uncertainty instead of "finishing" on another horse's detections
-                crossings = [
-                    p.t[np.argmax(self.info.distance - p.s <= 0)]
-                    for p in paths.values()
-                    if (self.info.distance - p.s <= 0).any()
-                ]
-                t_fin = min(crossings) if crossings else float(np.max(t))
-                late_frames = {int(f) for f, tt in zip(fr, t) if t_fin - 8.0 <= tt <= t_fin + 1.0}
-                shown = {int(x) for r_ in leg if int(r_[0]) in late_frames for x in r_[1:9] if x}
-                nums = self._number_reads(T)  # circle render: numbers read on discs count as shown
-                if nums is not None:
-                    shown |= {int(nums[j]) for j, f in enumerate(fr) if int(f) in late_frames and nums[j]}
-                blind = [h for h in horses if h not in read and h not in shown]
-                if blind:
-                    near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
-        margins = [None] if out_name == "det_labels_final.npz" else None
-
-        deny = None
-        if out_name == "det_labels_final.npz" and self._unseated and self.p("labels.npz").exists():
-            ids = np.load(self.p("labels.npz"))["labels"]
-            if len(ids) == len(T["members"]):
-                deny = self._unseated_deny(T["members"], ids)
-
-        def em_pass(paths, targets, tag):
-            """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""
-            prev = lab = obs = None
-            forbid = {}
-            for it in range(self.EM_ITERS):
-                forbid = {}
-                seeds = {}
-                if margins is not None:
-                    margins[0] = np.full(len(t), np.nan)
-                if targets:
-                    seeds = {h: p for h, p in self._finish_seeds(paths, prior).items() if h in targets}
-                lab, _chi = assoc.assign_frames(
-                    fr,
-                    t,
-                    s_run,
-                    lat,
-                    {**paths, **seeds},
-                    leg,
-                    near_line=near,
-                    n_field=len(horses),
-                    forbid_out=forbid,
-                    s_line=self.info.distance,
-                    margin_out=None if margins is None else margins[0],
-                    exclude=exclude,
-                    deny=deny,
-                )
-                lab, n_pf = assoc.release_post_finish(lab, t, s_run, self.info.distance, forbid)
-                obs = assoc.runs_to_obs(lab, t, s_run, lat)
-                for k in np.unique(frag[(lab == 0) & (frag >= 0)]):
-                    j = np.where((frag == k) & (lab == 0))[0]
-                    if len(j) >= 3:
-                        j = j[np.argsort(t[j])]
-                        # the E-step's hard legend exclusions travel with the anonymous fragment,
-                        # or fusion's chi^2 / orphan association hands it back
-                        no = assoc.fragment_forbid(forbid, j) | self._excluded(exclude, s_run[j], deny, j)
-                        obs.append(
-                            fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
-                        )
-                paths, _a = self._fuse(obs + (extra or []), horses, prior)
-                changed = np.nan if prev is None else float((lab != prev).mean())
-                self.log(
-                    f"   em-assoc{tag} it{it}: {np.mean(lab > 0):.0%} of detections assigned, "
-                    f"{len(paths)}/{len(horses)} horses, changed {changed:.1%}"
-                    + (f", seeded {sorted(seeds)}" if seeds else "")
-                    + (f", {n_pf} post-finish detections released" if n_pf else "")
-                )
-                if prev is not None and changed < 0.002:
-                    break
-                prev = lab
-            return paths, lab, obs, forbid
-
-        paths, lab, obs, forbid = em_pass(paths, None, "")
-        # SEED pass, CONFINED to finish-read horses still path-less after the unseeded EM; races
-        # without a target are unchanged
-        targets = set(self._finish_seeds(paths, prior)) - set(exclude or ())
-        if targets:
-            paths, lab, obs, forbid = em_pass(paths, targets, " (seed)")
-        # SHADOW paths: two horses cannot occupy one position; a horse whose own detections are
-        # missing can lock onto a neighbour's. Pairs within 0.8 m along / 0.5 m laterally for >= 0.5 s
-        # (both tight): the render obs of the weaker-evidence horse (no finish-camera reading, else
-        # fewer obs) in that window are dropped and the paths re-fused.
-        cam = set()
-        if self.p("finish.npz").exists():
-            zf = np.load(self.p("finish.npz"))
-            cam = self._fc_read(zf)
-        drop = np.zeros(len(t), bool)
-        hs = sorted(paths)
-        # only the finish-critical window (last 3 s before the first horse reaches the line); a
-        # mid-race window releases real horses' detections
-        t_fin = min(
-            (
-                p.t[np.argmax(self.info.distance - p.s <= 0)]
-                for p in paths.values()
-                if (self.info.distance - p.s <= 0).any()
-            ),
-            default=np.inf,
-        )
-        for a_i, ha in enumerate(hs):
-            for hb in hs[a_i + 1 :]:
-                pa, pb = paths[ha], paths[hb]
-                if len(pa.t) != len(pb.t) or pa.t[0] != pb.t[0]:
-                    continue
-                close = (  # physically impossible overlap (side-by-side horses are ~1 m apart)
-                    (np.abs(pa.s - pb.s) < 0.8)
-                    & (np.abs(pa.lat - pb.lat) < 0.5)
-                    & (pa.sd_s < 1.5)
-                    & (pb.sd_s < 1.5)
-                    & (pa.t > t_fin - 3.0)
-                )
-                if close.sum() * fusion.DT < 0.5:
-                    continue
-                tw = pa.t[close]
-                win = (t >= tw.min() - 0.2) & (t <= tw.max() + 0.2)
-                na, nb = int(((lab == ha) & win).sum()), int(((lab == hb) & win).sum())
-                if (ha in cam) != (hb in cam):
-                    loser = hb if ha in cam else ha
-                else:
-                    loser = ha if na < nb else hb
-                drop |= (lab == loser) & win
-        if drop.any():
-            lab = np.where(drop, 0, lab)
-            obs = assoc.runs_to_obs(lab, t, s_run, lat)
-            for k in np.unique(frag[(lab == 0) & (frag >= 0) & ~drop]):
-                j = np.where((frag == k) & (lab == 0) & ~drop)[0]
-                if len(j) >= 3:
-                    j = j[np.argsort(t[j])]
-                    no = assoc.fragment_forbid(forbid, j) | self._excluded(exclude, s_run[j], deny, j)
-                    obs.append(
-                        fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
-                    )
-            paths, _a = self._fuse(obs + (extra or []), horses, prior)
-            self.log(f"   em-assoc: shadow paths -> {int(drop.sum())} detections released")
-        with self.out(out_name) as fp:
-            np.savez(fp, labels=lab)  # per-detection EM identity (viz, audit)
-        if margins is not None:  # contract: the last E-step's margins of the labels kept (not a stage output)
-            with self.out("det_margins_final.npz") as fp:
-                np.savez(fp, margin=np.where(lab > 0, margins[0], np.nan), labels=lab)
-        return obs, paths
 
     def paths(self):
         import polars as pl

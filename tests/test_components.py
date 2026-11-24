@@ -1,6 +1,6 @@
 import numpy as np
 
-from hkjc.recon import detect, finishcam, fusion, identity
+from hkjc.recon import detect, finishcam
 
 
 def test_features_job_masks_the_detector_pool_boxes(monkeypatch):
@@ -48,28 +48,20 @@ def test_finish_gaps_spatial_and_occlusion_recovery():
 
 
 def test_start_phase_prior_allows_standing_start():
+    """The core's state from the gate (grid from t = 0): the standing-start prior lets a horse seen only after 4 s
+    accelerate out of the draw."""
+    from types import SimpleNamespace
+
+    from hkjc.recon import core
+
     t = np.arange(0, 20, 0.1)
     s_true = np.where(t < 3, 0.5 * 5.5 * t**2, 0.5 * 5.5 * 9 + 16.5 * (t - 3))
-    obs = [
-        fusion.Obs(np.array([0.0]), np.array([0.0]), np.array([3.0]), 0.3, 0.4, "draw", 1, 1),
-        fusion.Obs(t[t > 4], s_true[t > 4], np.full((t > 4).sum(), 3.0), 0.5, 0.3, "render", 1, 2),
-    ]
-    s, _sd, lat, _sl, _c = fusion.smooth(obs, fusion.Prior(width=22.5), t)
-    assert abs(s[0]) < 1.0 and np.abs(s - s_true)[t > 4].max() < 1.0  # no data in 0..4 s
-
-
-def test_completed_legend_votes():
-    # 3 horses; frame where only horse B (middle) is detected: rank completed from the posterior
-    members = [np.array([0])]
-    legend = np.array([[10, 7, 4, 9, 0, 0, 0, 0, 0]])  # legend: #7 leads, #4 2nd, #9 3rd
-
-    def field(t):
-        return np.array([100.0, 104.0, 110.0]), np.array([0.5, 0.5, 0.5])
-
-    v = identity.legend_votes_completed(
-        members, np.array([10]), np.array([5.0]), np.array([104.2]), legend, field, nmax=9
-    )
-    assert v[0, 4] == 1  # middle detection -> rank 1 -> legend slot 2 = #4
+    m = core.Model(SimpleNamespace(horses=np.array([1])), core.list_rows(None, None, [1]), t, 22.5)
+    k = t > 4
+    obs = core.Obs.cat([core.Obs(np.zeros(1, int), np.zeros(1), np.zeros(1), np.full(1, 0.3)),
+                        core.Obs(np.zeros(k.sum(), int), t[k], s_true[k], np.full(k.sum(), 0.5))])
+    X = m.solve_s(obs)[0]
+    assert abs(X[0, 0]) < 1.0 and np.abs(X[0] - s_true)[k].max() < 1.0  # no data in 0..4 s
 
 
 def test_rail_despike_removes_false_ridge_hump():
@@ -85,23 +77,6 @@ def test_rail_despike_removes_false_ridge_hump():
     out, ok = rails.despike_world(bad, np.ones(len(W), bool))
     assert not ok[905:935].any() and ok[:800].all() and ok[1100:].all()
     assert np.abs(out - W).max() < 2.0
-
-
-def test_em_assign_frames_uses_motion_and_exclusion():
-    from hkjc.recon import assoc
-
-    tg = np.arange(0, 10.01, 0.1)
-    paths = {
-        1: fusion.Path(1, tg, 15.0 * tg, np.full_like(tg, 2.0), np.full_like(tg, 0.3),
-                       np.full_like(tg, 0.2), np.ones_like(tg)),
-        2: fusion.Path(2, tg, 15.0 * tg - 3.0, np.full_like(tg, 4.0), np.full_like(tg, 0.3),
-                       np.full_like(tg, 0.2), np.ones_like(tg)),
-    }
-    t = np.array([5.0, 5.0, 5.0])
-    s = np.array([75.0, 72.0, 40.0])  # horse 1, horse 2, clutter far away
-    lat = np.array([2.0, 4.0, 3.0])
-    lab, _chi = assoc.assign_frames(np.array([7, 7, 7]), t, s, lat, paths, np.zeros((0, 9), int))
-    assert lab.tolist() == [1, 2, 0]
 
 
 def test_tick_seeded_marker_grid_ignores_edge_artefact():
@@ -153,52 +128,6 @@ def test_film_anchor_offset_recovers_constant():
     delta, per = film.anchor_offset(t, d_render, film_t)
     assert abs(delta - 6.0) < 0.05 and len(per) == 4
     assert film.anchor_offset(t, d_render, {400: 12.5, 300: 18.75})[0] is None
-
-
-def test_em_assign_negative_legend_evidence():
-    """A horse missing from a fully read top-8 legend runs behind all 8 listed horses: it must not
-    take a detection at the front, even when its own (vague) posterior points there."""
-    from hkjc.recon import assoc
-
-    tg = np.arange(0, 10.01, 0.1)
-
-    def path(h, s0, sd):
-        return fusion.Path(h, tg, 15.0 * tg + s0, np.full_like(tg, 2.0), np.full_like(tg, sd),
-                           np.full_like(tg, 0.3), np.ones_like(tg))
-
-    paths = {h: path(h, -2.0 * h, 0.3) for h in range(1, 9)}  # listed, tight, 2 m apart
-    paths[9] = path(9, 5.0, 6.0)  # NOT listed; vague posterior sitting ahead of the field
-    t = np.full(9, 5.0)
-    s = np.array([80.0] + [75.0 - 2.0 * h for h in range(1, 9)])  # a front detection + the 8
-    lat = np.full(9, 2.0)
-    leg = np.array([[7, 1, 2, 3, 4, 5, 6, 7, 8]])
-    lab, _ = assoc.assign_frames(np.full(9, 7), t, s, lat, paths, leg, n_field=9)
-    assert lab[0] != 9  # the front detection is not the unlisted horse
-
-
-def test_em_assign_rank_attraction_final_stretch():
-    """Near the line, a listed horse whose (overconfident, extrapolated) path sits 7 m ahead of its
-    real detection takes the detection at its legend rank; away from the line it does not."""
-    from hkjc.recon import assoc
-
-    tg = np.arange(0, 10.01, 0.1)
-
-    def path(h, s0, sd):
-        return fusion.Path(h, tg, 15.0 * tg + s0, np.full_like(tg, 2.0), np.full_like(tg, sd),
-                           np.full_like(tg, 0.3), np.ones_like(tg))
-
-    D = 1000.0
-    # at t = 5 s (15 m/s): #1's path at D - 70 (on its detection), #2's at D - 68: 7 m AHEAD of
-    # #2's real detection at D - 75 (and 2 m ahead of #1: overconfident constant-speed extrapolation)
-    paths = {1: path(1, D - 70.0 - 75.0, 0.3), 2: path(2, D - 68.0 - 75.0, 1.3)}
-    t = np.full(2, 5.0)
-    s = np.array([D - 70.0, D - 75.0])  # #1's detection leads; #2's real detection 7 m behind its path
-    lat = np.full(2, 2.0)
-    leg = np.array([[7, 1, 2, 0, 0, 0, 0, 0, 0]])
-    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, n_field=2, s_line=D)
-    assert lab[1] == 2  # rank-2 detection goes to the rank-2 horse
-    lab, _ = assoc.assign_frames(np.full(2, 7), t, s, lat, paths, leg, n_field=2, s_line=D + 500)
-    assert lab[1] == 0  # 575 m out: no attraction, chi^2 too large -> clutter
 
 
 def test_time_local_shift_recovers_per_frame_slip():
@@ -262,21 +191,6 @@ def test_finishcam_isolated_first_crosser_keeps_the_field():
     order, gaps, _u = finishcam.finish_gaps(dict(line_x=960.0, reads=np.array(rows, float)))
     assert order[:3] == [2, 7, 9]
     assert abs(gaps[7] - gaps[2] - 150.0) < 1 and abs(gaps[9] - gaps[2] - 300.0) < 1
-
-
-def test_fusion_anonymous_association_respects_forbid():
-    """An anonymous tracklet that the E-step's legend evidence excluded for a horse must not be
-    handed to that horse by fusion's chi^2 association."""
-    tg = np.arange(0.0, 10.0, 0.2)
-    lab = fusion.Obs(tg[:20], 15.0 * tg[:20], np.full(20, 2.0), 0.8, 0.35, "render", horse=1, tid=1)
-    anon = fusion.Obs(tg[20:], 15.0 * tg[20:], np.full(30, 2.0), 0.8, 0.35, "render", 0, 2)
-    prior = fusion.Prior(width=30.0)
-    _p, a = fusion.fuse_race([lab, anon], [1], prior, anchor_check=False)
-    assert a.get(2) == 1  # continuation of horse 1: associated
-    anon_no = fusion.Obs(tg[20:], 15.0 * tg[20:], np.full(30, 2.0), 0.8, 0.35, "render", 0, 2,
-                         frozenset({1}))
-    _p, a = fusion.fuse_race([lab, anon_no], [1], prior, anchor_check=False)
-    assert 2 not in a
 
 
 def test_register_mask_boxes_zeroes_grown_avatar_boxes():
@@ -411,47 +325,6 @@ def test_video_tick_frame_puts_ticks_on_the_uniform_grid():
     np.testing.assert_array_equal(video.tick_frame([1, 2, 3], None), [1.0, 2.0, 3.0])
 
 
-def test_identity_assign_global_respects_overlap_and_evidence():
-    """Two overlapping tracklets both voting for #1: the stronger evidence takes it; the other is
-    left unlabelled (with reliable votes, 15 for #2 against 20 elsewhere is evidence AGAINST #2); a
-    later, non-overlapping fragment of the same horse may reuse #1."""
-    from hkjc.recon import identity
-
-    members = [np.arange(0, 10), np.arange(10, 20), np.arange(20, 30)]
-    frames = np.r_[np.arange(10), np.arange(10), np.arange(100, 110)]  # 0 and 1 overlap, 2 later
-    votes = np.zeros((3, 4))
-    votes[0, 1], votes[0, 2] = 50, 2
-    votes[1, 1], votes[1, 2] = 20, 15
-    votes[2, 1] = 30
-    lab = identity.assign_global(members, frames, votes, 3)
-    assert lab.tolist() == [1, 0, 1]
-    votes[1, 1], votes[1, 2] = 2, 25  # clear evidence for #2
-    assert identity.assign_global(members, frames, votes, 3).tolist() == [1, 2, 1]
-
-
-def test_identity_assign_global_scores_are_the_evidence_behind_the_labels():
-    """``scores`` returns the last solve's gain matrix, the reliabilities it was built with and its objective; the
-    labels are unchanged by asking for them, the objective is the gain of the chosen labels, and G reproduces the
-    documented vote formula at the returned rho."""
-    from hkjc.recon import identity
-
-    members = [np.arange(0, 10), np.arange(10, 20), np.arange(20, 30)]
-    frames = np.r_[np.arange(10), np.arange(10), np.arange(100, 110)]
-    votes = np.zeros((3, 4))
-    votes[0, 1], votes[0, 2] = 50, 2
-    votes[1, 1], votes[1, 2] = 2, 25
-    votes[2, 1] = 30
-    sc = {}
-    lab = identity.assign_global(members, frames, votes, 3, scores=sc)
-    assert lab.tolist() == identity.assign_global(members, frames, votes, 3).tolist() == [1, 2, 1]
-    assert sc["G"].shape == (3, 3)
-    assert np.isclose(sc["objective"], sum(sc["G"][t, n - 1] for t, n in enumerate(lab) if n))
-    rho, N = sc["rho"], 3
-    V = votes[:, 1:]
-    G = V * np.log(rho * N) + (V.sum(1, keepdims=True) - V) * np.log((1 - rho) * N / (N - 1))
-    np.testing.assert_allclose(sc["G"], np.where(G > 0, G, 0.0))
-
-
 def test_rails_fixed_rail_gap_finds_the_line_not_the_band_edge():
     """A thin bright line 9.5 m inside the racing rail (ppm 10) is measured at 9.5 m; a bright apron
     beyond the band's far edge must not pull the estimate to the band edge."""
@@ -534,64 +407,6 @@ def test_rails_robust_offset_ignores_a_long_outlier_run():
     assert np.abs(z[3000:3110] - 30 - 5 * np.sin(np.arange(3000, 3110) / 900.0)).max() < 6.0
 
 
-def test_fusion_chi2_logdet_makes_vague_paths_pay():
-    from hkjc.recon import fusion
-
-    t = np.linspace(0, 2, 21)
-    o = fusion.Obs(t, 100 + 16 * t + 4.0, np.full_like(t, 3.0), 0.8, 0.35, "render")  # 4 m ahead
-    def path(sd):
-        return fusion.Path(1, t, 100 + 16 * t, np.full_like(t, 3.0), np.full_like(t, sd),
-                           np.full_like(t, sd), np.ones_like(t))
-    tight, vague = path(1.5), path(9.0)
-    assert fusion.chi2_against(o, vague, logdet=False) < fusion.chi2_against(o, tight, logdet=False)
-    assert fusion.chi2_against(o, vague) > fusion.chi2_against(o, tight)  # it pays for vagueness
-
-
-def test_identity_assign_global_silk_breaks_ties_and_allows_none():
-    from hkjc.recon import identity
-
-    frame_of_det = np.r_[np.arange(100), np.arange(100), np.arange(100)]
-    members = [np.arange(0, 100), np.arange(100, 200), np.arange(200, 300)]  # 3 horses, same frames
-    votes = np.zeros((3, 5))
-    votes[0, 1] = 60.0  # tracklet 0: clearly #1
-    votes[1, [3, 4]] = 20.0  # tracklets 1, 2: tied {3, 4} (never in the legend's top 8)
-    votes[2, [3, 4]] = 20.0
-    silk = np.zeros((3, 4))
-    silk[1, 3], silk[1, 2] = 2.0, -2.0  # tracklet 1 looks like #4
-    silk[2, 2], silk[2, 3] = 2.0, -2.0  # tracklet 2 looks like #3
-    lab = identity.assign_global(members, frame_of_det, votes, 4, silk_llr=silk)
-    assert lab.tolist() == [1, 4, 3]
-
-
-def test_identity_assign_global_elimination_sets_number_back_markers():
-    """Back-markers with ONLY elimination evidence ("one of the m = N - 8 unlisted numbers") must
-    be numbered (silk picks which); the fractional 1/m encoding reads (m-1)/m of each vote as
-    contradiction and leaves them unnumbered."""
-    from hkjc.recon import identity
-
-    N, F = 14, 100
-    frame_of_det = np.tile(np.arange(F), 3)
-    members = [np.arange(k * F, (k + 1) * F) for k in range(3)]
-    rank = np.zeros((3, N + 1))
-    rank[0, 1] = 80.0  # a leader, clearly #1
-    unl = list(range(9, 15))  # always unlisted: 9..14 (m = 6)
-    elim = np.zeros((3, N + 1))
-    elim[1:, unl] = 80.0
-    n_elim = np.array([0.0, 80.0, 80.0])
-    silk = np.zeros((3, N))
-    silk[1, 13], silk[1, 12] = 1.0, -1.0  # tracklet 1 looks like #14
-    silk[2, 12], silk[2, 13] = 1.0, -1.0  # tracklet 2 looks like #13
-    frac = rank.copy()
-    frac[1:, unl] = 80.0 / 6
-    old = identity.assign_global(members, frame_of_det, frac, N, silk_llr=silk)
-    assert old.tolist() == [1, 0, 0]
-    kw = dict(silk_llr=silk, elim=elim, n_elim=n_elim)
-    assert identity.assign_global(members, frame_of_det, rank, N, **kw).tolist() == [1, 14, 13]
-    # a scratched number is not in the universe
-    lab = identity.assign_global(members, frame_of_det, rank, N, valid=set(range(1, 14)), **kw)
-    assert lab[2] == 13 and lab[1] not in (0, 13, 14)
-
-
 def test_finishcam_misread_before_the_real_track_is_the_same_cloth():
     """HV 04-15 R1: the "7" cloth read as "1" on the 4 unique frames BEFORE the "7" track starts
     (no shared frame) lies on #7's line continued back -> one cloth, kept as #7; a real #1
@@ -636,54 +451,6 @@ def test_rails_straight_datum_measures_the_fence_where_it_is_seen():
     assert rails.is_straight(np.tile([1.0, 0.0], (100, 1)))
     th = np.linspace(0, np.pi, 200)
     assert not rails.is_straight(np.c_[np.cos(th), np.sin(th)])
-
-
-def test_assoc_release_post_finish_frees_detections_of_a_finished_horse():
-    """ST 05-24 R1 #7: detections later than the horse's own detection past the line that sit > 4 sd
-    before the line are released (and the horse forbidden for them); a horse still running is
-    untouched."""
-    from hkjc.recon import assoc
-
-    D = 1200.0
-    t = np.r_[np.arange(90, 96, 0.5), 96.7, 97.4, np.arange(90, 98, 0.5)]
-    s7 = np.r_[np.linspace(1100, 1207.3, 12), D - 16.6, D - 7.7]
-    s9 = np.linspace(1050, 1199.0, 16)  # never crosses
-    s = np.r_[s7, s9]
-    lab = np.r_[np.full(14, 7), np.full(16, 9)]
-    forbid = {}
-    out, n = assoc.release_post_finish(lab, t, s, D, forbid)
-    assert n == 2 and (out[12:14] == 0).all() and (out[:12] == 7).all() and (out[14:] == 9).all()
-    assert forbid == {12: {7}, 13: {7}}
-    out2, n2 = assoc.release_post_finish(out, t, s, D)
-    assert n2 == 0 and (out2 == out).all()
-
-
-def test_assoc_hard_rank_exclusion_needs_a_certain_ahead_count():
-    """ST 04-26 R1: the legend's 3rd and 4th horses are level (detections 0.9 m apart). Counting the
-    second detection as "clearly" 4th with a 0.6 m margin hard-excluded the legend's 3rd horse from
-    it; the hard part needs 4 sigma (4.5 m) on the difference of two detections."""
-    from hkjc.recon import assoc, fusion
-
-    tg = np.arange(0.0, 2.01, 0.1)
-    s_at = {1: 100.0, 2: 98.8, 3: 96.0, 4: 95.1}  # metres run: #1 leads; #3 and #4 level-ish
-    lat_at = {1: 3.0, 2: 6.0, 3: 2.0, 4: 5.8}
-
-    def path(h, s0, l0):
-        z = np.zeros_like(tg)
-        return fusion.Path(h, tg, s0 + 16.0 * tg, l0 + z, 0.3 + z, 0.2 + z, z + 1)
-
-    paths = {h: path(h, s_at[h] - 16.0, lat_at[h]) for h in s_at}
-    # one frame at t = 1.0; detection rows sit exactly on the paths, but the legend has #4 3rd
-    # and #3 4th (a level pair whose order the legend sees differently)
-    det = [1, 2, 4, 3]
-    s = np.array([s_at[h] for h in det])
-    lat = np.array([lat_at[h] for h in det])
-    frames, t = np.zeros(4, int), np.ones(4)
-    legend = np.array([[0, 1, 2, 4, 3, 0, 0, 0, 0]])
-    new, _ = assoc.assign_frames(frames, t, s, lat, paths, legend)
-    assert new.tolist() == [1, 2, 4, 3]
-
-
 
 
 def test_film_lazy_leads_match_eager_reads():

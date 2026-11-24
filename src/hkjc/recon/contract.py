@@ -25,8 +25,8 @@ paths.parquet gains
                then sat within a length of it (``box_columns``)
   enclosed_late  hypothesis B-1's regressor: enclosed for >= 1 s in the final 600 m while within four lengths of the
                leader (``box_columns``)
-det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
-               calibrated probability
+det_margins_final.npz  per tracks row: 2 log(p / (1 - p)) of the final label, p its probability from the core's
+               per-segment marginals (``core.marginals``); NaN where unlabelled
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
                held in near-cloth order, the per-crossing position verdicts, the noise table, id_robust's
                per-section and per-horse bend verdicts with the run's yield, the run's lane pitch and origin, and the
@@ -933,8 +933,8 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=No
                    "(behind: s_mark <= s; ahead: s_mark > s; one of them before the first / after the last; none: "
                    "False)"},
         "noise_table": NOISE_TABLE,
-        "margins": {"file": "det_margins_final.npz", "units": "-2 log-likelihood",
-                    "meaning": "assignment margin, not a calibrated probability"},
+        "margins": {"file": "det_margins_final.npz", "units": "2 log(p / (1 - p))",
+                    "meaning": "log odds of the final label from the core's per-segment marginals"},
         **({} if idr is None else {"id_robust": describe_id_robust(*idr)}),
         **({} if lane is None else {"lane": _finite(lane)}),
         **({} if box is None else {"box": box}),

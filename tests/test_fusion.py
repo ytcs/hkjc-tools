@@ -3,58 +3,16 @@ import numpy as np
 from hkjc.recon import fusion as F
 
 
-def _truth():
-    t = np.arange(0, 60, 0.1)
-    return t, 17 * t + 0.02 * t**2, 2 + 1.5 * np.sin(t / 10)
-
-
-def test_fuse_bridges_gaps_and_associates():
-    rng = np.random.default_rng(0)
-    t, s, lat = _truth()
-    a = (t < 20) | (t > 35)
-    b = (t > 15) & (t < 45)
-    A = F.Obs(
-        t[a],
-        s[a] + rng.normal(0, 0.5, a.sum()),
-        lat[a] + rng.normal(0, 0.3, a.sum()),
-        0.5,
-        0.3,
-        "render",
-        horse=1,
-        tid=1,
-    )
-    B = F.Obs(
-        t[b],
-        s[b] + rng.normal(0, 1, b.sum()),
-        lat[b] + rng.normal(0, 0.6, b.sum()),
-        1.0,
-        0.6,
-        "drone",
-        tid=2,
-    )
-    C = F.Obs(
-        t[b],
-        s[b] + 5 + rng.normal(0, 1, b.sum()),
-        lat[b] + 2 + rng.normal(0, 0.6, b.sum()),
-        1.0,
-        0.6,
-        "drone",
-        horse=2,
-        tid=3,
-    )
-    paths, assign = F.fuse_race([A, B, C], [1, 2], F.Prior(width=22.5))
-    assert assign[2] == 1  # anonymous drone tracklet -> horse 1
-    p = paths[1]
-    assert np.sqrt(np.mean((np.interp(t, p.t, p.s) - s) ** 2)) < 0.3
-    assert np.sqrt(np.mean((np.interp(t, p.t, p.lat) - lat) ** 2)) < 0.15
-    assert p.feeds == {"render": a.sum(), "drone": b.sum()}
-
-
 def test_lateral_bound_enforced():
-    t = np.arange(0, 10, 0.1)
-    o = F.Obs(t, 17 * t, np.full(len(t), -0.5), 0.5, 0.3, "render", horse=1, tid=1)
-    s, _ss, lat, _sl, _c = F.smooth([o], F.Prior(width=20.0, l_min=0.3), t)
-    assert lat.min() >= 0.3 - 1e-6
+    """The core's lateral smoother keeps a horse inside the course: [l_min, width - l_min]."""
+    from types import SimpleNamespace
+
+    from hkjc.recon import core
+
+    t = np.arange(1.0, 10, 0.1)
+    m = core.Model(SimpleNamespace(horses=np.array([1])), core.list_rows(None, None, [1]), t, 20.0)
+    lat, _J, _A = m.solve_l(core.Obs(np.zeros(len(t), int), t, np.full(len(t), -0.5), np.full(len(t), 0.3)))
+    assert lat.min() >= core.L_MIN - 1e-6
 
 
 def test_with_tail_appends_only():

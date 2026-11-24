@@ -205,15 +205,6 @@ def test_camera_crossings_leave_fuse_final_where_the_official_finish_is_visible(
     assert [o.horse for o in R.finish_observations({})] == [2, 3]
     R._official_clock = {}  # finish withheld by the mask: unchanged
     assert [o.horse for o in R.finish_observations({})] == [1, 2, 3]
-    # seeds keep every camera-read path-less horse; a visible official finish times the seed (sd OFFICIAL_SD)
-    R._official_clock = {1: 70.5}
-    p = fusion.Path(9, np.arange(60.0, 72.0, 0.1), np.linspace(1000.0, 1210.0, 120), np.full(120, 3.0),
-                    np.full(120, 0.2), np.full(120, 0.2), np.ones(120), {})
-    seeds = R._finish_seeds({9: p}, fusion.Prior(width=25.0))
-    assert sorted(seeds) == [1, 2, 3]
-    s1 = seeds[1]
-    assert abs(np.interp(1200.0, s1.s, s1.t) - 70.5) < 1e-6 and abs(s1.sd_s.min() - R.OFFICIAL_SD) < 0.02
-    assert abs(np.interp(1200.0, seeds[2].s, seeds[2].t) - 70.2) < 1e-6
 
 
 def test_registration_shift_puts_both_finish_clocks_in_the_shifted_frame(tmp_path, monkeypatch):

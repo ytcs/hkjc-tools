@@ -2,47 +2,37 @@ import numpy as np
 import polars as pl
 
 from hkjc.data.historical import _clean_race_data
-from hkjc.recon import identity
+from hkjc.recon import core
 
 
-def _field(numbers, F=40, extra=0):
-    """len(numbers) + extra tracklets, one detection each per frame, tracklet k always k-th; legend lists numbers[:8]."""
-    n = len(numbers) + extra
-    frame_of_det = np.tile(np.arange(F), n)
-    members = [np.arange(k * F, (k + 1) * F) for k in range(n)]
-    d = np.repeat(np.arange(n, dtype=float) * 3.0, F)
-    legend = np.c_[np.arange(F), np.tile(np.array(numbers[:8]), (F, 1))]
-    return members, frame_of_det, d, legend
+def _facts(numbers, row):
+    """The list's facts on one row, as (ahead number, behind number, unlisted)."""
+    L = core.list_rows(np.array([[0, *row]]), lambda f: np.asarray(f, float), numbers)
+    St = core.statements(L, len(numbers))
+    num = np.asarray(numbers)
+    return L, [(int(num[a]), int(num[b]), bool(u)) for a, b, u in zip(St.a, St.b, St.unl)]
 
 
-def test_legend_votes_withdrawn_numbers_match_the_renumbered_field():
-    """A field with withdrawn numbers (gaps) casts the same slot and elimination votes as the same field
-    numbered 1..N: the whole-field test counts runners, not the highest saddlecloth number."""
+def test_list_facts_with_withdrawn_numbers_match_the_renumbered_field():
+    """A field with withdrawn numbers (gaps) states the same facts as the same field numbered 1..N: columns are
+    runners, not saddlecloth numbers, and no fact names a withdrawn number."""
     gapped = [1, 3, 5, 6, 7, 8, 9, 10, 11, 12]  # #2 and #4 withdrawn
     dense = list(range(1, 11))
-    a = identity.legend_votes(*_field(gapped), gapped, parts=True)
-    b = identity.legend_votes(*_field(dense), dense, parts=True)
-    assert a[0].sum() > 0 and a[3].sum() > 0
-    for x, y in zip(a[:3], b[:3]):
-        assert np.array_equal(x[:, gapped], y[:, dense])
-        assert x[:, [2, 4]].sum() == 0  # no evidence for a withdrawn number
-    assert np.array_equal(a[3], b[3])
+    La, fa = _facts(gapped, gapped[:8])
+    Lb, fb = _facts(dense, dense[:8])
+    assert La.full.all() and Lb.full.all()
+    ren = dict(zip(gapped, dense))
+    assert [(ren[a], ren[b], u) for a, b, u in fa] == fb
+    assert sum(u for *_x, u in fa) == 2  # the two unlisted runners, behind the 8th
+    assert not {2, 4} & {x for a, b, _u in fa for x in (a, b)}
 
 
-def test_legend_votes_non_runner_in_the_legend_casts_no_elimination():
+def test_a_withdrawn_number_in_the_list_states_nothing_about_it_and_no_unlisted_fact():
     numbers = [1, 3, 5, 6, 7, 8, 9, 10, 11, 12]
-    members, frame_of_det, d, legend = _field(numbers)
-    legend[:, 8] = 2  # the legend shows a withdrawn number in slot 8
-    votes, rank, elim, n_elim = identity.legend_votes(members, frame_of_det, d, legend, numbers, parts=True)
-    assert elim.sum() == 0 and n_elim.sum() == 0
-    assert rank[:, 2].sum() == 0 and rank[0, 1] > 0
-
-
-def test_legend_votes_more_detections_than_runners_still_vote():
-    """Pins current behaviour: a frame with an extra detection (a false positive) passes the whole-field test."""
-    numbers = list(range(1, 11))
-    rank = identity.legend_votes(*_field(numbers, extra=1), numbers, parts=True)[1]
-    assert rank.sum() > 0
+    L, f = _facts(numbers, [1, 3, 5, 6, 7, 8, 9, 2])  # the list shows a withdrawn number in slot 8
+    assert not L.full.any()  # the row is not fully read as runners: it says nothing about the unlisted
+    assert all(not u for *_x, u in f) and len(f) == 6  # the 6 adjacent pairs among slots 1-7
+    assert all(2 not in (a, b) for a, b, _u in f)
 
 
 def test_clean_race_data_drops_withdrawn_rows_and_keeps_the_numbers():
