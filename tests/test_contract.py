@@ -510,3 +510,25 @@ def test_boxed_in_needs_closing_then_sitting_within_a_length_in_the_last_600_m()
     h, *r = _held_field(4.0, 1.0, D=800.0)
     c = ct.box_columns(h, *r)
     assert c["enclosed"][h == 1].all() and not c["boxed_in"].any()
+
+
+def test_enclosed_late_needs_the_final_600_m_and_four_lengths_of_the_leader():
+    from hkjc.recon import contract as ct
+
+    full = {1: (3.0, 0.0), 2: (3.5, 3.0), 3: (5.0, 1.0), 4: (1.0, -1.0)}
+    # in the last 600 m with the leader (2) 3 m ahead: enclosed_late wherever enclosed
+    h, *r = _box_field(full, D=800.0)
+    c = ct.box_columns(h, *r)
+    assert c["enclosed"][h == 1].all() and c["enclosed_late"][h == 1].all() and not c["enclosed_late"][h != 1].any()
+    # the same run more than 600 m out: enclosed, not enclosed_late
+    h, *r = _box_field(full, D=1200.0)
+    c = ct.box_columns(h, *r)
+    assert c["enclosed"][h == 1].all() and not c["enclosed_late"].any()
+    # a leader more than four lengths ahead (wide, not a wall): out of contention
+    for ahead, want in ((ct.BOX_CONTEND - 0.5, True), (ct.BOX_CONTEND + 0.5, False)):
+        h, *r = _box_field({**full, 5: (9.0, ahead)}, D=800.0)
+        c = ct.box_columns(h, *r)
+        assert c["enclosed"][h == 1].all() and c["enclosed_late"][h == 1].all() == want
+    # under one second: nothing kept
+    h, *r = _box_field(full, n_t=9, D=800.0)
+    assert not ct.box_columns(h, *r)["enclosed_late"].any()

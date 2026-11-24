@@ -626,6 +626,12 @@ none of the additions is a stage output or cache key.
   - Held up: from the first closing node, the horse spends at least 1 s of the next 3 s within one length behind that
     horse, with |dL| < 1 and both horses in W.
   - The column is true on the run's late part.
+- Enclosed late (`contract.box_columns`, after `boxed_in`): `enclosed_late` is the regressor of hypothesis B-1 (the
+  modelling framework's late box-in test): enclosed in the final 600 m while in contention.
+  - Node condition: the raw enclosed condition (as `enclosed`, before runs are joined), finite `lane_units`,
+    d ≤ 600 m, and within four lengths (9.6 m) of the leader. The leader is the furthest-forward horse at the node,
+    capped at the post, so the rule needs no labels.
+  - Runs are joined over gaps under 0.5 s and kept when they last ≥ 1 s, as for `enclosed`.
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
@@ -784,6 +790,10 @@ identical. Not bit-exact:
   - It fires for about a third of runners. The stewards report about one horse per race, so most of its flags have no
     statement to confirm or refute them. Across masked reruns its horse × race κ is 0.69 on the silk
   render (0.88 on `id_robust` units) and about 0.96 on the disc render, so on silk use it beside `id_robust`.
+- **Enclosed late.** Across masked reruns (both arms at one commit; 176 silk and 153 disc races) its horse × race κ is
+  0.85 on the silk render (0.93 on `id_robust` units) and 0.99 on the disc render, at a base rate of about half the
+  runners with late nodes. No calibrated probability goes with it: a per-node probability built from the identity
+  margins understates the rerun disagreement on both renders.
 - **Enclosed is not a costly box-in.** Enclosure is common and often cheap before the home turn. In the final 600 m it
   agrees with the stewards' blocked-run statements only 1.4 times as often as chance would give. Across masked
   reruns, its horse × section reliability (κ) is 0.86 on the silk render and 0.97 on the disc render.

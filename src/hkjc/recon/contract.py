@@ -23,6 +23,8 @@ paths.parquet gains
                >= 1 s (``box_columns``; a broader state than a 1 m-lane metre rule)
   boxed_in     held up behind in the final 600 m: an enclosed run in which the horse closed on the horse in front and
                then sat within a length of it (``box_columns``)
+  enclosed_late  hypothesis B-1's regressor: enclosed for >= 1 s in the final 600 m while within four lengths of the
+               leader (``box_columns``)
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
@@ -695,6 +697,14 @@ BOX_GRID, BOX_LEN, BOX_BRIDGE_N, BOX_MIN_N = 0.1, 2.4, 5, 10
 # third of runners (precision 0.125). Across masked reruns its horse x race reliability is low on the silk render (kappa
 # 0.69; 0.88 where id_robust) and high on the disc render.
 BOX_LATE_D, BOX_LATE_N, BOX_CLOSE_N, BOX_CLOSE, BOX_HOLD_N, BOX_HOLD_WIN = 600.0, 5, 10, -0.3, 10, 30
+# enclosed_late: the regressor of hypothesis B-1 (model_structure_theory 5.3a), enclosed in the final 600 m while in
+# contention. Node condition: raw enclosed (as `enclosed`, before joining runs), finite lane_units, d <= BOX_LATE_D and
+# within BOX_CONTEND m of the leader (the furthest-forward horse at the node, capped at the post: gap = d - max(min d, 0)).
+# Runs are joined and kept as for `enclosed` (gaps < BOX_BRIDGE_N valid nodes, >= BOX_MIN_N nodes). Across masked reruns
+# its horse x race kappa is 0.85 on the silk render (0.93 where id_robust) and 0.99 on the disc render (base rate about
+# half of the runners with late nodes). No calibrated probability goes with it: the identity margins understate rerun
+# disagreement.
+BOX_CONTEND = 4 * BOX_LEN
 
 
 def _box_grid(horse_no, t, *cols):
@@ -772,8 +782,8 @@ def _held_up(i, la, lb, S, LAT, PITCH, W, nearest) -> bool:
 
 
 def box_columns(horse_no, t, s, d, lat, lane_units, seg, used) -> dict:
-    """{"enclosed", "boxed_in"} per row (bool); ``lane_units``, ``used`` from ``lane_columns``, ``seg`` from
-    ``lat_m_segment``, ``d`` the distance to go."""
+    """{"enclosed", "boxed_in", "enclosed_late"} per row (bool); ``lane_units``, ``used`` from ``lane_columns``, ``seg``
+    from ``lat_m_segment``, ``d`` the distance to go."""
     seg = np.asarray(seg).astype(str)
     cls = np.where(seg == "start", "straight", seg)
     pitch = np.array([used[c]["pitch"] if c in used else np.nan for c in cls], float)
@@ -789,14 +799,29 @@ def box_columns(horse_no, t, s, d, lat, lane_units, seg, used) -> dict:
             late = np.flatnonzero(W[i, a:b]) + a
             if len(late) >= BOX_LATE_N and _held_up(i, late[0], late[-1] + 1, S, LAT, PITCH, W, nearest):
                 B[i, late[0]:late[-1] + 1] = True
-    return {"enclosed": E[hi, ki], "boxed_in": B[hi, ki]}
+    C = np.zeros(S.shape, bool)
+    with np.errstate(invalid="ignore"):
+        dmin = np.where(np.isfinite(D), D, np.inf).min(0)
+        contend = (D - np.maximum(dmin, 0.0)[None, :]) <= BOX_CONTEND
+    for i, eps in enumerate(_episodes(enc & W & contend, valid)):
+        for a, b in eps:
+            C[i, a:b] = True
+    return {"enclosed": E[hi, ki], "boxed_in": B[hi, ki], "enclosed_late": C[hi, ki]}
 
 
 def describe_box() -> dict:
     """contract.json's ``box`` entry: the enclosed and boxed_in rules and their constants."""
     return {"grid_s": BOX_GRID, "len_m": BOX_LEN, "bridge_nodes": BOX_BRIDGE_N, "min_nodes": BOX_MIN_N,
             "late_d_m": BOX_LATE_D, "late_nodes": BOX_LATE_N, "close_nodes": BOX_CLOSE_N, "close_m": BOX_CLOSE,
-            "hold_nodes": BOX_HOLD_N, "hold_window_nodes": BOX_HOLD_WIN,
+            "hold_nodes": BOX_HOLD_N, "hold_window_nodes": BOX_HOLD_WIN, "contend_m": BOX_CONTEND,
+            "enclosed_late": "hypothesis B-1's regressor: nodes with the raw enclosed condition (before runs are joined), "
+                             "finite lane_units, d <= late_d_m and d - max(min over horses of d, 0) <= contend_m (within "
+                             "four lengths of the leader capped at the post); runs joined over gaps < bridge_nodes nodes "
+                             "with finite lane_units, kept when >= min_nodes nodes",
+            "enclosed_late_status": "masked-rerun horse x race kappa 0.85 silk (0.93 where id_robust), 0.99 disc, base "
+                                    "rate about 0.5 of runners with late nodes (176 silk, 153 disc races, both arms at "
+                                    "one commit); no calibrated probability (identity margins understate rerun "
+                                    "disagreement); false where lane_units is NaN",
             "boxed_in": "held up behind: an enclosed run with >= late_nodes nodes in the late window W (finite lane_units, "
                         "d <= late_d_m) is boxed in when at its first closing node t (t and t - close_nodes in W, t in "
                         "the run's late part or the close_nodes before it, the gap to the nearest ahead wall j shrank by "
