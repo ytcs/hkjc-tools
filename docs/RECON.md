@@ -637,7 +637,10 @@ identical. Not bit-exact:
 - **Wide-running distance.** Distance run wide on the bends is overstated by the same spread.
 - **Lateral metres.** Metres exist only in `lat_m` (§4), for drone-era turf races in the tested segments; lateral
   order is usable everywhere, lateral metres nowhere else. Not covered: the Sha Tin disc start, the Happy Valley
-  disc bends and home straight, the Happy Valley silk start and home straight, and every pre-2026 season.
+  disc bends and home straight, the Happy Valley silk start and home straight, and every pre-2026 season. The
+  home-straight scale holds to about ±7 % across course settings (Sha Tin A reads about +0.3 m wide); bend metres
+  are calibrated against a linear rail-to-rail drone ruler, which does not model perspective or rail height on
+  oblique bend views.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the
