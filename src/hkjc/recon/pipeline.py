@@ -1555,9 +1555,11 @@ class RaceRun:
             for k in unc:
                 unc[k].append(v[k])
         P = P.with_columns(**{k: pl.Series(np.concatenate(v)) for k, v in unc.items()})
+        idr, *idr_rest = ct.id_robust(self, P)
+        P = P.with_columns(id_robust=pl.Series(idr))
         with self.out("contract.json") as fp:
-            fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors), indent=1,
-                                     default=float))
+            fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors, idr_rest),
+                                     indent=1, default=float))
         return P
 
     # Lateral in metres. The render spreads the field laterally (RECON 8), more in the compact field

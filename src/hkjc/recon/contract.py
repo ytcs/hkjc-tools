@@ -9,10 +9,14 @@ paths.parquet gains
                official times at the bounding visible official boundaries (``position_crossings``, ``node_pos_ok``)
   sd_s_axis, sd_s_horse, sd_s_gap, sd_s_rel, sd_s_total   along-track error terms sd_s omits (``uncertainty_columns``):
                the shared axis, a per-horse persistent term and a long-gap term; field-relative and total sd
+  id_robust    identity-robust: in the node's section unit, no horse within 5 m / 2.5 render units of the horse has
+               more than tR of its detections relabelled between the video-only and final labels, and the horse's
+               read support is >= tP (``id_robust``; thresholds from one cross-fit, not yet confirmed on a fresh set)
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
-               held in near-cloth order, the per-crossing position verdicts and the noise table
+               held in near-cloth order, the per-crossing position verdicts, the noise table and id_robust's
+               per-section and per-horse bend verdicts with the run's yield
 """
 
 from __future__ import annotations
@@ -485,10 +489,10 @@ def _finite(x):
     return x
 
 
-def describe(stretches, frozen=(), crossings=(), anchors=None) -> dict:
+def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None) -> dict:
     """contract.json: the definitions behind the columns, the run's flagged stretches, the legend windows held in
     near-cloth order (``frozen``), the position flag's crossing verdicts, the uncertainty terms with the run's axis
-    ``anchors`` and the noise table."""
+    ``anchors``, the noise table and ``idr``, id_robust's (sections, bends, yield) (``describe_id_robust``)."""
     return {
         "uncertainty": {
             "anchors_s": list(anchors or []),
@@ -521,4 +525,196 @@ def describe(stretches, frozen=(), crossings=(), anchors=None) -> dict:
         "noise_table": NOISE_TABLE,
         "margins": {"file": "det_margins_final.npz", "units": "-2 log-likelihood",
                     "meaning": "assignment margin, not a calibrated probability"},
+        **({} if idr is None else {"id_robust": describe_id_robust(*idr)}),
+    }
+
+
+# ------------------------------------------------------------------------------------------------- identity robustness
+# id_robust: per horse x node, the node's window passes both identity tests below. Windows: a section unit (the horse's
+# run nodes between two official boundaries, >= ID_MIN_NODES nodes) for the node column; and, for bend descriptors, the
+# horse's bend window (all its run nodes on the bends of the race, every bend pooled), reported per horse in contract.json.
+# Run nodes: finite s, before the line, at or after the field's render start (median over horses of each horse's first
+# observed node after 0.5 s).
+# Relabel share of horse j in a window: of the render detections labelled j by the video-only labels (det_labels) or by
+# the final labels (det_labels_final), the share labelled j by exactly one of them. Section window: detections within
+# ID_DET_PAD s of the unit's first and last node time; bend window: detections on a bend, at or after the render start.
+# Rmax: the maximum relabel share over the focal horse and every horse within ID_NEAR_DS m along and ID_NEAR_DLAT render
+# units across of it at any node of the window (about 1.5 lanes; render units, so not a fixed metric distance on bends).
+# Read support: circle render, the share of the focal horse's final-labelled window detections with a confident disc read
+# (``_number_reads``) naming it; silk render, the share of legend rows (``legend_rows``) timed inside the window (the bend
+# window: between the horse's first and last bend node) that list it in a slot. Legend rows of a frozen list count as
+# rows here (the thresholds were fitted so). No read source (no numbers.npz, no legend rows): read support is not tested.
+# A window is robust when Rmax <= tR and read support >= tP.
+# Thresholds (ID_THRESHOLDS) by render style and window type, by a stated rule: the median of the two folds' selected
+# thresholds of one cross-fit (journal 0286 addendum: legend- and disc-masked reruns, 2-fold race split by md5 parity,
+# each fold's set the maximum-yield one whose fit-fold kappa / ICC clears its bar + 0.05; pack exposure was never cut, so
+# it is dropped). Read support is a different quantity per render style, so each style has its own pair. Not yet
+# confirmed on a fresh set: neither fold was scored with these medians, and the folds' out-of-fold kappa / ICC do not
+# describe them. On disc bends the rule is nearly no cut (one fold selected none).
+ID_NEAR_DS, ID_NEAR_DLAT, ID_MIN_NODES, ID_DET_PAD = 5.0, 2.5, 20, 0.05
+ID_FOLDS = {  # (style, window): ((tR, tP) fit on fold 0, (tR, tP) fit on fold 1)
+    ("silk", "section"): ((0.0, 0.8184110007639422), (0.0991358024691349, 0.9861425218689994)),
+    ("circle", "section"): ((0.0, 0.9701098421473776), (0.03524229074889868, 0.0)),
+    ("silk", "bend"): ((0.020498506880355347, 0.2518796992481203), (0.022099447513812154, 0.0)),
+    ("circle", "bend"): ((1.0, 0.0), (0.7394366197183099, 0.0)),
+}
+ID_THRESHOLDS = {k: tuple(float(np.median([a[i], b[i]])) for i in (0, 1)) for k, (a, b) in ID_FOLDS.items()}
+
+
+def relabel_share(lv, lf, h, sel) -> float:
+    """Of the detections in ``sel`` labelled ``h`` by ``lv`` or ``lf``, the share labelled ``h`` by exactly one."""
+    a, b = (lv == h) & sel, (lf == h) & sel
+    un = int((a | b).sum())
+    return float((a ^ b).sum() / un) if un else 0.0
+
+
+def bend_windows(geometry, D) -> list:
+    """(lo, hi) distance-to-go intervals of race distance ``D`` that lie on a bend of ``geometry`` (laps tiled)."""
+    out, m = [], 0
+    while geometry.bend_segments and m * geometry.circumference < D:
+        for a, b in geometry.bend_segments:
+            lo, hi = max(a + m * geometry.circumference, 0.0), min(b + m * geometry.circumference, D)
+            if hi > lo:
+                out.append((lo, hi))
+        m += 1
+    return sorted(out)
+
+
+def _section_ends(run, D):
+    """Distance to go at the official section ends (400 m apart, the line last)."""
+    bnd = run.info.official_boundaries()[0]
+    return np.asarray(bnd if len(bnd) else [400.0 * k for k in range(int((D - 1) // 400), -1, -1)], float)
+
+
+def id_signals(run, P) -> dict:
+    """Identity-robustness signals of run ``run`` (tracks, video-only and final labels, disc reads or legend rows) on its
+    final paths ``P`` (polars: horse_no, t, s, lat, n_obs). -> dict(horses, tg, sections: list of dict(horse, section,
+    t0, t1, n_nodes, R, Rmax, P), section_masks: {(i, section): node mask on the horses x tg grid}, bends: list of
+    dict(horse, R, Rmax, P, n_nodes)). Read support P is NaN where no read source exists."""
+    from . import video
+    from .pipeline import FPS
+
+    D = float(run.info.distance)
+    horses = sorted(int(h) for h in P["horse_no"].unique().to_list())
+    tg = np.round(np.sort(P["t"].unique().to_numpy()), 3)
+    S, L, N = (np.full((len(horses), len(tg)), np.nan) for _ in range(3))
+    hn = P["horse_no"].to_numpy()
+    for i, h in enumerate(horses):
+        m = hn == h
+        j = np.searchsorted(tg, np.round(P["t"].to_numpy()[m], 3))
+        S[i, j], L[i, j], N[i, j] = (P[c].to_numpy()[m] for c in ("s", "lat", "n_obs"))
+    firsts = [tg[(N[i] > 0) & (tg > 0.5)] for i in range(len(horses))]
+    t_r = float(np.nanmedian([f.min() if len(f) else np.nan for f in firsts]))
+    with np.errstate(invalid="ignore"):
+        runm = np.isfinite(S) & (S < D) & (tg >= t_r)[None, :]
+        sec = ((D - S)[:, :, None] < _section_ends(run, D)[:-1][None, None, :]).sum(2)
+    T = np.load(run.p("tracks.npz"), allow_pickle=True)
+    tt, td = T["t"].astype(float), T["d"].astype(float)
+    lv = np.load(run.p("det_labels.npz"))["labels"]
+    lf = np.load(run.p("det_labels_final.npz"))["labels"]
+    num = run._number_reads(T)
+    leg = leg_t = None
+    if num is None and run.p("legend.npz").exists():
+        leg = run.legend_rows()
+        if len(leg):
+            grid = video.tick_grid(np.load(run.p("frames_idx.npz"))["idx"])
+            leg_t = (video.tick_frame(leg[:, 0], grid) - run.clock_f0()) / FPS
+
+    def support(h, sel, t0, t1):
+        if num is not None:
+            m = (lf == h) & sel
+            return float((num[m] == h).mean()) if m.sum() else 0.0
+        if leg_t is not None:
+            w = (leg_t >= t0) & (leg_t <= t1)
+            return float((leg[w, 1:] == h).any(1).mean()) if w.sum() else 0.0
+        return float("nan")
+
+    def near(i, m):
+        with np.errstate(invalid="ignore"):
+            z = ((np.abs(S[:, m] - S[i, m]) <= ID_NEAR_DS) & (np.abs(L[:, m] - L[i, m]) <= ID_NEAR_DLAT)).any(1)
+        z[i] = True
+        return np.flatnonzero(z)
+
+    secs, masks = [], {}
+    for i, h in enumerate(horses):
+        for k in np.unique(sec[i][runm[i]]):
+            m = runm[i] & (sec[i] == k)
+            if m.sum() < ID_MIN_NODES:
+                continue
+            masks[(i, int(k))] = m
+            t0, t1 = float(tg[m].min()), float(tg[m].max())
+            sel = (tt >= t0 - ID_DET_PAD) & (tt <= t1 + ID_DET_PAD)
+            secs.append(dict(horse=h, section=int(k), t0=t0, t1=t1, n_nodes=int(m.sum()), R=relabel_share(lv, lf, h, sel),
+                             Rmax=max(relabel_share(lv, lf, horses[j], sel) for j in near(i, m)),
+                             P=support(h, sel, t0, t1)))
+    onb = np.zeros(S.shape, bool)
+    detb = np.zeros(len(td), bool)
+    for lo, hi in bend_windows(run.info.geometry, D):
+        with np.errstate(invalid="ignore"):
+            onb |= (D - S >= lo) & (D - S < hi)
+        detb |= (td >= lo) & (td < hi)
+    onb &= runm
+    detb &= tt >= t_r
+    bends = []
+    if onb.any():
+        Rh = [relabel_share(lv, lf, h, detb) for h in horses]
+        for i, h in enumerate(horses):
+            m = onb[i]
+            if not m.any():
+                bends.append(dict(horse=h, R=Rh[i], Rmax=Rh[i], P=float("nan"), n_nodes=0))
+                continue
+            bends.append(dict(horse=h, R=Rh[i], Rmax=max(Rh[j] for j in near(i, m)),
+                              P=support(h, detb, float(tg[m].min()), float(tg[m].max())), n_nodes=int(m.sum())))
+    return dict(horses=horses, tg=tg, sections=secs, section_masks=masks, bends=bends)
+
+
+def id_robust(run, P, thresholds=None):
+    """``id_robust`` of run ``run`` on its final paths ``P`` (``id_signals``); ``thresholds`` {(style, window): (tR, tP)},
+    default ``ID_THRESHOLDS``. -> (per row of ``P``: its node's section unit is robust (no unit: False); sections with
+    their verdict ``robust``; bends with ``robust`` (None without a bend node); yield dict)."""
+    th = ID_THRESHOLDS if thresholds is None else thresholds
+    style = "circle" if run.p("numbers.npz").exists() else "silk"
+    sig = id_signals(run, P)
+
+    def ok(r, window):
+        tR, tP = th[(style, window)]
+        return bool(r["Rmax"] <= tR and (not np.isfinite(r["P"]) or r["P"] >= tP))
+
+    horses, tg = sig["horses"], sig["tg"]
+    V = np.zeros((len(horses), len(tg)), bool)
+    inunit = np.zeros_like(V)
+    secs = []
+    for r in sig["sections"]:
+        r = dict(r, robust=ok(r, "section"))
+        i = horses.index(r["horse"])
+        m = sig["section_masks"][(i, r["section"])]
+        V[i] |= m & r["robust"]
+        inunit[i] |= m
+        secs.append(r)
+    bends = [dict(r, robust=ok(r, "bend") if r["n_nodes"] else None) for r in sig["bends"]]
+    node = V[np.searchsorted(horses, P["horse_no"].to_numpy()), np.searchsorted(tg, np.round(P["t"].to_numpy(), 3))]
+    nb = [b for b in bends if b["robust"] is not None]
+    yld = dict(style=style, section_units=len(secs), section_units_robust=sum(r["robust"] for r in secs),
+               unit_nodes=int(inunit.sum()), unit_nodes_robust=int(V.sum()), rows=len(node),
+               rows_robust=int(node.sum()), bend_horses=len(nb), bend_horses_robust=sum(b["robust"] for b in nb))
+    return node, secs, bends, yld
+
+
+def describe_id_robust(secs, bends, yld) -> dict:
+    """contract.json's ``id_robust`` entry: definitions, thresholds, the run's per-window verdicts and its yield."""
+    return {
+        "thresholds": [{"style": s, "window": w, "tR": tR, "tP": tP} for (s, w), (tR, tP) in ID_THRESHOLDS.items()],
+        "threshold_rule": "median of the two folds' selected thresholds of one cross-fit, per render style and window "
+        "type; not yet confirmed on a fresh set",
+        "near_ds_m": ID_NEAR_DS, "near_dlat_render": ID_NEAR_DLAT, "min_nodes": ID_MIN_NODES, "det_pad_s": ID_DET_PAD,
+        "rule": "robust = Rmax <= tR and read support >= tP (no read source: support not tested). Rmax: the maximum over "
+        "the focal horse and every horse within near_ds_m along and near_dlat_render across at a window node of its "
+        "relabel share (of its window detections, the share labelled it by exactly one of the video-only and final "
+        "labels). Read support: circle, the share of the focal's final-labelled window detections with a confident disc "
+        "read naming it; silk, the share of legend rows in the window listing it",
+        "windows": "column: the node's section unit (run nodes between official section ends, >= min_nodes; no unit: "
+        "false); bends: per horse, all its run nodes on bends pooled, for descriptors over bends",
+        "yield": yld,
+        "sections": _finite(secs),
+        "bends": _finite(bends),
     }

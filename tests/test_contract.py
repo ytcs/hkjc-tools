@@ -208,3 +208,63 @@ def test_uncertainty_columns_add_in_quadrature_and_the_gap_grows_with_time_since
     assert np.allclose(out["sd_s_rel"] ** 2, 0.04 + ct.HORSE_VAR["silk"] + out["sd_s_gap"] ** 2)
     assert np.allclose(out["sd_s_total"] ** 2, out["sd_s_rel"] ** 2 + out["sd_s_axis"] ** 2)
     assert np.isnan(ct.uncertainty_columns(s, t, np.full(4, 0.2), [150.0], "circle", np.zeros(0))["sd_s_total"]).all()
+
+
+# ------------------------------------------------------------------------------------------------- identity robustness
+def test_id_thresholds_are_the_median_of_the_two_folds():
+    from hkjc.recon import contract as ct
+
+    for k, (a, b) in ct.ID_FOLDS.items():
+        assert ct.ID_THRESHOLDS[k] == ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    assert abs(ct.ID_THRESHOLDS[("silk", "section")][0] - 0.0496) < 1e-4
+    assert abs(ct.ID_THRESHOLDS[("circle", "bend")][0] - 0.8697) < 1e-4
+    lv, lf = np.array([1, 1, 1, 2, 0]), np.array([1, 1, 2, 2, 1])
+    # horse 1: labelled by either at rows 0, 1, 2, 4; by exactly one at rows 2, 4
+    assert ct.relabel_share(lv, lf, 1, np.ones(5, bool)) == 0.5 and ct.relabel_share(lv, lf, 3, np.ones(5, bool)) == 0.0
+
+
+def test_id_robust_reads_neighbours_relabels_and_read_support(tmp_path):
+    from types import SimpleNamespace
+
+    from hkjc.recon import contract as ct
+
+    D = 800.0
+    tg = np.round(np.arange(0.0, 60.0, 0.1), 3)
+    s = {1: 15.0 * tg, 2: 15.0 * tg, 3: 15.0 * tg - 20.0}
+    lat = {1: 1.0, 2: 2.0, 3: 1.0}
+    P = pl.DataFrame({"horse_no": np.repeat([1, 2, 3], len(tg)), "t": np.tile(tg, 3),
+                      "s": np.concatenate([s[h] for h in (1, 2, 3)]),
+                      "lat": np.concatenate([np.full(len(tg), lat[h]) for h in (1, 2, 3)]), "n_obs": np.ones(3 * len(tg))})
+    live = np.concatenate([(s[h] > 0) & (s[h] < D) for h in (1, 2, 3)])
+    t = P["t"].to_numpy()[live]
+    d = D - P["s"].to_numpy()[live]
+    h = P["horse_no"].to_numpy()[live]
+    lf = h.copy()
+    sec0_2 = np.flatnonzero((h == 2) & (d >= 400))
+    lf[sec0_2[::3]] = 0  # a third of horse 2's first-section detections lose their label in the final pass
+    num = h.copy()
+    num[(h == 3) & (d < 400)] = 0  # no disc read of horse 3 in the second section
+    np.savez(tmp_path / "tracks.npz", t=t, d=d)
+    np.savez(tmp_path / "det_labels.npz", labels=h)
+    np.savez(tmp_path / "det_labels_final.npz", labels=lf)
+    (tmp_path / "numbers.npz").write_bytes(b"")
+    info = SimpleNamespace(distance=D, official_boundaries=lambda: ([400.0, 0.0], {}),
+                           geometry=SimpleNamespace(bend_segments=((100.0, 300.0),), circumference=1000.0))
+    run = SimpleNamespace(info=info, p=lambda n: tmp_path / n, _number_reads=lambda T: num)
+    node, secs, bends, yld = ct.id_robust(run, P)
+    v = {(r["horse"], r["section"]): r["robust"] for r in secs}
+    # horse 1 runs abreast of the relabelled horse 2 -> not robust in section 0; horse 3 is 20 m back -> robust
+    assert v == {(1, 0): False, (2, 0): False, (3, 0): True, (1, 1): True, (2, 1): True, (3, 1): False}
+    r30 = next(r for r in secs if (r["horse"], r["section"]) == (3, 0))
+    assert r30["Rmax"] == 0.0 and r30["P"] == 1.0
+    assert next(r for r in secs if (r["horse"], r["section"]) == (1, 0))["Rmax"] > 0.3
+    # the column: the node's section verdict; no unit (before the render start, after the line) -> False
+    hh, ss, tt = P["horse_no"].to_numpy(), P["s"].to_numpy(), P["t"].to_numpy()
+    inside = (tt > 0.5) & (ss < D)
+    assert node[(hh == 1) & inside & (ss > 400)].all() and not node[(hh == 1) & (ss <= 400)].any()
+    assert not node[~inside].any()
+    # bends: horse 2's relabels are all before the bend -> every horse robust there (circle read support 1)
+    assert [b["robust"] for b in bends] == [True, True, True]
+    assert yld["section_units"] == 6 and yld["section_units_robust"] == 3 and yld["rows_robust"] == int(node.sum())
+    js = ct.describe_id_robust(secs, bends, yld)
+    assert js["yield"] == yld and len(js["thresholds"]) == 4

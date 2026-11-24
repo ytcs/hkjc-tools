@@ -503,6 +503,25 @@ none of the additions is a stage output or cache key.
   - `sd_s_gap`: a long-gap term, var = `GAP_SA`² Δt³ / 3, with Δt the time since the horse's last labelled detection
     (before its first, the time to it); NaN for a horse never labelled.
   - `sd_s_rel` = √(sd_s² + sd_s_horse² + sd_s_gap²), the field-relative sd; `sd_s_total` = √(sd_s_rel² + sd_s_axis²).
+- `id_robust` (`contract.id_robust`, appended last): the node's window is identity-robust, i.e. robust to how much
+  of the identity was decided by the final pass rather than the video alone. Two tests per window:
+  - relabel share: for the horse and every horse within 5 m along and 2.5 render units across of it at any window node,
+    take the share of its window detections labelled it by exactly one of the video-only (`det_labels`) and final
+    (`det_labels_final`) labels. The maximum must be ≤ tR;
+  - read support: the share of the horse's final-labelled window detections with a confident disc read naming it
+    (disc render), or of the legend rows in the window listing it (silk render), must be ≥ tP. Without a read source
+    it is not tested.
+  - windows: run nodes are those with finite s, before the line and at or after the field's render start (the
+    median over horses of each horse's first observed node after 0.5 s).
+    - The column uses the node's section unit: the horse's run nodes between two official section ends, at least 20
+      nodes. Its detections are those within 0.05 s of the unit's first and last node. A node outside every unit is
+      false.
+    - For descriptors over bends, contract.json gives a per-horse bend verdict: all its run nodes on the race's bends
+      pooled, the bend detections at or after the render start, and the legend rows between its first and last bend
+      node.
+  - thresholds: tR and tP are set per render style and window type (`ID_THRESHOLDS`). Each is the median of the two
+    folds' selected thresholds from one cross-fit on masked reruns. contract.json holds the run's per-section and
+    per-horse bend signals and verdicts and its yield (units, nodes and bend horses robust).
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
@@ -658,6 +677,9 @@ identical. Not bit-exact:
   systematic error term is missing.
 - **Uncertainty columns.** The uncertainty columns (§4) do not yet meet the calibration targets; the gap term is
   too wide for gaps over about 5 s; Happy Valley 600 m carries a known distance bias.
+- **Identity-robust flag.** The `id_robust` thresholds come from one cross-fit and are not yet confirmed on a fresh
+  set. The flag drops box-in units disproportionately, because box-in lives where identity is unstable. So box-in
+  should ship with the flag attached, not filtered by it.
 - **Render-vs-official conflicts.** A horse whose render path and official interior times disagree by more than a
   few metres keeps its render path; the video alone cannot say which side is wrong.
 - **Silk evidence.** Legend votes add per frame and silk once per tracklet (±3), so silk rarely overturns a legend
