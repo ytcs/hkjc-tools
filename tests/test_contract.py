@@ -299,15 +299,21 @@ def test_lat_m_err_is_provisional_sha_tin_bend_and_home_only_and_adds_in_quadrat
     assert ct.LAT_M_ERR == {("ST", "bend"): (0.98 / 1.645, 0.25), ("ST", "home"): (0.95 / 1.645, 0.0)}
     seg = np.array(["start", "straight", "bend", "home", "bend", ""])
     sd = np.array([0.03, 0.03, 0.04, 0.05, np.nan, np.nan])  # lat_m undefined at the last two nodes
-    e = ct.lat_m_err("ST", seg, sd)
+    dev = np.array([3.0, 2.0, 4.0, 1.5, 2.0, 2.0])
+    x = np.array([900.0, 700.0, 200.0, -100.0, 200.0, 0.0])
+    e = ct.lat_m_err("ST", seg, sd, dev, x)
     hb, hh = 0.98 / 1.645, 0.95 / 1.645
     assert round(hb, 2) == 0.60 and round(hh, 2) == 0.58
     assert np.allclose(e["sd_lat_m_horse"][2:4], [hb, hh]) and np.allclose(e["sd_lat_m_node"][2:4], [0.25, 0.0])
-    assert np.allclose(e["sd_lat_m_total"][2:4] ** 2,
-                       sd[2:4] ** 2 + e["sd_lat_m_horse"][2:4] ** 2 + e["sd_lat_m_node"][2:4] ** 2)
-    for k in e:  # start and straight: no value although lat_m is defined; NaN where lat_m is NaN
+    assert np.allclose(e["sd_lat_m_total"][2:4] ** 2, sd[2:4] ** 2 + e["sd_lat_m_horse"][2:4] ** 2
+                       + e["sd_lat_m_node"][2:4] ** 2 + e["sd_lat_m_scale"][2:4] ** 2)
+    for k in ("sd_lat_m_horse", "sd_lat_m_node", "sd_lat_m_total"):  # start / straight: no value; NaN where lat_m is NaN
         assert np.isnan(e[k][[0, 1, 4, 5]]).all()
-    assert all(np.isnan(v).all() for v in ct.lat_m_err("HV", seg, sd).values())  # Happy Valley: none
+    # the race-level scale is defined wherever lat_m is, at every venue
+    assert np.allclose(e["sd_lat_m_scale"][:4], [0.15 * 3.0, 0.15 * 2.0, (0.11 + 0.15 * 0.5) * 4.0, 0.11 * 1.5])
+    assert np.isnan(e["sd_lat_m_scale"][4:]).all()
+    eh = ct.lat_m_err("HV", seg, sd, dev, x)
+    assert np.isnan(eh["sd_lat_m_total"]).all() and np.allclose(eh["sd_lat_m_scale"][:4], e["sd_lat_m_scale"][:4])
     # segments as the pipeline derives them (ST disc, home straight 430 m): start, straight, bend, home, past the post
     info = RaceInfo("20260913", "ST", 1, 1200.0, "B", "turf", "GOOD", "Class 4", (Runner(1, "H1", "X001", 1),),
                     pl.DataFrame(), pl.DataFrame())
@@ -315,7 +321,7 @@ def test_lat_m_err_is_provisional_sha_tin_bend_and_home_only_and_adds_in_quadrat
     run.info = MaskedRace(info, Mask())
     s2 = run.lat_m_segment(np.array([1100.0, 1000.0, 700.0, 200.0, -0.1]), np.array([12.0, 20.0, 40.0, 62.0, 71.0]), 11.0)
     assert s2.tolist() == ["start", "straight", "bend", "home", ""]
-    e2 = ct.lat_m_err("ST", s2, np.full(5, 0.03))
+    e2 = ct.lat_m_err("ST", s2, np.full(5, 0.03), np.full(5, 2.0), np.zeros(5))
     assert np.isfinite(e2["sd_lat_m_total"]).tolist() == [False, False, True, True, False]
 
 
@@ -325,3 +331,16 @@ def test_describe_lists_the_provisional_lat_m_err_values():
     d = ct.describe([])["lat_m_err"]
     assert d["sd_m"] == {"ST bend": {"horse": 0.98 / 1.645, "node": 0.25}, "ST home": {"horse": 0.95 / 1.645, "node": 0.0}}
     assert "provisional" in d["status"]
+    rs = d["race_scale"]
+    assert rs["sigma_start_straight"] == 0.15 and rs["sigma_ramp_x_m"] == [[0.0, 0.11], [400.0, 0.26]]
+    assert "one per race x segment" in rs["form"]
+
+
+def test_lat_m_scale_sd_ramps_between_home_and_far_and_is_flat_on_straights():
+    from hkjc.recon import contract as ct
+
+    seg = np.array(["home", "home", "bend", "bend", "bend", "straight", "start", ""])
+    x = np.array([-300.0, 0.0, 100.0, 400.0, 900.0, 1200.0, 1500.0, 0.0])
+    s = ct.lat_m_scale_sd(seg, x)
+    assert np.allclose(s[:7], [0.11, 0.11, 0.11 + 0.15 * 0.25, 0.26, 0.26, 0.15, 0.15]) and np.isnan(s[7])
+    assert s[3] == 0.26 and s[0] == 0.11  # the end values exactly

@@ -1610,7 +1610,9 @@ class RaceRun:
         idr, *idr_rest = ct.id_robust(self, P)
         P = P.with_columns(id_robust=pl.Series(idr))
         seg = self.lat_m_segment(P["d"].to_numpy(), P["t"].to_numpy(), self.render_t0())
-        err = ct.lat_m_err(self.info.venue, seg, P["sd_lat_m"].to_numpy())  # provisional (contract.LAT_M_ERR)
+        d_ = P["d"].to_numpy()
+        err = ct.lat_m_err(self.info.venue, seg, P["sd_lat_m"].to_numpy(), P["lat_m"].to_numpy() - self.LAT_MAP[0],
+                           d_ - self.info.geometry.home_straight(self.info.course))  # provisional (contract.LAT_M_ERR)
         P = P.with_columns(**{k: pl.Series(v) for k, v in err.items()})
         with self.out("contract.json") as fp:
             fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors, idr_rest),

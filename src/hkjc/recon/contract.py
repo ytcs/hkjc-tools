@@ -13,9 +13,10 @@ paths.parquet gains
   id_robust    identity-robust: in the node's section unit, no horse within 5 m / 2.5 render units of the horse has
                more than tR of its detections relabelled between the video-only and final labels, and the horse's
                read support is >= tP (``id_robust``; thresholds from one cross-fit, not yet confirmed on a fresh set)
-  sd_lat_m_horse, sd_lat_m_node, sd_lat_m_total   the lat_m map's own error, PROVISIONAL (``LAT_M_ERR``, Sha Tin bend
-               and home straight only, NaN elsewhere): a per-horse persistent part, a per-node remainder, and the total
-               with sd_lat_m
+  sd_lat_m_horse, sd_lat_m_node, sd_lat_m_scale, sd_lat_m_total   the lat_m map's own error, PROVISIONAL
+               (``LAT_M_ERR``, Sha Tin bend and home straight only, NaN elsewhere): a per-horse persistent part, a
+               per-node remainder, the race-level scale (shared per race and segment; defined wherever lat_m is) and
+               the total with sd_lat_m
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
@@ -503,17 +504,41 @@ def uncertainty_columns(s, t, sd_s, anchors, style, label_t, ident=0.0) -> dict:
 # Every other segment and every Happy Valley segment has no value, so the three columns are NaN there while lat_m may be
 # defined.
 LAT_M_ERR = {("ST", "bend"): (0.98 / 1.645, 0.25), ("ST", "home"): (0.95 / 1.645, 0.0)}
+# Race-level lateral scale: the render's per-race scale error, which no tested observable predicts (field size, the
+# abreast-gap ruler, the drawn width, the drone box ruler). Error = z x sigma x (lat_m - a), z ~ N(0, 1) ONE per race and
+# segment (lat_m_segment), shared by every horse and node of that race and segment; a = the map intercept. sigma (log-scale
+# sd) is the noise-free race-to-race sd of the render/drone lateral ratio within venue x render style: start and straight
+# LAT_M_SCALE_STRAIGHT; bend and home a ramp in x = d - home straight length, LAT_M_SCALE_RAMP (x, sigma) at both ends,
+# linear between (the lat_m map's ramp).
+LAT_M_SCALE_STRAIGHT = 0.15
+LAT_M_SCALE_RAMP = ((0.0, 0.11), (400.0, 0.26))
 
 
-def lat_m_err(venue, seg, sd_lat_m) -> dict:
-    """sd_lat_m_horse, sd_lat_m_node and sd_lat_m_total = sqrt(sd_lat_m^2 + horse^2 + node^2) per node from its segment
-    ``seg`` (``RaceRun.lat_m_segment``); NaN where lat_m is undefined (``sd_lat_m`` NaN) or the segment has no value."""
+def lat_m_scale_sd(seg, x) -> np.ndarray:
+    """sigma of the race-level scale per node: segment ``seg`` and x = d - home straight length (m)."""
+    seg = np.asarray(seg).astype(str)
+    (x0, s0), (x1, s1) = LAT_M_SCALE_RAMP
+    w = np.clip((np.asarray(x, float) - x0) / (x1 - x0), 0.0, 1.0)
+    ramp = np.where(w <= 0.0, s0, np.where(w >= 1.0, s1, s0 + (s1 - s0) * w))
+    return np.where(np.isin(seg, ["start", "straight"]), LAT_M_SCALE_STRAIGHT,
+                    np.where(np.isin(seg, ["bend", "home"]), ramp, np.nan))
+
+
+def lat_m_err(venue, seg, sd_lat_m, dev, x) -> dict:
+    """sd_lat_m_horse, sd_lat_m_node, sd_lat_m_scale and sd_lat_m_total = sqrt(sd_lat_m^2 + horse^2 + node^2 + scale^2)
+    per node from its segment ``seg`` (``RaceRun.lat_m_segment``), ``dev`` = lat_m - a (the map intercept) and x = d - home
+    straight length. sd_lat_m_scale = sigma x |dev| is the race-level scale term, shared by every horse and node of the
+    race and segment (not independent per node); it is defined wherever lat_m is. horse, node and the total are NaN where
+    lat_m is undefined (``sd_lat_m`` NaN) or the segment has no LAT_M_ERR value."""
     seg = np.asarray(seg)
     hn = np.array([LAT_M_ERR.get((venue, str(x)), (np.nan, np.nan)) for x in seg.ravel()], float).reshape(seg.shape + (2,))
     sd = np.asarray(sd_lat_m, float)
-    h = np.where(np.isfinite(sd), hn[..., 0], np.nan)
-    n = np.where(np.isfinite(sd), hn[..., 1], np.nan)
-    return {"sd_lat_m_horse": h, "sd_lat_m_node": n, "sd_lat_m_total": np.sqrt(sd ** 2 + h ** 2 + n ** 2)}
+    ok = np.isfinite(sd)
+    h = np.where(ok, hn[..., 0], np.nan)
+    n = np.where(ok, hn[..., 1], np.nan)
+    sc = np.where(ok, lat_m_scale_sd(seg, x) * np.abs(np.asarray(dev, float)), np.nan)
+    return {"sd_lat_m_horse": h, "sd_lat_m_node": n, "sd_lat_m_scale": sc,
+            "sd_lat_m_total": np.sqrt(sd ** 2 + h ** 2 + n ** 2 + sc ** 2)}
 
 
 # ------------------------------------------------------------------------------------------------------ noise table
@@ -576,10 +601,20 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None) -> dict
         },
         "lat_m_err": {
             "sd_m": {f"{v} {g}": {"horse": h, "node": n} for (v, g), (h, n) in LAT_M_ERR.items()},
-            "form": "the lat_m map's own error by (venue, segment): a per-horse part persistent along the segment and a "
-                    "per-node remainder; sd_lat_m_total = sqrt(sd_lat_m^2 + horse^2 + node^2); NaN in every other "
-                    "segment; the home straight is not split (node 0 = not split)",
+            "form": "the lat_m map's own error by (venue, segment): a per-horse part persistent along the segment, a "
+                    "per-node remainder and the race-level scale; sd_lat_m_total = sqrt(sd_lat_m^2 + horse^2 + node^2 + "
+                    "scale^2); NaN in every segment without a horse/node value; the home straight is not split (node 0 "
+                    "= not split)",
             "status": "provisional design values (Sha Tin only, 7-9-race drone comparison; narrow at the tail held out)",
+            "race_scale": {"sigma_start_straight": LAT_M_SCALE_STRAIGHT,
+                           "sigma_ramp_x_m": [list(v) for v in LAT_M_SCALE_RAMP],
+                           "form": "shared per race and segment: error = z x sigma x (lat_m - a), z ~ N(0, 1) one per "
+                                   "race x segment, common to every horse and node in it (do not treat as independent "
+                                   "per node: a race mean keeps all of it); sigma = start/straight value, or in bend "
+                                   "and home linear in x = d - home straight length between the ramp ends; "
+                                   "sd_lat_m_scale = sigma x |lat_m - a|, defined wherever lat_m is",
+                           "source": "noise-free race-to-race sd of log(render sd / drone sd) within venue x render "
+                                     "style, drone-era q3d frames (0304)"},
         },
         "flag": {"stretches": stretches, "rule": "E1 video == final label, E2 >= 1 s after the first render detection, E3 "
                  "before the line, E4 firm and no overlap on the final paths, E5 tracklet disc-read majority (circle); "

@@ -482,7 +482,8 @@ Both parquets carry `lat_m = a + b(d) × lat` and `sd_lat_m = b(d) × sd_lat` af
   home-straight map. The render spreads a compact field more than a fanned-out one; b follows the field's typical
   fan-out through the race, not the local spacing of abreast horses.
 - `sd_lat_m` is the mapped posterior sd only. The map's own error is in the contract columns `sd_lat_m_horse`,
-  `sd_lat_m_node` and `sd_lat_m_total` (provisional, Sha Tin only; Output contract below).
+  `sd_lat_m_node`, `sd_lat_m_scale` (race-level, shared per race and segment) and `sd_lat_m_total` (provisional;
+  Output contract below).
 - Defined only where the map passed its drone test (`RaceRun.lat_m_scope`), NaN elsewhere: turf oval races (not
   the 1000 m straight) with dates in `LAT_M_DATES` (2026-01-07, when drone feeds begin, to the end of the 2026/27
   season; the drone test covered races to 2026-11-23); from the first render frame to the post, in the segments of `LAT_M_SEGMENTS` for the venue
@@ -561,8 +562,8 @@ none of the additions is a stage output or cache key.
     per-horse bend signals and verdicts and its yield (units, nodes and bend horses robust).
 - Lateral-metre error (`contract.lat_m_err`, appended last; **provisional**): the `lat_m` map's own error, which
   `sd_lat_m` omits. By segment (`RaceRun.lat_m_segment`), `LAT_M_ERR` gives the sd of a per-horse part persistent
-  along the segment (`sd_lat_m_horse`) and of a per-node remainder about it (`sd_lat_m_node`); `sd_lat_m_total` =
-  √(sd_lat_m² + sd_lat_m_horse² + sd_lat_m_node²).
+  along the segment (`sd_lat_m_horse`) and of a per-node remainder about it (`sd_lat_m_node`). `sd_lat_m_scale` is the
+  race-level lateral scale; `sd_lat_m_total` = √(sd_lat_m² + sd_lat_m_horse² + sd_lat_m_node² + sd_lat_m_scale²).
   - Sha Tin bend: persistent 0.60 m (the p90 of the per-horse bend-mean error against the drone / 1.645), per-node
     0.25 m.
   - Sha Tin home straight: one unsplit 0.58 m term (the map's leave-race-out residual p90 / 1.645), carried as the
@@ -572,6 +573,20 @@ none of the additions is a stage output or cache key.
     `sd_lat_m` alone is badly overconfident and `sd_lat_m_total` is close to calibrated (refit leaving each race out:
     z RMS 15.1 → 1.4, 90 % coverage 0.18 → 0.86), but still narrow at the tail out of sample. The home-straight term
     has not been scored.
+  - Race-level scale (`LAT_M_SCALE_*`, `contract.lat_m_scale_sd`): the render's per-race lateral scale varies race
+    to race, and no tested observable predicts it (field size, the abreast-gap ruler, the drawn width, the drone box
+    ruler). It is carried as variance: error = z × σ × (lat_m − a), with z ~ N(0, 1) ONE per race and segment, shared
+    by every horse and node of that race and segment. Consumers must treat it as one shared error per race and phase,
+    not as independent per node: a race or field mean keeps all of it. `sd_lat_m_scale` = σ × |lat_m − a|, defined
+    wherever `lat_m` is (Happy Valley included); the total stays NaN where the horse/node terms have no value.
+    - σ (log-scale sd): 0.15 in the start and straights; in bend and home a ramp in x = d − home straight length,
+      0.11 at x ≤ 0, 0.26 at x ≥ 400 m, linear between. These are the noise-free race-to-race sds of the render/drone
+      lateral ratio within venue × render style (drone-era q3d frames); contract.json `lat_m_err.race_scale`.
+    - Against the drone (Sha Tin, 42 races per segment, rank-paired kept frames), with the scale term vs without:
+      per race (mean error over the segment) z SD 4.8 → 1.4 on the bend and 3.8 → 1.1 on the home straight, 90 %
+      coverage 0.43 → 0.79 and 0.45 → 0.86; per node z SD 1.44 → 0.99 and 1.30 → 0.92, coverage 0.83 → 0.91 and 0.82
+      → 0.92. On the 7-race identity-linked bend means (whose horse term was set from those same rows) the total with
+      the scale term is too wide (z SD 0.51, coverage 1.00).
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
@@ -717,8 +732,8 @@ identical. Not bit-exact:
   home-straight scale holds to about ±7 % across course settings (Sha Tin A reads about +0.3 m wide); bend metres
   are calibrated against a linear rail-to-rail drone ruler, which does not model perspective or rail height on
   oblique bend views. The map's own error (`sd_lat_m_*`, §4) is provisional: design values for the Sha Tin bend
-  and home straight only, from a 7–9-race drone comparison, still narrow at the tail out of sample (the home straight
-  unscored); NaN at Happy Valley and in every other segment.
+  and home straight only, from a 7–9-race drone comparison; NaN at Happy Valley and in every other segment. Its
+  race-level scale term (`sd_lat_m_scale`) is shared per race and segment and defined wherever `lat_m` is.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the
