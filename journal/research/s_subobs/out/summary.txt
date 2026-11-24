@@ -1,0 +1,18 @@
+scorer check off_U: all-halves p90 frac 1.490 % (0285 1.18 %, tol 0.3 pp) n 1882; sub-split e_rel SD 2.54 m p90|e| 3.24 m (0285 SD 2.0-2.2) n 941
+P1 bracketing-halves p90 frac (off_U -> on_Sk), n 1882 rows, 40 races: 1.490 -> 1.480 %  delta -0.010 pp [-0.118, +0.056]  non-inferior (CI upper < +0.03 pp): False; strict (< 0): False
+P2 withheld-point p90 |e_rel| m, n 941: 3.238 -> 3.074  delta -0.165 [-0.268, +0.045]  non-inferior (< +0.05 m): True; strict: False
+   P2 median |e_rel|: 0.651 -> 0.646 delta -0.005 [-0.023, +0.006]
+   by withheld point / venue (information):
+   k=0 HV: P1 0.994 -> 0.978 % (n 452); P2 2.797 -> 2.651 m (n 226)
+   k=0 ST: P1 2.100 -> 2.048 % (n 490); P2 4.222 -> 4.091 m (n 245)
+   k=1 HV: P1 1.078 -> 1.076 % (n 452); P2 2.124 -> 2.152 m (n 226)
+   k=1 ST: P1 1.890 -> 1.822 % (n 488); P2 3.884 -> 3.737 m (n 244)
+G1 interior: n 471; median 0.1261 -> 0.1257 [-0.0027, +0.0000]; p90 0.2882 -> 0.2882 [-0.0000, +0.0000]  ok
+G1f finish: n 468; median 0.1551 -> 0.1528 [-0.0049, +0.0018]; p90 0.4412 -> 0.4381 [-0.0094, +0.0083]  ok
+G2 kinks at boundaries: median 0.0096 -> 0.0095, p95 0.0374 -> 0.0392 m/s (n 1180/1180)  ok (<= x1.05)
+G2 kinks at sub-split points: median 0.0040 -> 0.0128, p95 0.0203 -> 0.0488 m/s (n 941/941)  WORSE (<= x1.05)
+G3 visible interior |r| (s): median 0.0290 -> 0.0287 (-0.0003), p90 0.1048 -> 0.1038 (-0.0010); finish |t_c - t_off| > 0.02 s: 0 -> 0  ok
+G4 on_H == off_H where the 400 m boundary is withheld: 13/13; off_S0 == off_U (20230927_HV_8): True  ok
+info (circular, unmasked on_U vs off_U): all-halves p90 1.490 -> 0.889 % (n 1882); sub-split e_rel SD 2.54 -> 0.97 m, p90|e| 3.24 -> 1.54 m
+info det_labels_final changed (on_U vs off_U) in 31 races: 20230927_HV_8:51 20240501_HV_9:840 20241127_HV_5:88 20250528_HV_1:2 20260527_HV_9:290 20230910_ST_7:8 20240204_ST_3:18 20240602_ST_4:1002 20241109_ST_3:724 20250713_ST_8:473 20260201_ST_7:119 20260426_ST_1:546 20260524_ST_1:64 20260913_ST_4:154 20231129_HV_5:636 20240501_HV_8:23 20241113_HV_6:2 20250402_HV_7:436 20251126_HV_3:1583 20260211_HV_8:620 20260520_HV_4:19 20230917_ST_10:492 20231111_ST_2:262 20240121_ST_3:1408 20240511_ST_5:47 20240908_ST_9:231 20241222_ST_6:51 20250309_ST_2:991 20250921_ST_3:23 20260118_ST_5:257 20260406_ST_4:15
+guards {'G1 interior': np.True_, 'G1f finish': np.True_, 'G2': False, 'G3': np.True_, 'G4': True}; VERDICT FAIL

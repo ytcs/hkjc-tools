@@ -1,0 +1,167 @@
+diff --git a/src/hkjc/data/race.py b/src/hkjc/data/race.py
+index 9dd5e82..6940371 100644
+--- a/src/hkjc/data/race.py
++++ b/src/hkjc/data/race.py
+@@ -135,7 +135,8 @@ class Mask:
+ 
+     Official outcome. ``boundary=j``: the cumulative official time at sectional boundary j (0 = the first
+     section end; the last index is the finish, which also withholds the finish times and placings), and
+-    the 200 m sub-split points within 200 m of it.
++    the 200 m sub-split points within 200 m of it. ``subsplit=k``: the cumulative official time at sub-split point k
++    (an index into :func:`official_subsplits`' points, race order) for every runner.
+     ``outcome=True``: every official outcome record (results, finish times, placings, sectionals,
+     running positions); pre-race facts (distance, course, draw, runners, silks) stay visible.
+ 
+@@ -146,8 +147,8 @@ class Mask:
+     ``[kP, (k+1)P)`` with ``k % 2 == legend_phase`` count as unread, in the same way.
+ 
+     ``Mask()`` withholds nothing. Spec strings (``parse``, CLI ``--mask``, env ``HKJC_MASK``): ``none``,
+-    or ``;``-joined parts ``boundary=J`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``,
+-    ``legend=P`` | ``legend=P@PHASE``."""
++    or ``;``-joined parts ``boundary=J`` | ``subsplit=K`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` |
++    ``discs=P@PHASE``, ``legend=P`` | ``legend=P@PHASE``."""
+ 
+     boundary: int | None = None
+     outcome: bool = False
+@@ -156,10 +157,15 @@ class Mask:
+     discs_phase: int = 1
+     legend: float | None = None
+     legend_phase: int = 1
++    subsplit: int | None = None
+ 
+     def __post_init__(self):
+         if self.boundary is not None and (self.outcome or not isinstance(self.boundary, int) or self.boundary < 0):
+             raise ValueError(f"invalid mask {self!r}: boundary is a non-negative index, exclusive of outcome")
++        if self.subsplit is not None and (
++            self.outcome or self.boundary is not None or not isinstance(self.subsplit, int) or self.subsplit < 0
++        ):
++            raise ValueError(f"invalid mask {self!r}: subsplit is a non-negative index, exclusive of outcome and boundary")
+         object.__setattr__(self, "dets", frozenset(int(i) for i in self.dets))
+         if any(i < 0 for i in self.dets):
+             raise ValueError(f"invalid mask {self!r}: dets are dets.npz row indices")
+@@ -173,6 +179,8 @@ class Mask:
+ 
+     def outcome_part(self) -> str:
+         """The official-outcome component of the spec ('' when nothing is withheld)."""
++        if self.subsplit is not None:
++            return f"subsplit={self.subsplit}"
+         return "outcome" if self.outcome else "" if self.boundary is None else f"boundary={self.boundary}"
+ 
+     def evidence_part(self) -> str:
+@@ -212,12 +220,13 @@ class Mask:
+         kw = {}
+         for part in (p.strip() for p in s.split(";")):
+             key, _eq, val = part.partition("=")
+-            if key in kw or (key in ("outcome", "boundary") and ({"outcome", "boundary"} & kw.keys())):
++            excl = {"outcome", "boundary", "subsplit"}
++            if key in kw or (key in excl and (excl & kw.keys())):
+                 raise ValueError(f"mask spec {spec!r}: {key} given twice")
+             if part == "outcome":
+                 kw["outcome"] = True
+-            elif key == "boundary" and val:
+-                kw["boundary"] = int(val)
++            elif key in ("boundary", "subsplit") and val:
++                kw[key] = int(val)
+             elif key == "dets" and val:
+                 kw["dets"] = frozenset(int(i) for i in val.split(","))
+             elif key in ("discs", "legend") and val:
+@@ -227,7 +236,8 @@ class Mask:
+                     kw[f"{key}_phase"] = int(ph)
+             else:
+                 raise ValueError(
+-                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J | outcome, dets=I,J,..., discs=P[@PHASE],"
++                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J | subsplit=K | outcome, dets=I,J,...,"
++                    " discs=P[@PHASE],"
+                     " legend=P[@PHASE]"
+                 )
+         return cls(**kw)
+@@ -285,11 +295,14 @@ class MaskedRace:
+     def official_subsplits(self) -> tuple[list, dict]:
+         """(distance-to-go at each 200 m sub-split point, {runner: cumulative official times}); a point
+         within 200 m of a withheld boundary is NaN for every runner (its time is the previous boundary's
+-        time plus a 200 m split, so the points on either side of a boundary give it away); ([], {}) when
+-        the outcome is withheld."""
++        time plus a 200 m split, so the points on either side of a boundary give it away), and so is a
++        withheld point (``Mask(subsplit=k)``); ([], {}) when the outcome is withheld."""
+         if self.mask.outcome:
+             return [], {}
+         pts, cum = official_subsplits(self._info)
++        k = self.mask.subsplit
++        if k is not None and k < len(pts):
++            cum = {h: np.where(np.arange(len(pts)) == k, np.nan, c) for h, c in cum.items()}
+         j = self.mask.boundary
+         bnd = official_boundaries(self._info)[0] if j is not None and pts else []
+         if j is not None and j < len(bnd):
+diff --git a/src/hkjc/recon/pipeline.py b/src/hkjc/recon/pipeline.py
+index 22bd28b..b33d28b 100644
+--- a/src/hkjc/recon/pipeline.py
++++ b/src/hkjc/recon/pipeline.py
+@@ -127,6 +127,12 @@ def lat_metres_on() -> bool:
+     return os.environ.get("HKJC_LAT_METRES", "0") == "1"
+ 
+ 
++def subsplit_obs_on() -> bool:
++    """``HKJC_SUBSPLIT_OBS=1`` (opt-in): fuse_final also takes the visible official 200 m sub-split times, as soft
++    crossings (``RaceRun.SUBSPLIT_SD``) and metric-bias anchors. Off: as before (no stage reads them)."""
++    return os.environ.get("HKJC_SUBSPLIT_OBS", "0") == "1"
++
++
+ def upstream(stage: str) -> set:
+     """Every stage ``stage`` depends on, transitively."""
+     out, todo = set(), list(DEPS[stage])
+@@ -1459,7 +1465,8 @@ class RaceRun:
+         """FINAL-product observations (official outcome data): the gate draw fixes every runner's
+         lateral at t=0 (standing start, s=0); the official finish time is a near-hard crossing at d = 0
+         (OFFICIAL_SD) and the official interior sectional times are measured crossings at d = 400 k
+-        (OFFICIAL_INTERIOR_SD); what the mask withholds is absent."""
++        (OFFICIAL_INTERIOR_SD); with ``HKJC_SUBSPLIT_OBS=1`` the official 200 m sub-split times are measured
++        crossings at their points (SUBSPLIT_SD); what the mask withholds is absent."""
+         D = self.info.distance
+         out = []
+         for r in self.info.runners:
+@@ -1487,6 +1494,14 @@ class RaceRun:
+                 ok = part & np.isfinite(c)
+                 if ok.any():
+                     out.append(fusion.Obs(c[ok], D - b[ok], None, sd, 1.0, "official", horse=int(h), tid=tid + int(h)))
++        if subsplit_obs_on():
++            pts, sub = self.info.official_subsplits()
++            for h, c in sub.items():
++                c, b = np.asarray(c, float), np.asarray(pts, float)
++                ok = np.isfinite(c)
++                if ok.any():
++                    out.append(fusion.Obs(c[ok], D - b[ok], None, self.SUBSPLIT_SD, 1.0, "official", horse=int(h),
++                                          tid=35_000 + int(h)))
+         return out
+ 
+     ANCHOR_CHECK = True
+@@ -1497,6 +1512,10 @@ class RaceRun:
+     # their horse-specific error has a robust sd of 0.58-0.59 m (disc and legend-confirmed silk races) once a per
+     # race-boundary field-spread term is removed (raw, disc races: ~0.93 m); that term is not modelled
+     OFFICIAL_INTERIOR_SD = 0.6
++    # official 200 m sub-split times are also the leader's time plus a 0.04 s-quantised margin; priced, not fitted, at
++    # the bound on the independent part of the official point noise (product/bridge covariance at the sub-split points,
++    # pooled; quantisation alone is 0.19 m). Used only with HKJC_SUBSPLIT_OBS=1
++    SUBSPLIT_SD = 0.44
+ 
+     def _fuse(self, obs, horses, prior, t_end=None):
+         """Render-fused posterior, then + finish camera. ``t_end``: the grid runs at least to this
+@@ -1969,13 +1988,17 @@ class RaceRun:
+ 
+     def _metric_bias(self, paths):
+         """(s at the official boundaries, shared render metric bias b there, m) or None; a boundary the
+-        mask withholds sets no bias."""
++        mask withholds sets no bias. With ``HKJC_SUBSPLIT_OBS=1`` the visible sub-split points are anchors too."""
+         from .validate import crossing
+ 
+         bnd, cum = self.info.official_boundaries()
++        pts = [(j, bd, cum) for j, bd in enumerate(bnd)]
++        if subsplit_obs_on():
++            sp, sub = self.info.official_subsplits()
++            pts += [(j, bd, sub) for j, bd in enumerate(sp)]
+         D = self.info.distance
+         bs = []
+-        for j, bd in enumerate(bnd):
++        for j, bd, cum in pts:
+             r = []
+             for h, c in cum.items():
+                 p = paths.get(h)

@@ -1,0 +1,107 @@
+"""Official 200 m sub-splits in fuse_final (HKJC_SUBSPLIT_OBS=1, default off) and the one-point mask Mask(subsplit=k)."""
+
+import numpy as np
+import pytest
+
+from hkjc.data import Mask, MaskedRace
+from hkjc.data.race import official_boundaries, official_finish, official_subsplits
+from hkjc.data.sectional import parse_sectional_page
+from hkjc.recon.fusion import Path
+from hkjc.recon.pipeline import RaceRun
+
+from test_subsplits import D, _html, _info
+
+
+def _race():
+    return _info(parse_sectional_page(_html(), "03/06/2026", 8))
+
+
+def _bare(info, mask) -> RaceRun:
+    run = RaceRun.__new__(RaceRun)
+    run.truth, run.mask, run.info, run.log = info, mask, MaskedRace(info, mask), (lambda *a: None)
+    return run
+
+
+def test_subsplit_mask_spec():
+    assert Mask.parse("subsplit=1") == Mask(subsplit=1) and str(Mask(subsplit=1)) == "subsplit=1"
+    assert Mask(subsplit=0).outcome_part() == "subsplit=0" and Mask(subsplit=0)
+    assert str(Mask.parse("subsplit=0;dets=5")) == "subsplit=0;dets=5"
+    # existing specs render as before
+    assert str(Mask(boundary=1, dets={5})) == "boundary=1;dets=5" and str(Mask(outcome=True)) == "outcome"
+    for bad in ("subsplit", "subsplit=x", "subsplit=0;boundary=1", "outcome;subsplit=1", "subsplit=0;subsplit=1"):
+        with pytest.raises(ValueError):
+            Mask.parse(bad)
+    for kw in (dict(subsplit=-1), dict(subsplit=0, boundary=1), dict(subsplit=0, outcome=True)):
+        with pytest.raises(ValueError):
+            Mask(**kw)
+
+
+@pytest.mark.parametrize("k", [0, 1])
+def test_withheld_subsplit_hides_that_point_only(k):
+    info = _race()
+    pts0, cum0 = official_subsplits(info)
+    m = MaskedRace(info, Mask(subsplit=k))
+    pts, cum = m.official_subsplits()
+    assert pts == pts0
+    for h in cum0:
+        assert np.isnan(cum[h][k]) and np.array_equal(cum[h][1 - k], cum0[h][1 - k], equal_nan=True)
+    bnd0, cb0 = official_boundaries(info)
+    bnd, cb = m.official_boundaries()
+    assert bnd == bnd0 and all(np.array_equal(cb[h], cb0[h], equal_nan=True) for h in cb0)
+    assert m.official_finish() == official_finish(info)
+
+
+def _sub_points(obs):
+    return {(o.horse, float(d), float(t)) for o in obs if o.tid >= 35_000 and o.tid < 40_000 for d, t in zip(D - o.s, o.t)}
+
+
+def test_subsplit_obs_off_by_default(monkeypatch):
+    monkeypatch.delenv("HKJC_SUBSPLIT_OBS", raising=False)
+    info = _race()
+    off = _bare(info, Mask()).official_observations()
+    assert not _sub_points(off)
+    monkeypatch.setenv("HKJC_SUBSPLIT_OBS", "1")
+    on = _bare(info, Mask()).official_observations()
+    assert len(on) > len(off)
+    for a, b in zip(off, on):  # the switch only appends
+        assert a.tid == b.tid and np.array_equal(a.t, b.t) and np.array_equal(a.s, b.s) and a.sd_s == b.sd_s
+
+
+def test_subsplit_obs_are_soft_and_follow_the_mask(monkeypatch):
+    monkeypatch.setenv("HKJC_SUBSPLIT_OBS", "1")
+    info = _race()
+    pts, cum = official_subsplits(info)
+    obs = _bare(info, Mask()).official_observations()
+    sub = [o for o in obs if 35_000 <= o.tid < 40_000]
+    assert all(o.feed == "official" and o.sd_s == RaceRun.SUBSPLIT_SD and o.lat is None for o in sub)
+    assert RaceRun.OFFICIAL_SD < RaceRun.SUBSPLIT_SD < RaceRun.OFFICIAL_INTERIOR_SD
+    want = {(h, p, float(c[i])) for h, c in cum.items() for i, p in enumerate(pts) if np.isfinite(c[i])}
+    assert _sub_points(obs) == want and (3, 200.0) not in {(h, d) for h, d, _t in want}  # NaN: no obs
+    assert {d for _h, d, _t in _sub_points(_bare(info, Mask(subsplit=0)).official_observations())} == {200.0}
+    assert {d for _h, d, _t in _sub_points(_bare(info, Mask(boundary=2)).official_observations())} == {600.0}
+    assert not _sub_points(_bare(info, Mask(boundary=1)).official_observations())
+    assert not _sub_points(_bare(info, Mask(outcome=True)).official_observations())
+
+
+def _paths():
+    t = np.linspace(0, 80, 1601)
+    return {
+        h: Path(h, t, v * t, np.full_like(t, 3.0), np.full_like(t, 0.2), np.full_like(t, 0.3), np.ones_like(t))
+        for h, v in ((1, 17.0), (2, 17.1), (3, 16.9))
+    }
+
+
+def test_metric_bias_anchors_at_visible_subsplits_only(monkeypatch):
+    info, p = _race(), _paths()
+    monkeypatch.delenv("HKJC_SUBSPLIT_OBS", raising=False)
+    sb0, b0 = _bare(info, Mask())._metric_bias(p)
+    monkeypatch.setenv("HKJC_SUBSPLIT_OBS", "1")
+    sb1, b1 = _bare(info, Mask())._metric_bias(p)
+    assert set(sb1) == set(sb0) | {D - 600.0}  # 200 m: two horses with a time (< 3), no anchor
+    assert np.allclose(b1[np.isin(sb1, sb0)], b0)
+    for mask in (Mask(subsplit=0), Mask(boundary=0)):  # a withheld point sets no bias: the off arm's anchors
+        mon = _bare(info, mask)._metric_bias(p)
+        monkeypatch.delenv("HKJC_SUBSPLIT_OBS")
+        moff = _bare(info, mask)._metric_bias(p)
+        monkeypatch.setenv("HKJC_SUBSPLIT_OBS", "1")
+        assert np.array_equal(mon[0], moff[0]) and np.array_equal(mon[1], moff[1])

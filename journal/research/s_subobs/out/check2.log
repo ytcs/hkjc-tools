@@ -1,0 +1,3 @@
+(a) 0272 rows, these races: p90 1.490 % n 1882 races 40
+(b) stored products: p90 1.490 % n 1882; by set [('gate', 1.602), ('dev', 1.402)]
+(c) off_U replay: p90 1.490 % n 1882; by set [('dev', 1.402), ('gate', 1.602)]
