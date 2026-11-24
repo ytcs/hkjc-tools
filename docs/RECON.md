@@ -587,12 +587,25 @@ none of the additions is a stage output or cache key.
       coverage 0.43 → 0.79 and 0.45 → 0.86; per node z SD 1.44 → 0.99 and 1.30 → 0.92, coverage 0.83 → 0.91 and 0.82
       → 0.92. On the 7-race identity-linked bend means (whose horse term was set from those same rows) the total with
       the scale term is too wide (z SD 0.51, coverage 1.00).
+- Lane (`contract.lane_columns`, appended after the lateral-metre error): `lane_units` counts lateral in the race's own
+  abreast pitch from its rail runner, and `lane` is its category: 1 rail (< 1.5), 2 two-wide (< 2.5), 3 three-plus.
+  The count is scale-free, so it needs no metres and is defined in every season and render style.
+  - Per race and segment class (`RaceRun.lat_m_segment`'s bend, home straight and other straight; start nodes use the
+    straight class), on firm nodes (sd_lat < 1.5) at whole multiples of 0.5 s:
+    - pitch: the median nearest-abreast lateral gap, to another firm node at the same time within 1 m along;
+    - fallback: with fewer than 20 gaps, the pitch is `LANE_PITCH_POOL`, the median race pitch for venue × period ×
+      class (`LANE_PERIODS`; none before 2023-09-01, so NaN there);
+    - origin: the median over time of the innermost firm node's `lat`.
+  - `lane_units` = 1 + (lat − origin) / pitch on firm in-race nodes. It is NaN where sd_lat ≥ 1.5 or outside the race
+    (before the first render frame, past the post), and `lane` is null there.
+  - contract.json `lane` holds the run's pitch, origin, gap count and pitch source per class, with the rule and the cuts.
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
 - `contract.json`: the definitions, the run's flagged stretches, its frozen-list windows, every visible crossing's
   position verdict (observed, firm, r_v, identity check, pass), the uncertainty constants with the run's axis anchors,
-  the provisional `LAT_M_ERR` values, and `NOISE_TABLE`, the per-detection noise of the
+  the provisional `LAT_M_ERR` values, the run's lane pitch and origin per segment class, and `NOISE_TABLE`, the
+  per-detection noise of the
   detection-only state-space model by feed and region (white sd and a frame-common AR(1) term); a row whose split
   between the two is not identified carries `split_identified` false.
 
@@ -734,6 +747,8 @@ identical. Not bit-exact:
   oblique bend views. The map's own error (`sd_lat_m_*`, §4) is provisional: design values for the Sha Tin bend
   and home straight only, from a 7–9-race drone comparison; NaN at Happy Valley and in every other segment. Its
   race-level scale term (`sd_lat_m_scale`) is shared per race and segment and defined wherever `lat_m` is.
+- **Lane category.** Against the official running comments' explicit lane statements, `lane` agrees about 0.83 of the
+  time (0.90 in 2026/27), and stated three-plus horses read low.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the

@@ -1614,9 +1614,14 @@ class RaceRun:
         err = ct.lat_m_err(self.info.venue, seg, P["sd_lat_m"].to_numpy(), P["lat_m"].to_numpy() - self.LAT_MAP[0],
                            d_ - self.info.geometry.home_straight(self.info.course))  # provisional (contract.LAT_M_ERR)
         P = P.with_columns(**{k: pl.Series(v) for k, v in err.items()})
+        lane, lane_used = ct.lane_columns(P["t"].to_numpy(), d_, P["lat"].to_numpy(), P["sd_lat"].to_numpy(), seg,
+                                          self.info.venue, self.info.date)
+        P = P.with_columns(lane_units=pl.Series(lane["lane_units"]),
+                           lane=pl.Series(lane["lane"]).fill_nan(None).cast(pl.Int8))
+        lane_desc = ct.describe_lane(lane_used, ct.lane_period(self.info.date))
         with self.out("contract.json") as fp:
-            fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors, idr_rest),
-                                     indent=1, default=float))
+            fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors, idr_rest,
+                                                 lane=lane_desc), indent=1, default=float))
         return P
 
     # Lateral in metres. The render spreads the field laterally (RECON 8), more in the compact field

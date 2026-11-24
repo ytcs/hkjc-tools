@@ -17,11 +17,13 @@ paths.parquet gains
                (``LAT_M_ERR``, Sha Tin bend and home straight only, NaN elsewhere): a per-horse persistent part, a
                per-node remainder, the race-level scale (shared per race and segment; defined wherever lat_m is) and
                the total with sd_lat_m
+  lane_units, lane   lateral in units of the race's own abreast pitch from its rail runner (scale-free, every season)
+               and its category 1 rail / 2 two-wide / 3 three-plus (``lane_columns``)
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
-               held in near-cloth order, the per-crossing position verdicts, the noise table and id_robust's
-               per-section and per-horse bend verdicts with the run's yield
+               held in near-cloth order, the per-crossing position verdicts, the noise table, id_robust's
+               per-section and per-horse bend verdicts with the run's yield, and the run's lane pitch and origin
 """
 
 from __future__ import annotations
@@ -541,6 +543,108 @@ def lat_m_err(venue, seg, sd_lat_m, dev, x) -> dict:
             "sd_lat_m_total": np.sqrt(sd ** 2 + h ** 2 + n ** 2 + sc ** 2)}
 
 
+# ------------------------------------------------------------------------------------------------------ lane category
+# lane_units: lateral counted in the race's own abreast pitch from its rail runner, so the render's drawing scale cancels
+# and no metres are needed (every season). Per race and segment class (lat_m_segment's bend / home / straight; start nodes
+# use the straight class), on firm nodes (sd_lat < LANE_FIRM) at whole multiples of LANE_GRID s:
+#   pitch  = median over nodes of the nearest-abreast lateral gap (another firm node at the same time within LANE_ABREAST
+#            m along); with < LANE_MIN_GAPS gaps, the pooled median LANE_PITCH_POOL for venue x period x class;
+#   origin = median over time steps of the innermost firm node's lat.
+# lane_units = 1 + (lat - origin) / pitch on firm in-race nodes (NaN elsewhere); lane = 1 rail (< 1.5), 2 two-wide
+# (< 2.5), 3 three-plus. Scored against the official running comments' explicit lane statements (window means of
+# lane_units, 459 races, 2023-09 to 2026-11): agreement 0.83, 0.90 in 2026/27; stated three-plus horses read low (about
+# 2.6 mid-race).
+LANE_GRID, LANE_FIRM, LANE_ABREAST, LANE_MIN_GAPS = 0.5, 1.5, 1.0, 20
+LANE_CUTS = (1.5, 2.5)
+# period start dates (render eras); a race before the first has no pooled pitch
+LANE_PERIODS = (("20230901", "2023/24"), ("20240901", "2024/25"), ("20250901", "2025/26 pre-drone"),
+                ("20260107", "2026 silk"), ("20260901", "2026/27 disc"))
+# median of the race pitches (>= LANE_MIN_GAPS gaps) per venue x period x class over the 459 scored races (render units)
+LANE_PITCH_POOL = {
+    ("ST", "2023/24"): {"bend": 1.4782105789052054, "home": 2.22870791167592, "straight": 1.848585200313603},
+    ("ST", "2024/25"): {"bend": 1.7024693291082102, "home": 2.3872162687991367, "straight": 1.9687545485925788},
+    ("ST", "2025/26 pre-drone"): {"bend": 1.8955454317250395, "home": 2.3992178787966676, "straight": 2.1057563102337387},
+    ("ST", "2026 silk"): {"bend": 2.190847062604993, "home": 2.6282802457775274, "straight": 2.448576447690632},
+    ("ST", "2026/27 disc"): {"bend": 2.125265605877618, "home": 2.847586753518297, "straight": 2.34348215450569},
+    ("HV", "2023/24"): {"bend": 1.5387919617741668, "home": 2.323477400927679, "straight": 1.7300944698216623},
+    ("HV", "2024/25"): {"bend": 1.7988209095119068, "home": 2.5029744606568176, "straight": 1.8277507889349727},
+    ("HV", "2025/26 pre-drone"): {"bend": 2.065614824943134, "home": 2.5146546558742564, "straight": 1.9876326717133765},
+    ("HV", "2026 silk"): {"bend": 2.1081422779068983, "home": 2.6788714958951045, "straight": 2.2166205541601136},
+    ("HV", "2026/27 disc"): {"bend": 2.2787977140836935, "home": 3.2011608211831355, "straight": 2.2264745890481237},
+}
+
+
+def lane_period(date) -> str | None:
+    """The LANE_PERIODS label of a race date (YYYYMMDD), None before the first."""
+    out = None
+    for d0, lab in LANE_PERIODS:
+        if str(date) >= d0:
+            out = lab
+    return out
+
+
+def lane_columns(t, d, lat, sd_lat, seg, venue, date):
+    """({"lane_units", "lane"}, per-class pitch and origin) per node; ``seg`` from ``RaceRun.lat_m_segment`` ("" outside
+    the race), ``date`` YYYYMMDD. lane is 1 / 2 / 3 as float, NaN where lane_units is NaN."""
+    t, d, lat, sd_lat = (np.asarray(x, float) for x in (t, d, lat, sd_lat))
+    seg = np.asarray(seg).astype(str)
+    firm = sd_lat < LANE_FIRM
+    tk = np.round(t / LANE_GRID).astype(np.int64)
+    grid = np.abs(t / LANE_GRID - tk) < 1e-6
+    gap = np.full(len(t), np.nan)
+    gi = np.flatnonzero(grid)
+    order = gi[np.argsort(tk[gi], kind="stable")]
+    for idx in np.split(order, np.flatnonzero(np.diff(tk[order])) + 1):
+        if len(idx) < 2:
+            continue
+        ab = (np.abs(d[idx][:, None] - d[idx][None, :]) < LANE_ABREAST) & ~np.eye(len(idx), dtype=bool)
+        ab &= firm[idx][:, None] & firm[idx][None, :]
+        g = np.where(ab, np.abs(lat[idx][:, None] - lat[idx][None, :]), np.inf).min(1)
+        gap[idx] = np.where(np.isfinite(g), g, np.nan)
+    cls = {}
+    for c in ("bend", "home", "straight"):
+        sel = grid & firm & (seg == c)
+        if not sel.any():
+            continue
+        g = gap[sel & np.isfinite(gap)]
+        k, lo = tk[sel], lat[sel]
+        o = np.argsort(k, kind="stable")
+        cut = np.flatnonzero(np.diff(k[o])) + 1
+        inner = np.array([v.min() for v in np.split(lo[o], cut)])
+        cls[c] = {"pitch": float(np.median(g)) if len(g) else None, "n_gaps": int(len(g)), "origin": float(np.median(inner))}
+    pool = LANE_PITCH_POOL.get((venue, lane_period(date)), {})
+    used = {}
+    for c in ("bend", "home", "straight"):
+        v = cls.get(c)
+        if v and v["n_gaps"] >= LANE_MIN_GAPS:
+            used[c] = {"pitch": v["pitch"], "origin": v["origin"], "pitch_source": "race", "n_gaps": v["n_gaps"]}
+        else:
+            o = v["origin"] if v else (cls.get("straight") or cls.get("bend") or {}).get("origin", np.nan)
+            used[c] = {"pitch": pool.get(c, np.nan), "origin": o, "pitch_source": "pooled", "n_gaps": v["n_gaps"] if v else 0}
+    units = np.full(len(t), np.nan)
+    for c in ("start", "bend", "home", "straight"):
+        u = used["straight" if c == "start" else c]
+        sel = firm & (seg == c)
+        units[sel] = 1.0 + (lat[sel] - u["origin"]) / u["pitch"]
+    lane = np.where(np.isfinite(units), np.where(units < LANE_CUTS[0], 1.0, np.where(units < LANE_CUTS[1], 2.0, 3.0)),
+                    np.nan)
+    return {"lane_units": units, "lane": lane}, used
+
+
+def describe_lane(used, period=None) -> dict:
+    """contract.json's ``lane`` entry: the race's pitch and origin per segment class and the rule."""
+    return {"classes": used, "cuts": list(LANE_CUTS), "grid_s": LANE_GRID, "firm_sd_lat": LANE_FIRM,
+            "abreast_m": LANE_ABREAST, "min_gaps": LANE_MIN_GAPS, "period": period,
+            "rule": "per race and segment class (bend / home / straight; start nodes use straight), on firm nodes "
+                    "(sd_lat < firm_sd_lat) at multiples of grid_s: pitch = median nearest-abreast lateral gap (another "
+                    "firm node at the same time within abreast_m along), or the pooled venue x period x class median "
+                    "(pitch_source 'pooled') with < min_gaps gaps; origin = median over time of the innermost firm "
+                    "node's lat; lane_units = 1 + (lat - origin) / pitch on firm in-race nodes, NaN elsewhere; lane = 1 "
+                    "rail (< cuts[0]), 2 two-wide (< cuts[1]), 3 three-plus",
+            "status": "agreement with the official running comments' explicit lane statements (window means, 459 "
+                      "races 2023-09..2026-11) 0.83 overall, 0.90 in 2026/27; stated three-plus horses read low"}
+
+
 # ------------------------------------------------------------------------------------------------------ noise table
 # Per-detection observation noise of the detection-only state-space model, by feed
 # and region; raw render coordinates (along metres, lateral render units). Per row: independent white sd per detection,
@@ -579,10 +683,11 @@ def _finite(x):
     return x
 
 
-def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None) -> dict:
+def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=None) -> dict:
     """contract.json: the definitions behind the columns, the run's flagged stretches, the legend windows held in
     near-cloth order (``frozen``), the position flag's crossing verdicts, the uncertainty terms with the run's axis
-    ``anchors``, the noise table and ``idr``, id_robust's (sections, bends, yield) (``describe_id_robust``)."""
+    ``anchors``, the noise table, ``idr``, id_robust's (sections, bends, yield) (``describe_id_robust``), and ``lane``,
+    the run's lane pitch and origin (``describe_lane``)."""
     return {
         "uncertainty": {
             "anchors_s": list(anchors or []),
@@ -636,6 +741,7 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None) -> dict
         "margins": {"file": "det_margins_final.npz", "units": "-2 log-likelihood",
                     "meaning": "assignment margin, not a calibrated probability"},
         **({} if idr is None else {"id_robust": describe_id_robust(*idr)}),
+        **({} if lane is None else {"lane": _finite(lane)}),
     }
 
 

@@ -344,3 +344,57 @@ def test_lat_m_scale_sd_ramps_between_home_and_far_and_is_flat_on_straights():
     s = ct.lat_m_scale_sd(seg, x)
     assert np.allclose(s[:7], [0.11, 0.11, 0.11 + 0.15 * 0.25, 0.26, 0.26, 0.15, 0.15]) and np.isnan(s[7])
     assert s[3] == 0.26 and s[0] == 0.11  # the end values exactly
+
+
+def _lane_field(n_t=30, lats=(1.0, 3.0, 5.0, 9.0), dd=(0.0, 0.5, 0.2, 30.0)):
+    """Four horses on a 0.1 s grid, all in one segment class: three abreast 2 render units apart, one far ahead."""
+    t = np.round(np.arange(n_t) * 0.1, 1)
+    T, Dd, L = (np.concatenate(x) for x in zip(*[(t, 800.0 - 15 * t + o, np.full(n_t, la)) for la, o in zip(lats, dd)]))
+    return T, Dd, L
+
+
+def test_lane_units_count_the_race_abreast_pitch_from_the_rail_runner():
+    from hkjc.recon import contract as ct
+
+    t, d, lat = _lane_field(n_t=60)
+    sd = np.full(len(t), 0.3)
+    seg = np.full(len(t), "bend")
+    cols, used = ct.lane_columns(t, d, lat, sd, seg, "ST", "20261101")
+    # gaps 2, 2, 2 per 0.5 s step (the far horse has no abreast neighbour): pitch 2; origin = innermost lat 1.0
+    assert used["bend"]["pitch_source"] == "race" and used["bend"]["pitch"] == 2.0 and used["bend"]["origin"] == 1.0
+    assert used["bend"]["n_gaps"] == 3 * 12  # 12 grid steps (0.0 .. 5.5 s), three abreast horses
+    u = cols["lane_units"].reshape(4, -1)[:, 0]
+    assert np.allclose(u, [1.0, 2.0, 3.0, 5.0])
+    assert cols["lane"].reshape(4, -1)[:, 0].tolist() == [1.0, 2.0, 3.0, 3.0]  # cuts 1.5 / 2.5
+    # nodes not firm (sd_lat >= 1.5) or outside the race ("") get NaN
+    sd2, seg2 = sd.copy(), seg.copy()
+    sd2[0], seg2[1] = 1.5, ""
+    c2, _ = ct.lane_columns(t, d, lat, sd2, seg2, "ST", "20261101")
+    assert np.isnan(c2["lane_units"][:2]).all() and np.isnan(c2["lane"][:2]).all()
+
+
+def test_lane_pitch_falls_back_to_the_pooled_period_value_and_start_uses_straight():
+    from hkjc.recon import contract as ct
+
+    t, d, lat = _lane_field(n_t=30)  # 6 grid steps x 3 gaps = 18 < LANE_MIN_GAPS
+    sd = np.full(len(t), 0.3)
+    seg = np.where(t < 1.0, "start", "straight")
+    cols, used = ct.lane_columns(t, d, lat, sd, seg, "HV", "20240110")
+    assert ct.lane_period("20240110") == "2023/24" and ct.lane_period("20230831") is None
+    p = ct.LANE_PITCH_POOL[("HV", "2023/24")]["straight"]
+    assert used["straight"]["pitch_source"] == "pooled" and used["straight"]["pitch"] == p
+    assert used["straight"]["origin"] == 1.0
+    st = seg == "start"
+    assert np.allclose(cols["lane_units"][st], 1.0 + (lat[st] - 1.0) / p)
+    # no pooled value before the first period: NaN pitch, NaN units
+    c0, u0 = ct.lane_columns(t, d, lat, sd, seg, "HV", "20230101")
+    assert np.isnan(u0["straight"]["pitch"]) and np.isnan(c0["lane_units"]).all()
+
+
+def test_describe_carries_the_lane_rule_and_the_run_pitch():
+    from hkjc.recon import contract as ct
+
+    used = {"bend": {"pitch": 2.0, "origin": 1.0, "pitch_source": "race", "n_gaps": 40}}
+    d = ct.describe([], lane=ct.describe_lane(used, "2026/27 disc"))["lane"]
+    assert d["classes"]["bend"]["pitch"] == 2.0 and d["cuts"] == [1.5, 2.5] and d["period"] == "2026/27 disc"
+    assert "lane" not in ct.describe([])
