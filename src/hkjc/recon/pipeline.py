@@ -1828,7 +1828,8 @@ class RaceRun:
         t_vid = max((float(p.t[-1]) for p in pv.values()), default=None)
         ends = [x for x in (t_off, t_vid) if x is not None]
         t_end = max(ends) + 0.5 if ends else None
-        bias = self._shape_bias(self._metric_bias(pv))
+        raw_bias = self._metric_bias(pv)
+        bias = self._shape_bias(raw_bias)
         self._render_bias = bias
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
@@ -1859,7 +1860,7 @@ class RaceRun:
             big = {h: round(w, 2) for h, w in warp.items() if w > 0.05}
             self.log(f"   fuse_final: re-timed onto the official finish (max shift {max(warp.values()):.3f} s"
                      + (f"; > 0.05 s: {big}" if big else "") + ")")
-        ctr = {"anchors": [] if bias is None else [float(x) for x in bias[0]]}
+        ctr = {"anchors": [] if raw_bias is None else [float(x) for x in raw_bias[0]]}
         self._write_paths(pf, "paths.parquet", contract=ctr)
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
 
