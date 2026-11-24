@@ -191,3 +191,27 @@ def test_node_pos_ok_reads_the_node_and_the_bounding_boundaries():
     m2 = h == 2
     assert not pos[m2 & (t > 50.6) & (t < 59.4)].any() and pos[m2 & (t > 20) & (t < 49)].all()
 
+
+
+def test_axis_core_var_is_pinned_at_anchors_and_grows_away_from_them():
+    from hkjc.recon import contract as ct
+
+    a = [400.0, 800.0, 1200.0]
+    v = ct.axis_core_var([400.0, 500.0, 600.0, 1300.0, 1600.0], a)
+    assert abs(v[0]) < 1e-9 and 0 < v[1] < v[2] and 0 < v[3] < v[4] < ct.AXIS_S2
+    assert np.isnan(ct.axis_core_var([500.0], [])).all()
+    mix = 1 - ct.AXIS_PI + ct.AXIS_PI * ct.AXIS_K ** 2
+    assert np.allclose(ct.axis_var([600.0], a), ct.axis_core_var([600.0], a) * mix)
+
+
+def test_uncertainty_columns_add_in_quadrature_and_the_gap_grows_with_time_since_the_last_label():
+    from hkjc.recon import contract as ct
+
+    t = np.array([10.0, 11.0, 14.0, 20.0])
+    s = 15.0 * t
+    out = ct.uncertainty_columns(s, t, np.full(4, 0.2), [150.0, 300.0], "silk", np.array([10.0, 11.0]))
+    assert np.allclose(ct.gap_dt(t, [10.0, 11.0]), [0.0, 0.0, 3.0, 9.0])
+    assert np.allclose(out["sd_s_gap"] ** 2, ct.GAP_SA ** 2 * np.array([0.0, 0.0, 27.0, 729.0]) / 3)
+    assert np.allclose(out["sd_s_rel"] ** 2, 0.04 + ct.HORSE_VAR["silk"] + out["sd_s_gap"] ** 2)
+    assert np.allclose(out["sd_s_total"] ** 2, out["sd_s_rel"] ** 2 + out["sd_s_axis"] ** 2)
+    assert np.isnan(ct.uncertainty_columns(s, t, np.full(4, 0.2), [150.0], "circle", np.zeros(0))["sd_s_total"]).all()

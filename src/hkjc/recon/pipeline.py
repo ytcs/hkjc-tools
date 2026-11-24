@@ -1517,9 +1517,9 @@ class RaceRun:
             self.log(f"   fuse: anchor check demoted {st['demoted']} render tracklets")
         return paths, assign
 
-    def _write_paths(self, paths, name, contract=False):
-        """``contract`` (HKJC_CONTRACT=1, fuse_final only): the contract columns are appended after every existing
-        column, and contract.json is written."""
+    def _write_paths(self, paths, name, contract=None):
+        """``contract`` (HKJC_CONTRACT=1, fuse_final only): {"anchors": s of the visible boundaries the metric bias was set
+        at}; the contract columns are appended after every existing column, and contract.json is written."""
         import polars as pl
 
         metres = lat_metres_on()
@@ -1541,12 +1541,12 @@ class RaceRun:
             for h, p in paths.items()
         ]
         P = pl.concat(recs)
-        if contract:
-            P = self._contract_columns(P, paths)
+        if contract is not None:
+            P = self._contract_columns(P, paths, contract["anchors"])
         with self.out(name) as fp:
             P.write_parquet(fp)
 
-    def _contract_columns(self, P, paths):
+    def _contract_columns(self, P, paths, anchors):
         """The contract columns (``contract``) appended to the final paths ``P``; writes contract.json."""
         import polars as pl
 
@@ -1562,8 +1562,18 @@ class RaceRun:
         P = P.with_columns(**{k: pl.Series(np.concatenate(v)) for k, v in cols.items()})
         crossings, pos = ct.position_flag(self, P)
         P = P.with_columns(pos_ok=pl.Series(pos))
+        T = np.load(self.p("tracks.npz"), allow_pickle=True)
+        Lf = np.load(self.p("det_labels_final.npz"))["labels"]
+        style = self.render_style()
+        unc = {k: [] for k in ("sd_s_axis", "sd_s_horse", "sd_s_gap", "sd_s_rel", "sd_s_total")}
+        for h, p in paths.items():
+            v = ct.uncertainty_columns(p.s, p.t, p.sd_s, anchors, style, np.sort(T["t"][Lf == h].astype(float)))
+            for k in unc:
+                unc[k].append(v[k])
+        P = P.with_columns(**{k: pl.Series(np.concatenate(v)) for k, v in unc.items()})
         with self.out("contract.json") as fp:
-            fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings), indent=1, default=float))
+            fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors), indent=1,
+                                     default=float))
         return P
 
     # Lateral in metres (HKJC_LAT_METRES=1). The render spreads the field laterally (RECON 8), more in the compact field
@@ -1813,7 +1823,8 @@ class RaceRun:
                      + (f"; > 0.05 s: {big}" if big else "") + ")")
         from .contract import contract_on
 
-        self._write_paths(pf, "paths.parquet", contract=contract_on())
+        ctr = {"anchors": [] if bias is None else [float(x) for x in bias[0]]} if contract_on() else None
+        self._write_paths(pf, "paths.parquet", contract=ctr)
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
 
     TIE_STEP = 0.002  # s between horses sharing an official finish time, in placing order (dead heats: none)

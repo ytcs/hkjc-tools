@@ -492,11 +492,23 @@ additions is a stage output or cache key.
   bounding boundary, so masked runs read the next visible ones.
 - `free`: no other horse's path node at the same t within one length along (2.4 m) and one render abreast spacing
   across (2.6 render units).
+- Along-track uncertainty (`contract.uncertainty_columns`; terms the posterior `sd_s` omits, added at write time, the
+  paths unchanged):
+  - `sd_s_axis`: sd of the shared distance-axis error, a race-level latent b(s) common to every horse at the same s.
+    Its core is a stationary OU process along s (`AXIS_S2`, correlation length `AXIS_ELL`) conditioned on its values
+    at the visible anchors (the boundaries `_metric_bias` set a bias at); a scale mixture (weight `AXIS_PI` at `AXIS_K`
+    × the core sd) gives it a heavy tail, and the column is the mixture sd. NaN without an anchor.
+  - `sd_s_horse`: a per-horse persistent term (`HORSE_VAR` by render style; correlation 1 along the path, independent
+    across horses).
+  - `sd_s_gap`: a long-gap term, var = `GAP_SA`² Δt³ / 3, with Δt the time since the horse's last labelled detection
+    (before its first, the time to it); NaN for a horse never labelled.
+  - `sd_s_rel` = √(sd_s² + sd_s_horse² + sd_s_gap²), the field-relative sd; `sd_s_total` = √(sd_s_rel² + sd_s_axis²).
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
 - `contract.json`: the definitions, the run's flagged stretches, its frozen-list windows, every visible crossing's
-  position verdict (observed, firm, r_v, identity check, pass), and `NOISE_TABLE`, the per-detection noise of the
+  position verdict (observed, firm, r_v, identity check, pass), the uncertainty constants with the run's axis anchors,
+  and `NOISE_TABLE`, the per-detection noise of the
   detection-only state-space model by feed and region (white sd and a frame-common AR(1) term); a row whose split
   between the two is not identified carries `split_identified` false.
 
@@ -649,6 +661,8 @@ identical. Not bit-exact:
   render, by a factor that varies by race-boundary and season; it is not modelled.
 - **Posterior calibration.** The stated sd is overconfident at intermediate boundaries but not at the finish; a
   systematic error term is missing.
+- **Uncertainty columns.** The opt-in uncertainty columns (§4) do not yet meet the calibration targets; the gap term is
+  too wide for gaps over about 5 s; Happy Valley 600 m carries a known distance bias.
 - **Render-vs-official conflicts.** A horse whose render path and official interior times disagree by more than a
   few metres keeps its render path; the video alone cannot say which side is wrong.
 - **Silk evidence.** Legend votes add per frame and silk once per tracklet (±3), so silk rarely overturns a legend

@@ -7,6 +7,8 @@ paths.parquet gains
   free         no other horse within one length along and one render abreast spacing across at the node
   pos_ok       position flag: the horse is observed and firm at the node, and its video-only path agrees with the
                official times at the bounding visible official boundaries (``position_crossings``, ``node_pos_ok``)
+  sd_s_axis, sd_s_horse, sd_s_gap, sd_s_rel, sd_s_total   along-track error terms sd_s omits (``uncertainty_columns``):
+               the shared axis, a per-horse persistent term and a long-gap term; field-relative and total sd
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
@@ -393,6 +395,65 @@ def flag_run(rd, key, mask=None, conflicts=False):
     return ST, DT, {}
 
 
+# ------------------------------------------------------------------------------------------------------ uncertainty
+# Along-track error terms the posterior sd_s omits, added at write time (the paths are unchanged). They do not meet the
+# calibration targets yet (RECON 8).
+# Shared axis: a race-level latent b(s) common to every horse at the same s. Its core is a stationary OU process along s
+# (variance AXIS_S2 m^2, correlation length AXIS_ELL m) conditioned on its values at the visible anchors (the official
+# boundaries the metric bias is set at); a scale mixture gives it a heavy tail (weight AXIS_PI at AXIS_K x the core sd).
+# sd_s_axis is the mixture sd; NaN without an anchor.
+AXIS_S2, AXIS_ELL = 7.092734000380029, 799.9999999998456
+AXIS_PI, AXIS_K = 0.10216067886921987, 4.057275999777488
+# Per-horse persistent term by render style (correlation 1 along the path, independent across horses).
+HORSE_VAR = {"circle": 0.8768334661112646, "silk": 0.4673140522042648}  # m^2
+# Long-gap term: an integrated random walk from the horse's last labelled detection, var = GAP_SA^2 dt^3 / 3 (dt the time
+# since that detection; the time to its first one before it). Too wide for gaps over about 5 s (RECON 8).
+GAP_SA = 4.102187414573527  # m/s^2/sqrt(s)
+
+
+def axis_core_var(s, anchors) -> np.ndarray:
+    """Core (OU) variance of the shared axis at s (metres run), conditioned on the anchors; NaN without anchors."""
+    s = np.asarray(s, float)
+    a = np.sort(np.asarray(anchors, float))
+    if not len(a):
+        return np.full(s.shape, np.nan)
+    k = np.searchsorted(a, s)
+    lo = np.where(k > 0, s - a[np.maximum(k - 1, 0)], np.inf)
+    hi = np.where(k < len(a), a[np.minimum(k, len(a) - 1)] - s, np.inf)
+    ra = np.where(np.isfinite(lo), np.exp(-np.where(np.isfinite(lo), lo, 0.0) / AXIS_ELL), 0.0)
+    rb = np.where(np.isfinite(hi), np.exp(-np.where(np.isfinite(hi), hi, 0.0) / AXIS_ELL), 0.0)
+    rl = ra * rb
+    return AXIS_S2 * (1.0 - (ra ** 2 + rb ** 2 - 2.0 * ra * rb * rl) / (1.0 - rl ** 2))
+
+
+def axis_var(s, anchors) -> np.ndarray:
+    """Variance of the shared axis at s: the scale mixture's (core x (1 - AXIS_PI + AXIS_PI AXIS_K^2))."""
+    return axis_core_var(s, anchors) * (1.0 - AXIS_PI + AXIS_PI * AXIS_K ** 2)
+
+
+def gap_dt(t, label_t) -> np.ndarray:
+    """Per node time t: seconds since the horse's last labelled detection (``label_t``, sorted); before its first one,
+    the time to it; inf without labelled detections."""
+    t = np.asarray(t, float)
+    label_t = np.asarray(label_t, float)
+    if not len(label_t):
+        return np.full(t.shape, np.inf)
+    k = np.searchsorted(label_t, t, side="right")
+    return np.where(k > 0, t - label_t[np.maximum(k - 1, 0)], label_t[0] - t)
+
+
+def uncertainty_columns(s, t, sd_s, anchors, style, label_t) -> dict:
+    """sd_s_axis, sd_s_horse, sd_s_gap, sd_s_rel = sqrt(sd_s^2 + horse^2 + gap^2) (field-relative) and
+    sd_s_total = sqrt(sd_s_rel^2 + axis^2) for one path."""
+    sd_s = np.asarray(sd_s, float)
+    ax = np.sqrt(axis_var(s, anchors))
+    hz = np.full(sd_s.shape, np.sqrt(HORSE_VAR[style]))
+    dt = gap_dt(t, label_t)
+    gp = np.where(np.isfinite(dt), np.sqrt(GAP_SA ** 2 * np.where(np.isfinite(dt), dt, 0.0) ** 3 / 3.0), np.nan)
+    rel = np.sqrt(sd_s ** 2 + hz ** 2 + gp ** 2)
+    return {"sd_s_axis": ax, "sd_s_horse": hz, "sd_s_gap": gp, "sd_s_rel": rel, "sd_s_total": np.sqrt(rel ** 2 + ax ** 2)}
+
+
 # ------------------------------------------------------------------------------------------------------ noise table
 # Per-detection observation noise of the detection-only state-space model, by feed
 # and region; raw render coordinates (along metres, lateral render units). Per row: independent white sd per detection,
@@ -431,10 +492,23 @@ def _finite(x):
     return x
 
 
-def describe(stretches, frozen=(), crossings=()) -> dict:
+def describe(stretches, frozen=(), crossings=(), anchors=None) -> dict:
     """contract.json: the definitions behind the columns, the run's flagged stretches, the legend windows held in
-    near-cloth order (``frozen``), the position flag's crossing verdicts and the noise table."""
+    near-cloth order (``frozen``), the position flag's crossing verdicts, the uncertainty terms with the run's axis
+    ``anchors`` and the noise table."""
     return {
+        "uncertainty": {
+            "anchors_s": list(anchors or []),
+            "axis": {"core_var_m2": AXIS_S2, "corr_length_m": AXIS_ELL, "mix_weight": AXIS_PI, "mix_scale": AXIS_K,
+                     "form": "b(s) common to every horse at the same s; core = stationary OU along s (variance "
+                     "core_var_m2, correlation exp(-|ds| / corr_length_m)) conditioned on the anchors; scale mixture "
+                     "(1 - mix_weight) N(0, v) + mix_weight N(0, mix_scale^2 v); sd_s_axis = the mixture sd"},
+            "horse": {"var_m2": HORSE_VAR, "form": "persistent per horse (correlation 1 along the path, independent "
+                      "across horses)"},
+            "gap": {"sa": GAP_SA, "form": "var = sa^2 dt^3 / 3, dt = seconds since the horse's last labelled "
+                    "detection (before its first: the time to it); too wide for gaps over about 5 s"},
+            "status": "opt-in; does not meet the calibration targets",
+        },
         "flag": {"stretches": stretches, "rule": "E1 video == final label, E2 >= 1 s after the first render detection, E3 "
                  "before the line, E4 firm and no overlap on the final paths, E5 tracklet disc-read majority (circle); "
                  "silk: legend rank confirmation; stretches >= 10 detections and >= 2 s, gaps <= 0.5 s",
