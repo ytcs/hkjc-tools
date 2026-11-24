@@ -1897,7 +1897,7 @@ class RaceRun:
         ends = [x for x in (t_off, t_vid) if x is not None]
         t_end = max(ends) + 0.5 if ends else None
         raw_bias = self._metric_bias(pv)
-        bias = self._shape_bias(raw_bias)
+        bias = raw_bias  # identity (every fuse up to the E-step) runs on the raw bias; the line shape enters last
         self._render_bias = bias
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
@@ -1922,6 +1922,7 @@ class RaceRun:
         obs_e, _pe = self._em_associate(
             start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias, exclude=self._nonfin
         )
+        obs_e = self._shaped(obs_e, raw_bias)  # labels fixed: only the last fuse takes the metric-line shape
         pf, a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
         pf = self._end_at_last_obs(pf, obs_e + offi, a)
         pf, warp = self._official_retime(pf)
@@ -2101,6 +2102,19 @@ class RaceRun:
         sb, b = sb[o], b[o]
         self.log(f"   fuse: render metric bias at boundaries (m): {np.round(b, 2).tolist()}")
         return sb, b
+
+    def _shaped(self, obs, bias):
+        """Render observations already carrying the raw bias ``bias`` moved onto the metric-line shape
+        (``_shape_bias``): s += shape - raw, evaluated at the bias-shifted s. ``obs`` unchanged when there is no
+        shape (w = 0 or no visible boundary)."""
+        shape = self._shape_bias(bias)
+        if shape is bias:
+            return obs
+        grid, shift = shape
+        raw = np.interp(grid, *bias)
+        x, dlt = grid + raw, shift - raw
+        return [replace(ob, s=ob.s + np.interp(ob.s, x, dlt)) if ob.feed == "render" and ob.s is not None else ob
+                for ob in obs]
 
     def _shape_bias(self, bias):
         """With ``metric_w`` > 0 the bias table (s, shift) becomes ds(s) + the bias left at the visible

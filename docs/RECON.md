@@ -426,11 +426,13 @@ The product: the video-only detections plus the draw and the official records th
    finish observation. The anchor check, the official-only skeleton and its merge test use these sds.
 2. `RaceRun._metric_bias`: at each visible boundary, b = median over ≥ 3 horses of (video-only crossing delay
    × speed); render s is shifted by b interpolated along s. The render metric error is shared by all horses,
-   and hundreds of render observations would otherwise outvote the official times. At Happy Valley (turf ovals;
-   w = `METRIC_W` 3.10 m, frozen from the pooled HUD tick loss alone) the shift is ds(s) + the bias left at the
-   visible boundaries after ds, interpolated (`RaceRun._shape_bias`): ds = the s' metric's render s minus the rail-s
-   metric's for the same detections. The product keeps its values at every visible boundary and takes the s' metric's
-   shape between them; `paths_video.parquet` and the video-only gates do not use it.
+   and hundreds of render observations would otherwise outvote the official times. Every fuse up to and including
+   the final identity pass (step 5) uses this bias. At Happy Valley (turf ovals; w = `METRIC_W` 3.10 m, frozen from
+   the pooled HUD tick loss alone) the LAST fuse of step 5 takes the shape bias instead (`RaceRun._shaped`): ds(s) +
+   the bias left at the visible boundaries after ds, interpolated (`RaceRun._shape_bias`), ds = the s' metric's render
+   s minus the rail-s metric's for the same detections. The product keeps its values at every visible boundary and
+   takes the s' metric's shape between them; the labels (`det_labels_final.npz`), `paths_video.parquet` and the
+   video-only gates do not depend on it.
 3. Fuse with the grid running 0.5 s past the later of the last visible official time and the video-only grid's
    end (else the slowest finisher ends short of the line; with the finish withheld the last visible official time
    is 400 m out).
