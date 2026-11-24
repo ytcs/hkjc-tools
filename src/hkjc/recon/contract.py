@@ -7,8 +7,9 @@ paths.parquet gains
   free         no other horse within one length along and one render abreast spacing across at the node
   pos_ok       position flag: the horse is observed and firm at the node, and its video-only path agrees with the
                official times at the bounding visible official boundaries (``position_crossings``, ``node_pos_ok``)
-  sd_s_axis, sd_s_horse, sd_s_gap, sd_s_rel, sd_s_total   along-track error terms sd_s omits (``uncertainty_columns``):
-               the shared axis, a per-horse persistent term and a long-gap term; field-relative and total sd
+  sd_s_axis, sd_s_horse, sd_s_gap, sd_s_ident, sd_s_rel, sd_s_total   along-track error terms sd_s omits
+               (``uncertainty_columns``): the shared axis, a per-horse persistent term, a long-gap term and an identity
+               term; field-relative and total sd
   id_robust    identity-robust: in the node's section unit, no horse within 5 m / 2.5 render units of the horse has
                more than tR of its detections relabelled between the video-only and final labels, and the horse's
                read support is >= tP (``id_robust``; thresholds from one cross-fit, not yet confirmed on a fresh set)
@@ -402,10 +403,15 @@ def flag_run(rd, key, mask=None, conflicts=False):
 AXIS_S2, AXIS_ELL = 7.092734000380029, 799.9999999998456
 AXIS_PI, AXIS_K = 0.10216067886921987, 4.057275999777488
 # Per-horse persistent term by render style (correlation 1 along the path, independent across horses).
-HORSE_VAR = {"circle": 0.8768334661112646, "silk": 0.4673140522042648}  # m^2
-# Long-gap term: an integrated random walk from the horse's last labelled detection, var = GAP_SA^2 dt^3 / 3 (dt the time
-# since that detection; the time to its first one before it). Too wide for gaps over about 5 s (RECON 8).
-GAP_SA = 4.102187414573527  # m/s^2/sqrt(s)
+HORSE_VAR = {"circle": 1.0441935443052455, "silk": 0.4673909584957436}  # m^2
+# Long-gap term: from the horse's last labelled detection (dt the time since it; the time to its first one before it) the
+# horse coasts with white acceleration of the detection-level scale GAP_SA, an integrated random walk v = GAP_SA^2 dt^3 / 3;
+# the field holds an unseen horse near its neighbours, so it saturates at GAP_CAP: var = v / (1 + v / GAP_CAP^2).
+GAP_SA, GAP_CAP = 0.67, 12.539699709556691  # m/s^2/sqrt(s), m
+# Identity term: with probability IDENT_EPS the label at a node belongs to a neighbour, and the error is then minus the
+# offset to that neighbour (one of the IDENT_K nearest other paths along s within FREE_DLAT across, equally likely). The
+# column carries the mixture's variance, IDENT_EPS x the mean squared offset to those neighbours (0 with none).
+IDENT_EPS, IDENT_K = 0.006813608765177593, 2
 
 
 def axis_core_var(s, anchors) -> np.ndarray:
@@ -439,16 +445,48 @@ def gap_dt(t, label_t) -> np.ndarray:
     return np.where(k > 0, t - label_t[np.maximum(k - 1, 0)], label_t[0] - t)
 
 
-def uncertainty_columns(s, t, sd_s, anchors, style, label_t) -> dict:
-    """sd_s_axis, sd_s_horse, sd_s_gap, sd_s_rel = sqrt(sd_s^2 + horse^2 + gap^2) (field-relative) and
-    sd_s_total = sqrt(sd_s_rel^2 + axis^2) for one path."""
+def gap_var(dt) -> np.ndarray:
+    """Long-gap variance at dt seconds from the last labelled detection (NaN where dt is not finite)."""
+    dt = np.asarray(dt, float)
+    v = GAP_SA ** 2 * np.where(np.isfinite(dt), dt, 0.0) ** 3 / 3.0
+    return np.where(np.isfinite(dt), v / (1.0 + v / GAP_CAP ** 2), np.nan)
+
+
+def ident_var(P) -> dict:
+    """{horse: (t, identity variance per node)} on the shared grid of paths ``P`` (polars): IDENT_EPS x the mean squared
+    s offset to the IDENT_K nearest other finite paths along s with |dlat| < FREE_DLAT at the same t (0 with none)."""
+    import polars as pl
+
+    W = P.select("horse_no", "t", "s", "lat").with_columns(pl.col("t").round(2))
+    W = W.pivot(on="horse_no", index="t", values=["s", "lat"]).sort("t")
+    hs = sorted({int(c.split("_")[-1]) for c in W.columns if c.startswith("s_")})
+    S = np.stack([W[f"s_{h}"].to_numpy() for h in hs], 1).astype(float)
+    L = np.stack([W[f"lat_{h}"].to_numpy() for h in hs], 1).astype(float)
+    fin = np.isfinite(S) & np.isfinite(L)
+    tt = W["t"].to_numpy()
+    out = {}
+    for a, h in enumerate(hs):
+        ds = S[:, [a]] - S
+        ok = fin[:, [a]] & fin & (np.abs(L[:, [a]] - L) < FREE_DLAT)
+        ok[:, a] = False
+        d2 = np.sort(np.where(ok, ds ** 2, np.inf), axis=1)[:, :IDENT_K]
+        n = np.isfinite(d2).sum(1)
+        out[h] = (tt, IDENT_EPS * np.where(n > 0, np.where(np.isfinite(d2), d2, 0.0).sum(1) / np.maximum(n, 1), 0.0))
+    return out
+
+
+def uncertainty_columns(s, t, sd_s, anchors, style, label_t, ident=0.0) -> dict:
+    """sd_s_axis, sd_s_horse, sd_s_gap, sd_s_ident (``ident``: the identity variance per node, ``ident_var``),
+    sd_s_rel = sqrt(sd_s^2 + horse^2 + gap^2 + ident^2) (field-relative) and sd_s_total = sqrt(sd_s_rel^2 + axis^2) for
+    one path."""
     sd_s = np.asarray(sd_s, float)
     ax = np.sqrt(axis_var(s, anchors))
     hz = np.full(sd_s.shape, np.sqrt(HORSE_VAR[style]))
-    dt = gap_dt(t, label_t)
-    gp = np.where(np.isfinite(dt), np.sqrt(GAP_SA ** 2 * np.where(np.isfinite(dt), dt, 0.0) ** 3 / 3.0), np.nan)
-    rel = np.sqrt(sd_s ** 2 + hz ** 2 + gp ** 2)
-    return {"sd_s_axis": ax, "sd_s_horse": hz, "sd_s_gap": gp, "sd_s_rel": rel, "sd_s_total": np.sqrt(rel ** 2 + ax ** 2)}
+    gp = np.sqrt(gap_var(gap_dt(t, label_t)))
+    idn = np.sqrt(np.broadcast_to(np.asarray(ident, float), sd_s.shape))
+    rel = np.sqrt(sd_s ** 2 + hz ** 2 + gp ** 2 + idn ** 2)
+    return {"sd_s_axis": ax, "sd_s_horse": hz, "sd_s_gap": gp, "sd_s_ident": idn, "sd_s_rel": rel,
+            "sd_s_total": np.sqrt(rel ** 2 + ax ** 2)}
 
 
 # ------------------------------------------------------------------------------------------------------ noise table
@@ -502,8 +540,11 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None) -> dict
                      "(1 - mix_weight) N(0, v) + mix_weight N(0, mix_scale^2 v); sd_s_axis = the mixture sd"},
             "horse": {"var_m2": HORSE_VAR, "form": "persistent per horse (correlation 1 along the path, independent "
                       "across horses)"},
-            "gap": {"sa": GAP_SA, "form": "var = sa^2 dt^3 / 3, dt = seconds since the horse's last labelled "
-                    "detection (before its first: the time to it); too wide for gaps over about 5 s"},
+            "gap": {"sa": GAP_SA, "cap_m": GAP_CAP, "form": "v = sa^2 dt^3 / 3, var = v / (1 + v / cap_m^2), dt = "
+                    "seconds since the horse's last labelled detection (before its first: the time to it)"},
+            "ident": {"eps": IDENT_EPS, "k": IDENT_K, "dlat_render": FREE_DLAT, "form": "with probability eps the label "
+                      "belongs to one of the k nearest other paths along s within dlat_render across (equally likely), "
+                      "error = minus the offset to it; sd_s_ident^2 = eps x mean squared offset (0 with none)"},
             "status": "does not meet the calibration targets",
         },
         "flag": {"stretches": stretches, "rule": "E1 video == final label, E2 >= 1 s after the first render detection, E3 "

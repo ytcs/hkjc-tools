@@ -204,8 +204,13 @@ def test_uncertainty_columns_add_in_quadrature_and_the_gap_grows_with_time_since
     s = 15.0 * t
     out = ct.uncertainty_columns(s, t, np.full(4, 0.2), [150.0, 300.0], "silk", np.array([10.0, 11.0]))
     assert np.allclose(ct.gap_dt(t, [10.0, 11.0]), [0.0, 0.0, 3.0, 9.0])
-    assert np.allclose(out["sd_s_gap"] ** 2, ct.GAP_SA ** 2 * np.array([0.0, 0.0, 27.0, 729.0]) / 3)
+    v = ct.GAP_SA ** 2 * np.array([0.0, 0.0, 27.0, 729.0]) / 3
+    assert np.allclose(out["sd_s_gap"] ** 2, v / (1 + v / ct.GAP_CAP ** 2))
+    assert np.allclose(out["sd_s_ident"], 0.0)
     assert np.allclose(out["sd_s_rel"] ** 2, 0.04 + ct.HORSE_VAR["silk"] + out["sd_s_gap"] ** 2)
+    assert np.all(np.diff(out["sd_s_gap"]) >= 0) and ct.gap_var([1e4])[0] < ct.GAP_CAP ** 2
+    idn = ct.uncertainty_columns(s, t, np.full(4, 0.2), [150.0, 300.0], "silk", np.array([10.0, 11.0]), np.full(4, 0.5))
+    assert np.allclose(idn["sd_s_rel"] ** 2, out["sd_s_rel"] ** 2 + 0.5)
     assert np.allclose(out["sd_s_total"] ** 2, out["sd_s_rel"] ** 2 + out["sd_s_axis"] ** 2)
     assert np.isnan(ct.uncertainty_columns(s, t, np.full(4, 0.2), [150.0], "circle", np.zeros(0))["sd_s_total"]).all()
 
@@ -268,3 +273,18 @@ def test_id_robust_reads_neighbours_relabels_and_read_support(tmp_path):
     assert yld["section_units"] == 6 and yld["section_units_robust"] == 3 and yld["rows_robust"] == int(node.sum())
     js = ct.describe_id_robust(secs, bends, yld)
     assert js["yield"] == yld and len(js["thresholds"]) == 4
+
+
+def test_ident_var_is_eps_times_the_mean_squared_offset_to_the_two_nearest_neighbours_across_within_the_lane():
+    import polars as pl
+
+    from hkjc.recon import contract as ct
+
+    t = np.array([1.0, 2.0])
+    rows = [(1, 100.0, 0.0), (2, 103.0, 1.0), (3, 96.0, 0.5), (4, 101.0, 9.0)]  # 4 is beyond FREE_DLAT across
+    P = pl.DataFrame({"horse_no": np.repeat([r[0] for r in rows], 2), "t": np.tile(t, 4),
+                      "s": np.repeat([r[1] for r in rows], 2), "lat": np.repeat([r[2] for r in rows], 2)})
+    v = ct.ident_var(P)
+    assert np.allclose(v[1][1], ct.IDENT_EPS * (9.0 + 16.0) / 2)
+    assert np.allclose(v[4][1], 0.0)  # no neighbour within the lane
+    assert np.allclose(v[2][1], ct.IDENT_EPS * (9.0 + 49.0) / 2)

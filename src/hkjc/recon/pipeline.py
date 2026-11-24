@@ -1549,9 +1549,12 @@ class RaceRun:
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
         Lf = np.load(self.p("det_labels_final.npz"))["labels"]
         style = self.render_style()
-        unc = {k: [] for k in ("sd_s_axis", "sd_s_horse", "sd_s_gap", "sd_s_rel", "sd_s_total")}
+        idv = ct.ident_var(P)
+        unc = {k: [] for k in ("sd_s_axis", "sd_s_horse", "sd_s_gap", "sd_s_ident", "sd_s_rel", "sd_s_total")}
         for h, p in paths.items():
-            v = ct.uncertainty_columns(p.s, p.t, p.sd_s, anchors, style, np.sort(T["t"][Lf == h].astype(float)))
+            ti, vi = idv[h]
+            v = ct.uncertainty_columns(p.s, p.t, p.sd_s, anchors, style, np.sort(T["t"][Lf == h].astype(float)),
+                                       vi[np.searchsorted(ti, np.round(p.t, 2))])
             for k in unc:
                 unc[k].append(v[k])
         P = P.with_columns(**{k: pl.Series(np.concatenate(v)) for k, v in unc.items()})

@@ -16,7 +16,7 @@ def main(argv=None):
     ap.add_argument(
         "--mask",
         default=None,
-        help="information withheld from the reconstruction: none, or ';'-joined boundary=J | outcome, "
+        help="information withheld from the reconstruction: none, or ';'-joined boundary=J[+K...] | outcome, "
         "dets=I,J,... (dets.npz rows), discs=P[@PHASE], legend=P[@PHASE] (default: env HKJC_MASK / "
         "HKJC_FINAL_HOLDOUT)",
     )

@@ -135,7 +135,9 @@ class Mask:
 
     Official outcome. ``boundary=j``: the cumulative official time at sectional boundary j (0 = the first
     section end; the last index is the finish, which also withholds the finish times and placings), and
-    the 200 m sub-split points within 200 m of it.
+    the 200 m sub-split points within 200 m of it. ``boundary=(j, k, ...)`` withholds several boundaries at
+    once, each as above (an evaluation tool: withheld points far from every visible boundary); a single
+    index is kept as an int, so its spec stays ``boundary=j``.
     ``outcome=True``: every official outcome record (results, finish times, placings, sectionals,
     running positions); pre-race facts (distance, course, draw, runners, silks) stay visible.
 
@@ -146,10 +148,10 @@ class Mask:
     ``[kP, (k+1)P)`` with ``k % 2 == legend_phase`` count as unread, in the same way.
 
     ``Mask()`` withholds nothing. Spec strings (``parse``, CLI ``--mask``, env ``HKJC_MASK``): ``none``,
-    or ``;``-joined parts ``boundary=J`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``,
+    or ``;``-joined parts ``boundary=J`` | ``boundary=J+K+...`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``,
     ``legend=P`` | ``legend=P@PHASE``."""
 
-    boundary: int | None = None
+    boundary: int | tuple | None = None
     outcome: bool = False
     dets: frozenset = frozenset()
     discs: float | None = None
@@ -158,8 +160,13 @@ class Mask:
     legend_phase: int = 1
 
     def __post_init__(self):
-        if self.boundary is not None and (self.outcome or not isinstance(self.boundary, int) or self.boundary < 0):
-            raise ValueError(f"invalid mask {self!r}: boundary is a non-negative index, exclusive of outcome")
+        if isinstance(self.boundary, (tuple, list, set, frozenset)):
+            js = tuple(sorted({int(b) for b in self.boundary}))
+            object.__setattr__(self, "boundary", js[0] if len(js) == 1 else js)
+        js = self.boundaries()
+        if self.boundary is not None and (self.outcome or not js or any(isinstance(b, bool) or b < 0 for b in js)
+                                          or not all(isinstance(b, int) for b in js)):
+            raise ValueError(f"invalid mask {self!r}: boundary is a non-negative index or indices, exclusive of outcome")
         object.__setattr__(self, "dets", frozenset(int(i) for i in self.dets))
         if any(i < 0 for i in self.dets):
             raise ValueError(f"invalid mask {self!r}: dets are dets.npz row indices")
@@ -171,9 +178,16 @@ class Mask:
     def __bool__(self) -> bool:
         return bool(self.outcome_part() or self.evidence_part())
 
+    def boundaries(self) -> tuple:
+        """The withheld boundary indices (empty when none)."""
+        j = self.boundary
+        return () if j is None else j if isinstance(j, tuple) else (j,)
+
     def outcome_part(self) -> str:
         """The official-outcome component of the spec ('' when nothing is withheld)."""
-        return "outcome" if self.outcome else "" if self.boundary is None else f"boundary={self.boundary}"
+        if self.outcome:
+            return "outcome"
+        return "" if self.boundary is None else "boundary=" + "+".join(str(b) for b in self.boundaries())
 
     def evidence_part(self) -> str:
         """The video-evidence component of the spec ('' when nothing is withheld)."""
@@ -217,7 +231,8 @@ class Mask:
             if part == "outcome":
                 kw["outcome"] = True
             elif key == "boundary" and val:
-                kw["boundary"] = int(val)
+                js = tuple(int(b) for b in val.split("+"))
+                kw["boundary"] = js[0] if len(js) == 1 else js
             elif key == "dets" and val:
                 kw["dets"] = frozenset(int(i) for i in val.split(","))
             elif key in ("discs", "legend") and val:
@@ -227,7 +242,7 @@ class Mask:
                     kw[f"{key}_phase"] = int(ph)
             else:
                 raise ValueError(
-                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J | outcome, dets=I,J,..., discs=P[@PHASE],"
+                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J[+K...] | outcome, dets=I,J,..., discs=P[@PHASE],"
                     " legend=P[@PHASE]"
                 )
         return cls(**kw)
@@ -263,8 +278,7 @@ class MaskedRace:
 
     def _finish_withheld(self) -> bool:
         """The outcome, or the last boundary (the finish), is withheld."""
-        j = self.mask.boundary
-        return self.mask.outcome or (j is not None and j == self._info.sectionals["section"].n_unique() - 1)
+        return self.mask.outcome or (self._info.sectionals["section"].n_unique() - 1) in self.mask.boundaries()
 
     def official_boundaries(self) -> tuple[list, dict]:
         """(distance-to-go at each sectional end, {runner: cumulative official times}); a withheld
@@ -272,12 +286,12 @@ class MaskedRace:
         if self.mask.outcome:
             return [], {}
         bnd, cum = official_boundaries(self._info)
-        j = self.mask.boundary
-        if j is not None and j < len(bnd):
+        js = [j for j in self.mask.boundaries() if j < len(bnd)]
+        if js:
             hidden = {}
             for h, c in cum.items():
                 c = np.array(c, dtype=float)
-                c[j] = np.nan
+                c[js] = np.nan
                 hidden[h] = c
             cum = hidden
         return bnd, cum
@@ -290,10 +304,10 @@ class MaskedRace:
         if self.mask.outcome:
             return [], {}
         pts, cum = official_subsplits(self._info)
-        j = self.mask.boundary
-        bnd = official_boundaries(self._info)[0] if j is not None and pts else []
-        if j is not None and j < len(bnd):
-            hide = np.array([abs(p - bnd[j]) <= SUBSPLIT_HALF + 1e-6 for p in pts])
+        bnd = official_boundaries(self._info)[0] if self.mask.boundaries() and pts else []
+        js = [j for j in self.mask.boundaries() if j < len(bnd)]
+        if js:
+            hide = np.array([any(abs(p - bnd[j]) <= SUBSPLIT_HALF + 1e-6 for j in js) for p in pts])
             cum = {h: np.where(hide, np.nan, c) for h, c in cum.items()}
         return pts, cum
 

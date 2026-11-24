@@ -73,6 +73,9 @@ Outcome part (read by `fuse_final`):
 - `Mask(boundary=j)` withholds the cumulative official time at sectional boundary j for every runner (0 is the
   first section end; the last index is the finish, which also withholds finish times and placings), and the
   sub-split points within 200 m of it (a sub-split time is the previous boundary's time plus a 200 m half).
+- `Mask(boundary=(j, k, ...))` (spec `boundary=J+K`) withholds several boundaries at once, each as above: an
+  evaluation tool that puts withheld points farther from every visible boundary. A single index stays an int, so
+  its spec (and every existing run dir's `mask.txt`) is `boundary=J`.
 - `Mask(outcome=True)` withholds all official outcome data (results, finish times, placings, sectionals,
   running positions); pre-race facts, the draw included, stay visible.
 
@@ -89,7 +92,7 @@ Evidence part (from `observe` on, `pipeline.READS_EVIDENCE`), for held-out scori
   (rank costs, negative legend evidence, blind set), all through `RaceRun.legend_rows`.
 
 Select it with `RaceRun(info, mask=...)`, CLI `--mask SPEC`, or env `HKJC_MASK`; a spec is `none` or
-`;`-joined parts `boundary=J` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`, `legend=P` | `legend=P@PHASE`
+`;`-joined parts `boundary=J[+K...]` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`, `legend=P` | `legend=P@PHASE`
 (`HKJC_FINAL_HOLDOUT=j` is an alias for `boundary=j`; setting both is an error). A masked run writes
 `paths.parquet` and `validation.json` like any other, so give it its own `root`: the run dir records a
 non-empty mask in `mask.txt`, and a run refuses a dir whose mask-dependent artifacts were made under another
@@ -500,9 +503,15 @@ none of the additions is a stage output or cache key.
     × the core sd) gives it a heavy tail, and the column is the mixture sd. NaN without an anchor.
   - `sd_s_horse`: a per-horse persistent term (`HORSE_VAR` by render style; correlation 1 along the path, independent
     across horses).
-  - `sd_s_gap`: a long-gap term, var = `GAP_SA`² Δt³ / 3, with Δt the time since the horse's last labelled detection
-    (before its first, the time to it); NaN for a horse never labelled.
-  - `sd_s_rel` = √(sd_s² + sd_s_horse² + sd_s_gap²), the field-relative sd; `sd_s_total` = √(sd_s_rel² + sd_s_axis²).
+  - `sd_s_gap`: a long-gap term. From its last labelled detection (Δt the time since it; before its first, the time
+    to it) an unseen horse coasts with white acceleration of the detection-level scale `GAP_SA` (0.67 m/s²/√s), an
+    integrated random walk v = `GAP_SA`² Δt³ / 3; the field holds it near its neighbours, so the term saturates:
+    var = v / (1 + v / `GAP_CAP`²), `GAP_CAP` 12.5 m. NaN for a horse never labelled.
+  - `sd_s_ident`: an identity term. With probability `IDENT_EPS` the label at a node belongs to one of the
+    `IDENT_K` = 2 nearest other paths along s within 2.6 render units across, and the error is then minus the offset
+    to it; the column is that mixture's sd, √(`IDENT_EPS` × the mean squared offset), 0 with no such neighbour.
+  - `sd_s_rel` = √(sd_s² + sd_s_horse² + sd_s_gap² + sd_s_ident²), the field-relative sd; `sd_s_total` =
+    √(sd_s_rel² + sd_s_axis²).
 - `id_robust` (`contract.id_robust`, appended last): the node's window is identity-robust, i.e. robust to how much
   of the identity was decided by the final pass rather than the video alone. Two tests per window:
   - relabel share: for the horse and every horse within 5 m along and 2.5 render units across of it at any window node,
@@ -676,7 +685,8 @@ identical. Not bit-exact:
 - **Posterior calibration.** The stated sd is overconfident at intermediate boundaries but not at the finish; a
   systematic error term is missing.
 - **Uncertainty columns.** The uncertainty columns (§4) do not yet meet the calibration targets; the gap term is
-  too wide for gaps over about 5 s; Happy Valley 600 m carries a known distance bias.
+  too narrow for gaps of 1-6 s; Happy Valley 600 m carries a known distance bias, and a withheld first boundary with
+  no visible boundary behind it runs 3-7 m late.
 - **Identity-robust flag.** The `id_robust` thresholds come from one cross-fit and are not yet confirmed on a fresh
   set. The flag drops box-in units disproportionately, because box-in lives where identity is unstable. So box-in
   should ship with the flag attached, not filtered by it.

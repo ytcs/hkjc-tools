@@ -352,3 +352,28 @@ def test_run_dir_refuses_artifacts_of_another_evidence_mask(tmp_path):
         with pytest.raises(ValueError, match="own root"):
             RaceRun(info, root=other, log=lambda *a: None, mask=m).mask_guard(["fuse_final"])
     ev.mask_guard(["fuse_final"])  # same mask: reuse is fine
+
+
+def test_several_boundaries_spec_and_single_index_keys_unchanged():
+    m = Mask(boundary=(2, 0))
+    assert m.boundary == (0, 2) and m.boundaries() == (0, 2) and str(m) == "boundary=0+2"
+    assert Mask.parse("boundary=2+0") == m and Mask.parse(str(m)) == m
+    assert Mask(boundary=(1,)) == Mask(boundary=1) and str(Mask(boundary=[1, 1])) == "boundary=1"
+    assert Mask.parse("boundary=1") == Mask(boundary=1) and Mask(boundary=1).boundary == 1
+    assert Mask().boundaries() == () and Mask(boundary=1).boundaries() == (1,)
+    for bad in (dict(boundary=()), dict(boundary=(0, -1)), dict(boundary=(0, 1), outcome=True)):
+        with pytest.raises(ValueError):
+            Mask(**bad)
+    with pytest.raises(ValueError):
+        Mask.parse("boundary=0+x")
+
+
+def test_several_withheld_boundaries_are_hidden_exactly():
+    info = _info()
+    v = MaskedRace(info, Mask(boundary=(0, 1)))
+    bnd, cum = v.official_boundaries()
+    _bnd0, cum0 = official_boundaries(info)
+    for h in cum0:
+        assert np.isnan(cum[h][:2]).all() and cum[h][2] == cum0[h][2]
+    assert v.official_finish() == official_finish(info)
+    assert MaskedRace(info, Mask(boundary=(1, 2))).official_finish() == {}  # includes the finish

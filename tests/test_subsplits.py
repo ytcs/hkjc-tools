@@ -91,6 +91,7 @@ def test_sectionals_without_sub_split_columns_give_nothing():
     (Mask(boundary=0), [0]),       # 800 m: the 600 m point borders it
     (Mask(boundary=1), [0, 1]),    # 400 m: both points border it
     (Mask(boundary=2), [1]),       # the finish: the 200 m point borders it
+    (Mask(boundary=(0, 2)), [0, 1]),  # two boundaries: each hides its own points
 ])
 def test_subsplits_follow_the_mask(mask, hidden):
     info = _info(parse_sectional_page(_html(), "03/06/2026", 8))
