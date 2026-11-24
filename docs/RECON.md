@@ -453,8 +453,8 @@ Both parquets carry `lat_m = a + b(d) × lat` and `sd_lat_m = b(d) × sd_lat` af
   fan-out through the race, not the local spacing of abreast horses.
 - `sd_lat_m` is the mapped posterior sd only; the map's own uncertainty is not added.
 - Defined only where the map passed its drone test (`RaceRun.lat_m_scope`), NaN elsewhere: turf oval races (not
-  the 1000 m straight) with dates in `LAT_M_DATES` (2026-01-07, when drone feeds begin, to 2026-11-23; later races
-  need their own test); from the first render frame to the post, in the segments of `LAT_M_SEGMENTS` for the venue
+  the 1000 m straight) with dates in `LAT_M_DATES` (2026-01-07, when drone feeds begin, to the end of the 2026/27
+  season; the drone test covered races to 2026-11-23); from the first render frame to the post, in the segments of `LAT_M_SEGMENTS` for the venue
   and render style (disc from 2026-09-01, silk before). Segments (`RaceRun.lat_m_segment`): start (the first 6 s
   after the first render frame), bend (`is_bend`), home straight, other straight.
   - Sha Tin disc: straight, bend, home straight.

@@ -47,7 +47,7 @@ def test_scope_follows_the_tested_segments_per_venue_and_style():
     seg = hv.lat_m_segment(d, t, t_r0)
     m = hv.lat_m_scope(d, t, t_r0)
     assert set(seg[m]) <= {"start", "straight"} and m.any()  # HV disc: bend and home straight failed
-    for r in (_run(date="20251123"), _run(date="20260104"), _run(date="20261124"), _run(distance=1000.0)):
+    for r in (_run(date="20251123"), _run(date="20260104"), _run(date="20270801"), _run(distance=1000.0)):
         assert not r.lat_m_scope(d, t, t_r0).any()  # untested seasons / dates, the 1000 m straight
 
 

@@ -1576,9 +1576,9 @@ class RaceRun:
         ("HV", "silk"): ("straight", "bend"),
     }
     LAT_M_START = 6.0  # s after the first render frame: the start segment
-    # race dates the drone test's population spans: drone feeds from 2026-01-07 to the test's inventory date; later
-    # races may come from a changed render and need their own test. Disc render from 2026-09-01, silk before.
-    LAT_M_DATES = ("20260107", "20261123")
+    # race dates the map applies to: drone feeds from 2026-01-07 to the end of the 2026/27 season (the drone test's
+    # population ends 2026-11-23; later races are assumed to share the disc render). Disc from 2026-09-01, silk before.
+    LAT_M_DATES = ("20260107", "20270731")
     LAT_M_DISC_FROM = "20260901"
 
     def lat_b(self, d) -> np.ndarray:
