@@ -750,9 +750,11 @@ identical. Not bit-exact:
 - **Orphan elimination.** The last uncovered horse takes the largest leftover chain without an anchor check, which
   can give a tailed-off horse a mid-field chain (§4 fuse_video).
 - **Video resolution.** The pipeline assumes a 1920 × 1080 aerial feed; seasons before 2023-05 are 1280 × 720.
-- **Non-finishers.** A stopped horse's path ends at its last observation, not where it stopped. An unseated horse's
-  path runs to the grid end (constant-speed extrapolation, growing sd), and it can still take another runner's
-  detections where `identify` left the fragment unlabelled. With the finish withheld (evaluation masks) no placing
+- **Non-finishers.** A stopped horse's path ends at its last observation, not where it stopped, and before the last
+  50 m its label can still ride another horse's avatar (ST 2025-07-05 R5 #2 from 385 m to 68 m out). An unseated
+  horse's path runs to the grid end (constant-speed extrapolation, growing sd); it can still take another runner's
+  detections where `identify` left the fragment unlabelled, and where `identify` put its number on another runner's
+  avatar the rule holds it there (ST 2023-10-15 R3 #14 on #12's avatar). With the finish withheld (evaluation masks) no placing
   code is visible, so neither rule applies and a non-finisher's label can ride a finisher's avatar to the line. In the
   video-only product nothing marks a non-finisher. Its completed sections count for coverage and `sectional_mae`, but
   it is excluded from the finish gates.

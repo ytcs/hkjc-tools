@@ -188,6 +188,20 @@ def test_an_unseated_horse_keeps_off_other_avatars_and_keeps_its_own():
     assert deny[0] == deny[1] == {1, 2, 3}  # nobody else takes the unseated horse's own fragment
     assert deny[2] == {4}  # it does not take another runner's fragment
     assert 3 not in deny  # an unlabelled fragment is open to all
+    assert run._excluded({}, np.array([0.0, 1.0]), deny, [0, 1]) == {1, 2, 3}  # travels with the fragment
+    assert run._excluded({}, np.array([0.0]), deny, [3]) == frozenset()
+
+
+def test_assign_frames_deny_is_hard_and_reported():
+    from hkjc.recon import assoc
+
+    paths = {h: _path(h, 15.0) for h in (3, 4)}
+    paths[4].lat[:] = 6.0
+    t, s, lat = np.array([40.0, 40.0]), np.array([600.0, 600.0]), np.array([3.0, 6.0])
+    forbid = {}
+    lab, _chi = assoc.assign_frames(np.array([1, 1]), t, s, lat, paths, np.zeros((0, 9), int), deny={0: {3}},
+                                    forbid_out=forbid)
+    assert lab.tolist() == [0, 4] and 3 in forbid[0]
 
 
 def test_an_excluded_horse_takes_no_detection_past_its_bar_even_on_the_legend_rank():
