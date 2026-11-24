@@ -381,7 +381,7 @@ query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo:
 | **Sectional Time** | `displaysectionaltime?racedate=D/M/Y&RaceNo=N` | per-horse section positions + split times (1st–6th Sec.) + race splits | ✅ `data.sectional` |
 | **Results** | `localresults?racedate=Y/M/D&Racecourse=ST&RaceNo=N`; wired via legacy `/racing/information/English/Racing/LocalResults.aspx?RaceDate=Y/M/D&Racecourse=ST&RaceNo=N` | result table + **full exotic/jackpot dividends** + **incident table** + running positions | ✅ results table · 📜 dividends §2.2 |
 | **Horse page** | `horse?horseid=HK_2023_J183`; legacy `/racing/information/English/Horse/Horse.aspx?HorseNo=<id>` (id presumably the brand, e.g. `J183`; unverified) | record, location (Conghua/ST), import; tabs: Form, Rating/Wt/Placing, **Performance by Distance**, **Trackwork**, **Veterinary**, Movement, Pre-import, **Pedigree** + replay links | 📜 legacy form table §2.2 |
-| **Trackwork archive** | `trackworkresult?horseid=HK_2023_J183` | one horse's **full dated work log over years** (SSR) — the only historical trackwork route | 📜 §2.2 |
+| **Trackwork archive** | `trackworkresult?horseid=HK_2023_J183` | one horse's **full dated work log over years** (SSR), **served only while the horse is in training**: a retired horse's id redirects to its race-record page with no trackwork, so historical trackwork is survivor-selected | 📜 §2.2 |
 
 ### Per-runner "angle" pages (server-rendered, all ⬜ — the buried gold)
 > **Pre-race window caveat (important):** these pages are SSR-fetchable with plain `requests.get`,
