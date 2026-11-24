@@ -358,7 +358,8 @@ probability that its posterior projects inside the visible panel, between the di
 unobserved, so their missing box is no evidence.
 
 The frame's detection probability is estimated from its own count: p_f = (boxes + 1)/(runners in view + 2), clipped
-to [`P_DET_MIN`, `P_DET_MAX`]. The detector's recall varies by frame (camera, zoom), so a frame that boxes half the
+to [`P_DET_MIN`, `P_DET_MAX`]. The ceiling is the detector's recall of visible horses: silk 0.95, 0.86 on bends, disc
+0.985. The detector's recall varies by frame (camera, zoom), so a frame that boxes half the
 field makes a miss cheap. A runner labelled in the frame costs −2 log p_f. An unlabelled one costs
 −2 log(1 − p_f) × P(in view) (`core.miss_terms`). This keeps a path from floating unobserved through a part of the
 panel where the detector boxes the field.
@@ -416,7 +417,15 @@ It is the sum of:
    the window around the segment. Its evidence farther away, the extra observations and the order curvature stay.
    The window MILP leaves out the rank votes. A list omission shifts every horse behind the omitted one at once, and
    only such a move reaches that labelling.
-4. The loop ends when no proposal lowers J. There is no iteration cap. Every accepted step lowers J; the log prints J
+4. Then permutation moves: at a cut where tracker links are broken between labelled segments, or where the
+   segments ending and starting at a camera cut pair up by along-track rank, the label permutation is carried over a
+   whole stretch, back to an earlier or on to a later camera cut (a time where ≥ 3 labelled segments start together).
+   The move lowering J most is kept (`core.permutation_moves`).
+5. Then omission insertions (`core.insertion_moves`): over a stretch between camera cuts where the omission chain
+   gives horse u a mean P(omitted) > `INSERT_OM`, u is put at rank r of the field and every horse from r to u's old
+   rank moves one avatar back. Per horse, the `INSERT_WINDOWS` stretches of ≥ `INSERT_MIN_T` s with the largest
+   length × mean P(omitted) are tried, at every rank ahead of u.
+6. The loop ends when no proposal lowers J. There is no iteration cap. Every accepted step lowers J; the log prints J
    after each.
 
 Each product solves twice: without the finish camera, then with its crossings (`finish_camera` from the first

@@ -68,7 +68,10 @@ P_OMIT_IN, P_OMIT_STAY = 1e-4, 0.999  # per list row, per horse
 P_AHEAD_UNSEEN = 0.25  # start solve: P(an undetected horse is ahead of a detection) before any path exists
 MAX_RANK = 8
 # detection: frame-level probability that an in-view horse is boxed, from the frame's own count
-P_DET_MAX, P_DET_MIN = 0.95, 0.05
+P_DET_MIN = 0.05
+# ceiling of a frame's detection probability: the detector's measured recall of visible horses (0330): silk 0.95,
+# 0.86 on bends (small vertical / diagonal avatars), disc 0.985
+P_DET_MAX = {("silk", False): 0.95, ("silk", True): 0.86, ("disc", False): 0.985, ("disc", True): 0.985}
 VIEW_PX = 5.0  # px: projection uncertainty floor of the in-view test
 # disc reads (circle render)
 READ_ERR, READ_ERR_TOUCH, READ_ERR_DROP, TOUCH_PX = 0.01, 0.10, 0.25, 50.0
@@ -293,7 +296,7 @@ def silk_costs(seg, n_seg, horses, feat, proto_no, proto):
     return out
 
 
-def view_maps(rows, t, s, lat, ph, panel_h, panel_w, silk_style):
+def view_maps(rows, t, s, lat, ph, panel_h, panel_w, silk_style, bend=None):
     """Per render frame with detections: a local affine map (s, lat) -> panel (cx, cy) fitted to the frame's horse
     boxes (P(horse) >= 0.5; >= 4 of them, else the nearest frame's map), the frame's box count, and the visible
     panel rows (below the disclaimer text, above the list band on the silk render)."""
@@ -322,8 +325,13 @@ def view_maps(rows, t, s, lat, ph, panel_h, panel_w, silk_style):
     tf = np.bincount(inv, t) / np.bincount(inv)
     y_lo = float(DISCLAIMER_ROWS)
     y_hi = legend_top(rows[:, 2], panel_h) if silk_style else float(panel_h)
+    on_bend = np.zeros(len(F), bool)
+    if bend is not None:
+        on_bend = np.bincount(inv, np.asarray(bend, float), len(F)) / np.bincount(inv, minlength=len(F)) > 0.5
+    style = "silk" if silk_style else "disc"
+    cap = np.where(on_bend, P_DET_MAX[(style, True)], P_DET_MAX[(style, False)])
     return dict(frames=F, t=tf, A=A if len(ok) else None, n=np.bincount(inv, good.astype(float), len(F)),
-                x=(0.0, float(panel_w)), y=(y_lo, y_hi))
+                x=(0.0, float(panel_w)), y=(y_lo, y_hi), cap=cap)
 
 
 def in_view(ev: Evidence, S, L, sdS, sdL, tg):
@@ -348,12 +356,13 @@ def in_view(ev: Evidence, S, L, sdS, sdL, tg):
 
 def miss_terms(ev: Evidence, pin, seg_lab):
     """Detection terms per (horse, frame): with p_f the frame's detection probability (its horse-box count over the
-    horses projected in view, smoothed, in [P_DET_MIN, P_DET_MAX]), a horse labelled in the frame costs -2 log p_f and
+    horses projected in view, smoothed, in [P_DET_MIN, the render style's recall ceiling, lower on bends]), a horse
+    labelled in the frame costs -2 log p_f and
     an unlabelled one -2 log(1 - p_f) times P(in view). -> (J term, p_f, per (H, F) cost if unlabelled, if labelled)."""
     V = ev.view
     if not pin.shape[1]:
         return 0.0, None, None, None
-    p = np.clip((V["n"] + 1.0) / (pin.sum(0) + 2.0), P_DET_MIN, P_DET_MAX)
+    p = np.clip((V["n"] + 1.0) / (pin.sum(0) + 2.0), P_DET_MIN, V["cap"])
     c_un = pin * (-2.0 * np.log(1.0 - p))[None, :]
     c_lab = np.broadcast_to(-2.0 * np.log(p)[None, :], pin.shape)
     labd = np.zeros(pin.shape, bool)
@@ -364,7 +373,7 @@ def miss_terms(ev: Evidence, pin, seg_lab):
     return float(np.where(labd, c_lab, c_un).sum()), p, c_un, c_lab
 
 
-def build_evidence(horses, T, members, pose, panel_h, silk_style, nums=None, silk=None, panel_w=None):
+def build_evidence(horses, T, members, pose, panel_h, silk_style, nums=None, silk=None, panel_w=None, bend=None):
     """Label-free evidence from observe's tracks (``T``: rows, t, d->s supplied as T['s'], lat), the tracker's
     tracklets, the pose graph, disc reads and silk features."""
     t, s, lat = np.asarray(T["t"], float), np.asarray(T["s"], float), np.asarray(T["lat"], float)
@@ -393,7 +402,7 @@ def build_evidence(horses, T, members, pose, panel_h, silk_style, nums=None, sil
     np.minimum.at(lo, seg, fr)
     np.maximum.at(hi, seg, fr)
     ev = Evidence(np.asarray(horses, int), fr, t, s, lat, ph, seg, n_seg, links, lo, hi, cid, **ch, cam=cam)
-    ev.view = view_maps(rows, t, s, lat, ph, panel_h, panel_w, silk_style)
+    ev.view = view_maps(rows, t, s, lat, ph, panel_h, panel_w, silk_style, bend)
     H = len(horses)
     ev.read_cost = np.zeros((n_seg, H))
     if nums is not None:
@@ -1074,6 +1083,51 @@ def permutation_moves(ev: Evidence, lab):
     return out
 
 
+INSERT_OM, INSERT_MIN_T, INSERT_WINDOWS = 0.3, 10.0, 6
+
+
+def insertion_moves(model: Model, st: State, lab):
+    """Omission insertions: over a window between camera cuts (times where >= 3 labelled segments start together, or
+    the race's ends) in which the list's omission chain gives horse u a mean P(omitted) > INSERT_OM, u is put at
+    rank r of the field (ranked by the window's mean position) and every horse from rank r to u's old rank moves one
+    avatar back. Per horse, the INSERT_WINDOWS windows of >= INSERT_MIN_T s with the largest length x mean P(omitted)
+    are tried, at every rank ahead of u. -> list of (description, labelling)."""
+    ev, L, tg = model.ev, model.Lr, model.tg
+    if not len(L.tau):
+        return []
+    lo = np.full(ev.n_seg, np.inf)
+    hi = np.full(ev.n_seg, -np.inf)
+    np.minimum.at(lo, ev.seg, ev.t)
+    np.maximum.at(hi, ev.seg, ev.t)
+    st_t, cnt = np.unique(np.round(lo[lab >= 0] * 5) / 5, return_counts=True)
+    cuts = np.r_[tg[0], st_t[cnt >= 3], tg[-1] + 1.0]
+    out = []
+    for u in range(model.H):
+        cand = []
+        for i, b0 in enumerate(cuts):
+            for b1 in cuts[i + 1:]:
+                rows = (L.tau >= b0) & (L.tau < b1)
+                if b1 - b0 < INSERT_MIN_T or rows.sum() < 10:
+                    continue
+                om = float(st.om[u, rows].mean())
+                if om > INSERT_OM:
+                    cand.append(((b1 - b0) * om, b0, b1))
+        for _score, b0, b1 in sorted(cand, reverse=True)[:INSERT_WINDOWS]:
+            rows = (L.tau >= b0) & (L.tau < b1)
+            k, w = _interp(tg, L.tau[rows])
+            order = list(np.argsort(-(st.S[:, k] * (1 - w) + st.S[:, k + 1] * w).mean(1)))
+            q = order.index(u)
+            inside = np.flatnonzero((lo >= b0 - 0.15) & (hi < b1 - 0.05) & (lab >= 0))
+            for r in range(q):
+                mp = {order[r]: u, **{order[j]: order[j - 1] for j in range(r + 1, q + 1)}}
+                new = lab.copy()
+                for s_ in inside:
+                    new[s_] = mp.get(int(lab[s_]), lab[s_])
+                if not np.array_equal(new, lab):
+                    out.append((f"insert #{ev.horses[u]} at rank {r + 1} over {b0:.1f}-{b1:.1f} s", new))
+    return out
+
+
 def kin_costs(model: Model, st: State, seg_lab):
     """(segments x horses) block predictive -2 log-likelihood ratio of each segment's chunks against each horse's
     posterior (leave-segment-out for its current owner), along-track and lateral."""
@@ -1384,6 +1438,19 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 pm, st2, T, B = best
                 log(f"   core: it{it} permutation move at {T:.1f} s over {min(B, T):.1f}-{max(B, T):.1f} s relabels "
                     f"{int((pm != lab).sum())} segments, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
+                hist.append((it, st2.J, int((pm != lab).sum())))
+                lab, st = pm, st2
+                moved = True
+        if not moved:  # omission insertions over stretches
+            best = None
+            for desc, pm in insertion_moves(model, st, lab):
+                st2 = evaluate(model, pm, extra_s, extra_l, X0=st.S, s_shift=s_shift)
+                if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
+                    best = (pm, st2, desc)
+            if best is not None:
+                pm, st2, desc = best
+                log(f"   core: it{it} {desc} relabels {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
+                    f"{st2.J:.1f} {_fmt(st2.parts)}")
                 hist.append((it, st2.J, int((pm != lab).sum())))
                 lab, st = pm, st2
                 moved = True
