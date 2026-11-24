@@ -72,9 +72,6 @@ def _detector():
     dev = os.environ.get("HKJC_FILM_DEVICE") or os.environ.get("HKJC_DEVICE", "cpu")
     if dev.startswith("intel:"):
         return _openvino_fp32(dev)
-    from .cudasched import blocking_sync
-
-    blocking_sync(dev)
     return YOLO("models/coco_yolov8x.pt"), dict(imgsz=960, device=dev if dev != "cpu" else None)
 
 

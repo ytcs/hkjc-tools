@@ -1,16 +1,9 @@
-"""Output contract (HKJC_CONTRACT=1, opt-in): free-running flag, E-step margins."""
+"""Output contract: free-running flag, E-step margins."""
 
 import numpy as np
 import polars as pl
 
 from hkjc.recon import assoc, contract, fusion
-
-
-def test_switch_is_off_by_default(monkeypatch):
-    monkeypatch.delenv("HKJC_CONTRACT", raising=False)
-    assert not contract.contract_on()
-    monkeypatch.setenv("HKJC_CONTRACT", "1")
-    assert contract.contract_on()
 
 
 def test_node_free_uses_one_length_and_the_abreast_spacing():

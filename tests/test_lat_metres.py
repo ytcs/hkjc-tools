@@ -1,5 +1,5 @@
-"""Lateral in metres (HKJC_LAT_METRES=1): new columns lat_m / sd_lat_m, one map continuous in d, defined only in the
-segments where it passed its drone test (drone-era dates), NaN elsewhere; every existing column unchanged."""
+"""Lateral in metres: columns lat_m / sd_lat_m after the path columns, one map continuous in d, defined only in the
+segments where it passed its drone test (drone-era dates), NaN elsewhere."""
 
 import numpy as np
 import polars as pl
@@ -57,16 +57,13 @@ def _path(n=600):
     return fusion.Path(1, t, s, np.linspace(2.0, 12.0, n), np.full(n, 0.2), np.linspace(0.05, 0.3, n), np.ones(n))
 
 
-def test_metre_columns_only_with_the_switch_and_nothing_else_changes(tmp_path, monkeypatch):
+def test_metre_columns_follow_the_path_columns(tmp_path):
     run = _run(tmp_path)
     p = _path()
-    monkeypatch.delenv("HKJC_LAT_METRES", raising=False)
-    run._write_paths({1: p}, "off.parquet")
-    monkeypatch.setenv("HKJC_LAT_METRES", "1")
-    run._write_paths({1: p}, "on.parquet")
-    A, B = pl.read_parquet(run.p("off.parquet")), pl.read_parquet(run.p("on.parquet"))
-    assert B.columns == A.columns + ["lat_m", "sd_lat_m"]
-    assert B.select(A.columns).equals(A)  # every existing column bitwise as before
+    run._write_paths({1: p}, "paths.parquet")
+    B = pl.read_parquet(run.p("paths.parquet"))
+    assert B.columns == ["horse_no", "t", "s", "d", "lat", "sd_s", "sd_lat", "n_obs", "lat_m", "sd_lat_m"]
+    assert np.array_equal(B["lat"].to_numpy(), p.lat) and np.array_equal(B["sd_lat"].to_numpy(), p.sd_l)
     a, bh = RaceRun.LAT_MAP
     d, lat, sd = (B[c].to_numpy() for c in ("d", "lat", "sd_lat"))
     m = np.isfinite(B["lat_m"].to_numpy())
@@ -83,8 +80,7 @@ def test_metre_columns_only_with_the_switch_and_nothing_else_changes(tmp_path, m
     assert step.max() < 0.01
 
 
-def test_metre_columns_are_nan_outside_the_scope(tmp_path, monkeypatch):
-    monkeypatch.setenv("HKJC_LAT_METRES", "1")
+def test_metre_columns_are_nan_outside_the_scope(tmp_path):
     run = _run(tmp_path, date="20251123")
     run._write_paths({1: _path()}, "old.parquet")
     B = pl.read_parquet(run.p("old.parquet"))

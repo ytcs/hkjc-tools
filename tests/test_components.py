@@ -3,6 +3,25 @@ import numpy as np
 from hkjc.recon import detect, finishcam, fusion, identity
 
 
+def test_features_job_masks_the_detector_pool_boxes(monkeypatch):
+    from hkjc.recon import pipeline
+
+    raw = np.array([[10.0, 20.0, 30.0, 44.0], [5.0, 400.0, 25.0, 420.0]]), np.array([0.9, 0.8])
+
+    class Cache:
+        idx = np.array([7])
+
+        def panel(self, k):
+            return np.random.default_rng(0).integers(0, 255, (535, 945, 3), np.uint8)
+
+    monkeypatch.setattr(pipeline, "_CACHE", Cache())
+    monkeypatch.setattr(pipeline, "_STYLE", "silk")
+    i, lt, f, shape, rs, hist = pipeline._feat_job((0, 500, raw))
+    assert i == 7 and shape == (535, 945)
+    assert np.array_equal(rs, detect.AvatarDetector.drop_legend(raw, lt)) and len(hist) == len(rs)
+    assert len(f.pts) == len(f.des)
+
+
 def test_bgsub_finds_horses_and_merges_fragments():
     back = np.full((200, 300, 3), (60, 80, 100), np.uint8)  # dirt-like
     panel = back.copy()

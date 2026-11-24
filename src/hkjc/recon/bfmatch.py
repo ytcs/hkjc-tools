@@ -2,7 +2,8 @@
 
 Opt-in (``HKJC_MATCH_DEVICE``: ``cuda`` or ``cpu``): the neighbour tables of every frame pair a stage will match
 are computed up front in a helper interpreter (CUDA never initialises in the parent, whose forked pools must stay
-CUDA-free): one kept for the race and handed to ``register.match`` (``HKJC_MATCH_HELPER=0``: a fresh one per call). ``HKJC_MATCH_DEVICE`` unset: OpenCV inside ``register.match``.
+CUDA-free), one kept for the race, and handed to ``register.match``. ``HKJC_MATCH_DEVICE`` unset: OpenCV inside
+``register.match``.
 
 Exactness: distances are popcounts <= 256, computed as |a| + |b| - 2 a.b on 0/1 bit vectors; every partial
 sum is an integer <= 256, exact in fp16 and fp32. OpenCV's tie order (equal distance -> lower train index
@@ -21,18 +22,8 @@ def device() -> str | None:
     return os.environ.get("HKJC_MATCH_DEVICE") or None
 
 
-def helper_on() -> bool:
-    """One helper interpreter per race (started by ``warm``, closed by ``close``) and the features stage feeding its
-    feature workers from a detector process; ``HKJC_MATCH_HELPER=0``: a fresh interpreter per ``tables`` call and
-    the detector inside the workers. Both give identical artifacts (CPU and CUDA)."""
-    return os.environ.get("HKJC_MATCH_HELPER", "1") != "0"
-
-
 def _tables(dev: str, des: list, jobs: list) -> dict:
     """{(i, j, cross): table}; cross -> (ia, ib) int64 arrays, else ti (N, min(K_NN, M)) int64."""
-    from .cudasched import blocking_sync
-
-    blocking_sync(dev)  # (the helper interpreter, before its first CUDA call)
     import torch
 
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -79,27 +70,7 @@ def tables(des: list, jobs: list) -> dict:
     jobs = list(dict.fromkeys(jobs))
     if not dev.startswith("cuda"):
         return _tables(dev, des, jobs)
-    return _tables_subprocess(dev, des, jobs) if helper_on() else _tables_oneshot(dev, des, jobs)
-
-
-def _tables_oneshot(dev: str, des: list, jobs: list) -> dict:
-    """``_tables`` in a fresh interpreter (``python -c``, arguments and result pickled over pipes): CUDA
-    initialises there, never in the caller, whose forked pools must stay CUDA-free. Unlike a
-    multiprocessing spawn it never re-imports the caller's main module."""
-    import pickle
-    import subprocess
-    import sys
-
-    code = (
-        "import pickle, sys; from hkjc.recon.bfmatch import _tables; "
-        "sys.stdout.buffer.write(pickle.dumps(_tables(*pickle.load(sys.stdin.buffer))))"
-    )
-    r = subprocess.run(
-        [sys.executable, "-c", code], input=pickle.dumps((dev, des, jobs)), capture_output=True
-    )
-    if r.returncode:
-        raise RuntimeError(f"bfmatch helper failed: {r.stderr.decode(errors='replace')[-2000:]}")
-    return pickle.loads(r.stdout)
+    return _tables_subprocess(dev, des, jobs)
 
 
 _HELPER = None  # the persistent helper interpreter: (Popen, device, owner pid)
@@ -134,7 +105,7 @@ def warm():
     """Start the helper interpreter now (torch import and CUDA initialisation overlap the caller's work) when
     the tables will be computed on CUDA; it serves every later ``tables`` call of this process."""
     dev = device()
-    if dev and dev.startswith("cuda") and helper_on():
+    if dev and dev.startswith("cuda"):
         _helper(dev)
 
 

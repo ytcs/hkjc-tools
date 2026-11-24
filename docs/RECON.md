@@ -25,7 +25,7 @@ no feed acting as a master that the others correct.
 
 | Artifact | Content |
 |---|---|
-| `paths.parquet` (`run.paths()`) | **The product**: per horse `horse_no, t, s, d, lat, sd_s, sd_lat, n_obs` on a 0.1 s grid, from every source, including the official records the run's mask leaves visible; with `HKJC_LAT_METRES=1` also `lat_m, sd_lat_m` (§4); with `HKJC_CONTRACT=1` the contract columns (§4) |
+| `paths.parquet` (`run.paths()`) | **The product**: per horse `horse_no, t, s, d, lat, sd_s, sd_lat, n_obs, lat_m, sd_lat_m` on a 0.1 s grid, from every source, including the official records the run's mask leaves visible, then the contract columns (§4) |
 | `paths_video.parquet` | The reconstruction from the videos and pre-race facts only (no official outcome record); the fixed gates score it, and it is the reference for what the videos alone determine |
 | `validation.json` | fixed gates on `paths_video.parquet` against the full official record, plus the product's residual against the official times (`final_official_resid_mae`) |
 | `audit.json` | label-free invariants (§4, validate) |
@@ -442,10 +442,10 @@ The product: the video-only detections plus the draw and the official records th
 
 `fuse_final` leaves `paths_video.parquet` byte-identical.
 
-### Lateral in metres (`HKJC_LAT_METRES=1`, opt-in)
+### Lateral in metres
 
-With the switch on, both parquets gain `lat_m = a + b(d) × lat` and `sd_lat_m = b(d) × sd_lat`
-(`RaceRun.lat_metres`); every other column and artifact is unchanged.
+Both parquets carry `lat_m = a + b(d) × lat` and `sd_lat_m = b(d) × sd_lat` after the render-unit columns
+(`RaceRun.lat_metres`).
 - One map for both venues and both drone-era render styles, continuous in the distance to go d (`RaceRun.lat_b`).
   With x = d − the home straight's length, b = `LAT_MAP`'s 0.645 for x ≤ 0 (the home straight), `LAT_B_FAR` for
   x ≥ 400 m, linear between (`LAT_RAMP`); a = −0.020 m throughout. In the home straight it is the Sha Tin
@@ -464,11 +464,11 @@ With the switch on, both parquets gain `lat_m = a + b(d) × lat` and `sd_lat_m =
 - The slope changes continuously along a path, so `lat_m` has no step anywhere it is defined. Where a path leaves
   the scope (an untested segment), `lat_m` is NaN, never render units.
 
-### Output contract (`HKJC_CONTRACT=1`, opt-in)
+### Output contract
 
-For modelling on the paths (`recon.contract`). With the switch on, `fuse_final` appends columns to `paths.parquet`
-after every existing column and writes two artifacts; every existing column and artifact is unchanged, and none of the
-additions is a stage output or cache key.
+For modelling on the paths (`recon.contract`). `fuse_final` appends these columns to `paths.parquet` after the path
+and metre columns and writes two artifacts. They are computed from the finished paths and change none of them, and
+none of the additions is a stage output or cache key.
 - `valid`: the node lies in a validity-flagged stretch of the horse (`contract.flag_stretches`). A detection is
   flagged when its video-only and final labels agree, it is at least 1 s after the first render detection and before
   the line, the horse's final path is firm there (sd_s < 1.5 m) and overlaps no other firm path (2.0 m along, 0.7
@@ -612,7 +612,7 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
   − 1 s, with sd < 3 m at both ends.
 - **Pixels.** `viz.reproject` and the synced video; every change is checked on frames.
 
-## 7. Environment and switches
+## 7. Environment
 
 - `HKJC_DEVICE`: `cpu`, `cuda`, `intel:…` (OpenVINO). `HKJC_NPROC`: workers per race. `HKJC_AVATAR_WEIGHTS`:
   detector weights.
@@ -620,16 +620,11 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
   on the GPU in a helper interpreter (integer popcounts, OpenCV's tie order).
 - `HKJC_FILM_DEVICE`: the film detector alone, e.g. `intel:gpu`.
 - `HKJC_MASK`, `HKJC_FINAL_HOLDOUT`: the mask (§3). `HKJC_PERTURB_SEED`: seeded 1 % detection drop in `observe`.
-  `HKJC_LAT_METRES=1`: adds `lat_m, sd_lat_m` (§4).
-  `HKJC_CONTRACT=1`: adds the output-contract columns and artifacts (§4).
-- `HKJC_MATCH_HELPER` (scheduling only; on unless `0`): one matcher helper interpreter serves the race from
-  features to pose, and features runs the avatar detector in its own process feeding up to 4 feature workers (a
-  CUDA context per race from features to pose). `0` starts a fresh helper per table request and has each worker run
-  its own detector (on CUDA, one process detects and does the per-frame CPU work).
-- `HKJC_CUDA_BLOCKING_SYNC=1` (scheduling only, opt-in): the CUDA primary context in blocking-sync mode
-  (`recon.cudasched`); a process waiting for the GPU sleeps instead of spinning.
 
-Exactness: the scheduling switches, `HKJC_OCR_THREADS=1` and `HKJC_MATCH_DEVICE=cuda` leave every artifact
+Scheduling: one matcher helper interpreter serves the race from features to pose, and features runs the avatar
+detector in its own process feeding up to 4 feature workers (a CUDA context per race from features to pose).
+
+Exactness: `HKJC_OCR_THREADS=1` and `HKJC_MATCH_DEVICE=cuda` leave every artifact
 identical. Not bit-exact:
 - `HKJC_OCR_DEVICE=cuda` (ONNX Runtime's CUDA provider, needs onnxruntime-gpu): finish-camera reads, legend reads
   and identity votes can move.
@@ -661,7 +656,7 @@ identical. Not bit-exact:
   render, by a factor that varies by race-boundary and season; it is not modelled.
 - **Posterior calibration.** The stated sd is overconfident at intermediate boundaries but not at the finish; a
   systematic error term is missing.
-- **Uncertainty columns.** The opt-in uncertainty columns (§4) do not yet meet the calibration targets; the gap term is
+- **Uncertainty columns.** The uncertainty columns (§4) do not yet meet the calibration targets; the gap term is
   too wide for gaps over about 5 s; Happy Valley 600 m carries a known distance bias.
 - **Render-vs-official conflicts.** A horse whose render path and official interior times disagree by more than a
   few metres keeps its render path; the video alone cannot say which side is wrong.

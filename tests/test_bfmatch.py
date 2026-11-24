@@ -41,6 +41,18 @@ def test_tables_empty_when_not_opted_in(monkeypatch):
     assert bfmatch.tables([np.zeros((5, 32), np.uint8)] * 2, [(0, 1, True)]) == {}
 
 
+def test_cuda_tables_go_through_the_kept_helper(monkeypatch):
+    from hkjc.recon import bfmatch
+
+    calls = []
+    monkeypatch.setattr(bfmatch, "_tables_subprocess", lambda dev, des, jobs: calls.append("kept") or {})
+    monkeypatch.setattr(bfmatch, "_helper", lambda dev: calls.append("warm"))
+    monkeypatch.setenv("HKJC_MATCH_DEVICE", "cuda")
+    bfmatch.warm()
+    bfmatch.tables([np.zeros((5, 32), np.uint8)] * 2, [(0, 1, True)])
+    assert calls == ["warm", "kept"]
+
+
 def test_helper_interpreter_gives_the_in_process_tables():
     from hkjc.recon import bfmatch
 

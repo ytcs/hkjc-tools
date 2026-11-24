@@ -1,6 +1,6 @@
-"""Output contract for modelling (``HKJC_CONTRACT=1``, opt-in): extra columns and artifacts written by ``fuse_final``.
+"""Output contract for modelling: the flag and uncertainty columns and artifacts ``fuse_final`` writes beside the paths.
 
-Nothing here changes a path: every column the product writes without the switch is bitwise the same with it.
+Nothing here changes a path: the contract columns are computed from the finished paths and appended after them.
 
 paths.parquet gains
   valid        the node lies in a validity-flagged stretch of the horse (``flag_stretches``)
@@ -17,14 +17,7 @@ contract.json          the definitions behind the columns, the run's flagged str
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
-
-
-def contract_on() -> bool:
-    """``HKJC_CONTRACT=1`` (opt-in): fuse_final writes the contract columns and artifacts. Off: as before."""
-    return os.environ.get("HKJC_CONTRACT", "0") == "1"
 
 
 # ------------------------------------------------------------------------------------------------- validity flag
@@ -507,7 +500,7 @@ def describe(stretches, frozen=(), crossings=(), anchors=None) -> dict:
                       "across horses)"},
             "gap": {"sa": GAP_SA, "form": "var = sa^2 dt^3 / 3, dt = seconds since the horse's last labelled "
                     "detection (before its first: the time to it); too wide for gaps over about 5 s"},
-            "status": "opt-in; does not meet the calibration targets",
+            "status": "does not meet the calibration targets",
         },
         "flag": {"stretches": stretches, "rule": "E1 video == final label, E2 >= 1 s after the first render detection, E3 "
                  "before the line, E4 firm and no overlap on the final paths, E5 tracklet disc-read majority (circle); "

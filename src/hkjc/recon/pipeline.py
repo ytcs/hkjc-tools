@@ -121,12 +121,6 @@ DEPS = {
 }
 
 
-def lat_metres_on() -> bool:
-    """``HKJC_LAT_METRES=1`` (opt-in): the written paths gain lat_m / sd_lat_m, the lateral in metres where a validated
-    map exists (``RaceRun.lat_m_scope``), NaN elsewhere; every other column and artifact is unchanged. Off: as before."""
-    return os.environ.get("HKJC_LAT_METRES", "0") == "1"
-
-
 def upstream(stage: str) -> set:
     """Every stage ``stage`` depends on, transitively."""
     out, todo = set(), list(DEPS[stage])
@@ -157,9 +151,6 @@ _STEP_NN = {}  # fork-shared bfmatch cross-check tables for the step matches (em
 _STYLE = "silk"  # render style of the race being processed (fork-shared with the feature workers)
 
 
-_DETECT_HERE = "detect here"  # _feat_job: run this worker's own avatar detector (else: the detector pool's boxes)
-
-
 def _feat_job(args):
     k, nfeat, raw = args
     i, p = _CACHE.idx[k], _CACHE.panel(k)
@@ -172,7 +163,7 @@ def _feat_job(args):
     else:
         lt = video.legend_top(p)
         # the avatar detector's boxes (+ shadows) are masked too: the colour mask misses brown horses
-        rs = _DET.panel(p, lt) if isinstance(raw, str) else _detect.AvatarDetector.drop_legend(raw, lt)
+        rs = _detect.AvatarDetector.drop_legend(raw, lt)  # raw: the detector pool's boxes
         hist = [_detect.silk_hist(p, r) for r in rs]
     m = register.mask_boxes(register.world_mask(p, video.hud_mask(p, lt)), rs)
     f = register.extract(p, m, nfeat)
@@ -497,8 +488,7 @@ class RaceRun:
         is independent and OpenCV's RANSAC seeds its RNG per call, so the process pool gives results
         identical to a sequential loop. The avatar detections made for the mask are saved for
         ``detect`` (yolo.npz). The avatar detector runs in its own pool (one process on an accelerator) and feeds up
-        to 4 feature workers frame by frame (``HKJC_MATCH_HELPER=0``: each worker runs its own detector, one process on
-        an accelerator)."""
+        to 4 feature workers frame by frame."""
         import multiprocessing as mp
 
         cache = self.cache()
@@ -510,19 +500,14 @@ class RaceRun:
         _STYLE = self.render_style()
         accel = os.environ.get("HKJC_DEVICE", "cpu").startswith(("intel:", "cuda"))
         K = len(cache)
-        if bfmatch.helper_on():  # detector pool feeding the feature workers; one accelerator context
-            nw = min(_nproc(), 4)
-            with mp.get_context("fork").Pool(nw) as pool:
-                if _STYLE == "circle":  # no avatar detector
-                    res = pool.map(_feat_job, [(k, nfeat, None) for k in range(K)], chunksize=8)
-                else:
-                    with mp.get_context("fork").Pool(1 if accel else nw, initializer=_det_init) as dpool:
-                        raws = dpool.imap(_det_job, range(K), chunksize=8)
-                        res = list(pool.imap(_feat_job, ((k, nfeat, r) for k, r in enumerate(raws)), chunksize=8))
-        else:  # one avatar detector per worker; one accelerator context
-            nw = 1 if accel else min(_nproc(), 4)
-            with mp.get_context("fork").Pool(nw, initializer=_det_init) as pool:
-                res = pool.map(_feat_job, [(k, nfeat, _DETECT_HERE) for k in range(K)], chunksize=8)
+        nw = min(_nproc(), 4)  # detector pool feeding the feature workers; one accelerator context
+        with mp.get_context("fork").Pool(nw) as pool:
+            if _STYLE == "circle":  # no avatar detector
+                res = pool.map(_feat_job, [(k, nfeat, None) for k in range(K)], chunksize=8)
+            else:
+                with mp.get_context("fork").Pool(1 if accel else nw, initializer=_det_init) as dpool:
+                    raws = dpool.imap(_det_job, range(K), chunksize=8)
+                    res = list(pool.imap(_feat_job, ((k, nfeat, r) for k, r in enumerate(raws)), chunksize=8))
         # a NEW pool: workers fork the parent's state, so the features must exist before forking
         _FEATS_PAR = [r[2] for r in res]
         pairs = [k for k in range(1, len(res)) if res[k][0] - res[k - 1][0] <= 6]
@@ -1518,12 +1503,11 @@ class RaceRun:
         return paths, assign
 
     def _write_paths(self, paths, name, contract=None):
-        """``contract`` (HKJC_CONTRACT=1, fuse_final only): {"anchors": s of the visible boundaries the metric bias was set
-        at}; the contract columns are appended after every existing column, and contract.json is written."""
+        """``contract`` (fuse_final only): {"anchors": s of the visible boundaries the metric bias was set at}; the
+        contract columns are appended after the path columns, and contract.json is written."""
         import polars as pl
 
-        metres = lat_metres_on()
-        t_r0 = self.render_t0() if metres else None
+        t_r0 = self.render_t0()
         recs = [
             pl.DataFrame(
                 {
@@ -1535,7 +1519,7 @@ class RaceRun:
                     "sd_s": p.sd_s,
                     "sd_lat": p.sd_l,
                     "n_obs": p.n_obs,
-                    **(self.lat_metres(p, t_r0) if metres else {}),
+                    **self.lat_metres(p, t_r0),
                 }
             )
             for h, p in paths.items()
@@ -1576,7 +1560,7 @@ class RaceRun:
                                      default=float))
         return P
 
-    # Lateral in metres (HKJC_LAT_METRES=1). The render spreads the field laterally (RECON 8), more in the compact field
+    # Lateral in metres. The render spreads the field laterally (RECON 8), more in the compact field
     # before the home turn than in the fanned-out home straight. One map, continuous in the distance to go d, for both
     # venues and both drone-era render styles: true = a + b(x) x render lateral, x = d - home straight length,
     # b = LAT_MAP's b at x <= LAT_RAMP[0], LAT_B_FAR at x >= LAT_RAMP[1], linear between. In the home straight it is the
@@ -1821,9 +1805,7 @@ class RaceRun:
             big = {h: round(w, 2) for h, w in warp.items() if w > 0.05}
             self.log(f"   fuse_final: re-timed onto the official finish (max shift {max(warp.values()):.3f} s"
                      + (f"; > 0.05 s: {big}" if big else "") + ")")
-        from .contract import contract_on
-
-        ctr = {"anchors": [] if bias is None else [float(x) for x in bias[0]]} if contract_on() else None
+        ctr = {"anchors": [] if bias is None else [float(x) for x in bias[0]]}
         self._write_paths(pf, "paths.parquet", contract=ctr)
         self.log(f"   fuse_final: {len(pf)}/{len(horses)} horses")
 
@@ -2105,9 +2087,7 @@ class RaceRun:
                 blind = [h for h in horses if h not in read and h not in shown]
                 if blind:
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
-        from .contract import contract_on
-
-        margins = [None] if (contract_on() and out_name == "det_labels_final.npz") else None
+        margins = [None] if out_name == "det_labels_final.npz" else None
 
         def em_pass(paths, targets, tag):
             """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""

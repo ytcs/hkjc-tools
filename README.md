@@ -38,7 +38,7 @@ uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse_final,val
 
 Detector weights are expected in `models/` (`avv_avatar_yolo11n.onnx`/`.pt`, the self-trained
 render-avatar detector; `coco_yolov8x.pt` from Ultralytics). They are not distributed in git.
-Environment switches (all optional; unset = CPU):
+Environment variables (all optional; unset = CPU):
 
 | Variable | Effect |
 |---|---|
@@ -90,7 +90,7 @@ src/hkjc/recon/   race info + videos -> paths
     validate.py   fixed gates on the video-only paths vs the full official record
     audit.py      label-free consistency invariants of a reconstruction (audit.json)
     viz.py        synced four-feed video with the reconstructed track map
-docs/RECON.md     architecture: stages, artifacts, mask and held-out evaluation, gates, switches, known limitations
+docs/RECON.md     architecture: stages, artifacts, mask and held-out evaluation, gates, environment, known limitations
 docs/HKJC_*.md    HKJC data sources and track specifications
 models/           detector weights (git-ignored)
 ```

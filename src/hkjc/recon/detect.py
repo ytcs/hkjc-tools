@@ -63,21 +63,15 @@ class AvatarDetector:
     def __init__(self, weights: str | None = None, imgsz: int = 960):
         from ultralytics import YOLO
 
-        from .cudasched import blocking_sync
         from .ortsession import no_spin
 
         no_spin()
-        blocking_sync(os.environ.get("HKJC_DEVICE", "cpu"))
         self.model = YOLO(weights or default_weights())
         self.imgsz = imgsz
 
-    def panel(self, panel, legend_row: int) -> np.ndarray:
-        """Detect on the render PANEL (945x535; ~2x fewer pixels than the letterboxed half frame).
-        -> (N, 6) [cx, cy, w, h, conf, 0] in panel px; legend icon band dropped."""
-        return self.drop_legend(self.raw(panel), legend_row)
-
     def raw(self, panel):
-        """The detector's boxes on the render panel: (xyxy (N, 4), conf (N,)) arrays, or None for no box."""
+        """The detector's boxes on the render PANEL (945x535; ~2x fewer pixels than the letterboxed half frame):
+        (xyxy (N, 4), conf (N,)) arrays, or None for no box."""
         dev = os.environ.get("HKJC_DEVICE", "cpu")
         ov = dev.startswith("intel:")
         r = self.model.predict(
