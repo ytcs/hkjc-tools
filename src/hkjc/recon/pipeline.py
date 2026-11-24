@@ -1620,7 +1620,7 @@ class RaceRun:
                            lane=pl.Series(lane["lane"]).fill_nan(None).cast(pl.Int8))
         box = ct.box_columns(P["horse_no"].to_numpy(), P["t"].to_numpy(), P["s"].to_numpy(), d_, P["lat"].to_numpy(),
                              lane["lane_units"], seg, lane_used)
-        P = P.with_columns(enclosed=pl.Series(box["enclosed"]))
+        P = P.with_columns(enclosed=pl.Series(box["enclosed"]), boxed_in=pl.Series(box["boxed_in"]))
         lane_desc = ct.describe_lane(lane_used, ct.lane_period(self.info.date))
         with self.out("contract.json") as fp:
             fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors, idr_rest,

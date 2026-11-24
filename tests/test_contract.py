@@ -476,3 +476,37 @@ def test_describe_carries_the_box_rule():
 
     b = ct.describe([], box=ct.describe_box())["box"]
     assert b["len_m"] == 2.4 and b["min_nodes"] == 10 and "box" not in ct.describe([])
+
+
+def _held_field(gap0, v_close, D, n_t=40, t_close=1.5):
+    """Focal 1 walled in (2 ahead at gap0 m, 3 outside, 4 inside, the side horses keep pace with 1); 1 runs v_close m/s
+    faster than 2 for t_close s, then at 2's speed (15 m/s)."""
+    t = np.round(np.arange(n_t) * 0.1, 1)
+    s1 = 300.0 + 15.0 * t + v_close * np.minimum(t, t_close)
+    s2 = 300.0 + gap0 + 15.0 * t
+    rows = [(1, s1, 3.0), (2, s2, 3.5), (3, s1 + 1.0, 5.0), (4, s1 - 1.0, 1.0)]
+    h = np.concatenate([np.full(n_t, k) for k, _s, _l in rows])
+    S = np.concatenate([s for _k, s, _l in rows])
+    L = np.concatenate([np.full(n_t, la) for _k, _s, la in rows])
+    T = np.tile(t, 4)
+    return h, T, S, D - S, L, 1.0 + (L - 1.0) / 2.0, np.full(len(T), "straight"), {"straight": {"pitch": 2.0, "origin": 1.0}}
+
+
+def test_boxed_in_needs_closing_then_sitting_within_a_length_in_the_last_600_m():
+    from hkjc.recon import contract as ct
+
+    # closes 1 m/s from 3.5 m to 2.0 m, then sits on the heels: boxed in on the enclosed run's late part
+    h, *r = _held_field(3.5, 1.0, D=800.0)
+    c = ct.box_columns(h, *r)
+    assert c["enclosed"][h == 1].all() and c["boxed_in"][h == 1].all() and not c["boxed_in"][h != 1].any()
+    # the same run more than 600 m out: not late, not boxed in (still enclosed)
+    h, *r = _held_field(3.5, 1.0, D=1200.0)
+    c = ct.box_columns(h, *r)
+    assert c["enclosed"][h == 1].all() and not c["boxed_in"].any()
+    # on the heels but never closing (2.0 m throughout): not boxed in
+    h, *r = _held_field(2.0, 0.0, D=800.0)
+    assert not ct.box_columns(h, *r)["boxed_in"].any()
+    # closing, but it stays more than a length behind (4.0 -> 2.5 m): not held up
+    h, *r = _held_field(4.0, 1.0, D=800.0)
+    c = ct.box_columns(h, *r)
+    assert c["enclosed"][h == 1].all() and not c["boxed_in"].any()

@@ -21,6 +21,8 @@ paths.parquet gains
                and its category 1 rail / 2 two-wide / 3 three-plus (``lane_columns``)
   enclosed     walled in ahead and on both sides (rail counts inside), lateral in the race's abreast pitch, held for
                >= 1 s (``box_columns``; a broader state than a 1 m-lane metre rule)
+  boxed_in     held up behind in the final 600 m: an enclosed run in which the horse closed on the horse in front and
+               then sat within a length of it (``box_columns``)
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
@@ -678,6 +680,18 @@ def describe_lane(used, period=None) -> dict:
 # this is a broader state than 0286's metre B (LANE 1.0 m): 29 % of in-race horse-time on 458 races 2023-09..2026-11,
 # against about 16 % for metre B on the same drone-era nodes.
 BOX_GRID, BOX_LEN, BOX_BRIDGE_N, BOX_MIN_N = 0.1, 2.4, 5, 10
+# boxed_in: held up behind, a costly box-in (0308 round 2). An enclosed run with >= BOX_LATE_N nodes at d <= BOX_LATE_D
+# (its late part) is boxed in when the horse closes on the horse in front and then sits on its heels, all in the late
+# window W (nodes with finite lane_units and d <= BOX_LATE_D):
+#   closing node t: t and t - BOX_CLOSE_N nodes both in W, t in the late part or the BOX_CLOSE_N nodes before it, and
+#                   the gap to the nearest ahead wall j at t shrank by >= -BOX_CLOSE m over those BOX_CLOSE_N nodes;
+#   held: at the first closing node, >= BOX_HOLD_N of the BOX_HOLD_WIN nodes from t have 0 < dS_ij <= BOX_LEN and
+#         |dL| < 1 with both horses in W.
+# The column is true on the late part of each such run. Against the stewards' late blocked-run statements (566 on 458
+# races, 2023-09..2026-11) it finds 0.52 of them at 1.9x chance and its flags overlap one 2.0x as often as chance; it
+# fires for about a third of runners, so it is a candidate for "trip trouble", not a certainty. Across masked reruns its
+# horse x race reliability is low on the silk render (kappa 0.69; 0.88 where id_robust) and high on the disc render.
+BOX_LATE_D, BOX_LATE_N, BOX_CLOSE_N, BOX_CLOSE, BOX_HOLD_N, BOX_HOLD_WIN = 600.0, 5, 10, -0.3, 10, 30
 
 
 def _box_grid(horse_no, t, *cols):
@@ -735,23 +749,59 @@ def _walls(S, LAT, LU, PITCH):
     return ahead & ok, enc & ok, nearest
 
 
+def _held_up(i, la, lb, S, LAT, PITCH, W, nearest) -> bool:
+    """The boxed_in test of one enclosed run's late part [la, lb) of horse ``i``."""
+    T = S.shape[1]
+    for t in range(max(la - BOX_CLOSE_N, BOX_CLOSE_N), lb):
+        j = nearest[i, t]
+        if j < 0 or not (W[i, t] and W[i, t - BOX_CLOSE_N]):
+            continue
+        d0, d1 = S[j, t] - S[i, t], S[j, t - BOX_CLOSE_N] - S[i, t - BOX_CLOSE_N]
+        if not (np.isfinite(d0) and np.isfinite(d1) and d0 - d1 <= BOX_CLOSE):
+            continue
+        sl = slice(t, min(t + BOX_HOLD_WIN, T))
+        with np.errstate(invalid="ignore"):
+            dS = S[j, sl] - S[i, sl]
+            dL = (LAT[j, sl] - LAT[i, sl]) / PITCH[i, sl]
+            held = (dS > 0) & (dS <= BOX_LEN) & (np.abs(dL) < 1.0) & W[i, sl] & W[j, sl]
+        return int(held.sum()) >= BOX_HOLD_N
+    return False
+
+
 def box_columns(horse_no, t, s, d, lat, lane_units, seg, used) -> dict:
-    """{"enclosed"} per row (bool); ``lane_units``, ``used`` from ``lane_columns``, ``seg`` from ``lat_m_segment``."""
+    """{"enclosed", "boxed_in"} per row (bool); ``lane_units``, ``used`` from ``lane_columns``, ``seg`` from
+    ``lat_m_segment``, ``d`` the distance to go."""
     seg = np.asarray(seg).astype(str)
     cls = np.where(seg == "start", "straight", seg)
     pitch = np.array([used[c]["pitch"] if c in used else np.nan for c in cls], float)
-    hi, ki, _h, (S, LAT, LU, PITCH) = _box_grid(horse_no, t, s, lat, lane_units, pitch)
-    _ahead, enc, _nearest = _walls(S, LAT, LU, PITCH)
-    E = np.zeros(S.shape, bool)
-    for i, eps in enumerate(_episodes(enc, np.isfinite(LU))):
+    hi, ki, _h, (S, LAT, LU, PITCH, D) = _box_grid(horse_no, t, s, lat, lane_units, pitch, d)
+    _ahead, enc, nearest = _walls(S, LAT, LU, PITCH)
+    valid = np.isfinite(LU)
+    with np.errstate(invalid="ignore"):
+        W = valid & (D <= BOX_LATE_D)
+    E, B = np.zeros(S.shape, bool), np.zeros(S.shape, bool)
+    for i, eps in enumerate(_episodes(enc, valid)):
         for a, b in eps:
             E[i, a:b] = True
-    return {"enclosed": E[hi, ki]}
+            late = np.flatnonzero(W[i, a:b]) + a
+            if len(late) >= BOX_LATE_N and _held_up(i, late[0], late[-1] + 1, S, LAT, PITCH, W, nearest):
+                B[i, late[0]:late[-1] + 1] = True
+    return {"enclosed": E[hi, ki], "boxed_in": B[hi, ki]}
 
 
 def describe_box() -> dict:
-    """contract.json's ``box`` entry: the enclosed rule and its constants."""
+    """contract.json's ``box`` entry: the enclosed and boxed_in rules and their constants."""
     return {"grid_s": BOX_GRID, "len_m": BOX_LEN, "bridge_nodes": BOX_BRIDGE_N, "min_nodes": BOX_MIN_N,
+            "late_d_m": BOX_LATE_D, "late_nodes": BOX_LATE_N, "close_nodes": BOX_CLOSE_N, "close_m": BOX_CLOSE,
+            "hold_nodes": BOX_HOLD_N, "hold_window_nodes": BOX_HOLD_WIN,
+            "boxed_in": "held up behind: an enclosed run with >= late_nodes nodes in the late window W (finite lane_units, "
+                        "d <= late_d_m) is boxed in when at its first closing node t (t and t - close_nodes in W, t in "
+                        "the run's late part or the close_nodes before it, the gap to the nearest ahead wall j shrank by "
+                        ">= -close_m over close_nodes) the horse then spends >= hold_nodes of the hold_window_nodes from t "
+                        "within len_m behind j and |dL| < 1, both in W; true on the run's late part",
+            "boxed_in_status": "against the stewards' late blocked-run statements (566, 458 races 2023-09..2026-11): "
+                               "recall 0.52 (1.9x chance), precision 0.125 (2.0x chance); fires for about a third of "
+                               "runners; masked-rerun kappa 0.69 silk (0.88 where id_robust), 0.96 disc",
             "enclosed": "at nodes with finite lane_units, dS = s_j - s_i (m), dL = (lat_j - lat_i) / pitch of the horse's "
                         "segment class (lane): ahead = some horse with 0 < dS <= 2 len_m and |dL| < 1; outside = some "
                         "horse with |dS| < len_m and 0 < dL < 2; inside = the same with 0 < -dL < 2, or lane_units < 1.5 "

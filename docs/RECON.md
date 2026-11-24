@@ -614,7 +614,16 @@ none of the additions is a stage output or cache key.
   - Runs of enclosed nodes are joined over gaps under 0.5 s and kept when they last ≥ 1 s.
   - One pitch is about 1.2–1.4 m of `lat_m` off the home straight and 1.8 m in it (drone era), so this is a broader
     state than a rule with 1 m lanes in metres: 29 % of in-race horse-time (458 races, 2023-09 to 2026-11), against
-    about 16 % for the metre rule on the same drone-era nodes. contract.json `box` holds the rule.
+    about 16 % for the metre rule on the same drone-era nodes. contract.json `box` holds the rules of both columns.
+- Boxed in (`contract.box_columns`, after `enclosed`): `boxed_in` marks a horse held up behind in the final 600 m. It
+  applies to an enclosed run with at least 0.5 s at d ≤ 600 m (its late part). The late window W is the nodes with
+  finite `lane_units` and d ≤ 600 m.
+  - Closing node: a node t such that t and the node 1 s earlier are both in W, and t is in the late part or the 1 s
+    before it. Over that second, the gap to the nearest horse ahead (0 < dS ≤ 4.8 m, |dL| < 1) shrank by at least
+    0.3 m.
+  - Held up: from the first closing node, the horse spends at least 1 s of the next 3 s within one length behind that
+    horse, with |dL| < 1 and both horses in W.
+  - The column is true on the run's late part.
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
@@ -765,6 +774,11 @@ identical. Not bit-exact:
   race-level scale term (`sd_lat_m_scale`) is shared per race and segment and defined wherever `lat_m` is.
 - **Lane category.** Against the official running comments' explicit lane statements, `lane` agrees about 0.83 of the
   time (0.90 in 2026/27), and stated three-plus horses read low (recall 0.78). No season reaches 90 %.
+- **Boxed in.** Against the stewards' late blocked-run statements (566 statements on 458 races, 2023-09 to 2026-11),
+  `boxed_in` finds 0.52 of them, 1.9 times the share chance would find. Its flagged runs overlap a statement 2.0 times
+  as often as chance. It fires for about a third of runners: the stewards report about one horse per race, so most of
+  its flags have no statement to confirm or refute them. Across masked reruns its horse × race κ is 0.69 on the silk
+  render (0.88 on `id_robust` units) and about 0.96 on the disc render, so on silk use it beside `id_robust`.
 - **Enclosed is not a costly box-in.** Enclosure is common and often cheap before the home turn. In the final 600 m it
   agrees with the stewards' blocked-run statements only 1.4 times as often as chance would give. Across masked
   reruns, its horse × section reliability (κ) is 0.86 on the silk render and 0.97 on the disc render.
