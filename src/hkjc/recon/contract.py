@@ -13,6 +13,9 @@ paths.parquet gains
   id_robust    identity-robust: in the node's section unit, no horse within 5 m / 2.5 render units of the horse has
                more than tR of its detections relabelled between the video-only and final labels, and the horse's
                read support is >= tP (``id_robust``; thresholds from one cross-fit, not yet confirmed on a fresh set)
+  sd_lat_m_horse, sd_lat_m_node, sd_lat_m_total   the lat_m map's own error, PROVISIONAL (``LAT_M_ERR``, Sha Tin bend
+               and home straight only, NaN elsewhere): a per-horse persistent part, a per-node remainder, and the total
+               with sd_lat_m
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
@@ -489,6 +492,30 @@ def uncertainty_columns(s, t, sd_s, anchors, style, label_t, ident=0.0) -> dict:
             "sd_s_total": np.sqrt(rel ** 2 + ax ** 2)}
 
 
+# ------------------------------------------------------------------------------------------------ lateral-metre error
+# The lat_m map's own error (m), PROVISIONAL design values, not fitted parameters: Sha Tin only, from a comparison with the
+# drone on 7-9 races. By (venue, segment of RaceRun.lat_m_segment): (sd of a per-horse part persistent along the segment,
+# sd of the per-node remainder about it).
+# - Sha Tin bend: the persistent sd is the p90 of the per-horse bend-mean error / 1.645 (0.60 m); the per-node remainder
+#   is 0.25 m. Held out by race the total is still narrow at the tail.
+# - Sha Tin home straight: the map's leave-race-out residual p90 / 1.645 (0.58 m), not split and carried whole as the
+#   persistent part. Its per-node 0.0 means "not split", not a measured zero.
+# Every other segment and every Happy Valley segment has no value, so the three columns are NaN there while lat_m may be
+# defined.
+LAT_M_ERR = {("ST", "bend"): (0.98 / 1.645, 0.25), ("ST", "home"): (0.95 / 1.645, 0.0)}
+
+
+def lat_m_err(venue, seg, sd_lat_m) -> dict:
+    """sd_lat_m_horse, sd_lat_m_node and sd_lat_m_total = sqrt(sd_lat_m^2 + horse^2 + node^2) per node from its segment
+    ``seg`` (``RaceRun.lat_m_segment``); NaN where lat_m is undefined (``sd_lat_m`` NaN) or the segment has no value."""
+    seg = np.asarray(seg)
+    hn = np.array([LAT_M_ERR.get((venue, str(x)), (np.nan, np.nan)) for x in seg.ravel()], float).reshape(seg.shape + (2,))
+    sd = np.asarray(sd_lat_m, float)
+    h = np.where(np.isfinite(sd), hn[..., 0], np.nan)
+    n = np.where(np.isfinite(sd), hn[..., 1], np.nan)
+    return {"sd_lat_m_horse": h, "sd_lat_m_node": n, "sd_lat_m_total": np.sqrt(sd ** 2 + h ** 2 + n ** 2)}
+
+
 # ------------------------------------------------------------------------------------------------------ noise table
 # Per-detection observation noise of the detection-only state-space model, by feed
 # and region; raw render coordinates (along metres, lateral render units). Per row: independent white sd per detection,
@@ -546,6 +573,13 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None) -> dict
                       "belongs to one of the k nearest other paths along s within dlat_render across (equally likely), "
                       "error = minus the offset to it; sd_s_ident^2 = eps x mean squared offset (0 with none)"},
             "status": "does not meet the calibration targets",
+        },
+        "lat_m_err": {
+            "sd_m": {f"{v} {g}": {"horse": h, "node": n} for (v, g), (h, n) in LAT_M_ERR.items()},
+            "form": "the lat_m map's own error by (venue, segment): a per-horse part persistent along the segment and a "
+                    "per-node remainder; sd_lat_m_total = sqrt(sd_lat_m^2 + horse^2 + node^2); NaN in every other "
+                    "segment; the home straight is not split (node 0 = not split)",
+            "status": "provisional design values (Sha Tin only, 7-9-race drone comparison; narrow at the tail held out)",
         },
         "flag": {"stretches": stretches, "rule": "E1 video == final label, E2 >= 1 s after the first render detection, E3 "
                  "before the line, E4 firm and no overlap on the final paths, E5 tracklet disc-read majority (circle); "

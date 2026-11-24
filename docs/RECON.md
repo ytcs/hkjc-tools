@@ -479,7 +479,8 @@ Both parquets carry `lat_m = a + b(d) × lat` and `sd_lat_m = b(d) × sd_lat` af
   x ≥ 400 m, linear between (`LAT_RAMP`); a = −0.020 m throughout. In the home straight it is the Sha Tin
   home-straight map. The render spreads a compact field more than a fanned-out one; b follows the field's typical
   fan-out through the race, not the local spacing of abreast horses.
-- `sd_lat_m` is the mapped posterior sd only; the map's own uncertainty is not added.
+- `sd_lat_m` is the mapped posterior sd only. The map's own error is in the contract columns `sd_lat_m_horse`,
+  `sd_lat_m_node` and `sd_lat_m_total` (provisional, Sha Tin only; Output contract below).
 - Defined only where the map passed its drone test (`RaceRun.lat_m_scope`), NaN elsewhere: turf oval races (not
   the 1000 m straight) with dates in `LAT_M_DATES` (2026-01-07, when drone feeds begin, to the end of the 2026/27
   season; the drone test covered races to 2026-11-23); from the first render frame to the post, in the segments of `LAT_M_SEGMENTS` for the venue
@@ -537,7 +538,7 @@ none of the additions is a stage output or cache key.
     to it; the column is that mixture's sd, √(`IDENT_EPS` × the mean squared offset), 0 with no such neighbour.
   - `sd_s_rel` = √(sd_s² + sd_s_horse² + sd_s_gap² + sd_s_ident²), the field-relative sd; `sd_s_total` =
     √(sd_s_rel² + sd_s_axis²).
-- `id_robust` (`contract.id_robust`, appended last): the node's window is identity-robust, i.e. robust to how much
+- `id_robust` (`contract.id_robust`, appended after the along-track terms): the node's window is identity-robust, i.e. robust to how much
   of the identity was decided by the final pass rather than the video alone. Two tests per window:
   - relabel share: for the horse and every horse within 5 m along and 2.5 render units across of it at any window node,
     take the share of its window detections labelled it by exactly one of the video-only (`det_labels`) and final
@@ -556,12 +557,25 @@ none of the additions is a stage output or cache key.
   - thresholds: tR and tP are set per render style and window type (`ID_THRESHOLDS`). Each is the median of the two
     folds' selected thresholds from one cross-fit on masked reruns. contract.json holds the run's per-section and
     per-horse bend signals and verdicts and its yield (units, nodes and bend horses robust).
+- Lateral-metre error (`contract.lat_m_err`, appended last; **provisional**): the `lat_m` map's own error, which
+  `sd_lat_m` omits. By segment (`RaceRun.lat_m_segment`), `LAT_M_ERR` gives the sd of a per-horse part persistent
+  along the segment (`sd_lat_m_horse`) and of a per-node remainder about it (`sd_lat_m_node`); `sd_lat_m_total` =
+  √(sd_lat_m² + sd_lat_m_horse² + sd_lat_m_node²).
+  - Sha Tin bend: persistent 0.60 m (the p90 of the per-horse bend-mean error against the drone / 1.645), per-node
+    0.25 m.
+  - Sha Tin home straight: one unsplit 0.58 m term (the map's leave-race-out residual p90 / 1.645), carried as the
+    persistent part; its per-node 0 means not split.
+  - NaN everywhere else, including every Happy Valley segment, even where `lat_m` is defined; NaN where `lat_m` is.
+  - These are design values, not a fit: Sha Tin only, from a 7–9-race drone comparison. On the Sha Tin bend,
+    `sd_lat_m` alone is badly overconfident and `sd_lat_m_total` is close to calibrated (refit leaving each race out:
+    z RMS 15.1 → 1.4, 90 % coverage 0.18 → 0.86), but still narrow at the tail out of sample. The home-straight term
+    has not been scored.
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
 - `contract.json`: the definitions, the run's flagged stretches, its frozen-list windows, every visible crossing's
   position verdict (observed, firm, r_v, identity check, pass), the uncertainty constants with the run's axis anchors,
-  and `NOISE_TABLE`, the per-detection noise of the
+  the provisional `LAT_M_ERR` values, and `NOISE_TABLE`, the per-detection noise of the
   detection-only state-space model by feed and region (white sd and a frame-common AR(1) term); a row whose split
   between the two is not identified carries `split_identified` false.
 
@@ -700,7 +714,9 @@ identical. Not bit-exact:
   disc bends and home straight, the Happy Valley silk start and home straight, and every pre-2026 season. The
   home-straight scale holds to about ±7 % across course settings (Sha Tin A reads about +0.3 m wide); bend metres
   are calibrated against a linear rail-to-rail drone ruler, which does not model perspective or rail height on
-  oblique bend views.
+  oblique bend views. The map's own error (`sd_lat_m_*`, §4) is provisional: design values for the Sha Tin bend
+  and home straight only, from a 7–9-race drone comparison, still narrow at the tail out of sample (the home straight
+  unscored); NaN at Happy Valley and in every other segment.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the

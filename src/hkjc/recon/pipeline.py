@@ -1609,6 +1609,9 @@ class RaceRun:
         P = P.with_columns(**{k: pl.Series(np.concatenate(v)) for k, v in unc.items()})
         idr, *idr_rest = ct.id_robust(self, P)
         P = P.with_columns(id_robust=pl.Series(idr))
+        seg = self.lat_m_segment(P["d"].to_numpy(), P["t"].to_numpy(), self.render_t0())
+        err = ct.lat_m_err(self.info.venue, seg, P["sd_lat_m"].to_numpy())  # provisional (contract.LAT_M_ERR)
+        P = P.with_columns(**{k: pl.Series(v) for k, v in err.items()})
         with self.out("contract.json") as fp:
             fp.write_text(json.dumps(ct.describe(stretches, ct.frozen_windows(self), crossings, anchors, idr_rest),
                                      indent=1, default=float))
@@ -1671,7 +1674,7 @@ class RaceRun:
 
     def lat_metres(self, p, t_r0) -> dict:
         """{"lat_m", "sd_lat_m"} of path ``p``: a + b(d) x lat and b(d) x sd_lat inside ``lat_m_scope``, NaN outside.
-        sd_lat_m is the mapped posterior sd only (the map's own uncertainty is not added)."""
+        sd_lat_m is the mapped posterior sd only; the map's own error is in the contract columns sd_lat_m_* (fuse_final)."""
         d = self.info.distance - p.s
         b = self.lat_b(d)
         m = self.lat_m_scope(d, p.t, t_r0)

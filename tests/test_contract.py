@@ -288,3 +288,40 @@ def test_ident_var_is_eps_times_the_mean_squared_offset_to_the_two_nearest_neigh
     assert np.allclose(v[1][1], ct.IDENT_EPS * (9.0 + 16.0) / 2)
     assert np.allclose(v[4][1], 0.0)  # no neighbour within the lane
     assert np.allclose(v[2][1], ct.IDENT_EPS * (9.0 + 49.0) / 2)
+
+
+# ------------------------------------------------------------------------------------------------ lateral-metre error
+def test_lat_m_err_is_provisional_sha_tin_bend_and_home_only_and_adds_in_quadrature():
+    from hkjc.data import Mask, MaskedRace, RaceInfo, Runner
+    from hkjc.recon import contract as ct
+    from hkjc.recon.pipeline import RaceRun
+
+    assert ct.LAT_M_ERR == {("ST", "bend"): (0.98 / 1.645, 0.25), ("ST", "home"): (0.95 / 1.645, 0.0)}
+    seg = np.array(["start", "straight", "bend", "home", "bend", ""])
+    sd = np.array([0.03, 0.03, 0.04, 0.05, np.nan, np.nan])  # lat_m undefined at the last two nodes
+    e = ct.lat_m_err("ST", seg, sd)
+    hb, hh = 0.98 / 1.645, 0.95 / 1.645
+    assert round(hb, 2) == 0.60 and round(hh, 2) == 0.58
+    assert np.allclose(e["sd_lat_m_horse"][2:4], [hb, hh]) and np.allclose(e["sd_lat_m_node"][2:4], [0.25, 0.0])
+    assert np.allclose(e["sd_lat_m_total"][2:4] ** 2,
+                       sd[2:4] ** 2 + e["sd_lat_m_horse"][2:4] ** 2 + e["sd_lat_m_node"][2:4] ** 2)
+    for k in e:  # start and straight: no value although lat_m is defined; NaN where lat_m is NaN
+        assert np.isnan(e[k][[0, 1, 4, 5]]).all()
+    assert all(np.isnan(v).all() for v in ct.lat_m_err("HV", seg, sd).values())  # Happy Valley: none
+    # segments as the pipeline derives them (ST disc, home straight 430 m): start, straight, bend, home, past the post
+    info = RaceInfo("20260913", "ST", 1, 1200.0, "B", "turf", "GOOD", "Class 4", (Runner(1, "H1", "X001", 1),),
+                    pl.DataFrame(), pl.DataFrame())
+    run = RaceRun.__new__(RaceRun)
+    run.info = MaskedRace(info, Mask())
+    s2 = run.lat_m_segment(np.array([1100.0, 1000.0, 700.0, 200.0, -0.1]), np.array([12.0, 20.0, 40.0, 62.0, 71.0]), 11.0)
+    assert s2.tolist() == ["start", "straight", "bend", "home", ""]
+    e2 = ct.lat_m_err("ST", s2, np.full(5, 0.03))
+    assert np.isfinite(e2["sd_lat_m_total"]).tolist() == [False, False, True, True, False]
+
+
+def test_describe_lists_the_provisional_lat_m_err_values():
+    from hkjc.recon import contract as ct
+
+    d = ct.describe([])["lat_m_err"]
+    assert d["sd_m"] == {"ST bend": {"horse": 0.98 / 1.645, "node": 0.25}, "ST home": {"horse": 0.95 / 1.645, "node": 0.0}}
+    assert "provisional" in d["status"]
