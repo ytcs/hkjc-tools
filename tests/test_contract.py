@@ -420,3 +420,59 @@ def test_describe_carries_the_lane_rule_and_the_run_pitch():
     d = ct.describe([], lane=ct.describe_lane(used, "2026/27 disc"))["lane"]
     assert d["classes"]["bend"]["pitch"] == 2.0 and d["cuts"] == [1.5, 2.5] and d["period"] == "2026/27 disc"
     assert "lane" not in ct.describe([])
+
+
+def _box_field(spec, n_t=30, D=1200.0, v=15.0):
+    """Rows of horses {no: (lat, s offset m)} on a 0.1 s grid at v m/s in one straight class with pitch 2, origin 1."""
+    t = np.round(np.arange(n_t) * 0.1, 1)
+    rows = [(np.full(n_t, h), t, 300.0 + v * t + o, np.full(n_t, la)) for h, (la, o) in spec.items()]
+    h, T, S, L = (np.concatenate(x) for x in zip(*rows))
+    used = {"straight": {"pitch": 2.0, "origin": 1.0}}
+    return h, T, S, D - S, L, 1.0 + (L - 1.0) / 2.0, np.full(len(T), "straight"), used
+
+
+def test_enclosed_needs_a_horse_ahead_and_both_sides_closed_in_lane_units():
+    from hkjc.recon import contract as ct
+
+    # focal 1 in lane 2 (lat 3); 2 ahead within two lengths and under a pitch across; 3 one pitch out; 4 one pitch in
+    full = {1: (3.0, 0.0), 2: (3.5, 3.0), 3: (5.0, 1.0), 4: (1.0, -1.0)}
+    h, *rest = _box_field(full)
+    e = ct.box_columns(h, *rest)["enclosed"]
+    assert e[h == 1].all() and not e[h == 2].any()  # 2 has nobody ahead
+    for drop, want in ((3, False), (4, False), (2, False)):  # remove the outside, the inside or the ahead wall
+        h2, *r2 = _box_field({k: v for k, v in full.items() if k != drop})
+        assert ct.box_columns(h2, *r2)["enclosed"][h2 == 1].any() == want
+    # on the rail (lane_units < 1.5) the rail closes the inside: no inside horse needed
+    rail = {1: (1.5, 0.0), 2: (1.8, 3.0), 3: (3.5, 1.0)}
+    h3, *r3 = _box_field(rail)
+    assert ct.box_columns(h3, *r3)["enclosed"][h3 == 1].all()
+    # walls just outside the windows: ahead beyond two lengths, the outside horse two pitches out or a length along
+    for k, val in ((2, (3.5, 2 * ct.BOX_LEN + 0.1)), (3, (7.0, 1.0)), (3, (5.0, ct.BOX_LEN + 0.05))):
+        h4, *r4 = _box_field({**full, k: val})
+        assert not ct.box_columns(h4, *r4)["enclosed"][h4 == 1].any()
+
+
+def test_enclosed_bridges_short_gaps_and_keeps_runs_of_one_second():
+    from hkjc.recon import contract as ct
+
+    full = {1: (3.0, 0.0), 2: (3.5, 3.0), 3: (5.0, 1.0), 4: (1.0, -1.0)}
+    h, t, s, d, lat, lu, seg, used = _box_field(full)
+    out = h == 3
+    for gap, keep in ((range(12, 15), np.arange(30)), (range(8, 14), np.arange(14, 30))):
+        s2 = s.copy()
+        s2[out] += np.isin(np.round(t[out] * 10), list(gap)) * 50.0  # the outside horse leaves the side window
+        e = ct.box_columns(h, t, s2, d, lat, lu, seg, used)["enclosed"][h == 1]
+        assert np.flatnonzero(e).tolist() == keep.tolist()
+    # under one second enclosed: nothing kept; neighbours without lane_units are not walls
+    h5, *r5 = _box_field(full, n_t=9)
+    assert not ct.box_columns(h5, *r5)["enclosed"].any()
+    lu2 = lu.copy()
+    lu2[h == 3] = np.nan
+    assert not ct.box_columns(h, t, s, d, lat, lu2, seg, used)["enclosed"][h == 1].any()
+
+
+def test_describe_carries_the_box_rule():
+    from hkjc.recon import contract as ct
+
+    b = ct.describe([], box=ct.describe_box())["box"]
+    assert b["len_m"] == 2.4 and b["min_nodes"] == 10 and "box" not in ct.describe([])

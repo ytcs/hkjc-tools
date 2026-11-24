@@ -19,11 +19,14 @@ paths.parquet gains
                the total with sd_lat_m
   lane_units, lane   lateral in units of the race's own abreast pitch from its rail runner (scale-free, every season)
                and its category 1 rail / 2 two-wide / 3 three-plus (``lane_columns``)
+  enclosed     walled in ahead and on both sides (rail counts inside), lateral in the race's abreast pitch, held for
+               >= 1 s (``box_columns``; a broader state than a 1 m-lane metre rule)
 det_margins_final.npz  per tracks row: the final E-step's assignment margin (``assoc.assign_frames``); a margin, not a
                calibrated probability
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
                held in near-cloth order, the per-crossing position verdicts, the noise table, id_robust's
-               per-section and per-horse bend verdicts with the run's yield, and the run's lane pitch and origin
+               per-section and per-horse bend verdicts with the run's yield, the run's lane pitch and origin, and the
+               enclosed rule
 """
 
 from __future__ import annotations
@@ -661,6 +664,102 @@ def describe_lane(used, period=None) -> dict:
                       "races 2023-09..2026-11) 0.83 overall, 0.90 in 2026/27; stated three-plus horses read low"}
 
 
+
+# ------------------------------------------------------------------------------------------------------------ enclosed
+# enclosed: the horse is walled in ahead and on both sides, with lateral counted in the race's abreast pitch (0308; every
+# season, no metres). On the final paths' BOX_GRID s node grid, at nodes where lane_units is finite (firm, in-race), with
+# dS = s_j - s_i (m) and dL = (lat_j - lat_i) / pitch of the horse's segment class (``lane_columns``; start uses straight):
+#   ahead    some horse with 0 < dS <= 2 BOX_LEN and |dL| < 1;
+#   outside  some horse with |dS| < BOX_LEN and 0 < dL < 2;
+#   inside   some horse with |dS| < BOX_LEN and 0 < -dL < 2, or the rail (lane_units < 1.5);
+# only neighbours with finite lane_units count. Enclosed nodes form runs; runs closer than BOX_BRIDGE_N nodes are joined
+# when every node between has finite lane_units, and runs of >= BOX_MIN_N nodes are kept (the column is True on them,
+# bridged nodes included). One pitch is about 1.2-1.4 m of lat_m off the home straight and 1.8 m in it (drone era), so
+# this is a broader state than 0286's metre B (LANE 1.0 m): 29 % of in-race horse-time on 458 races 2023-09..2026-11,
+# against about 16 % for metre B on the same drone-era nodes.
+BOX_GRID, BOX_LEN, BOX_BRIDGE_N, BOX_MIN_N = 0.1, 2.4, 5, 10
+
+
+def _box_grid(horse_no, t, *cols):
+    """Rows -> (row horse index, row time index, horses, grids H x T of ``cols`` with NaN where a horse has no row)."""
+    horse_no = np.asarray(horse_no).astype(np.int64)
+    horses = np.unique(horse_no)
+    k = np.round(np.asarray(t, float) / BOX_GRID).astype(np.int64)
+    hi, ki = np.searchsorted(horses, horse_no), k - k.min()
+    grids = []
+    for c in cols:
+        g = np.full((len(horses), int(ki.max()) + 1), np.nan)
+        g[hi, ki] = np.asarray(c, float)
+        grids.append(g)
+    return hi, ki, horses, grids
+
+
+def _runs(b):
+    x = np.diff(np.r_[0, b.astype(np.int8), 0])
+    return list(zip(np.flatnonzero(x == 1), np.flatnonzero(x == -1)))
+
+
+def _episodes(node, valid):
+    """Per horse [(a, b_exclusive)] of ``node`` runs bridged over gaps < BOX_BRIDGE_N valid nodes, kept >= BOX_MIN_N."""
+    out = []
+    for i in range(node.shape[0]):
+        r = _runs(node[i] & valid[i])
+        eps = []
+        if r:
+            merged = [list(r[0])]
+            for a, e in r[1:]:
+                if a - merged[-1][1] < BOX_BRIDGE_N and valid[i, merged[-1][1]:a].all():
+                    merged[-1][1] = e
+                else:
+                    merged.append([a, e])
+            eps = [(a, e) for a, e in merged if e - a >= BOX_MIN_N]
+        out.append(eps)
+    return out
+
+
+def _walls(S, LAT, LU, PITCH):
+    """(ahead, enclosed) node masks H x T and the nearest ahead-wall horse index (-1 where none)."""
+    H = S.shape[0]
+    ok = np.isfinite(LU) & np.isfinite(S)
+    dS = S[None, :, :] - S[:, None, :]
+    dL = (LAT[None, :, :] - LAT[:, None, :]) / PITCH[:, None, :]
+    okj = ok[None, :, :] & ok[:, None, :] & ~np.eye(H, dtype=bool)[:, :, None]
+    with np.errstate(invalid="ignore"):
+        ahead_j = okj & (dS > 0) & (dS <= 2 * BOX_LEN) & (np.abs(dL) < 1.0)
+        side = okj & (np.abs(dS) < BOX_LEN)
+        out = (side & (dL > 0) & (dL < 2.0)).any(1)
+        ins = (side & (-dL > 0) & (-dL < 2.0)).any(1)
+        ahead = ahead_j.any(1)
+        enc = ahead & out & (ins | (LU < 1.5))
+    nearest = np.where(ahead, np.argmin(np.where(ahead_j, dS, np.inf), axis=1), -1)
+    return ahead & ok, enc & ok, nearest
+
+
+def box_columns(horse_no, t, s, d, lat, lane_units, seg, used) -> dict:
+    """{"enclosed"} per row (bool); ``lane_units``, ``used`` from ``lane_columns``, ``seg`` from ``lat_m_segment``."""
+    seg = np.asarray(seg).astype(str)
+    cls = np.where(seg == "start", "straight", seg)
+    pitch = np.array([used[c]["pitch"] if c in used else np.nan for c in cls], float)
+    hi, ki, _h, (S, LAT, LU, PITCH) = _box_grid(horse_no, t, s, lat, lane_units, pitch)
+    _ahead, enc, _nearest = _walls(S, LAT, LU, PITCH)
+    E = np.zeros(S.shape, bool)
+    for i, eps in enumerate(_episodes(enc, np.isfinite(LU))):
+        for a, b in eps:
+            E[i, a:b] = True
+    return {"enclosed": E[hi, ki]}
+
+
+def describe_box() -> dict:
+    """contract.json's ``box`` entry: the enclosed rule and its constants."""
+    return {"grid_s": BOX_GRID, "len_m": BOX_LEN, "bridge_nodes": BOX_BRIDGE_N, "min_nodes": BOX_MIN_N,
+            "enclosed": "at nodes with finite lane_units, dS = s_j - s_i (m), dL = (lat_j - lat_i) / pitch of the horse's "
+                        "segment class (lane): ahead = some horse with 0 < dS <= 2 len_m and |dL| < 1; outside = some "
+                        "horse with |dS| < len_m and 0 < dL < 2; inside = the same with 0 < -dL < 2, or lane_units < 1.5 "
+                        "(rail); enclosed = ahead and outside and inside, neighbours with finite lane_units only; runs "
+                        "joined over gaps < bridge_nodes nodes with finite lane_units, kept when >= min_nodes nodes",
+            "status": "lane units, not metres: one pitch is about 1.2-1.4 m off the home straight and 1.8 m in it, so "
+                      "a broader state than a 1 m-lane metre rule (29 % of in-race horse-time, 2023-09..2026-11)"}
+
 # ------------------------------------------------------------------------------------------------------ noise table
 # Per-detection observation noise of the detection-only state-space model, by feed
 # and region; raw render coordinates (along metres, lateral render units). Per row: independent white sd per detection,
@@ -699,11 +798,11 @@ def _finite(x):
     return x
 
 
-def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=None) -> dict:
+def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=None, box=None) -> dict:
     """contract.json: the definitions behind the columns, the run's flagged stretches, the legend windows held in
     near-cloth order (``frozen``), the position flag's crossing verdicts, the uncertainty terms with the run's axis
     ``anchors``, the noise table, ``idr``, id_robust's (sections, bends, yield) (``describe_id_robust``), and ``lane``,
-    the run's lane pitch and origin (``describe_lane``)."""
+    the run's lane pitch and origin (``describe_lane``), and ``box``, the enclosed rule (``describe_box``)."""
     return {
         "uncertainty": {
             "anchors_s": list(anchors or []),
@@ -758,6 +857,7 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=No
                     "meaning": "assignment margin, not a calibrated probability"},
         **({} if idr is None else {"id_robust": describe_id_robust(*idr)}),
         **({} if lane is None else {"lane": _finite(lane)}),
+        **({} if box is None else {"box": box}),
     }
 
 

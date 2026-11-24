@@ -604,6 +604,17 @@ none of the additions is a stage output or cache key.
     there.
   - contract.json `lane` holds the run's pitch, pitch3, origin, gap counts and sources per class, with the rule and the
     cuts.
+- Enclosed (`contract.box_columns`, appended after `lane`): `enclosed` is true where the horse is walled in ahead and
+  on both sides, with lateral counted in the race's abreast pitch, so it needs no metres and is defined in every season.
+  - At nodes with finite `lane_units` (neighbours count only where theirs is finite), with dS the along-track gap (m)
+    and dL the lateral gap divided by the pitch of the horse's segment class:
+    - ahead: a horse with 0 < dS ≤ 4.8 m (two lengths) and |dL| < 1;
+    - outside: a horse with |dS| < 2.4 m and 0 < dL < 2;
+    - inside: the same on the inside, or the rail (`lane_units` < 1.5).
+  - Runs of enclosed nodes are joined over gaps under 0.5 s and kept when they last ≥ 1 s.
+  - One pitch is about 1.2–1.4 m of `lat_m` off the home straight and 1.8 m in it (drone era), so this is a broader
+    state than a rule with 1 m lanes in metres: 29 % of in-race horse-time (458 races, 2023-09 to 2026-11), against
+    about 16 % for the metre rule on the same drone-era nodes. contract.json `box` holds the rule.
 - `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
   cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
   unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
@@ -754,6 +765,9 @@ identical. Not bit-exact:
   race-level scale term (`sd_lat_m_scale`) is shared per race and segment and defined wherever `lat_m` is.
 - **Lane category.** Against the official running comments' explicit lane statements, `lane` agrees about 0.83 of the
   time (0.90 in 2026/27), and stated three-plus horses read low (recall 0.78). No season reaches 90 %.
+- **Enclosed is not a costly box-in.** Enclosure is common and often cheap before the home turn. In the final 600 m it
+  agrees with the stewards' blocked-run statements only 1.4 times as often as chance would give. Across masked
+  reruns, its horse × section reliability (κ) is 0.86 on the silk render and 0.97 on the disc render.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the
