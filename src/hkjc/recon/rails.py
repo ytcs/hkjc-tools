@@ -219,6 +219,28 @@ class RailFrame:
         return self.s[j] + along, lat
 
 
+def inward_turning(rail: "RailFrame") -> np.ndarray:
+    """Cumulative turning of the rail toward its inner side (rad) at each station, 0 at the first: the integral of the
+    curvature along s, from the unwrapped direction of the rail's (smoothed) normals."""
+    T = np.c_[rail.Nout[:, 1], -rail.Nout[:, 0]]  # a unit tangent; one sign for the whole rail
+    T = T * np.sign(np.sum(np.gradient(rail.R, axis=0) * T))  # direction of travel
+    phi = np.unwrap(np.arctan2(T[:, 1], T[:, 0]))
+    # d phi / ds > 0 turns toward (-Ty, Tx); the inner side is -Nout
+    sgn = np.sign(np.median(-(np.c_[-T[:, 1], T[:, 0]] * rail.Nout).sum(1)))
+    return sgn * (phi - phi[0])
+
+
+def offset_arc(rail: "RailFrame", w_px: float):
+    """s -> arc length (world px) along the line ``w_px`` world px outside the rail, s + w_px * Theta(s), Theta the
+    rail's inward turning (constant beyond the rail's ends)."""
+    th = inward_turning(rail)
+
+    def sp(x):
+        return np.asarray(x, float) + w_px * np.interp(x, rail.s, th)
+
+    return sp
+
+
 def marker_profile(img, cnt, to_px, rail: "RailFrame", s_lo, s_hi, lat=(30.0, 450.0)):
     """Per-s (1 world px) response of thin bright lines PERPENDICULAR to the rail in an outward band
     — the render's painted distance markers (FINISH/50/100/150/200/300, drawn across the track)."""

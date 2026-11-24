@@ -274,6 +274,13 @@ scales agree within 8 %; a pinned grid also sets the per-race tick convention (d
 |residual| > 10 m (a pose slip in the straights' camera swing). Lateral = (lat_px + lat0_px) / local px/m;
 detections > 1 m inside the rail are dropped (`RaceRun.LAT_GATE`).
 
+**Metric line.** The HUD's metres per rail px step where the rail turns (about 4 % at the Happy Valley home-bend
+entry, 600 m to go), as if the odometer measured arc length along a line w metres outside the extracted rail; the
+150 m spline in rail s smooths over the step and cuts the corner. `RaceRun.tick_metric` can fit the ticks against
+s' = s + w·ppm·Θ(s) (`rails.offset_arc`: Θ the rail's cumulative inward turning, ppm the rail-s fit's tick-line scale;
+the marker grid stays in rail s, its finish mapped to s'). `observe` always fits in rail s (w = 0); the s' metric is
+used only by the product (§4 fuse_final).
+
 **Timestamps.** Each render frame is stamped with its tick time (`video.tick_frame`), since tick content advances a
 uniform 0.1 s while ticks start 2 and 3 frames apart: the residue followed by a 2-frame step moves −0.25 frame, the
 other +0.25 (mean zero; off-grid frames unchanged). All observation times (tracks, tracker, film anchor, time-local
@@ -415,7 +422,11 @@ The product: the video-only detections plus the draw and the official records th
    finish observation. The anchor check, the official-only skeleton and its merge test use these sds.
 2. `RaceRun._metric_bias`: at each visible boundary, b = median over ≥ 3 horses of (video-only crossing delay
    × speed); render s is shifted by b interpolated along s. The render metric error is shared by all horses,
-   and hundreds of render observations would otherwise outvote the official times.
+   and hundreds of render observations would otherwise outvote the official times. At Happy Valley (turf ovals;
+   w = `METRIC_W` 3.10 m, frozen from the pooled HUD tick loss alone) the shift is ds(s) + the bias left at the
+   visible boundaries after ds, interpolated (`RaceRun._shape_bias`): ds = the s' metric's render s minus the rail-s
+   metric's for the same detections. The product keeps its values at every visible boundary and takes the s' metric's
+   shape between them; `paths_video.parquet` and the video-only gates do not use it.
 3. Fuse with the grid running 0.5 s past the later of the last visible official time and the video-only grid's
    end (else the slowest finisher ends short of the line; with the finish withheld the last visible official time
    is 400 m out).

@@ -121,6 +121,12 @@ DEPS = {
 }
 
 
+# m outside the extracted racing rail: the line whose arc length the HUD odometer's metres follow, per venue (frozen
+# from the pooled HUD tick loss alone, no official data). Happy Valley only: the Sha Tin line (4.60 m) made the product
+# worse at 200 m.
+METRIC_W = {"HV": 3.10}
+
+
 def upstream(stage: str) -> set:
     """Every stage ``stage`` depends on, transitively."""
     out, todo = set(), list(DEPS[stage])
@@ -910,33 +916,37 @@ class RaceRun:
         lat0 = float(z["lat0_px"]) if "lat0_px" in z.files else 0.0
         return 0.0 if lat0 < -self.LAT_GATE * ppm else lat0
 
-    def observe(self):
-        rows, X, hist, _P = self.world_dets()
-        seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness perturbation
-        if seed:  # drop 1 % of detections (seeded) -> spread of the downstream gate metrics
-            keep = np.random.default_rng(int(seed)).random(len(rows)) >= 0.01
-            rows, X, hist = rows[keep], X[keep], hist[keep]
-            self._wd_idx = self._wd_idx[keep]
-        if self.mask.dets:  # evidence mask: withheld detections, as if the detector had missed them
-            keep = ~np.isin(self._wd_idx, np.fromiter(self.mask.dets, int))
-            rows, X, hist = rows[keep], X[keep], hist[keep]
-            self._wd_idx = self._wd_idx[keep]
-            self.log(f"   observe: {int((~keep).sum())} detections withheld by the mask")
-        z = np.load(self.p("rail.npz"))
-        m = np.load(self.p("metric.npz"))
-        rf = rails.RailFrame.from_points(z["rail"], int(z["inner"]))
-        k_of = {int(f): k for k, f in enumerate(z["frame_idx"])}
-        hint = rf.s[z["st_of_frame"][[k_of[int(f)] for f in rows[:, 0]]]]
-        s_px, lat_px = rf.project(X, s_hint=hint, window=1200.0)
-        ppm, sF = float(m["ppm"]), float(m["sF"])
-        fu = np.unique(rows[:, 0])
-        # race-clock time of a render frame: its tick on the uniform 10 Hz grid (video.tick_frame)
+    def metric_w(self) -> float:
+        """w (m) of the product's metric line (``METRIC_W`` by venue); 0 for other venues, off turf and on straight
+        courses (the rails stage wrote lat0_px)."""
+        if self.info.surface != "turf" or not self.p("rail.npz").exists():
+            return 0.0
+        if "lat0_px" in np.load(self.p("rail.npz")).files:
+            return 0.0
+        return float(METRIC_W.get(self.info.venue, 0.0))
+
+    def tick_time(self):
+        """-> f(frames): race-clock time (s) of render frames, each stamped with its tick on the uniform 10 Hz grid
+        (video.tick_frame)."""
         grid = video.tick_grid(np.load(self.p("frames_idx.npz"))["idx"])
         f0 = self.clock_f0()
 
         def tick_s(f):
             return (video.tick_frame(f, grid) - f0) / FPS
 
+        return tick_s
+
+    def tick_metric(self, rows, s_px, rf, m, w: float = 0.0) -> dict:
+        """observe's distance metric (RECON 4, observe): the render leader per frame (``s_px``, rail s of the gated
+        detections ``rows``), odometer tick events, the tick-seeded marker grid (``m``: metric.npz), the tick fit
+        (``rails.calibrate_distance_ticks``), the film anchor and the time-local shift. With ``w`` > 0 (m,
+        ``metric_w``) the ticks are fitted against arc length along the line w m outside the rail
+        (``rails.offset_arc``, the scale from the rail-s fit's tick line); lateral keeps the rail-s fit's px/m.
+        -> dict(d per detection, ppm (marker or seeded), ppm_loc (lateral px/m of rail s), resid (tick residuals of
+        the fit behind d), c, fit (ppm_odo, sF_odo, pinned, c_m, n_shift), delta (film anchor), w, fu, d_lead)"""
+        ppm, sF = float(m["ppm"]), float(m["sF"])
+        fu = np.unique(rows[:, 0])
+        tick_s = self.tick_time()
         # leader position per frame: a front detection > 8 m clear of the next is a false positive
         # only if that gap is not persistent (a genuinely clear leader keeps its margin)
         from scipy.ndimage import median_filter
@@ -975,39 +985,78 @@ class RaceRun:
             tt = zf["t"] + lag / FPS if lag > 0 else zf["t"]
             film_t = dict(zip(zf["markers"].tolist(), tt.tolist()))
         use_film = len(film_t) >= film.FILM_MIN
-        d_of_s, c, ppm_loc, resid, (ppm_odo, sF_odo, pinned, c_m, nsh) = (
-            rails.calibrate_distance_ticks(
-                fu,
-                s_lead,
-                odo,
-                ppm,
-                sF,
-                pin_finish=False if use_film else None,
-                have_markers=have_markers,
+
+        def fit_in(x_lead, x_F):
+            """the tick fit in one along-track coordinate -> (calibrate_distance_ticks output, film delta, per)"""
+            fit = rails.calibrate_distance_ticks(
+                fu, x_lead, odo, ppm, x_F, pin_finish=False if use_film else None, have_markers=have_markers
             )
-        )
-        delta = 0.0
-        if use_film:
-            dlt, per = film.anchor_offset(tick_s(fu), d_of_s(s_lead), film_t)
-            if dlt is None:  # crossings not matched by the render leader: back to the paint pin
-                d_of_s, c, ppm_loc, resid, (ppm_odo, sF_odo, pinned, c_m, nsh) = (
-                    rails.calibrate_distance_ticks(
-                        fu, s_lead, odo, ppm, sF, have_markers=have_markers
-                    )
-                )
-            else:
-                delta = dlt
-                self.log(
-                    f"   observe: film anchor delta {delta:+.2f} m from {len(per)} markers "
-                    f"(spread {np.ptp(per):.1f} m)"
-                )
+            if use_film:
+                dlt, per = film.anchor_offset(tick_s(fu), fit[0](x_lead), film_t)
+                if dlt is None:  # crossings not matched by the render leader: back to the paint pin
+                    return rails.calibrate_distance_ticks(fu, x_lead, odo, ppm, x_F, have_markers=have_markers), 0.0, None
+                return fit, dlt, per
+            return fit, 0.0, None
+
+        fit, delta, per = fit_in(s_lead, sF)
+        d_of_s, c, ppm_loc, resid, info = fit
+        if w:
+            # the HUD's metres run along a line w m outside the extracted rail (its px/m steps where the rail turns):
+            # d from the fit in that line's arc length, the marker grid and lateral stay in rail s
+            sp = rails.offset_arc(rf, w * info[0])
+            fit, delta, per = fit_in(sp(s_lead), float(sp(sF)))
+            d_w, c, _ppm_loc_w, resid, info = fit
+
+            def d_of_s(x):
+                return d_w(sp(x))
+
+            self.log(f"   observe: metric along the line {w:.2f} m outside the rail")
+        if per is not None:
+            self.log(f"   observe: film anchor delta {delta:+.2f} m from {len(per)} markers (spread {np.ptp(per):.1f} m)")
         d = d_of_s(s_px) - delta
         # time-local pose slips (render camera swing on the straights): per-frame along-track shift
-        tf_u = tick_s(fu)
-        shift_u, n_win = rails.time_local_shift(tf_u, d_of_s(s_lead) - delta, odo)
+        d_lead = d_of_s(s_lead) - delta
+        shift_u, n_win = rails.time_local_shift(tick_s(fu), d_lead, odo)
         if n_win:
             d = d - shift_u[np.searchsorted(fu, rows[:, 0])]
             self.log(f"   observe: time-local shift in {n_win} window(s), max {np.abs(shift_u).max():.1f} m")
+        return dict(d=d, ppm=ppm, ppm_loc=ppm_loc, resid=resid, c=c, fit=info, delta=delta, w=w, fu=fu, s_lead=s_lead,
+                    odo=odo, d_lead=d_lead)
+
+    def _observed_dets(self):
+        """observe's detections: world_dets less the perturbation and the mask's withheld detections
+        (``self._wd_idx`` follows) -> rows, X, hist"""
+        rows, X, hist, _P = self.world_dets()
+        seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness perturbation
+        if seed:  # drop 1 % of detections (seeded) -> spread of the downstream gate metrics
+            keep = np.random.default_rng(int(seed)).random(len(rows)) >= 0.01
+            rows, X, hist = rows[keep], X[keep], hist[keep]
+            self._wd_idx = self._wd_idx[keep]
+        if self.mask.dets:  # evidence mask: withheld detections, as if the detector had missed them
+            keep = ~np.isin(self._wd_idx, np.fromiter(self.mask.dets, int))
+            rows, X, hist = rows[keep], X[keep], hist[keep]
+            self._wd_idx = self._wd_idx[keep]
+            self.log(f"   observe: {int((~keep).sum())} detections withheld by the mask")
+        return rows, X, hist
+
+    def _rail_projection(self, rows, X):
+        """-> (rail.npz, metric.npz, RailFrame, s_px, lat_px) of observe's detections"""
+        z = np.load(self.p("rail.npz"))
+        m = np.load(self.p("metric.npz"))
+        rf = rails.RailFrame.from_points(z["rail"], int(z["inner"]))
+        k_of = {int(f): k for k, f in enumerate(z["frame_idx"])}
+        hint = rf.s[z["st_of_frame"][[k_of[int(f)] for f in rows[:, 0]]]]
+        s_px, lat_px = rf.project(X, s_hint=hint, window=1200.0)
+        return z, m, rf, s_px, lat_px
+
+    def observe(self):
+        rows, X, hist = self._observed_dets()
+        z, m, rf, s_px, lat_px = self._rail_projection(rows, X)
+        mt = self.tick_metric(rows, s_px, rf, m)
+        tick_s = self.tick_time()
+        d, ppm, ppm_loc, resid, c = mt["d"], mt["ppm"], mt["ppm_loc"], mt["resid"], mt["c"]
+        delta = mt["delta"]
+        ppm_odo, sF_odo, pinned, c_m, nsh = mt["fit"]
         # straight courses (the rails stage's decision, recorded as lat0_px): the rail polyline is the
         # field-edge datum and lat0_px the fence's measured offset inside it (rails.straight_datum)
         lat0 = self.fence_lat0(ppm)
@@ -1779,7 +1828,7 @@ class RaceRun:
         t_vid = max((float(p.t[-1]) for p in pv.values()), default=None)
         ends = [x for x in (t_off, t_vid) if x is not None]
         t_end = max(ends) + 0.5 if ends else None
-        bias = self._metric_bias(pv)
+        bias = self._shape_bias(self._metric_bias(pv))
         self._render_bias = bias
         obs_f = self._metric_corrected(obs, pv, bias)
         pf, _a = self._fuse(obs_f + offi, horses, prior, t_end=t_end)
@@ -1982,6 +2031,31 @@ class RaceRun:
         sb, b = sb[o], b[o]
         self.log(f"   fuse: render metric bias at boundaries (m): {np.round(b, 2).tolist()}")
         return sb, b
+
+    def _shape_bias(self, bias):
+        """With ``metric_w`` > 0 the bias table (s, shift) becomes ds(s) + the bias left at the visible
+        boundaries after ds, interpolated: ds(s) = the offset-line tick metric's s minus the rail-s metric's for the same
+        detections (``tick_metric`` at w and 0 on observe's detections, median per metre of render s). The product keeps
+        its values at every visible official boundary and takes the offset-line metric's shape between them. ``bias``
+        unchanged when w = 0 or no boundary is visible."""
+        w = self.metric_w()
+        if not w or bias is None:
+            return bias
+        rows, X, _hist = self._observed_dets()
+        _z, m, rf, s_px, _lat = self._rail_projection(rows, X)
+        d0 = self.tick_metric(rows, s_px, rf, m)["d"]
+        dw = self.tick_metric(rows, s_px, rf, m, w)["d"]
+        s0 = self.info.distance - d0
+        key, inv = np.unique(np.round(s0).astype(int), return_inverse=True)
+        order = np.argsort(inv, kind="stable")
+        groups = np.split((d0 - dw)[order], np.flatnonzero(np.diff(inv[order])) + 1)
+        s_r, ds = key.astype(float), np.array([np.median(g) for g in groups])
+        sb, b = bias
+        grid = np.unique(np.r_[s_r, sb])
+        shift = np.interp(grid, s_r, ds) + np.interp(grid, sb, b - np.interp(sb, s_r, ds))
+        self.log(f"   fuse_final: metric line {w:.2f} m outside the rail between the boundaries (shape range "
+                 f"{np.ptp(ds):.1f} m)")
+        return grid, shift
 
     EM_ITERS = 8
     SEED_BACK = 3.0  # s before its finish-camera crossing that a path-less horse is seeded

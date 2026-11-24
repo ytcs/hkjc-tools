@@ -298,14 +298,15 @@ def test_recon_reads_disc_numbers_and_detections_only_where_the_mask_applies():
         return sorted(name for name, body in methods.items() if pat in body)
 
     # numbers.npz is read in one place (_number_reads, which applies the disc mask); raw detections reach
-    # the stages from observe on only through observe's world_dets call, where the detection mask applies
-    # (rails and silk are upstream of observe)
+    # the stages from observe on only through _observed_dets (observe, fuse_final's shape bias), where the detection
+    # mask applies (rails and silk are upstream of observe)
     assert readers('self.p("numbers.npz")') == ["_number_reads"]
     # legend.npz is read in the stages from observe on only through legend_rows (which applies the legend mask);
     # hud writes it
     assert readers('self.p("legend.npz")') == ["legend_rows"]
     assert readers("self.legend_rows()") == ["_em_associate", "_em_identity", "identify"]
-    assert readers("self.world_dets()") == ["observe", "rails"]
+    assert readers("self.world_dets()") == ["_observed_dets", "rails"]  # _observed_dets applies the detection mask
+    assert readers("self._observed_dets()") == ["_shape_bias", "observe"]
     assert readers('self.p("dets.npz")') == ["_backfill_yolo", "silk", "world_dets"]
     assert {"rails", "silk", "detect"} & RaceRun._downstream(READS_EVIDENCE) == set()
 

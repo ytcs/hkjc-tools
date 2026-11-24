@@ -70,6 +70,61 @@ def test_odometer_tick_calibration_recovers_scale_drift():
     assert np.abs(d_of_s(s) - d_true).max() < 3.0
 
 
+def _bend_rail(r_px, ccw=True, straight_px=9000.0, step=2.0):
+    """Straight -> half-circle bend (radius r_px) -> straight, stations ``step`` px apart, and its inner side (the
+    bend's centre: Nout must point away from it)."""
+    a = np.arange(0.0, straight_px, step)
+    th = np.arange(0.0, np.pi, step / r_px)
+    sg = 1.0 if ccw else -1.0
+    P1 = np.c_[a, np.zeros_like(a)]
+    P2 = np.c_[straight_px + r_px * np.sin(th), sg * r_px * (1 - np.cos(th))]
+    P3 = np.c_[straight_px - a, np.full_like(a, sg * 2 * r_px)]
+    R = np.r_[P1, P2, P3]
+    for inner in (-1, 1):
+        rf = rails.RailFrame.from_points(R, inner)
+        k = len(P1) + len(P2) // 2
+        if np.dot(rf.Nout[k], R[k] - np.array([straight_px, sg * r_px])) > 0:
+            return R, inner, rf
+
+
+@pytest.mark.parametrize("ccw", [True, False])
+def test_offset_arc_is_arc_length_along_the_line_outside_the_rail(ccw):
+    r, w = 1800.0, 72.0  # px: a 100 m bend radius at 18 px/m, the line 4 m out
+    R, inner, rf = _bend_rail(r, ccw)
+    th = rails.inward_turning(rf)
+    assert abs(th[-1] - np.pi) < 0.01 and abs(th[100]) < 1e-3  # half a turn, all of it on the bend
+    sp = rails.offset_arc(rf, w)
+    s0, s1 = rf.s[0], rf.s[-1]
+    assert abs((sp(s1) - sp(s0)) - (s1 - s0 + w * np.pi)) < 0.5
+    line = rf.R + w * rf.Nout  # the offset line itself
+    L = np.hypot(*np.diff(line, axis=0).T).sum()
+    assert abs((sp(s1) - sp(s0)) - L) < 2.0
+    assert np.all(np.diff(sp(rf.s)) > 0)
+    assert rails.offset_arc(rf, 0.0)(rf.s[1000]) == rf.s[1000]
+
+
+def test_ticks_along_an_offset_line_fit_without_the_bend_corner():
+    """HUD metres = arc length along a line 4 m outside the rail: the rail-s spline cuts the corner at the bend entry by
+    metres, the fit in the offset line's arc length does not."""
+    ppm, r, w = 18.0, 1800.0, 4.0
+    R, inner, rf = _bend_rail(r, straight_px=12000.0)
+    sp = rails.offset_arc(rf, w * ppm)
+    s = rf.s[::5]
+    sF = s[-1] - 1000.0
+    d_true = (sp(sF) - sp(s)) / ppm
+    odo = np.ceil(d_true / 10) * 10
+    i = np.arange(len(s))
+    entry = np.argmin(np.abs(s - 12000.0))  # the bend entry
+    near = np.abs(s - s[entry]) < 40 * ppm
+    for x, xF, bound in ((s, sF, None), (sp(s), float(sp(sF)), 0.3)):
+        d_of = rails.calibrate_distance_ticks(i, x, odo, ppm, xF, pin_finish=False)[0]
+        err = np.abs(d_of(x) - d_true)[near].max()
+        if bound is None:
+            assert err > 1.0  # the corner
+        else:
+            assert err < bound
+
+
 def _rail_map(lines, h=200, w=2000):
     """Synthetic mosaic: turf with horizontal white rail lines; ``lines`` = [(y, brightness(x))]."""
     img = np.zeros((h, w, 3), np.uint8)
