@@ -713,7 +713,8 @@ identical. Not bit-exact:
 - **Blind near-line cost.** It can remove correctly placed unread back markers. More generally, near the line a horse's
   own tracker fragment can be cut from it: the blind and camera-unread costs bar it, and its path runs on at race speed
   while the horse slows, so the fragment's last detections stay anonymous and the path crosses early. With the finish
-  withheld this leaves most tail horses without a label at the line.
+  withheld this is one cause of tail horses without a label at the line (others: no detection there, or detections
+  labelled to another horse).
 - **Fixed-rail drawing.** On some Sha Tin course settings (A+3, B, B+2) the render draws the fixed rail at a
   constant offset from the course table's gap, so `lateral_scale_err` fails there while the lateral scale is
   consistent.
@@ -741,9 +742,7 @@ identical. Not bit-exact:
 - **Non-finishers.** In the product a non-finisher's path runs to the grid end (constant-speed extrapolation after
   its last observation, growing sd; no stop is modelled), and its label can ride a finisher's avatar to the line,
   taking that horse's detections (nothing in the E-step uses the official non-finisher status). Its completed
-  sections count for coverage and `sectional_mae`, but it is excluded from the finish gates. A horse whose rider was
-  dislodged can keep galloping and may still be drawn, so barring its label near the line can free an avatar for
-  another horse's label.
+  sections count for coverage and `sectional_mae`, but it is excluded from the finish gates.
 - **Post-start non-runners.** A horse declared a non-runner after the start (WXNR) is not a runner and gets no path,
   even if it raced.
 - **Resolution floors.** Official mid-race times sit on a 0.04 s grid relative to the leader (~0.2 m); the HUD
