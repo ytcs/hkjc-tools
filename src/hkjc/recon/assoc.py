@@ -63,6 +63,8 @@ def assign_frames(
     forbid_out=None,
     s_line=None,
     margin_out=None,
+    exclude=None,
+    deny=None,
 ):
     """E-step. frames/t/s/lat: per detection (s = metres run). paths: {horse: fusion.Path}.
     ``near_line`` = (s_line_from, {horse: extra cost}): detections at s >= s_line_from (the last metres
@@ -74,6 +76,10 @@ def assign_frames(
     legend costs, so later stages (fusion's anonymous association) cannot hand them back.
     ``margin_out`` (float array over detections, optional) receives, per labelled detection, the frame's optimal cost
     with that detection forbidden from its horse minus the optimal cost (-2 log-likelihood units); read-only.
+    ``exclude`` = {horse: s_from}: the horse takes no detection at s >= s_from (hard, after every other term; the
+    official non-finishers of the final product), reported in ``forbid_out``.
+    ``deny`` = {detection index: horses}: hard exclusions per detection (the unseated horses' rule), after every other
+    term, reported in ``forbid_out``.
     Returns per-detection horse number (0 = clutter/unassigned) and per-detection chi^2."""
     from scipy.optimize import linear_sum_assignment
 
@@ -176,6 +182,23 @@ def assign_frames(
                         col = ok.index(num)
                         cells = (ahead == r) & near
                         C[cells, col] = np.minimum(C[cells, col], RANK_ATTR)
+        if exclude:  # hard, after every soft term (the rank attraction included)
+            for col, h in enumerate(ok):
+                if h in exclude:
+                    hit = s[js] >= exclude[h]
+                    C[hit, col] = 1e6
+                    if forbid_out is not None:
+                        for i in np.where(hit)[0]:
+                            forbid_out.setdefault(int(js[i]), set()).add(int(h))
+        if deny:
+            for i, j in enumerate(js):
+                no = deny.get(int(j))
+                if no:
+                    for col, h in enumerate(ok):
+                        if h in no:
+                            C[i, col] = 1e6
+                            if forbid_out is not None:
+                                forbid_out.setdefault(int(j), set()).add(int(h))
         n, m = C.shape
         M = np.full((n, m + n), 1e6)
         M[:, :m] = C

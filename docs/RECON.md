@@ -55,8 +55,9 @@ results; failures are reported as failures.
 Every stage reads the race through `RaceRun.info`, a `hkjc.data.MaskedRace`: the pre-race facts plus the
 official outcome records that the run's `hkjc.data.Mask` leaves visible, read only through
 `official_boundaries()` (cumulative sectional times), `official_subsplits()` (cumulative times at the 200 m
-sub-split points), `official_finish()`, `official_order()` and `official_placing()` (placings; a dead heat shares
-one). `validate` scores against the full record (`RaceRun.truth`).
+sub-split points), `official_finish()`, `official_order()`, `official_placing()` (placings; a dead heat shares
+one) and `official_nonfinish()` (the placing code of each runner without a finish time; withheld with the finish).
+`validate` scores against the full record (`RaceRun.truth`).
 
 HKJC prints each horse's two 200 m halves of the race's last two 400 m sections; `official_subsplits()` returns
 their points (`[600.0, 200.0]` m to go) and the cumulative time at each (section-start time plus the first half),
@@ -440,6 +441,16 @@ The product: the video-only detections plus the draw and the official records th
    horse's official-only skeleton (absent when every official time is withheld) by > 4 combined σ; the E-step is
    re-run from there with the official observations in every fuse and bias-shifted detections
    (`det_labels_final.npz`).
+   Non-finishers, by their visible placing code (`MaskedRace.official_nonfinish`; nothing with the finish withheld):
+   a horse that stops (`STOPPED`: PU, FE, DNF) takes no detection from `NONFIN_BLIND` = 50 m before the first visible
+   boundary it has no time for (the finish when every interior time exists; a boundary the mask withholds is no
+   evidence) to the end, nor any anonymous fragment holding one, gets no finish-camera crossing, and its path ends at
+   its last observation (no path without one after the draw) (`RaceRun._stopped`, `_end_at_last_obs`). It stops
+   somewhere in that section, so only the last stretch is barred: there the detections are the finishers'. A horse
+   whose rider was unseated (`UNSEATED`: UR) may gallop on riderless and still be drawn, so it is not barred; instead
+   it cannot take a detection of a fragment `identify` labels as another runner, and no other runner can take a
+   detection of a fragment `identify` labels as it (`RaceRun._unseated_deny`): its label stays off the finishers'
+   avatars and its own avatar is not freed. TNP is unchanged.
    Finish camera, in every fuse of steps 3–5 (`RaceRun.finish_observations`; the camera's proposals are
    `RaceRun.finish_camera`): a horse whose official finish is visible gets no camera crossing, its official finish
    being the better measurement of the same crossing; a camera-read horse without a path still gets an E-step seed,
@@ -739,10 +750,12 @@ identical. Not bit-exact:
 - **Orphan elimination.** The last uncovered horse takes the largest leftover chain without an anchor check, which
   can give a tailed-off horse a mid-field chain (§4 fuse_video).
 - **Video resolution.** The pipeline assumes a 1920 × 1080 aerial feed; seasons before 2023-05 are 1280 × 720.
-- **Non-finishers.** In the product a non-finisher's path runs to the grid end (constant-speed extrapolation after
-  its last observation, growing sd; no stop is modelled), and its label can ride a finisher's avatar to the line,
-  taking that horse's detections (nothing in the E-step uses the official non-finisher status). Its completed
-  sections count for coverage and `sectional_mae`, but it is excluded from the finish gates.
+- **Non-finishers.** A stopped horse's path ends at its last observation, not where it stopped. An unseated horse's
+  path runs to the grid end (constant-speed extrapolation, growing sd), and it can still take another runner's
+  detections where `identify` left the fragment unlabelled. With the finish withheld (evaluation masks) no placing
+  code is visible, so neither rule applies and a non-finisher's label can ride a finisher's avatar to the line. In the
+  video-only product nothing marks a non-finisher. Its completed sections count for coverage and `sectional_mae`, but
+  it is excluded from the finish gates.
 - **Post-start non-runners.** A horse declared a non-runner after the start (WXNR) is not a runner and gets no path,
   even if it raced.
 - **Resolution floors.** Official mid-race times sit on a 0.04 s grid relative to the leader (~0.2 m); the HUD

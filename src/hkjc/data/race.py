@@ -129,6 +129,18 @@ def official_order(info) -> list:
     return list(official_placing(info))
 
 
+def official_nonfinish(info) -> dict:
+    """Full official record: {runner: placing code} for the runners without a finish time (FE fell, UR rider unseated,
+    PU pulled up, DNF did not finish, TNP took no part)."""
+    if "PlaCode" not in info.results.columns:
+        return {}
+    return {
+        int(h): str(c)
+        for h, c, ft in info.results.select(["HorseNo", "PlaCode", "FinishTime"]).iter_rows()
+        if h is not None and c is not None and (ft is None or not np.isfinite(ft))
+    }
+
+
 @dataclass(frozen=True)
 class Mask:
     """Information withheld from the reconstruction: official outcome records and video evidence.
@@ -271,7 +283,7 @@ class Mask:
 class MaskedRace:
     """The race as the reconstruction sees it: every pre-race fact of ``info`` (``PRE_RACE``) and the
     official outcome only through ``official_boundaries`` / ``official_subsplits`` / ``official_finish`` /
-    ``official_order`` / ``official_placing``, with what ``mask`` withholds removed. It has no ``results`` / ``sectionals``."""
+    ``official_order`` / ``official_placing`` / ``official_nonfinish``, with what ``mask`` withholds removed. It has no ``results`` / ``sectionals``."""
 
     PRE_RACE = (
         "date", "venue", "race_no", "distance", "course", "surface", "going", "race_class",
@@ -342,6 +354,13 @@ class MaskedRace:
         if self._finish_withheld():
             return {}
         return official_placing(self._info)
+
+    def official_nonfinish(self) -> dict:
+        """{runner: placing code} for the runners without a finish time; empty when the outcome or the finish is
+        withheld."""
+        if self._finish_withheld():
+            return {}
+        return official_nonfinish(self._info)
 
 
 def _cached(path: Path, fetch):

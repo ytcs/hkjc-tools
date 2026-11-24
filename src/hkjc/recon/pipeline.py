@@ -1357,7 +1357,7 @@ class RaceRun:
         crossing of another cloth, the rider's silk or scenery would pull the path and the final identity pass off it."""
         fin = self.finish_camera(paths)
         vis = {h for h, t in (self._official_clock or {}).items() if np.isfinite(t)}
-        return [o for o in fin if o.horse not in vis]
+        return [o for o in fin if o.horse not in vis and o.horse not in self._nonfin]
 
     def finish_camera(self, paths) -> list:
         """Finish-camera proposals: each horse crosses d=0 at t_win + gap/C. The camera fixes ORDER
@@ -1808,11 +1808,76 @@ class RaceRun:
         The finish camera's clock is moved onto the visible official finish times (median offset over
         the horses with both, >= 3) in every fuse here; the camera keeps the order and the gaps."""
         self._official_clock = self._official_finish()
+        nonfin = self.info.official_nonfinish()
+        self._nonfin = self._stopped(nonfin)
+        self._unseated = {h for h, c in nonfin.items() if c in self.UNSEATED}
         try:
             self._fuse_final()
         finally:
             self._official_clock = None
             self._render_bias = None
+            self._nonfin = {}
+            self._unseated = set()
+
+    _nonfin: dict = {}
+    _unseated: set = set()
+    STOPPED = ("PU", "FE", "DNF")  # official placing codes of a horse that stops: pulled up, fell, did not finish
+    UNSEATED = ("UR",)  # rider unseated: the horse may gallop on riderless, and the render may still draw it
+    NONFIN_BLIND = 50.0  # m before the first boundary a stopped horse has no time for
+
+    def _stopped(self, nonfin) -> dict:
+        """{horse: s from which it takes no detection} for the runners the visible official record codes as stopping
+        (``STOPPED``). The horse stops somewhere in its first section without a time (a faller at the 100 m still races
+        300 m past its last time), so only from NONFIN_BLIND m before that boundary on is it barred -- there the
+        detections are the finishers'."""
+        bnd, cum = self.info.official_boundaries()
+        out = {}
+        for h, code in nonfin.items():
+            if code not in self.STOPPED or not bnd:
+                continue
+            c = np.asarray(cum.get(h, np.full(len(bnd), np.nan)), float)
+            timed = [i for i in range(len(bnd)) if any(np.isfinite(np.asarray(x, float)[i]) for x in cum.values())]
+            i0 = next((i for i in timed if not np.isfinite(c[i])), len(bnd) - 1)  # a withheld boundary is no evidence
+            out[h] = self.info.distance - bnd[i0] - self.NONFIN_BLIND
+        return out
+
+    def _unseated_deny(self, members, id_labels) -> dict:
+        """{detection index: horses it cannot be} keeping an unseated horse's label off the finishers' avatars without
+        freeing its own: it cannot take a detection of a fragment identify labels as another runner, and no other
+        runner can take a detection of a fragment identify labels as it."""
+        if not self._unseated:
+            return {}
+        runners = {r.no for r in self.info.runners}
+        out = {}
+        for k, m in enumerate(members):
+            lab = int(id_labels[k])
+            if lab in self._unseated:
+                no = runners - {lab}
+            elif lab > 0:
+                no = self._unseated - {lab}
+            else:
+                continue
+            if no:
+                for j in np.asarray(m, int):
+                    out[int(j)] = no
+        return out
+
+    def _end_at_last_obs(self, paths, obs, assign) -> dict:
+        """Stopped horses' paths end at their last observation (no prior-only extension to the grid's end); one
+        with no observation after the draw has no path."""
+        out = dict(paths)
+        for h in self._nonfin:
+            if h not in out:
+                continue
+            ts = [float(o.t.max()) for o in obs if assign.get(o.tid, o.horse) == h and o.feed != "draw" and len(o.t)]
+            p = out[h]
+            k = int(np.searchsorted(p.t, max(ts), side="right")) if ts else 0
+            if k < 2:
+                del out[h]
+            elif k < len(p.t):
+                out[h] = replace(p, t=p.t[:k], s=p.s[:k], lat=p.lat[:k], sd_s=p.sd_s[:k], sd_l=p.sd_l[:k],
+                                 n_obs=p.n_obs[:k])
+        return out
 
     def _fuse_final(self):
         import pickle
@@ -1852,9 +1917,10 @@ class RaceRun:
         sk = self._fuse(offi, horses, prior, t_end=t_end)[0] if t_off is not None else {}
         start = self._skeleton_merge(pf, sk)
         obs_e, _pe = self._em_associate(
-            start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias
+            start, horses, prior, extra=offi, out_name="det_labels_final.npz", s_bias=bias, exclude=self._nonfin
         )
-        pf, _a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
+        pf, a = self._fuse(obs_e + offi, horses, prior, t_end=t_end)
+        pf = self._end_at_last_obs(pf, obs_e + offi, a)
         pf, warp = self._official_retime(pf)
         if warp:
             big = {h: round(w, 2) for h, w in warp.items() if w > 0.05}
@@ -2119,13 +2185,24 @@ class RaceRun:
         """Horses the finish camera read (negative evidence / shadow-path tie-break): those with a GAP."""
         return {int(k) for k in finishcam.finish_gaps(self.finish_sc(zf))[1]}
 
+    @staticmethod
+    def _excluded(exclude, s, deny=None, j=()) -> frozenset:
+        """Horses a fragment with detections ``j`` at ``s`` cannot be: those of ``exclude`` {horse: s_from} it reaches,
+        and every horse ``deny`` {detection: horses} bars on any of its detections."""
+        out = frozenset(h for h, s0 in (exclude or {}).items() if (s >= s0).any())
+        if deny:
+            out = out.union(*(deny.get(int(x), ()) for x in j))
+        return out
+
     def _em_associate(
-        self, paths, horses, prior, extra=None, out_name="det_labels.npz", s_bias=None
+        self, paths, horses, prior, extra=None, out_name="det_labels.npz", s_bias=None, exclude=None
     ):
         """Detection-level EM (``assoc``): every detection re-assigned per frame against the
         continuous fused paths (+ one-sided legend rank constraint), paths re-fused; the tracker's
         fragments are only the initialisation. Unassigned detections stay anonymous (grouped by
-        their tracker fragment) so association/orphan logic can still place path-less horses."""
+        their tracker fragment) so association/orphan logic can still place path-less horses. ``exclude``
+        {horse: s_from} (fuse_final's stopped horses): the horse takes no detection at s >= s_from, nor any
+        anonymous fragment holding one."""
         from . import assoc
 
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
@@ -2169,6 +2246,12 @@ class RaceRun:
                     near.append((self.info.distance - 50.0, {h: assoc.CLUTTER for h in blind}))
         margins = [None] if out_name == "det_labels_final.npz" else None
 
+        deny = None
+        if out_name == "det_labels_final.npz" and self._unseated and self.p("labels.npz").exists():
+            ids = np.load(self.p("labels.npz"))["labels"]
+            if len(ids) == len(T["members"]):
+                deny = self._unseated_deny(T["members"], ids)
+
         def em_pass(paths, targets, tag):
             """EM iterations; ``targets``: path-less finish-read horses to seed in the E-step."""
             prev = lab = obs = None
@@ -2192,6 +2275,8 @@ class RaceRun:
                     forbid_out=forbid,
                     s_line=self.info.distance,
                     margin_out=None if margins is None else margins[0],
+                    exclude=exclude,
+                    deny=deny,
                 )
                 lab, n_pf = assoc.release_post_finish(lab, t, s_run, self.info.distance, forbid)
                 obs = assoc.runs_to_obs(lab, t, s_run, lat)
@@ -2201,7 +2286,7 @@ class RaceRun:
                         j = j[np.argsort(t[j])]
                         # the E-step's hard legend exclusions travel with the anonymous fragment,
                         # or fusion's chi^2 / orphan association hands it back
-                        no = assoc.fragment_forbid(forbid, j)
+                        no = assoc.fragment_forbid(forbid, j) | self._excluded(exclude, s_run[j], deny, j)
                         obs.append(
                             fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
                         )
@@ -2221,7 +2306,7 @@ class RaceRun:
         paths, lab, obs, forbid = em_pass(paths, None, "")
         # SEED pass, CONFINED to finish-read horses still path-less after the unseeded EM; races
         # without a target are unchanged
-        targets = set(self._finish_seeds(paths, prior))
+        targets = set(self._finish_seeds(paths, prior)) - set(exclude or ())
         if targets:
             paths, lab, obs, forbid = em_pass(paths, targets, " (seed)")
         # SHADOW paths: two horses cannot occupy one position; a horse whose own detections are
@@ -2273,7 +2358,7 @@ class RaceRun:
                 j = np.where((frag == k) & (lab == 0) & ~drop)[0]
                 if len(j) >= 3:
                     j = j[np.argsort(t[j])]
-                    no = assoc.fragment_forbid(forbid, j)
+                    no = assoc.fragment_forbid(forbid, j) | self._excluded(exclude, s_run[j], deny, j)
                     obs.append(
                         fusion.Obs(t[j], s_run[j], lat[j], 0.8, 0.35, "render", 0, int(k), no)
                     )
