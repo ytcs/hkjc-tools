@@ -76,6 +76,9 @@ Outcome part (read by `fuse_final`):
 - `Mask(boundary=(j, k, ...))` (spec `boundary=J+K`) withholds several boundaries at once, each as above: an
   evaluation tool that puts withheld points farther from every visible boundary. A single index stays an int, so
   its spec (and every existing run dir's `mask.txt`) is `boundary=J`.
+- `Mask(subsplit=k)` (spec `subsplit=K`) withholds the cumulative official time at sub-split point k (an index into
+  `official_subsplits()`' points, race order) for every runner; exclusive of `boundary` and `outcome`. No stage
+  reads sub-splits, so it changes no output: an evaluation tool for when one does.
 - `Mask(outcome=True)` withholds all official outcome data (results, finish times, placings, sectionals,
   running positions); pre-race facts, the draw included, stay visible.
 
@@ -92,7 +95,7 @@ Evidence part (from `observe` on, `pipeline.READS_EVIDENCE`), for held-out scori
   (rank costs, negative legend evidence, blind set), all through `RaceRun.legend_rows`.
 
 Select it with `RaceRun(info, mask=...)`, CLI `--mask SPEC`, or env `HKJC_MASK`; a spec is `none` or
-`;`-joined parts `boundary=J[+K...]` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`, `legend=P` | `legend=P@PHASE`
+`;`-joined parts `boundary=J[+K...]` | `subsplit=K` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`, `legend=P` | `legend=P@PHASE`
 (`HKJC_FINAL_HOLDOUT=j` is an alias for `boundary=j`; setting both is an error). A masked run writes
 `paths.parquet` and `validation.json` like any other, so give it its own `root`: the run dir records a
 non-empty mask in `mask.txt`, and a run refuses a dir whose mask-dependent artifacts were made under another

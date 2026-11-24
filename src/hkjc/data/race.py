@@ -137,7 +137,9 @@ class Mask:
     section end; the last index is the finish, which also withholds the finish times and placings), and
     the 200 m sub-split points within 200 m of it. ``boundary=(j, k, ...)`` withholds several boundaries at
     once, each as above (an evaluation tool: withheld points far from every visible boundary); a single
-    index is kept as an int, so its spec stays ``boundary=j``.
+    index is kept as an int, so its spec stays ``boundary=j``. ``subsplit=k``: the cumulative official time at
+    sub-split point k (an index into :func:`official_subsplits`' points, race order) for every runner; exclusive of
+    ``boundary`` and ``outcome`` (an evaluation tool).
     ``outcome=True``: every official outcome record (results, finish times, placings, sectionals,
     running positions); pre-race facts (distance, course, draw, runners, silks) stay visible.
 
@@ -148,7 +150,7 @@ class Mask:
     ``[kP, (k+1)P)`` with ``k % 2 == legend_phase`` count as unread, in the same way.
 
     ``Mask()`` withholds nothing. Spec strings (``parse``, CLI ``--mask``, env ``HKJC_MASK``): ``none``,
-    or ``;``-joined parts ``boundary=J`` | ``boundary=J+K+...`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``,
+    or ``;``-joined parts ``boundary=J`` | ``boundary=J+K+...`` | ``subsplit=K`` | ``outcome``, ``dets=I,J,...``, ``discs=P`` | ``discs=P@PHASE``,
     ``legend=P`` | ``legend=P@PHASE``."""
 
     boundary: int | tuple | None = None
@@ -158,6 +160,7 @@ class Mask:
     discs_phase: int = 1
     legend: float | None = None
     legend_phase: int = 1
+    subsplit: int | None = None
 
     def __post_init__(self):
         if isinstance(self.boundary, (tuple, list, set, frozenset)):
@@ -167,6 +170,9 @@ class Mask:
         if self.boundary is not None and (self.outcome or not js or any(isinstance(b, bool) or b < 0 for b in js)
                                           or not all(isinstance(b, int) for b in js)):
             raise ValueError(f"invalid mask {self!r}: boundary is a non-negative index or indices, exclusive of outcome")
+        if self.subsplit is not None and (self.outcome or self.boundary is not None or isinstance(self.subsplit, bool)
+                                          or not isinstance(self.subsplit, int) or self.subsplit < 0):
+            raise ValueError(f"invalid mask {self!r}: subsplit is a non-negative index, exclusive of outcome and boundary")
         object.__setattr__(self, "dets", frozenset(int(i) for i in self.dets))
         if any(i < 0 for i in self.dets):
             raise ValueError(f"invalid mask {self!r}: dets are dets.npz row indices")
@@ -187,6 +193,8 @@ class Mask:
         """The official-outcome component of the spec ('' when nothing is withheld)."""
         if self.outcome:
             return "outcome"
+        if self.subsplit is not None:
+            return f"subsplit={self.subsplit}"
         return "" if self.boundary is None else "boundary=" + "+".join(str(b) for b in self.boundaries())
 
     def evidence_part(self) -> str:
@@ -226,10 +234,13 @@ class Mask:
         kw = {}
         for part in (p.strip() for p in s.split(";")):
             key, _eq, val = part.partition("=")
-            if key in kw or (key in ("outcome", "boundary") and ({"outcome", "boundary"} & kw.keys())):
+            excl = {"outcome", "boundary", "subsplit"}
+            if key in kw or (key in excl and (excl & kw.keys())):
                 raise ValueError(f"mask spec {spec!r}: {key} given twice")
             if part == "outcome":
                 kw["outcome"] = True
+            elif key == "subsplit" and val:
+                kw["subsplit"] = int(val)
             elif key == "boundary" and val:
                 js = tuple(int(b) for b in val.split("+"))
                 kw["boundary"] = js[0] if len(js) == 1 else js
@@ -242,8 +253,8 @@ class Mask:
                     kw[f"{key}_phase"] = int(ph)
             else:
                 raise ValueError(
-                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J[+K...] | outcome, dets=I,J,..., discs=P[@PHASE],"
-                    " legend=P[@PHASE]"
+                    f"mask spec {spec!r}: expected none | ';'-joined boundary=J[+K...] | subsplit=K | outcome, dets=I,J,...,"
+                    " discs=P[@PHASE], legend=P[@PHASE]"
                 )
         return cls(**kw)
 
@@ -299,11 +310,14 @@ class MaskedRace:
     def official_subsplits(self) -> tuple[list, dict]:
         """(distance-to-go at each 200 m sub-split point, {runner: cumulative official times}); a point
         within 200 m of a withheld boundary is NaN for every runner (its time is the previous boundary's
-        time plus a 200 m split, so the points on either side of a boundary give it away); ([], {}) when
-        the outcome is withheld."""
+        time plus a 200 m split, so the points on either side of a boundary give it away), and so is a
+        withheld point (``Mask(subsplit=k)``); ([], {}) when the outcome is withheld."""
         if self.mask.outcome:
             return [], {}
         pts, cum = official_subsplits(self._info)
+        k = self.mask.subsplit
+        if k is not None and k < len(pts):
+            cum = {h: np.where(np.arange(len(pts)) == k, np.nan, c) for h, c in cum.items()}
         bnd = official_boundaries(self._info)[0] if self.mask.boundaries() and pts else []
         js = [j for j in self.mask.boundaries() if j < len(bnd)]
         if js:

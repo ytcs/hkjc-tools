@@ -107,3 +107,32 @@ def test_subsplits_follow_the_mask(mask, hidden):
 def test_withheld_outcome_hides_the_sub_splits():
     info = _info(parse_sectional_page(_html(), "03/06/2026", 8))
     assert MaskedRace(info, Mask(outcome=True)).official_subsplits() == ([], {})
+
+
+def test_subsplit_mask_spec():
+    assert Mask.parse("subsplit=1") == Mask(subsplit=1) and str(Mask(subsplit=1)) == "subsplit=1"
+    assert Mask(subsplit=0).outcome_part() == "subsplit=0" and Mask(subsplit=0)
+    assert str(Mask.parse("subsplit=0;dets=5")) == "subsplit=0;dets=5"
+    assert str(Mask(boundary=1, dets={5})) == "boundary=1;dets=5" and str(Mask(outcome=True)) == "outcome"
+    assert str(Mask(boundary=(0, 2))) == "boundary=0+2"
+    for bad in ("subsplit", "subsplit=x", "subsplit=0;boundary=1", "outcome;subsplit=1", "subsplit=0;subsplit=1"):
+        with pytest.raises(ValueError):
+            Mask.parse(bad)
+    for kw in (dict(subsplit=-1), dict(subsplit=True), dict(subsplit=0, boundary=1), dict(subsplit=0, outcome=True)):
+        with pytest.raises(ValueError):
+            Mask(**kw)
+
+
+@pytest.mark.parametrize("k", [0, 1])
+def test_withheld_subsplit_hides_that_point_only(k):
+    info = _info(parse_sectional_page(_html(), "03/06/2026", 8))
+    pts0, cum0 = official_subsplits(info)
+    m = MaskedRace(info, Mask(subsplit=k))
+    pts, cum = m.official_subsplits()
+    assert pts == pts0
+    for h in cum0:
+        assert np.isnan(cum[h][k]) and np.array_equal(cum[h][1 - k], cum0[h][1 - k], equal_nan=True)
+    bnd0, cb0 = official_boundaries(info)
+    bnd, cb = m.official_boundaries()
+    assert bnd == bnd0 and all(np.array_equal(cb[h], cb0[h], equal_nan=True) for h in cb0)
+    assert m.official_finish() == {2: 70.0, 1: 70.6}
