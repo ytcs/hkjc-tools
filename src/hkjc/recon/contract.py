@@ -668,29 +668,32 @@ def describe_lane(used, period=None) -> dict:
 
 
 # ------------------------------------------------------------------------------------------------------------ enclosed
-# enclosed: the horse is walled in ahead and on both sides, with lateral counted in the race's abreast pitch (0308; every
-# season, no metres). On the final paths' BOX_GRID s node grid, at nodes where lane_units is finite (firm, in-race), with
+# enclosed: the horse is walled in ahead and on both sides, with lateral counted in the race's abreast pitch (every season,
+# no metres). On the final paths' BOX_GRID s node grid, at nodes where lane_units is finite (firm, in-race), with
 # dS = s_j - s_i (m) and dL = (lat_j - lat_i) / pitch of the horse's segment class (``lane_columns``; start uses straight):
 #   ahead    some horse with 0 < dS <= 2 BOX_LEN and |dL| < 1;
 #   outside  some horse with |dS| < BOX_LEN and 0 < dL < 2;
 #   inside   some horse with |dS| < BOX_LEN and 0 < -dL < 2, or the rail (lane_units < 1.5);
 # only neighbours with finite lane_units count. Enclosed nodes form runs; runs closer than BOX_BRIDGE_N nodes are joined
 # when every node between has finite lane_units, and runs of >= BOX_MIN_N nodes are kept (the column is True on them,
-# bridged nodes included). One pitch is about 1.2-1.4 m of lat_m off the home straight and 1.8 m in it (drone era), so
-# this is a broader state than 0286's metre B (LANE 1.0 m): 29 % of in-race horse-time on 458 races 2023-09..2026-11,
-# against about 16 % for metre B on the same drone-era nodes.
+# bridged nodes included). False wherever lane_units is NaN, so False can mean undefined. One pitch is about 1.2-1.4 m
+# of lat_m off the home straight and 1.8 m in it (derived: drone-era race pitch x the lat_m slope), so this is a broader
+# state than the same rule with 1 m lanes in metres: 30 % of drone-era lat_m nodes against 16 % (29 % of in-race
+# horse-time over 458 turf-oval races, 2023-09..2026-11).
 BOX_GRID, BOX_LEN, BOX_BRIDGE_N, BOX_MIN_N = 0.1, 2.4, 5, 10
-# boxed_in: held up behind, a costly box-in (0308 round 2). An enclosed run with >= BOX_LATE_N nodes at d <= BOX_LATE_D
+# boxed_in: held up behind, a costly box-in. An enclosed run with >= BOX_LATE_N nodes at d <= BOX_LATE_D
 # (its late part) is boxed in when the horse closes on the horse in front and then sits on its heels, all in the late
 # window W (nodes with finite lane_units and d <= BOX_LATE_D):
 #   closing node t: t and t - BOX_CLOSE_N nodes both in W, t in the late part or the BOX_CLOSE_N nodes before it, and
 #                   the gap to the nearest ahead wall j at t shrank by >= -BOX_CLOSE m over those BOX_CLOSE_N nodes;
 #   held: at the first closing node, >= BOX_HOLD_N of the BOX_HOLD_WIN nodes from t have 0 < dS_ij <= BOX_LEN and
 #         |dL| < 1 with both horses in W.
-# The column is true on the late part of each such run. Against the stewards' late blocked-run statements (566 on 458
-# races, 2023-09..2026-11) it finds 0.52 of them at 1.9x chance and its flags overlap one 2.0x as often as chance; it
-# fires for about a third of runners, so it is a candidate for "trip trouble", not a certainty. Across masked reruns its
-# horse x race reliability is low on the silk render (kappa 0.69; 0.88 where id_robust) and high on the disc render.
+# The column is true on the late part of each such run (False where lane_units is NaN). Scored per run against the
+# stewards' late blocked-run statements (566 on 458 turf-oval races, 2023-09..2026-11): it finds 0.52 of them at 1.9x
+# chance and its runs overlap one 2.0x as often as chance; the closing term was chosen on these same statements, so the
+# figures are not confirmed on a fresh set, and node timing inside the late part is not validated. It fires for about a
+# third of runners (precision 0.125). Across masked reruns its horse x race reliability is low on the silk render (kappa
+# 0.69; 0.88 where id_robust) and high on the disc render.
 BOX_LATE_D, BOX_LATE_N, BOX_CLOSE_N, BOX_CLOSE, BOX_HOLD_N, BOX_HOLD_WIN = 600.0, 5, 10, -0.3, 10, 30
 
 
@@ -799,16 +802,18 @@ def describe_box() -> dict:
                         "the run's late part or the close_nodes before it, the gap to the nearest ahead wall j shrank by "
                         ">= -close_m over close_nodes) the horse then spends >= hold_nodes of the hold_window_nodes from t "
                         "within len_m behind j and |dL| < 1, both in W; true on the run's late part",
-            "boxed_in_status": "against the stewards' late blocked-run statements (566, 458 races 2023-09..2026-11): "
-                               "recall 0.52 (1.9x chance), precision 0.125 (2.0x chance); fires for about a third of "
-                               "runners; masked-rerun kappa 0.69 silk (0.88 where id_robust), 0.96 disc",
+            "boxed_in_status": "scored per run against the stewards' late blocked-run statements (566, 458 turf-oval "
+                               "races 2023-09..2026-11): recall 0.52 (1.9x chance), precision 0.125 (2.0x chance); not "
+                               "confirmed on a fresh set; fires for about a third of runners; masked-rerun kappa 0.69 "
+                               "silk (0.88 where id_robust), 0.96 disc; false where lane_units is NaN",
             "enclosed": "at nodes with finite lane_units, dS = s_j - s_i (m), dL = (lat_j - lat_i) / pitch of the horse's "
                         "segment class (lane): ahead = some horse with 0 < dS <= 2 len_m and |dL| < 1; outside = some "
                         "horse with |dS| < len_m and 0 < dL < 2; inside = the same with 0 < -dL < 2, or lane_units < 1.5 "
                         "(rail); enclosed = ahead and outside and inside, neighbours with finite lane_units only; runs "
                         "joined over gaps < bridge_nodes nodes with finite lane_units, kept when >= min_nodes nodes",
-            "status": "lane units, not metres: one pitch is about 1.2-1.4 m off the home straight and 1.8 m in it, so "
-                      "a broader state than a 1 m-lane metre rule (29 % of in-race horse-time, 2023-09..2026-11)"}
+            "status": "lane units, not metres: one pitch is about 1.2-1.4 m off the home straight and 1.8 m in it "
+                      "(derived), so a broader state than a 1 m-lane metre rule (30 % against 16 % of drone-era lat_m "
+                      "nodes; 29 % of in-race horse-time, 2023-09..2026-11); false where lane_units is NaN"}
 
 # ------------------------------------------------------------------------------------------------------ noise table
 # Per-detection observation noise of the detection-only state-space model, by feed
