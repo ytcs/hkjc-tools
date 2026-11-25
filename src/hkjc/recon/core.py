@@ -463,35 +463,60 @@ def list_rows(leg, t_of_frame, horses) -> ListRows:
     return ListRows(tau[keep], sl[keep], full[keep], same[keep])
 
 
+def _scan(M, L, reverse=False):
+    """Inclusive prefix (or, ``reverse``, suffix) products of 2 x 2 matrices M (C, n, 2, 2) kept normalised, with their
+    log scales L (C, n): Hillis-Steele doubling, log2(n) vectorised steps."""
+    M, L = M.copy(), L.copy()
+    n = M.shape[1]
+    k = 1
+    while k < n:
+        A, B = M[:, :-k], M[:, k:]
+        P = np.empty_like(A)
+        P[..., 0, 0] = A[..., 0, 0] * B[..., 0, 0] + A[..., 0, 1] * B[..., 1, 0]
+        P[..., 0, 1] = A[..., 0, 0] * B[..., 0, 1] + A[..., 0, 1] * B[..., 1, 1]
+        P[..., 1, 0] = A[..., 1, 0] * B[..., 0, 0] + A[..., 1, 1] * B[..., 1, 0]
+        P[..., 1, 1] = A[..., 1, 0] * B[..., 0, 1] + A[..., 1, 1] * B[..., 1, 1]
+        Ln = L[:, :-k] + L[:, k:]
+        sc = np.maximum(P.max((2, 3)), 1e-300)
+        P = P / sc[..., None, None]
+        Ln = Ln + np.log(sc)
+        if reverse:
+            M[:, :-k], L[:, :-k] = P, Ln
+        else:
+            M[:, k:], L[:, k:] = P, Ln
+        k *= 2
+    return M, L
+
+
 def _hmm(log_e0, log_e1, p_in, p_stay):
     """Two-state chains (0 = ok, 1 = fault) starting in 0, one per row of ``log_e0`` / ``log_e1`` (C x n, or one chain
-    as a 1-d array); scaled forward-backward. -> (log Z per chain, P(fault) per chain and step)."""
+    as a 1-d array); forward-backward by scans of the step matrices. -> (log Z per chain, P(fault) per chain and
+    step)."""
     e0, e1 = np.atleast_2d(log_e0).astype(float), np.atleast_2d(log_e1).astype(float)
     C, n = e0.shape
     if not n:
         return (0.0, np.zeros(0)) if np.ndim(log_e0) == 1 else (np.zeros(C), np.zeros((C, 0)))
     m = np.maximum(e0, e1)
     E0, E1 = np.exp(e0 - m), np.exp(e1 - m)
-    p00, p01, p10, p11 = 1 - p_in, p_in, 1 - p_stay, p_stay
-    f0 = np.zeros((C, n))
-    f1 = np.zeros((C, n))
-    c = np.zeros((C, n))
-    f0[:, 0], f1[:, 0] = E0[:, 0], 0.0
-    c[:, 0] = f0[:, 0] + f1[:, 0]
-    f0[:, 0] /= c[:, 0]
-    for i in range(1, n):
-        a0 = (f0[:, i - 1] * p00 + f1[:, i - 1] * p10) * E0[:, i]
-        a1 = (f0[:, i - 1] * p01 + f1[:, i - 1] * p11) * E1[:, i]
-        c[:, i] = a0 + a1
-        f0[:, i], f1[:, i] = a0 / c[:, i], a1 / c[:, i]
-    b0 = np.ones((C, n))
-    b1 = np.ones((C, n))
-    for i in range(n - 2, -1, -1):
-        g0, g1 = E0[:, i + 1] * b0[:, i + 1], E1[:, i + 1] * b1[:, i + 1]
-        b0[:, i] = (p00 * g0 + p01 * g1) / c[:, i + 1]
-        b1[:, i] = (p10 * g0 + p11 * g1) / c[:, i + 1]
-    lz = (np.log(c) + m).sum(1)
-    post = np.clip(f1 * b1, 0.0, 1.0)
+    T = np.array([[1 - p_in, p_in], [1 - p_stay, p_stay]])
+    # step matrices M_i[a, b] = T[a, b] E_b(i), i = 1 .. n-1
+    M = T[None, None] * np.stack([E0[:, 1:], E1[:, 1:]], -1)[:, :, None, :]
+    Lm = m[:, 1:].copy()
+    a0 = np.stack([E0[:, 0], np.zeros(C)], -1)  # alpha_0 / exp(m_0)
+    if n > 1:
+        Pre, Lp = _scan(M, Lm)
+        Suf, _ls = _scan(M, Lm, reverse=True)
+        alpha = np.concatenate([a0[:, None], a0[:, None, 0, None] * Pre[..., 0, :]], 1)
+        la = np.concatenate([np.zeros((C, 1)), Lp], 1) + m[:, :1]
+        beta = np.concatenate([Suf.sum(3), np.ones((C, 1, 2))], 1)  # per-step scales cancel in the posterior
+    else:
+        alpha, la = a0[:, None], m[:, :1]
+        beta = np.ones((C, 1, 2))
+    zf = alpha[:, -1].sum(1)
+    lz = np.log(np.maximum(zf, 1e-300)) + la[:, -1]
+    w = alpha * beta
+    post = w[..., 1] / np.maximum(w.sum(2), 1e-300)
+    post = np.clip(post, 0.0, 1.0)
     return (float(lz[0]), post[0]) if np.ndim(log_e0) == 1 else (lz, post)
 
 
@@ -1390,6 +1415,7 @@ class Result:
 
 
 SCREEN_KEEP, SCREEN_MARGIN = 3, 100.0  # move candidates given a full state step: the best 3 by screening J, within 100
+SCREEN_PRE = 12  # at most this many candidates per move family are screened (lowest linearised cost change first)
 T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
 
@@ -1461,7 +1487,14 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
 
     def screened(cands, st0):
         """Full state steps for the SCREEN_KEEP candidates with the lowest screening J (truncated solve), if within
-        SCREEN_MARGIN of the current J. -> list of (description, labelling, State)."""
+        SCREEN_MARGIN of the current J; with more than SCREEN_PRE candidates only the SCREEN_PRE with the lowest
+        linearised cost change (sum of the current unaries over the relabelled segments) are screened.
+        -> list of (description, labelling, State)."""
+        if len(cands) > SCREEN_PRE:
+            Uc = np.c_[U, np.zeros(len(U))]  # last column: clutter
+            cur = Uc[np.arange(len(lab)), np.where(lab >= 0, lab, -1)]
+            du = [float((Uc[np.arange(len(lab)), np.where(pm >= 0, pm, -1)] - cur).sum()) for _d, pm in cands]
+            cands = [cands[i] for i in np.argsort(du)[:SCREEN_PRE]]
         qj = [evaluate(model, pm, extra_s, extra_l, X0=st0.S, s_shift=s_shift, quick=st0).J for _d, pm in cands]
         keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st0.J + SCREEN_MARGIN]
         return [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
