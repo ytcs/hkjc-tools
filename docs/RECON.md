@@ -474,9 +474,14 @@ product's solve (20260301_ST_2: three chains from 44 s, which TV order facts con
 **Outputs.**
 - `segs.npz` (identify): segments, links, P(horse), camera-transition detections.
 - `det_labels.npz` / `det_labels_final.npz`: per tracks row, `labels` (argmax, 0 = clutter), `prob` (its probability)
-  and `marg` (P per runner, last column clutter). `core.posterior` computes them per segment over every labelling the
-  solve scored, each weighted by exp(−(J − J_best)/(2 `T_POST`)): J's per-detection terms count correlated errors as
-  independent, so the posterior is tempered (`T_POST` 10).
+  and `marg` (P per runner, last column clutter). `core.probability_output` computes them from the final labelling
+  and its evidence alone, not from the labellings the search visited: a fixed alternative set (`core.alternatives`:
+  the chain-aware single relabels of every segment with ≥ `LONG_N` detections, and the pair exchanges over the whole
+  race, cut → end and start → cut) is screened by one-horse-refit scores, the `POST_K` (20) lowest and those within `POST_BAND` (20 J) get a
+  full state step, and each segment's P is the kept label's weight 1 against exp(−ΔJ/(2 `T_PROB`)) for every
+  alternative's label on it (`core.alternative_posterior`). J's per-detection terms count correlated errors as
+  independent, so the weights are tempered: `T_PROB` 50, fitted on a race-hashed half of the development null-pair
+  races (largest coverage at p ≥ 0.99 with the confident-flip rate within 1.07 pp of main's) and checked on the other.
 - `core_video.npz` / `core_final.npz`: segment labels, marginals, the final unaries, J per accepted step.
 - `det_margins_final.npz`: 2 log(p/(1 − p)) of the kept label.
 - `paths_video.parquet`, `fuse_video.pkl` (segment labels, finish observations, paths), `paths.parquet` and the

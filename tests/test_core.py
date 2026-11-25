@@ -254,3 +254,13 @@ def test_refit_label_and_detection_terms_are_exact_increments():
         pin = core.in_view(ev, S, L, st.sdS, st.sdL, m.tg)
         ref = core.miss_terms(ev, pin, new)[0] - st.parts["J_det"]
         assert abs(rf.d_det(hs, new, S, L) - ref) < 1e-6
+
+
+def test_probabilities_come_from_the_alternative_set_alone():
+    """A segment's probability is its kept label's weight 1 against exp(-dJ / (2 T_PROB)) per alternative; a segment
+    no alternative changes keeps P 1."""
+    lab = np.array([0, 1, -1])
+    alt = np.array([1, 0, -1])  # exchanges the first two segments
+    P = core.alternative_posterior(lab, [(alt, 2 * core.T_PROB * np.log(3.0))], 2)
+    assert np.allclose(P[0], [0.75, 0.25, 0.0]) and np.allclose(P[1], [0.25, 0.75, 0.0])
+    assert np.allclose(P[2], [0.0, 0.0, 1.0])
