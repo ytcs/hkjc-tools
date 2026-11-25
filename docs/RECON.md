@@ -477,6 +477,10 @@ camera) skips the pass. The lowest end is kept. Moves are judged by J, so more s
 kept J; the ends of different starts differ by cascades of relabellings, each part of which raises J alone, which no
 single move family reaches.
 
+Every full state step starts from scratch and runs the EM over the fault chains to convergence (weights changing
+< 1e-3, at most `EM_ROUNDS` 20), so J is a function of the labelling alone: with the earlier 4 rounds, warm starts from
+neighbouring labellings moved J by up to 12.
+
 The candidates of steps 4–6 are screened by a truncated state step (`QUICK_ROUNDS` fault-chain round, at most
 `QUICK_IT` Newton steps, the current state's posterior sds). Only the `SCREEN_KEEP` best within `SCREEN_MARGIN` of
 the current J get a full state step, and only full steps can be accepted or enter the posterior. A family with more

@@ -795,6 +795,10 @@ class State:
         return out
 
 
+EM_ROUNDS = 20  # EM rounds over the fault chains at most; they stop when the weights change < 1e-3 (4 left J
+# unconverged by up to 12)
+
+
 class Model:
     """The objective's state step for one race: grid, priors, list statements."""
 
@@ -867,7 +871,7 @@ class Model:
         sb = X[St.b, k] * (1 - w) + X[St.b, k + 1] * w
         return sa - sb
 
-    def solve_s(self, obs: Obs, X0=None, rounds=4, max_it=30):
+    def solve_s(self, obs: Obs, X0=None, rounds=EM_ROUNDS, max_it=30):
         """Joint mode of every horse's s under physics, observations and the weighted order factors (EM over the
         fault chains, Newton with line search). -> (X, J_s, J_list, pf, om, per-horse marginal bands, P(order wrong)
         per statement)."""
@@ -1875,11 +1879,11 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
 
     memo, qmemo = {}, {}  # state steps already taken in this solve, by labelling
 
-    def look(labs, X0=None):
+    def look(labs, X0=None):  # the state step from scratch: J a function of the labelling alone
         key = np.asarray(labs).tobytes()
         if key in memo:
             return memo[key]
-        st_ = evaluate(model, labs, extra_s, extra_l, X0=X0, s_shift=s_shift)
+        st_ = evaluate(model, labs, extra_s, extra_l, s_shift=s_shift)
         seen.append((np.asarray(labs).copy(), st_.J))
         if len(memo) > 64:
             memo.clear()
