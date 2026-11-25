@@ -1458,6 +1458,40 @@ T_POST = 10.0  # J's per-detection terms treat correlated errors as independent:
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
 
 
+def crossovers(ev: Evidence, lab, other):
+    """Labellings that take ``other``'s labels over a run of consecutive parts (in time) of the segments where the two
+    differ; a part links differing segments that overlap in time and share a label (old or new), so every run keeps
+    per-frame exclusivity. -> list of (description, labelling)."""
+    ch = np.flatnonzero(lab != other)
+    if not len(ch):
+        return []
+    par = np.arange(len(ch))
+
+    def root(i):
+        while par[i] != i:
+            par[i] = par[par[i]]
+            i = par[i]
+        return i
+
+    for i in range(len(ch)):
+        a = ch[i]
+        la = {int(lab[a]), int(other[a])} - {-1}
+        for j in range(i + 1, len(ch)):
+            b = ch[j]
+            if ev.seg_lo[a] <= ev.seg_hi[b] and ev.seg_hi[a] >= ev.seg_lo[b] and la & {int(lab[b]), int(other[b])}:
+                par[root(i)] = root(j)
+    r = np.array([root(i) for i in range(len(ch))])
+    parts = sorted((ch[r == u] for u in np.unique(r)), key=lambda g: ev.seg_lo[g].min())
+    out = []
+    for i in range(len(parts)):
+        for j in range(i, len(parts)):
+            g = np.concatenate(parts[i:j + 1])
+            new = lab.copy()
+            new[g] = other[g]
+            out.append((f"crossover of parts {i + 1}-{j + 1} of {len(parts)} ({len(g)} segments)", new))
+    return out
+
+
 def swap_moves(model: Model, st: State, lab):
     """Abreast-pair swaps: for two horses whose paths stay within ABREAST_S along and ABREAST_L across for >= ABREAST_T
     s, exchange their labels on every segment inside the stretch, widened to the nearest camera cuts (times where >= 3
@@ -1672,7 +1706,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         m2.Lr = ListRows(model.Lr.tau, np.where(keep[:, None], model.Lr.slots, -1), model.Lr.full & keep,
                          model.Lr.same & keep)
         split.append((f"split-list init {par}", list_votes(m2, None, None) + app))
-    for name, U0 in [("init", lv0 + app), ("list-only init", lv0)] + split:
+    for name, U0 in [("init", lv0 + app), ("list-only init", lv0), ("appearance-only init", app)] + split:
         U0 = np.array(U0, float)
         U0[ev.forbid] = INF
         inits.append((name, milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)))
@@ -1691,8 +1725,24 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     # then the global move families from each distinct end (their order here does not predict their order after)
     if global_moves:
         ends = [descend(lab, st, True) for lab, st in ends]
-    best = min(ends, key=lambda e: e[1].J)
-    lab, st = best
+    lab, st = min(ends, key=lambda e: e[1].J)
+    # crossovers: the lowest end takes another end's labels over a run of the parts in which they differ (a part:
+    # differing segments linked by time overlap and a shared label); a lower labelling descends again, until no
+    # crossover with any other end lowers J
+    others = [e for e in ends if not np.array_equal(e[0], lab)]
+    while others:
+        best = None
+        U = unaries(model, st, lab)
+        for lb, _sb in others:
+            for desc, pm, st2 in screened(crossovers(ev, lab, lb), st, U, lab):
+                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
+                    best = (pm, st2, desc)
+        if best is None:
+            break
+        log(f"   core: {best[2]}, J {st.J:.1f} -> {best[1].J:.1f}")
+        hist.append(("crossover", best[1].J, int((best[0] != lab).sum())))
+        lab, st = descend(best[0], best[1], global_moves)
+        others = [e for e in others if not np.array_equal(e[0], lab)]
     log(f"   core: lowest end J {st.J:.1f}")
     U = unaries(model, st, lab)
     return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)

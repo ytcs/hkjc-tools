@@ -410,10 +410,11 @@ It is the sum of:
 1. Start-free solve: one MILP over segments × runners on the label-free evidence (a row inside a held near-cloth
    read, `contract.legend_frozen`, counts as frozen with P `PF0_FROZEN`; afterwards the frozen chain decides). This is the list's rank-count vote
    with undetected horses ahead at `P_AHEAD_UNSEEN`, plus reads and silk. It keeps only segments with a positive
-   gain. The same MILP also gives three more starts: the list's vote alone, and the vote of the list rows in
-   alternate `LIST_SPLIT` (7) s blocks (each parity) with reads and silk. The rank-count vote is not J's list term:
-   it over-rules labellings whose list disagreements J's fault chains discount, and a descent that starts inside its
-   basin does not leave it. The 7 s blocks are off the 10 s grid of the legend-masking validation cells.
+   gain. The same MILP also gives four more starts: the list's vote alone, reads and silk alone, and the vote of the
+   list rows in alternate `LIST_SPLIT` (7) s blocks (each parity) with reads and silk. The rank-count vote is not
+   J's list term: it over-rules labellings whose list disagreements J's fault chains discount, and a descent that
+   starts inside its basin does not leave it. The 7 s blocks are off the 10 s grid of the legend-masking validation
+   cells.
 2. Repeat:
    - Assignment step: a MILP over segments × runners minimises J's increments, linearised at the current state.
      Each increment combines the block predictive of the segment's chunks against each runner's posterior (leave
@@ -440,9 +441,12 @@ It is the sum of:
    are retried only after `WINDOW_RETRY` segments have changed label. There is no iteration cap. Every accepted step
    lowers J; the log prints J after each.
 
-Every start (step 1's four, then the caller's labellings) descends by steps 1–2 alone; the global move families
+Every start (step 1's five, then the caller's labellings) descends by steps 1–2 alone; the global move families
 (steps 3–6) then run from each distinct end (the order of the ends there does not predict their order after the
-global moves), and the lowest end is kept. Moves are judged
+global moves). Then crossovers (`core.crossovers`): the lowest end takes another end's labels over a run of
+consecutive parts of the segments where they differ (a part links differing segments that overlap in time and share
+a label, so a run keeps exclusivity), screened like steps 4–6; a lower labelling descends again, until no crossover
+with any other end lowers J. The lowest end is kept. Moves are judged
 by J, so more starts can only lower the kept J; the ends of different starts differ by cascades of relabellings, each
 part of which raises J alone, which no single move family reaches.
 
