@@ -66,6 +66,11 @@ EPS_LIST = 0.02  # iid misread / wrong-slot probability of one statement
 P_FROZEN_IN, P_FROZEN_STAY = 1e-3, 0.995  # per list row
 PF0_FROZEN = 0.9  # start solve: P(frozen) of a row inside a held near-cloth read
 P_OMIT_IN, P_OMIT_STAY = 1e-4, 0.999  # per list row, per horse
+# order-wrong state of a pair the list states adjacent (its order says nothing), per adjacent fact of that pair;
+# fitted on held-out list rows of the development races against masked paths
+P_WRONG_IN, P_WRONG_STAY = 3e-3, 0.98
+# a slot read whose number has a dropped-digit partner (1 <-> 11, 12, ...) is the partner: the list's one-row flickers
+P_DROP = 1e-3
 P_AHEAD_UNSEEN = 0.25  # start solve: P(an undetected horse is ahead of a detection) before any path exists
 MAX_RANK = 8
 # detection: frame-level probability that an in-view horse is boxed, from the frame's own count
@@ -439,6 +444,14 @@ class ListRows:
     slots: np.ndarray  # (R, 8) runner column index, -1 unread / not a runner
     full: np.ndarray  # every slot the field fills read, distinct runners
     same: np.ndarray  # identical to the previous full row
+    partner: np.ndarray | None = None  # (H, H) bool: runner columns whose numbers are dropped-digit partners
+
+
+def drop_partners(horses) -> np.ndarray:
+    """(H, H) bool: numbers one of which contains the other's digits (1 <-> 11, 12, ...; 2 <-> 12), a list read that
+    can be the other with a digit dropped."""
+    s = [str(int(h)) for h in horses]
+    return np.array([[a != b and (a in b or b in a) for b in s] for a in s], bool).reshape(len(s), len(s))
 
 
 def list_rows(leg, t_of_frame, horses) -> ListRows:
@@ -448,7 +461,7 @@ def list_rows(leg, t_of_frame, horses) -> ListRows:
     need = min(MAX_RANK, H)
     if leg is None or not len(leg):
         z = np.zeros(0)
-        return ListRows(z, np.zeros((0, MAX_RANK), int), z.astype(bool), z.astype(bool))
+        return ListRows(z, np.zeros((0, MAX_RANK), int), z.astype(bool), z.astype(bool), drop_partners(horses))
     leg = leg[np.argsort(leg[:, 0], kind="stable")]
     tau = t_of_frame(leg[:, 0]) - LAG
     sl = np.vectorize(lambda x: col.get(int(x), -1))(leg[:, 1:1 + MAX_RANK])
@@ -463,7 +476,7 @@ def list_rows(leg, t_of_frame, horses) -> ListRows:
             same[i] = last is not None and np.array_equal(sl[i], sl[last])
             last = i
     keep = rd.any(1)
-    return ListRows(tau[keep], sl[keep], full[keep], same[keep])
+    return ListRows(tau[keep], sl[keep], full[keep], same[keep], drop_partners(horses))
 
 
 def _scan(M, L, reverse=False):
@@ -523,15 +536,16 @@ def _hmm(log_e0, log_e1, p_in, p_stay):
     return (float(lz[0]), post[0]) if np.ndim(log_e0) == 1 else (lz, post)
 
 
-def _p_order(d):
-    """P(stated order | the ahead-minus-behind gap d) with the misread mixture; -> (p, -2 log p, d/dd, d2/dd2)."""
+def _p_order(d, eps=EPS_LIST):
+    """P(stated order | the ahead-minus-behind gap d) with the misread mixture (``eps`` per fact or one value);
+    -> (p, -2 log p, d/dd, d2/dd2)."""
     u = d / SIG_AB
     phi = np.exp(-0.5 * u * u) / np.sqrt(2 * np.pi)
     P = ndtr(u)
-    p = (1 - EPS_LIST) * P + 0.5 * EPS_LIST
+    p = (1 - eps) * P + 0.5 * eps
     f = -2.0 * np.log(p)
-    g = -2.0 * (1 - EPS_LIST) * phi / (SIG_AB * p)
-    h = 2.0 * (1 - EPS_LIST) * phi * u / (SIG_AB**2 * p) + 0.25 * g * g
+    g = -2.0 * (1 - eps) * phi / (SIG_AB * p)
+    h = 2.0 * (1 - eps) * phi * u / (SIG_AB**2 * p) + 0.25 * g * g
     return p, f, g, np.maximum(h, 0.0)
 
 
@@ -544,11 +558,20 @@ class Statements:
     a: np.ndarray
     b: np.ndarray
     unl: np.ndarray  # bool: an unlisted horse (b) behind the last listed (a)
+    eps: np.ndarray = None  # per fact misread probability (EPS_LIST, more where a read has a dropped-digit partner)
+    pair: np.ndarray = None  # per adjacent fact: its unordered pair's order-wrong chain (-1: unlisted facts)
+    slot: np.ndarray = None  # the list slot of a (adjacent facts: b sits in slot + 1)
 
 
 def statements(L: ListRows, H: int) -> Statements:
-    rr, aa, bb, uu = [], [], [], []
+    """The list rows' pairwise facts: adjacent read slots, and on full rows the last listed horse ahead of every
+    unlisted runner; per fact its misread probability: EPS_LIST, and P_DROP more for each of its two horses whose list
+    read can be a dropped-digit partner's number (a listed horse with partners; an unlisted runner that partners a
+    read of the row)."""
+    rr, aa, bb, uu, kk, qq = [], [], [], [], [], []
     need = min(MAX_RANK, H)
+    P = L.partner if L.partner is not None else np.zeros((H, H), bool)
+    pr = P.any(1)
     for i in range(len(L.tau)):
         sl = L.slots[i, :need]
         for q in range(need - 1):
@@ -557,15 +580,25 @@ def statements(L: ListRows, H: int) -> Statements:
                 aa.append(sl[q])
                 bb.append(sl[q + 1])
                 uu.append(False)
+                kk.append(int(pr[sl[q]]) + int(pr[sl[q + 1]]))
+                qq.append(q)
         if L.full[i] and H > MAX_RANK:
+            read = sl[sl >= 0]
             for u in sorted(set(range(H)) - set(sl.tolist())):
                 rr.append(i)
                 aa.append(sl[need - 1])
                 bb.append(u)
                 uu.append(True)
+                kk.append(int(pr[sl[need - 1]]) + int(P[u, read].any()))
+                qq.append(need - 1)
     rr = np.array(rr, int)
-    return Statements(rr, L.tau[rr] if len(rr) else np.zeros(0), np.array(aa, int), np.array(bb, int),
-                      np.array(uu, bool))
+    aa, bb, uu = np.array(aa, int), np.array(bb, int), np.array(uu, bool)
+    eps = 1.0 - (1.0 - EPS_LIST) * (1.0 - P_DROP) ** np.array(kk, float)
+    pair = np.full(len(rr), -1)
+    if (~uu).any():
+        key = np.minimum(aa, bb) * H + np.maximum(aa, bb)
+        pair[~uu] = np.unique(key[~uu], return_inverse=True)[1].ravel()
+    return Statements(rr, L.tau[rr] if len(rr) else np.zeros(0), aa, bb, uu, eps, pair, np.array(qq, int))
 
 
 OMIT_MARGIN = 2.4  # m: an omitted horse explains an unlisted horse only ahead of the last listed one by > a length
@@ -573,14 +606,21 @@ OMIT_MARGIN = 2.4  # m: an omitted horse explains an unlisted horse only ahead o
 
 def list_chains(L: ListRows, St: Statements, f_stmt, H, delta=None):
     """Fault chains at the statements' -2 log p ``f_stmt`` (``delta``: their ahead-minus-behind gaps), each fact's
-    likelihood taken relative to a clearly kept order (q = p / p_max). The list-level frozen chain acts on the adjacent
-    facts: a frozen row (only a row identical to the previous full row can be one) makes each fact a coin flip (1/2).
-    Then one omission chain per horse over every list row on its unlisted facts: an omitted horse explains being ahead
-    of the last listed horse by more than OMIT_MARGIN (likelihood max(q(d), 1 - q(d + OMIT_MARGIN))), so a horse level
-    with the last listed one gains nothing from the omitted state and the list keeps ordering it; a listed horse is
-    not omitted. -> (J_list, P(frozen) per row, P(omitted) per (horse, row))."""
+    likelihood taken relative to a clearly kept order (q = p / p_max).
+    - The list-level frozen chain acts on the adjacent facts: a frozen row (only a row identical to the previous full
+      row can be one) makes each adjacent fact a coin flip (1/2).
+    - One order-wrong chain per unordered pair the list states adjacent, over that pair's adjacent facts in row order:
+      in the wrong state the pair's stated order says nothing (a coin flip), so a list that misplaces a horse for a
+      stretch costs the chain's entry, not every fact (emission: the ratio to the kept order, weighted by the row's
+      P(not frozen)).
+    - One omission chain per horse over every list row on its unlisted facts: an omitted horse explains being ahead of
+      the last listed horse by more than OMIT_MARGIN (likelihood max(q(d), 1 - q(d + OMIT_MARGIN))), so a horse level
+      with the last listed one gains nothing from the omitted state and the list keeps ordering it; a listed horse is
+      not omitted, unless its read can be a dropped-digit partner's number (then at P_DROP).
+    -> (J_list, P(frozen) per row, P(omitted) per (horse, row), P(order wrong) per fact (0 for unlisted facts))."""
     R = len(L.tau)
-    pmax = 1.0 - 0.5 * EPS_LIST
+    eps = St.eps if St.eps is not None else np.full(len(St.a), EPS_LIST)
+    pmax = 1.0 - 0.5 * eps
     lp = -0.5 * np.asarray(f_stmt) - np.log(pmax)
     adj = ~St.unl
     e_ok = np.bincount(St.row[adj], lp[adj], R) if R else np.zeros(0)
@@ -589,22 +629,37 @@ def list_chains(L: ListRows, St: Statements, f_stmt, H, delta=None):
     lz_f, pf = _hmm(e_ok, e_fz, P_FROZEN_IN, P_FROZEN_STAY)
     ok = 1.0 - pf
     om = np.zeros((H, R))
+    pw = np.zeros(len(St.a))
+    lz_w = 0.0
+    ka = np.flatnonzero(adj)
+    if len(ka) and St.pair is not None:
+        o = ka[np.argsort(St.pair[ka], kind="stable")]  # by pair, rows ascending within a pair
+        cs = St.pair[o]
+        cnt = np.bincount(cs)
+        pos = np.arange(len(o)) - np.r_[0, np.cumsum(cnt)[:-1]][cs]
+        e1 = np.zeros((len(cnt), int(cnt.max())))
+        e1[cs, pos] = ok[St.row[o]] * (np.log(0.5 / pmax[o]) - lp[o])
+        lzc, post = _hmm(np.zeros_like(e1), e1, P_WRONG_IN, P_WRONG_STAY)
+        pw[o] = post[cs, pos]
+        lz_w = float(lzc.sum())
     if not R or not St.unl.any():
-        return -2.0 * lz_f, pf, om
+        return -2.0 * (lz_f + lz_w), pf, om, pw
     k = np.flatnonzero(St.unl)
     d = np.zeros(len(St.a)) if delta is None else np.asarray(delta)
-    q_far = 1.0 - _p_order(d[k] + OMIT_MARGIN)[0] / pmax
+    q_far = 1.0 - _p_order(d[k] + OMIT_MARGIN, eps[k])[0] / pmax[k]
     l_om = np.maximum(lp[k], np.log(np.maximum(q_far, 1e-300)))
     e0 = np.zeros((H, R))
     e1 = np.zeros((H, R))
     np.add.at(e0, (St.b[k], St.row[k]), lp[k] * ok[St.row[k]])
     np.add.at(e1, (St.b[k], St.row[k]), l_om * ok[St.row[k]])
+    part = (L.partner if L.partner is not None else np.zeros((H, H), bool)).any(1)
     for q in range(L.slots.shape[1]):
         sl = L.slots[:, q]
         m = sl >= 0
-        e1[sl[m], np.flatnonzero(m)] = -690.0
+        e1[sl[m], np.flatnonzero(m)] = np.where(part[sl[m]], max(np.log(P_DROP), -690.0) if P_DROP > 0 else -690.0,
+                                                -690.0)
     lz, om = _hmm(e0, e1, P_OMIT_IN, P_OMIT_STAY)
-    return -2.0 * (lz_f + float(lz.sum())), pf, om
+    return -2.0 * (lz_f + lz_w + float(lz.sum())), pf, om, pw
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -806,7 +861,8 @@ class Model:
 
     def solve_s(self, obs: Obs, X0=None, rounds=4, max_it=30):
         """Joint mode of every horse's s under physics, observations and the weighted order factors (EM over the
-        fault chains, Newton with line search). -> (X, J_s, J_list, pf, om, per-horse marginal bands)."""
+        fault chains, Newton with line search). -> (X, J_s, J_list, pf, om, per-horse marginal bands, P(order wrong)
+        per statement)."""
         H, n, St = self.H, self.n, self.St
         A0, r0 = self._joint_base(obs)
         x = cho_solve_banded((cholesky_banded(A0, lower=True), True), r0) if X0 is None else X0.T.ravel().copy()
@@ -828,11 +884,12 @@ class Model:
         wt = np.ones(m_st)
         pf = np.zeros(len(self.Lr.tau))
         om = np.zeros((H, len(self.Lr.tau)))
+        pw = np.zeros(m_st)
         for _ in range(rounds if m_st else 1):
             if m_st:
                 dl = delta(x)
-                _J, pf, om = list_chains(self.Lr, St, _p_order(dl)[1], H, dl)
-                wt_new = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0)
+                _J, pf, om, pw = list_chains(self.Lr, St, _p_order(dl, St.eps)[1], H, dl)
+                wt_new = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0 - pw)
                 if _ > 0 and np.abs(wt_new - wt).max() < 1e-3:
                     break
                 wt = wt_new
@@ -844,7 +901,7 @@ class Model:
                 obj = q0
                 cw = np.zeros(m_st)
                 if m_st:
-                    _p, f, gd, hd = _p_order(delta(x))
+                    _p, f, gd, hd = _p_order(delta(x), St.eps)
                     obj += float((wt * f).sum())
                     grad += np.bincount(II.ravel(), ((wt * gd)[:, None] * vv).ravel(), len(x))
                     cw = 0.5 * wt * hd
@@ -860,7 +917,7 @@ class Model:
                 while lam > 1e-4:
                     on = q0 + lam * g1 + lam * lam * g2
                     if m_st:
-                        on += float((wt * _p_order(d0 + lam * ds)[1]).sum())
+                        on += float((wt * _p_order(d0 + lam * ds, St.eps)[1]).sum())
                     if on <= obj:
                         break
                     lam *= 0.5
@@ -875,9 +932,9 @@ class Model:
         hd = np.zeros(m_st)
         if m_st:
             dl = delta(x)
-            _p, f, _g, hd = _p_order(dl)
-            J_list, pf, om = list_chains(self.Lr, St, f, H, dl)
-            wt = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0)
+            _p, f, _g, hd = _p_order(dl, St.eps)
+            J_list, pf, om, pw = list_chains(self.Lr, St, f, H, dl)
+            wt = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0 - pw)
         ld = _logdet(hess(0.5 * wt * hd))[0]
         J_s = float(x @ _band_matvec(A0, x)) - 2.0 * float(r0 @ x) + self._const_s(obs) + ld - H * self.ld_prior_s
         # per-horse marginal bands: own physics, prior, observations + the order factors' curvature on its nodes
@@ -901,7 +958,7 @@ class Model:
                     np.add.at(As[h][0], k[m], cw[m] * (1 - w[m]) ** 2)
                     np.add.at(As[h][0], k[m] + 1, cw[m] * w[m] ** 2)
                     np.add.at(As[h][1], k[m], cw[m] * (1 - w[m]) * w[m])
-        return Xs, J_s, J_list, pf, om, As
+        return Xs, J_s, J_list, pf, om, As, pw
 
     def _const_s(self, obs):
         """The quadratic objective's constant: sum y^2/sd^2 of the observations and the prior's m0, v0 terms."""
@@ -1013,14 +1070,15 @@ def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift
     os_ = Obs.cat([os_, extra_s])
     ol = Obs.cat([ol, extra_l])
     if quick is None:
-        Xs, J_s, J_list, pf, om, As = model.solve_s(os_, X0)
+        Xs, J_s, J_list, pf, om, As, pw = model.solve_s(os_, X0)
     else:
-        Xs, J_s, J_list, pf, om, As = model.solve_s(os_, X0, QUICK_ROUNDS, QUICK_IT)
+        Xs, J_s, J_list, pf, om, As, pw = model.solve_s(os_, X0, QUICK_ROUNDS, QUICK_IT)
     Xl, J_l, Al = model.solve_l(ol)
     J_lab = label_terms(ev, seg_lab)
     has = np.zeros(model.H, bool)
     has[np.unique(os_.h)] = True
     st = State(model.tg, Xs, Xl, As, Al, pf, om, 0.0, {}, os_, ol, has)
+    st.pw = pw
     sdl_cache = model.__dict__.setdefault("_sdl_cache", {})
     if len(sdl_cache) > 4000:
         sdl_cache.clear()
@@ -1320,6 +1378,15 @@ def list_votes(model: Model, st: State | None, seg_lab):
     bnd = np.r_[0, np.flatnonzero(np.diff(fr[o])) + 1, len(o)]
     lab_det = seg_lab[ev.seg] if seg_lab is not None else None
     need = min(MAX_RANK, H)
+    # a slot whose adjacent pair facts are in their order-wrong state places its horse uninformatively
+    pws = np.zeros(L.slots.shape)
+    St = model.St
+    if st is not None and getattr(st, "pw", None) is not None and len(St.a):
+        adj = ~St.unl
+        for off in (0, 1):
+            np.maximum.at(pws, (St.row[adj], St.slot[adj] + off), st.pw[adj])
+    part = (L.partner if L.partner is not None else np.zeros((H, H), bool)).any(1)
+    eps_h = 1.0 - (1.0 - EPS_LIST) * (1.0 - P_DROP) ** part.astype(float)  # a read with a dropped-digit partner
     for a, b in zip(bnd[:-1], bnd[1:]):
         j = o[a:b]
         tf = t[j[0]]
@@ -1362,7 +1429,8 @@ def list_votes(model: Model, st: State | None, seg_lab):
             h = sl[q]
             if h < 0:
                 continue
-            P = ok * ((1 - EPS_LIST) * cnt[:, q] + EPS_LIST / H) + (1 - ok) / H
+            e, wq = eps_h[h], pws[r, q]
+            P = ok * ((1 - wq) * ((1 - e) * cnt[:, q] + e / H) + wq / H) + (1 - ok) / H
             np.add.at(out[:, h], segj, -2.0 * np.log(P * H))
         if L.full[r] and H > MAX_RANK:
             base = (H - MAX_RANK) / H

@@ -51,12 +51,12 @@ def test_omission_chain_absorbs_a_long_omission_and_frozen_chain_a_held_list():
     St = core.statements(L, H)
     # horse 9 (unlisted) is truly 5 m ahead of the last listed horse on every row: an omission
     d = np.where(St.unl & (St.b == 9), -5.0, 3.0)
-    _J, pf, om = core.list_chains(L, St, core._p_order(d)[1], H, d)
+    _J, pf, om, _pw = core.list_chains(L, St, core._p_order(d)[1], H, d)
     assert om[9, 50:250].min() > 0.9
     assert om[8, 50:250].max() < 0.1
     # every adjacent pair contradicted on a list held identical: frozen
     d2 = np.where(St.unl, 3.0, -3.0)
-    _J2, pf2, _om2 = core.list_chains(L, St, core._p_order(d2)[1], H, d2)
+    _J2, pf2, _om2, _pw2 = core.list_chains(L, St, core._p_order(d2)[1], H, d2)
     assert pf2[20:280].min() > 0.9 and pf.max() < 0.1
 
 
@@ -110,11 +110,52 @@ def test_an_unlisted_horse_level_with_the_last_listed_one_is_not_omitted():
     L = core.ListRows(np.arange(R) * 0.1, slots, np.ones(R, bool), np.zeros(R, bool))
     St = core.statements(L, H)
     d = np.where(St.unl & (St.b == 9), 0.0, 3.0)
-    _J, _pf, om = core.list_chains(L, St, core._p_order(d)[1], H, d)
+    _J, _pf, om, _pw = core.list_chains(L, St, core._p_order(d)[1], H, d)
     assert om[9].max() < 0.1
     d = np.where(St.unl & (St.b == 9), -4.0, 3.0)
-    _J, _pf, om = core.list_chains(L, St, core._p_order(d)[1], H, d)
+    _J, _pf, om, _pw = core.list_chains(L, St, core._p_order(d)[1], H, d)
     assert om[9, 50:250].min() > 0.9
+
+
+def test_a_pair_the_list_orders_wrongly_for_a_stretch_costs_its_entry_not_every_row():
+    """Rows that keep the order of every pair except one (horses 4 and 5 stated 4 ahead of 5 while 5 is 3 m ahead):
+    the pair's order-wrong chain switches on, so each further row costs a coin flip, not a misread, and no other pair
+    is called wrong."""
+    H = 8
+
+    def cost(R):
+        slots = np.tile(np.arange(8), (R, 1))
+        L = core.ListRows(np.arange(R) * 0.1, slots, np.ones(R, bool), np.zeros(R, bool))
+        St = core.statements(L, H)
+        d = np.where((St.a == 4) & (St.b == 5), -3.0, 3.0)
+        J, _pf, _om, pw = core.list_chains(L, St, core._p_order(d, St.eps)[1], H, d)
+        J0, *_ = core.list_chains(L, St, core._p_order(np.abs(d), St.eps)[1], H, np.abs(d))
+        return J - J0, pw, St
+
+    j100, pw, St = cost(100)
+    j300, _, _ = cost(300)
+    bad = (St.a == 4) & (St.b == 5)
+    assert pw[bad][20:].min() > 0.9 and pw[~bad].max() < 0.1
+    flip, misread = -2 * np.log(0.5 / (1 - 0.5 * core.EPS_LIST)), -2 * np.log(0.5 * core.EPS_LIST)
+    assert (j300 - j100) / 200 < 1.1 * flip  # a coin flip per further row
+    assert j100 < 0.3 * 100 * misread  # far below the iid misread cost of every row
+
+
+def test_a_read_with_a_dropped_digit_partner_is_a_weaker_fact_and_does_not_end_an_omission():
+    """Runners 1 and 11: a slot read '1' may be 11 with a digit dropped, so its facts carry P_DROP more misread
+    probability, and runner 1 (truly far ahead, unlisted) stays omitted through rows that read '1'."""
+    horses = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 11])
+    P = core.drop_partners(horses)
+    assert P[0, 9] and P[9, 0] and not P[1, 9]
+    R = 300
+    slots = np.tile(np.arange(1, 9), (R, 1))  # columns 1..8 (numbers 2..9) listed; column 0 (#1) and 9 (#11) not
+    slots[100:300:20, 7] = 0  # ten isolated rows read "1" in the last slot (where 11 would be)
+    L = core.ListRows(np.arange(R) * 0.1, slots, np.ones(R, bool), np.zeros(R, bool), P)
+    St = core.statements(L, len(horses))
+    assert St.eps[(St.row == 100) & (St.b == 0)].min() > core.EPS_LIST
+    d = np.where(St.unl & (St.b == 0), -6.0, 3.0)
+    _J, _pf, om, _pw = core.list_chains(L, St, core._p_order(d, St.eps)[1], len(horses), d)
+    assert om[0, 50:250].min() > 0.5
 
 
 def test_a_box_wholly_inside_the_list_band_is_an_icon():
