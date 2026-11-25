@@ -279,3 +279,14 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   Offline estimate on main's F cells (finstep_eval.py, dt - step / v): silk check half median |dt| 0.125 -> 0.091 s,
   p90 0.390 -> 0.351; tune half 0.117 -> 0.123, p90 0.483 -> 0.425. To be measured on F cells run with the code.
   It changes only cells with the finish withheld (not P1's cells).
+- **Case 6 regression and pair exchanges (9a94af5).** The Gate-1 rerun of 20251126_HV_3 on c2c4cf2 kept #7/#9 swapped
+  for the whole race (coordinator confirmed by eye): kept J 81,825.1, true labelling 81,811.7 (list -12, silk -6). The
+  two are 3-4 lateral units apart, so no abreast swap proposed it, and the linearised cost change ranked the
+  race-long exchange 511th (+85,616 against a true -13.4). New family: any two horses over the whole race, cut->end and
+  start->cut (cut windows only where the two paths are within 3 m / 4 units at the cut), screened by the truncated
+  state step alone (its value matched the full step within 0.6 J on the case). Variants (bench J vs c2c4cf2 / CPU s):
+  in every descent 0 / -48 / -367 / -74, CPU 1,216; in a last descent from the lowest end 0 / -14 / -367 / -74, CPU
+  628 (c2c4cf2: 667) -> kept the last-descent variant. Case 6 now 81,803.8 with #7/#9 right. Screen check: 23 pair
+  exchanges screened below J on case 6 (every-descent run), 0 not confirmed by the full step.
+- **Dev runs restarted on 9a94af5** (stale c2c4cf2 rows moved to runs/p1after_c2c4cf2_stale); split c/d 20 races
+  each (coordinator), e/f 10 each (mine, after the Gate-1 reruns of cases 6, 4, 1, 3, 5).
