@@ -27,6 +27,8 @@ falls, then a bounded polish: candidate labellings scored by one-horse refits, t
 
 from __future__ import annotations
 
+import copy
+
 from dataclasses import dataclass, field
 from functools import partial
 
@@ -1563,8 +1565,10 @@ class Result:
     log: list
 
 
-REFIT_ROUNDS = 30  # alternation proposals (MILP + full state step) per solve at most
-POLISH_STEPS = 16  # polish full state steps per solve at most
+REFIT_ROUNDS = 30  # alternation proposals (MILP + full state step) per descent at most
+DESCENTS = 2  # starts that descend: the lowest by J at the start (the pre-solve: the lowest)
+LIST_SPLIT = 7.0  # s: block length of the split-list inits (off the 10 s grid of the legend masking cells)
+POLISH_STEPS = 16  # polish full state steps per descent at most
 NEWTON_IT = 10  # one-horse refit: Newton steps at most
 REFIT_SWEEPS, SWEEP_IT = 2, 3  # Gauss-Seidel sweeps over a candidate's horses after their first refits, Newton steps
 REFIT_TOP, SWEEP_TOP = 200, 60  # polish candidates re-scored by one-horse refits (the lowest by the closed-form
@@ -2150,8 +2154,9 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
 
 
 def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True):
-    """Global solve. Starts: the all-evidence init (MILP on the list votes, reads and silk) and the caller's
-    labellings. From each distinct start a descent: alternation of the exact MILP assignment over segments on unaries
+    """Global solve. Starts: five init MILPs (list votes with reads and silk; list votes; reads and silk; the list
+    rows of alternate LIST_SPLIT s blocks of each parity with reads and silk) and the caller's labellings; the DESCENTS
+    lowest by J (the pre-solve: the lowest) descend. A descent: alternation of the exact MILP assignment over segments on unaries
     at the current state (one-horse-refit kinematic block) with a full state step of its proposal, kept when J falls
     by more than MIN_GAIN, until the MILP returns the current labelling or its proposal raises J (REFIT_ROUNDS proposals
     at most per descent); then (``polish``) a bounded polish (POLISH_STEPS full state steps at most per descent):
@@ -2161,7 +2166,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     sweeps over their horses; the predicted-negative ones with disjoint horses go together into one full state step,
     on rejection the single best ones one at a time; an accepted step resumes the alternation. Then the lowest end
     descends again with the crossover runs toward every other end (``crossovers``) as its pool, while that lowers J.
-    The pre-solve without the finish camera runs the alternation from the lowest start only (``polish`` False)."""
+    The pre-solve without the finish camera runs the alternation only (``polish`` False)."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
@@ -2178,10 +2183,23 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         return st_
 
     hist = []
+    # inits: MILPs on the list votes with reads and silk, the list votes alone, reads and silk alone, and the list
+    # rows of alternate LIST_SPLIT s blocks (each parity) with reads and silk (a list stretch the full vote gets wrong
+    # can be outvoted only from a start that leaves it out); then the caller's labellings
     lv0 = list_votes(model, None, None)
-    U0 = lv0 + ev.read_cost + ev.silk_cost
-    U0[ev.forbid] = INF
-    inits = [("init", milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0))]
+    app = ev.read_cost + ev.silk_cost
+    vot = [("init", lv0 + app), ("list-only init", lv0), ("appearance-only init", app)]
+    for par in (0, 1):
+        keep = (np.floor(model.Lr.tau / LIST_SPLIT).astype(int) % 2) == par
+        m2 = copy.copy(model)
+        m2.Lr = ListRows(model.Lr.tau, np.where(keep[:, None], model.Lr.slots, -1), model.Lr.full & keep,
+                         model.Lr.same & keep)
+        vot.append((f"split-list init {par}", list_votes(m2, None, None) + app))
+    inits = []
+    for name, U0 in vot:
+        U0 = np.array(U0, float)
+        U0[ev.forbid] = INF
+        inits.append((name, milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)))
     inits += [(f"start {k + 1}", np.asarray(o).copy()) for k, o in enumerate(start)]
     ucache = {}
 
@@ -2324,8 +2342,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         hist.append((name, st0.J, int((lab0 >= 0).sum())))
         log(f"   core: {name} J {st0.J:.1f} ({int((lab0 >= 0).sum())}/{ev.n_seg} segments labelled)")
         starts.append((name, lab0, st0))
-    if not polish:
-        starts = [min(starts, key=lambda x: x[2].J)]
+    starts = sorted(starts, key=lambda x: x[2].J)[:DESCENTS if polish else 1]
     ends = []
     for name, lab0, st0 in starts:
         e = descend(lab0, st0, [])
