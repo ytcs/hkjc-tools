@@ -374,7 +374,8 @@ def miss_terms(ev: Evidence, pin, seg_lab):
     return float(np.where(labd, c_lab, c_un).sum()), p, c_un, c_lab
 
 
-def build_evidence(horses, T, members, pose, panel_h, silk_style, nums=None, silk=None, panel_w=None, bend=None):
+def build_evidence(horses, T, members, pose, panel_h, silk_style, nums=None, silk=None, panel_w=None, bend=None,
+                   s_shift=None):
     """Label-free evidence from observe's tracks (``T``: rows, t, d->s supplied as T['s'], lat), the tracker's
     tracklets, the pose graph, disc reads and silk features."""
     t, s, lat = np.asarray(T["t"], float), np.asarray(T["s"], float), np.asarray(T["lat"], float)
@@ -397,6 +398,8 @@ def build_evidence(horses, T, members, pose, panel_h, silk_style, nums=None, sil
         cam = near <= CAM_WIN
     else:
         cam = np.zeros(len(t), bool)
+    if s_shift is not None:  # the final product's metric bias moves render s after the (label-free) segmentation
+        s = s + s_shift(s)
     cid, ch = chunks(t, s, lat, seg, cam)
     lo = np.full(n_seg, np.iinfo(np.int64).max)
     hi = np.full(n_seg, -1)

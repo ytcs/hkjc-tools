@@ -1129,14 +1129,13 @@ class RaceRun:
             zs = np.load(self.p("silk.npz"))
             silk = (zs["feat"][T["det_idx"]], zs["proto_no"], zs["proto"])
         box = np.load(self.p("frames_idx.npz"))["box"]
-        s_run = self.info.distance - np.asarray(T["d"], float)
-        Td = dict(rows=T["rows"], t=T["t"], s=s_run if s_shift is None else s_run + s_shift(s_run), lat=T["lat"])
+        Td = dict(rows=T["rows"], t=T["t"], s=self.info.distance - np.asarray(T["d"], float), lat=T["lat"])
         g = self.info.geometry
         bend = np.array([g.is_bend(float(x)) for x in np.round(np.asarray(T["d"], float), 0)], bool)
         return core.build_evidence(horses, Td, [np.asarray(m, int) for m in T["members"]],
                                    np.load(self.p("pose.npz")), float(box[3] - box[2]),
                                    self.render_style() == "silk", nums=self._number_reads(T), silk=silk,
-                                   panel_w=float(box[1] - box[0]), bend=bend)
+                                   panel_w=float(box[1] - box[0]), bend=bend, s_shift=s_shift)
 
     NUMBER_CONF = 0.6  # minimum OCR confidence of a disc number read
 
