@@ -206,3 +206,27 @@ def test_a_chain_move_carries_a_tracklets_clutter_continuation():
     full = lab.copy()
     full[tail] = lab[chains[0][0]]
     assert any(np.array_equal(new, full) for _d, new in core.chain_moves(ev, lab, st))
+
+
+def test_refit_scores_track_the_exact_change_of_j():
+    """At a labelling with the tracker swap left in (each tracklet one horse throughout), the one-horse-refit and
+    closed-form scores of undoing the swap agree in sign with the exact J change, and the refit score of a relabel
+    that leaves the labelling unchanged is 0."""
+    rows, t, s, lat, who = _race(n_h=2, speeds=[16.0, 16.0], start_s=[100.0, 96.0], gap_lat=1.5)
+    a = np.flatnonzero(((who == 0) & (t < 10)) | ((who == 1) & (t >= 10)))
+    b = np.flatnonzero(((who == 1) & (t < 10)) | ((who == 0) & (t >= 10)))
+    horses = np.array([3, 7])
+    ev = _evidence(rows, t, s, lat, [a, b], horses)
+    fr = np.unique(rows[:, 0])
+    leg = np.c_[fr, np.tile([3, 7, 0, 0, 0, 0, 0, 0], (len(fr), 1))]
+    Lr = core.list_rows(leg, lambda f: np.asarray(f, float) * 0.1 + 1.0, horses)
+    m = core.Model(ev, Lr, np.arange(1.0, 20.0, core.DT), width=20.0)
+    right = np.array([np.bincount(who[ev.seg == k], minlength=2).argmax() for k in range(ev.n_seg)])
+    late = np.array([ev.t[ev.seg == k].min() >= 10 for k in range(ev.n_seg)])
+    wrong = np.where(late, 1 - right, right)
+    st = core.evaluate(m, wrong)
+    rf = core.Refit(m, st, wrong)
+    exact = core.evaluate(m, right).J - st.J
+    assert exact < -core.MIN_GAIN
+    assert rf.score(right) < -core.MIN_GAIN and rf.score_quick(right) < -core.MIN_GAIN
+    assert rf.score(wrong) == 0.0
