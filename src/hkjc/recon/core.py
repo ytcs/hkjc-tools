@@ -1517,10 +1517,24 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     hist = []
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
 
+    memo, qmemo = {}, {}  # state steps already taken in this solve, by labelling
+
     def look(labs, X0=None):
+        key = np.asarray(labs).tobytes()
+        if key in memo:
+            return memo[key]
         st_ = evaluate(model, labs, extra_s, extra_l, X0=X0, s_shift=s_shift)
         seen.append((np.asarray(labs).copy(), st_.J))
+        if len(memo) > 64:
+            memo.clear()
+        memo[key] = st_
         return st_
+
+    def quick_j(labs, st0):
+        key = np.asarray(labs).tobytes()
+        if key not in qmemo:
+            qmemo[key] = evaluate(model, labs, extra_s, extra_l, X0=st0.S, s_shift=s_shift, quick=st0).J
+        return qmemo[key]
 
     def screened(cands, st0):
         """Full state steps for the SCREEN_KEEP candidates with the lowest screening J (truncated solve), if within
@@ -1532,7 +1546,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             cur = Uc[np.arange(len(lab)), np.where(lab >= 0, lab, -1)]
             du = [float((Uc[np.arange(len(lab)), np.where(pm >= 0, pm, -1)] - cur).sum()) for _d, pm in cands]
             cands = [cands[i] for i in np.argsort(du)[:SCREEN_PRE]]
-        qj = [evaluate(model, pm, extra_s, extra_l, X0=st0.S, s_shift=s_shift, quick=st0).J for _d, pm in cands]
+        qj = [quick_j(pm, st0) for _d, pm in cands]
         keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st0.J + SCREEN_MARGIN]
         return [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
 
