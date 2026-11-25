@@ -1601,6 +1601,9 @@ SEG_SLACK = 50.0  # single-segment polish candidates: labels whose unary is at m
 POST_K, POST_BAND = 20, 20.0  # alternatives given a full state step for the probabilities: the K lowest, any within
 # POST_BAND J of the kept labelling
 T_PROB = 50.0  # the probability output's temperature: fitted on a race-hashed half of the dev null-pair races (0333)
+POST_PRUNE = 2.0 * T_PROB * np.log(1e4)  # J: an alternative whose closed-form screen is above this (weight < 1e-4)
+# keeps that screen as its dJ
+POST_FULL = 100.0  # J: of the POST_K lowest, only those screened below this get a full state step
 T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
 EXCH_S, EXCH_L = 3.0, 4.0  # m, units: two paths this close at a camera cut may exchange labels from it on
@@ -2249,6 +2252,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
+    last_rf = []  # the latest polish round's Refit (its state and memoised one-horse refits)
     cnt = dict(full=0, rounds=0, steps=0, acc_r=0, acc_p=0)
     cpu = dict(state=0.0, unaries=0.0, milp=0.0, scores=0.0)
 
@@ -2342,6 +2346,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             if not cands:
                 break
             rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
+            last_rf[:] = [rf]
             lab_r = lab
             # a candidate's score is kept from an earlier polish round while none of its horses changed since
             keys, hsets, pred, todo = [], [], np.zeros(len(cands)), []
@@ -2493,7 +2498,9 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     if not polish:  # a preliminary solve: its marginals are not a product's
         return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist, ends)
     t0 = time.process_time()
-    marg, _alts = probability_output(model, lab, extra_s, extra_l, s_shift, st=st, log=log)
+    rf = last_rf[0] if last_rf and last_rf[0].st is st and np.array_equal(last_rf[0].lab, lab) else None
+    known = {k: v.J for k, v in memo.items()}
+    marg, _alts = probability_output(model, lab, extra_s, extra_l, s_shift, st=st, rf=rf, known=known, log=log)
     log(f"   core: probability output CPU s {time.process_time() - t0:.1f}")
     return Result(lab, st, U, marg, hist, ends)
 
@@ -2505,21 +2512,37 @@ def alternatives(model: Model, lab, st: State):
     return [pm for _x, _y, pm in single_relabels(model.ev, lab, st)] + [pm for _d, pm in pair_exchanges(model.ev, lab, st)]
 
 
-def probability_output(model: Model, lab, extra_s=None, extra_l=None, s_shift=None, st=None, log=print):
+def probability_output(model: Model, lab, extra_s=None, extra_l=None, s_shift=None, st=None, rf=None, known=None,
+                       log=print):
     """Per segment P(label) for a final labelling and its evidence, independent of how the labelling was found: the
-    alternatives (alternatives()) screened by their one-horse-refit scores (Refit.score), the POST_K lowest and those within POST_BAND
-    of J given a full state step from scratch, combined by alternative_posterior at T_PROB.
+    alternatives (alternatives()) screened in closed form (Refit.score_quick); those screened at most POST_PRUNE
+    re-screened by their one-horse-refit scores (Refit.score); a full state step from scratch for those screened
+    below POST_BAND and for the POST_K lowest screened below POST_FULL (``known``: labelling bytes -> J of full state
+    steps already taken); combined by alternative_posterior at T_PROB. ``rf``: a Refit at (lab, st) to reuse.
     -> (P (segments x H + 1), list of (labelling, dJ))."""
     lab = np.asarray(lab)
     if st is None:
         st = evaluate(model, lab, extra_s, extra_l, s_shift=s_shift)
+    known = {} if known is None else known
     alts = alternatives(model, lab, st)
-    rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
-    qd = np.array([rf.score(pm) for pm in alts])
-    full = set(np.argsort(qd)[:POST_K].tolist()) | set(np.flatnonzero(qd < POST_BAND).tolist())
-    dj = [evaluate(model, alts[i], extra_s, extra_l, s_shift=s_shift).J - st.J if i in full else float(qd[i])
-          for i in range(len(alts))]
-    log(f"   core: probabilities from {len(alts)} alternatives ({len(full)} with a full state step)")
+    if rf is None:
+        rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
+    qd = np.array([rf.score_quick(pm) for pm in alts])
+    near = np.flatnonzero(qd <= POST_PRUNE)
+    for i in near:
+        qd[i] = rf.score(alts[i])
+    low = np.argsort(qd, kind="stable")[:POST_K]
+    full = set(low[qd[low] < POST_FULL].tolist()) | set(np.flatnonzero(qd < POST_BAND).tolist())
+    dj = qd.tolist()
+    n_new = 0
+    for i in sorted(full):
+        J = known.get(alts[i].tobytes())
+        if J is None:
+            J = evaluate(model, alts[i], extra_s, extra_l, s_shift=s_shift).J
+            n_new += 1
+        dj[i] = J - st.J
+    log(f"   core: probabilities from {len(alts)} alternatives ({len(near)} refit-scored, {len(full)} with a full "
+        f"state step, {n_new} new)")
     pairs = list(zip(alts, dj))
     return alternative_posterior(lab, pairs, model.H), pairs
 
