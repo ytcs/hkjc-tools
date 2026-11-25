@@ -1245,68 +1245,145 @@ def insertion_moves(model: Model, st: State, lab):
 
 def kin_costs(model: Model, st: State, seg_lab):
     """(segments x horses) block predictive -2 log-likelihood ratio of each segment's chunks against each horse's
-    posterior (leave-segment-out for its current owner), along-track and lateral."""
+    posterior, along-track and lateral: for its current owner with the segment left out; for a horse holding other
+    segments that overlap it in time, with those segments' chunks left out (a one-horse refit: the path the horse would
+    have holding this segment instead), by a low-rank downdate of the posterior; segments of equal chunk count are
+    scored together."""
     ev, tg = model.ev, model.tg
     S, H = ev.n_seg, model.H
     out = np.zeros((S, H))
     order = np.argsort(ev.ch_seg, kind="stable")
     bnd = np.r_[0, np.flatnonzero(np.diff(ev.ch_seg[order])) + 1, len(order)]
     segs = ev.ch_seg[order[bnd[:-1]]]
+    sizes = np.diff(bnd)
     kk, ww = _interp(tg, ev.ch_t)
     n = len(tg)
-    allc = order
-    # per horse: cov of every chunk functional (linear interpolation rows), by segment blocks
-    Hm = np.zeros((len(allc), n))
-    Hm[np.arange(len(allc)), kk[allc]] += 1 - ww[allc]
-    Hm[np.arange(len(allc)), kk[allc] + 1] += ww[allc]
-    import scipy.sparse as sp
-
-    Hsp = sp.csr_matrix(Hm)
-    k0, w0 = kk[allc], ww[allc]
+    k0, w0 = kk[order], ww[order]
+    nodes = np.unique(np.r_[k0, k0 + 1])  # grid nodes the chunks interpolate between
+    pos = np.full(n, -1)
+    pos[nodes] = np.arange(len(nodes))
+    E = np.zeros((n, len(nodes)))
+    E[nodes, np.arange(len(nodes))] = 1.0
+    p0, p1 = pos[k0], pos[k0 + 1]
+    groups = [(m_, np.flatnonzero(sizes == m_)) for m_ in np.unique(sizes)]
+    lab = np.asarray(seg_lab)
+    rcost, rok = np.zeros((S, H, 2)), np.zeros((S, H, 2), bool)
+    ccache = model.__dict__.setdefault("_kin_cache", {})  # lateral bands are reused while a horse's labels stay
+    if len(ccache) > 64:
+        ccache.clear()
     for coord in ("s", "l"):
         A = st.As if coord == "s" else st.Al
         X = st.S if coord == "s" else st.L
-        y = (ev.ch_s if coord == "s" else ev.ch_l)[allc]
-        R = ((ev.ch_sds if coord == "s" else ev.ch_sdl)[allc]) ** 2
-        bcache = model.__dict__.setdefault("_block_cache", {})
-        if len(bcache) > 300:
-            bcache.clear()
+        y = (ev.ch_s if coord == "s" else ev.ch_l)[order]
+        R = ((ev.ch_sds if coord == "s" else ev.ch_sdl)[order]) ** 2
         for h in range(H):
-            hit = bcache.get(id(A[h])) if coord == "l" else None
-            if hit is not None and hit[0] is A[h]:  # a cached lateral band: its chunk covariance blocks too
-                blocks = hit[1]
+            hit = ccache.get(id(A[h])) if coord == "l" else None
+            if hit is not None and hit[0] is A[h]:
+                blocks, W = hit[1], hit[2]
             else:
-                c = cholesky_banded(A[h], lower=True)
-                Z = cho_solve_banded((c, True), Hm.T)  # n x M
-                blocks = [Z[k0[bnd[q]:bnd[q + 1]], bnd[q]:bnd[q + 1]] * (1 - w0[bnd[q]:bnd[q + 1]])[:, None]
-                          + Z[k0[bnd[q]:bnd[q + 1]] + 1, bnd[q]:bnd[q + 1]] * w0[bnd[q]:bnd[q + 1]][:, None]
-                          for q in range(len(segs))]
+                W = cho_solve_banded((cholesky_banded(A[h], lower=True), True), E)[nodes]  # A^-1 on the nodes
+                blocks = {}
+                for m_, qs in groups:
+                    ix = bnd[qs][:, None] + np.arange(m_)[None, :]  # (G, m) chunk positions
+                    a0, a1 = p0[ix], p1[ix]
+                    wa = w0[ix]
+                    C = ((1 - wa)[:, :, None] * (1 - wa)[:, None, :] * W[a0[:, :, None], a0[:, None, :]]
+                         + (1 - wa)[:, :, None] * wa[:, None, :] * W[a0[:, :, None], a1[:, None, :]]
+                         + wa[:, :, None] * (1 - wa)[:, None, :] * W[a1[:, :, None], a0[:, None, :]]
+                         + wa[:, :, None] * wa[:, None, :] * W[a1[:, :, None], a1[:, None, :]])
+                    blocks[m_] = 0.5 * (C + C.transpose(0, 2, 1))
                 if coord == "l":
-                    bcache[id(A[h])] = (A[h], blocks)
-            mu = Hsp @ X[h]
-            for q, k in enumerate(segs):
-                a, b = bnd[q], bnd[q + 1]
-                C = blocks[q]
-                m = mu[a:b]
-                yy, rr = y[a:b], R[a:b]
-                if seg_lab[k] == h:  # leave this segment out
-                    Ci = np.linalg.inv(C + 1e-12 * np.eye(len(C)))
-                    M = Ci - np.diag(1.0 / rr)
-                    M = 0.5 * (M + M.T)
-                    lam, V = np.linalg.eigh(M)
+                    ccache[id(A[h])] = (A[h], blocks, W)
+            mu = X[h][k0] * (1 - w0) + X[h][k0 + 1] * w0
+            _refit_block(W, p0, p1, w0, y, R, mu, bnd, segs, lab, h, ev, rcost, rok, coord)
+            for m_, qs in groups:
+                ix = bnd[qs][:, None] + np.arange(m_)[None, :]
+                C = blocks[m_].copy()
+                own = lab[segs[qs]] == h
+                for g in np.flatnonzero(own):  # leave the segment out for its owner
+                    Cg, rr = C[g], R[ix[g]]
+                    Ci = np.linalg.inv(Cg + 1e-12 * np.eye(m_))
+                    Mx = Ci - np.diag(1.0 / rr)
+                    Mx = 0.5 * (Mx + Mx.T)
+                    lam, V = np.linalg.eigh(Mx)
                     lam = np.maximum(lam, 1e-8)
                     Cl = (V / lam) @ V.T
-                    m = Cl @ (Ci @ m - yy / rr)
-                    C = Cl
-                P = C + np.diag(rr)
+                    mu_g = Cl @ (Ci @ mu[ix[g]] - y[ix[g]] / rr)
+                    out[segs[qs[g]], h] += _block_cost(Cl, rr, y[ix[g]] - mu_g)
+                rest = np.flatnonzero(~own)
+                if not len(rest):
+                    continue
+                ixr = ix[rest]
+                P = C[rest] + np.einsum("gi,ij->gij", R[ixr], np.eye(m_))
                 try:
                     cp = np.linalg.cholesky(P)
                 except np.linalg.LinAlgError:
-                    out[k, h] += INF
+                    for j, g in enumerate(rest):
+                        out[segs[qs[g]], h] += _block_cost(C[g], R[ixr[j]], y[ixr[j]] - mu[ixr[j]])
                     continue
-                z = np.linalg.solve(cp, yy - m)
-                out[k, h] += float(z @ z) + 2.0 * float(np.log(np.diag(cp)).sum()) - float(np.log(rr).sum())
+                z = np.linalg.solve(cp, (y[ixr] - mu[ixr])[:, :, None])[:, :, 0]
+                ld = 2.0 * np.log(np.diagonal(cp, axis1=1, axis2=2)).sum(1)
+                out[segs[qs[rest]], h] += (z * z).sum(1) + ld - np.log(R[ixr]).sum(1)
+    both = rok.sum(2) == 2
+    out[both] = rcost.sum(2)[both]
     return out
+
+
+def _cov(W, p0, p1, w0, P, Q):
+    """Posterior covariance of the chunk functionals P x Q from the inverse W on the nodes."""
+    wp, wq = w0[P][:, None], w0[Q][None, :]
+    a0, a1, b0, b1 = p0[P][:, None], p1[P][:, None], p0[Q][None, :], p1[Q][None, :]
+    return ((1 - wp) * (1 - wq) * W[a0, b0] + (1 - wp) * wq * W[a0, b1] + wp * (1 - wq) * W[a1, b0]
+            + wp * wq * W[a1, b1])
+
+
+def _refit_block(W, p0, p1, w0, y, R, mu, bnd, segs, lab, h, ev, rcost, rok, coord):
+    """One coordinate of ``kin_costs``' one-horse refits for horse h: every segment not h's that overlaps h's segments
+    in time, scored with their chunks removed from h's posterior (Woodbury downdate); into rcost / rok
+    [segment, h, coordinate]."""
+    own = np.flatnonzero(lab == h)
+    if not len(own):
+        return
+    qpos = np.full(ev.n_seg, -1)
+    qpos[segs] = np.arange(len(segs))
+    own = own[qpos[own] >= 0]
+    lo, hi = ev.seg_lo, ev.seg_hi
+    groups = {}
+    for q, k in enumerate(segs):
+        if lab[k] == h or ev.forbid[k, h]:
+            continue
+        conf = own[(lo[own] <= hi[k]) & (hi[own] >= lo[k])]
+        if len(conf):
+            groups.setdefault(conf.tobytes(), (conf, []))[1].append(q)
+    ci = 0 if coord == "s" else 1
+    for conf, qs in groups.values():
+        rm = np.concatenate([np.arange(bnd[qpos[c]], bnd[qpos[c] + 1]) for c in conf])
+        sr = np.sqrt(R[rm])
+        Sm = np.eye(len(rm)) - _cov(W, p0, p1, w0, rm, rm) / sr[:, None] / sr[None, :]
+        try:
+            cS = np.linalg.cholesky(0.5 * (Sm + Sm.T))
+        except np.linalg.LinAlgError:
+            continue
+        t2 = np.linalg.solve(cS, (y[rm] - mu[rm]) / sr)
+        for q in qs:
+            c = np.arange(bnd[q], bnd[q + 1])
+            T = np.linalg.solve(cS, (_cov(W, p0, p1, w0, c, rm) / sr[None, :]).T)
+            Ck = _cov(W, p0, p1, w0, c, c) + T.T @ T
+            v = _block_cost(0.5 * (Ck + Ck.T), R[c], y[c] - (mu[c] - T.T @ t2))
+            if v < INF / 2:
+                rcost[segs[q], h, ci] = v
+                rok[segs[q], h, ci] = True
+
+
+def _block_cost(C, rr, r):
+    """-2 log predictive ratio of a chunk block with prior covariance C, noise variances rr, residual r (INF when the
+    predictive covariance is not positive definite)."""
+    try:
+        cp = np.linalg.cholesky(C + np.diag(rr))
+    except np.linalg.LinAlgError:
+        return INF
+    z = np.linalg.solve(cp, r)
+    return float(z @ z) + 2.0 * float(np.log(np.diag(cp)).sum()) - float(np.log(rr).sum())
 
 
 def list_votes(model: Model, st: State | None, seg_lab):
@@ -1463,67 +1540,11 @@ def milp(U, ev: Evidence, allow=None):
 
 def unaries(model: Model, st: State, seg_lab):
     """The assignment step's increments of J per (segment, horse), relative to clutter, at the state: the kinematic
-    block of segment k on horse h is the predictive of k's chunks under h's posterior with h's render chunks of the
-    segments overlapping k in time removed (a one-horse refit: the path h would have holding k instead of them; for
-    k's own horse, k left out); the list's rank-count vote, the detection terms, the segment base, reads and silk are
-    linearised at the state."""
-    ev, tg = model.ev, model.tg
+    block (``kin_costs``: one-horse refits), the list's rank-count vote, the detection terms, the segment base, reads
+    and silk."""
+    ev = model.ev
     lab = np.asarray(seg_lab)
-    K = kin_costs(model, st, lab)
-    ys = ev.ch_s
-    order = np.argsort(ev.ch_seg, kind="stable")
-    cb = np.r_[0, np.cumsum(np.bincount(ev.ch_seg, minlength=ev.n_seg))]
-    lo, hi = ev.seg_lo, ev.seg_hi
-    for h in range(model.H):
-        own = np.flatnonzero(lab == h)
-        if not len(own):
-            continue
-        groups = {}
-        for k in np.flatnonzero((lab != h) & (cb[1:] > cb[:-1]) & ~ev.forbid[:, h]):
-            conf = own[(lo[own] <= hi[k]) & (hi[own] >= lo[k])]
-            if len(conf):
-                groups.setdefault(conf.tobytes(), (conf, []))[1].append(int(k))
-        for conf, ks in groups.values():
-            rm = np.concatenate([order[cb[q]:cb[q + 1]] for q in conf])
-            new = np.zeros(len(ks))
-            for coord in ("s", "l"):
-                A = (st.As if coord == "s" else st.Al)[h]
-                X = (st.S if coord == "s" else st.L)[h]
-                yv = ys if coord == "s" else ev.ch_l
-                sd = ev.ch_sds if coord == "s" else ev.ch_sdl
-                ab, r = A.copy(), _band_matvec(A, X)
-                _band_add_obs(ab, r, tg, ev.ch_t[rm], yv[rm], sd[rm], -1.0)
-                ab[0] = np.maximum(ab[0], 1e-12)
-                try:
-                    cfac = cholesky_banded(ab, lower=True)
-                except np.linalg.LinAlgError:
-                    new[:] = np.nan
-                    break
-                x = cho_solve_banded((cfac, True), r)
-                cs = [order[cb[k]:cb[k + 1]] for k in ks]
-                call = np.concatenate(cs)
-                kk, ww = _interp(tg, ev.ch_t[call])
-                Hm = np.zeros((len(tg), len(call)))
-                Hm[kk, np.arange(len(call))] += 1 - ww
-                Hm[kk + 1, np.arange(len(call))] += ww
-                Z = cho_solve_banded((cfac, True), Hm)
-                mu = x[kk] * (1 - ww) + x[kk + 1] * ww
-                off = 0
-                for i, c in enumerate(cs):
-                    j = slice(off, off + len(c))
-                    off += len(c)
-                    R = sd[c] ** 2
-                    P = Z[kk[j], j] * (1 - ww[j])[:, None] + Z[kk[j] + 1, j] * ww[j][:, None] + np.diag(R)
-                    try:
-                        cp = np.linalg.cholesky(P)
-                    except np.linalg.LinAlgError:
-                        new[i] = np.nan
-                        continue
-                    z = np.linalg.solve(cp, yv[c] - mu[j])
-                    new[i] += float(z @ z) + 2.0 * float(np.log(np.diag(cp)).sum()) - float(np.log(R).sum())
-            ok = np.isfinite(new)
-            K[np.asarray(ks)[ok], h] = new[ok]
-    U = K + list_votes(model, st, lab)
+    U = kin_costs(model, st, lab) + list_votes(model, st, lab)
     U += segment_base(ev)[:, None] + ev.read_cost + ev.silk_cost
     if st.c_un is not None:  # detection terms: a labelled frame instead of a (possibly in-view) missed one
         fi = np.searchsorted(ev.view["frames"], ev.fr)
@@ -2128,28 +2149,30 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
     return out
 
 
-def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print):
+def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True):
     """Global solve. Starts: the all-evidence init (MILP on the list votes, reads and silk) and the caller's
-    labellings, the lowest J kept. Then alternation: the exact MILP assignment over segments on unaries at the current
-    state (one-horse-refit kinematic block), a full state step of its proposal, kept when J falls by more than
-    MIN_GAIN, until the MILP returns the current labelling or its proposal raises J (REFIT_ROUNDS proposals at most).
-    Then a bounded polish (POLISH_STEPS full state steps at most): candidates (the rejected proposal's label-connected
-    parts, single segments whose unaries prefer another label, the move generators' labellings) scored in closed form
-    (``Refit.score_quick``), the REFIT_TOP lowest by one-horse refits, the SWEEP_TOP lowest of those with Gauss-Seidel
-    sweeps over their horses; the predicted-negative ones with
-    disjoint horses go together into one full state step, on rejection the single best ones one at a time; an
-    accepted step resumes the alternation."""
+    labellings. From each distinct start a descent: alternation of the exact MILP assignment over segments on unaries
+    at the current state (one-horse-refit kinematic block) with a full state step of its proposal, kept when J falls
+    by more than MIN_GAIN, until the MILP returns the current labelling or its proposal raises J (REFIT_ROUNDS proposals
+    at most per descent); then (``polish``) a bounded polish (POLISH_STEPS full state steps at most per descent):
+    candidates (the pool: the rejected proposal's label-connected parts; single segments whose unaries prefer another
+    label; the move generators' labellings) scored by one-horse refits (generator candidates first in closed form,
+    ``Refit.score_quick``, the REFIT_TOP lowest of those by refits), the SWEEP_TOP lowest again with Gauss-Seidel
+    sweeps over their horses; the predicted-negative ones with disjoint horses go together into one full state step,
+    on rejection the single best ones one at a time; an accepted step resumes the alternation. Then the lowest end
+    descends again with the crossover runs toward every other end (``crossovers``) as its pool, while that lowers J.
+    The pre-solve without the finish camera runs the alternation from the lowest start only (``polish`` False)."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
-    n_full = [0]
+    cnt = dict(full=0, rounds=0, steps=0, acc_r=0, acc_p=0)
 
     def look(labs):  # the state step from scratch: J a function of the labelling alone
         key = np.asarray(labs).tobytes()
         if key in memo:
             return memo[key]
         st_ = evaluate(model, labs, extra_s, extra_l, s_shift=s_shift)
-        n_full[0] += 1
+        cnt["full"] += 1
         seen.append((np.asarray(labs).copy(), st_.J))
         memo[key] = st_
         return st_
@@ -2160,23 +2183,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     U0[ev.forbid] = INF
     inits = [("init", milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0))]
     inits += [(f"start {k + 1}", np.asarray(o).copy()) for k, o in enumerate(start)]
-    best = None
-    for name, lab0 in inits:
-        st0 = look(lab0)
-        hist.append((name, st0.J, int((lab0 >= 0).sum())))
-        log(f"   core: {name} J {st0.J:.1f} ({int((lab0 >= 0).sum())}/{ev.n_seg} segments labelled)")
-        if best is None or st0.J < best[1].J:
-            best = (lab0, st0)
-    lab, st = best
-    rounds = steps = acc_r = acc_p = 0
     ucache = {}
-    pcache, pkeys_h = {}, {}  # polish scores by candidate change, and the horses each changes
-
-    def changed(a, b):  # forget the polish scores of candidates touching horses whose labels changed
-        ch = np.flatnonzero(a != b)
-        hs = (set(a[ch].tolist()) | set(b[ch].tolist())) - {-1}
-        for kk in [kk for kk, v in pkeys_h.items() if v & hs]:
-            del pkeys_h[kk], pcache[kk]
 
     def unaries_of(st_, labs):
         key = (id(st_), np.asarray(labs).tobytes())
@@ -2185,108 +2192,159 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             ucache[key] = (st_, unaries(model, st_, labs))
         return ucache[key][1]
 
-    pool, fresh = [], False
-    while True:
-        while not fresh and rounds < REFIT_ROUNDS:  # alternation: exact assignment, joint state step
+    def descend(lab, st, pool):
+        rounds = steps = 0
+        pcache, pkeys_h = {}, {}  # polish scores by candidate change, and the horses each changes
+
+        def changed(a, b):  # forget the polish scores of candidates touching horses whose labels changed
+            ch = np.flatnonzero(a != b)
+            hs = (set(a[ch].tolist()) | set(b[ch].tolist())) - {-1}
+            for kk in [kk for kk, v in pkeys_h.items() if v & hs]:
+                del pkeys_h[kk], pcache[kk]
+
+        fresh = bool(pool)
+        while True:
+            while not fresh and rounds < REFIT_ROUNDS:  # alternation: exact assignment, joint state step
+                U = unaries_of(st, lab)
+                prop = milp(U, ev)
+                if np.array_equal(prop, lab):
+                    log(f"   core: assignment fixed point at J {st.J:.1f}")
+                    break
+                rounds += 1
+                cnt["rounds"] += 1
+                st2 = look(prop)
+                nch = int((prop != lab).sum())
+                if st2.J < st.J - MIN_GAIN:
+                    log(f"   core: round {rounds}: {nch} segments relabelled, J {st.J:.1f} -> {st2.J:.1f} "
+                        f"{_fmt(st2.parts)}")
+                    hist.append((f"round {rounds}", st2.J, nch))
+                    cnt["acc_r"] += 1
+                    changed(lab, prop)
+                    lab, st = prop, st2
+                    continue
+                log(f"   core: round {rounds}: proposal ({nch} segments) raised J ({st2.J:.1f}); its parts to the "
+                    f"polish")
+                pool = [(f"part of round {rounds}'s proposal: {d}", pm) for d, pm in crossovers(ev, lab, prop)]
+                break
+            if not polish or steps >= POLISH_STEPS:
+                break
             U = unaries_of(st, lab)
-            prop = milp(U, ev)
-            if np.array_equal(prop, lab):
-                log(f"   core: assignment fixed point at J {st.J:.1f}")
+            pool = list({pm.tobytes(): (d, pm) for d, pm in pool
+                         if pm.tobytes() not in memo and not np.array_equal(pm, lab)}.values())
+            npool = len(pool)
+            cands = polish_candidates(model, st, lab, U, pool)
+            cands = cands[:npool] + [(d, pm) for d, pm in cands[npool:] if pm.tobytes() not in memo]
+            if not cands:
                 break
-            rounds += 1
-            st2 = look(prop)
-            nch = int((prop != lab).sum())
-            if st2.J < st.J - MIN_GAIN:
-                log(f"   core: round {rounds}: {nch} segments relabelled, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
-                hist.append((f"round {rounds}", st2.J, nch))
-                acc_r += 1
-                changed(lab, prop)
-                lab, st = prop, st2
+            rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
+            # a candidate's score is kept from an earlier polish round while none of its horses changed since
+            keys, hsets, pred, todo = [], [], np.zeros(len(cands)), []
+            for i, (_d, pm) in enumerate(cands):
+                ch = np.flatnonzero(pm != lab)
+                keys.append((ch.tobytes(), lab[ch].tobytes(), pm[ch].tobytes()))
+                hsets.append(set(lab[ch].tolist()) | set(pm[ch].tolist()))
+                if keys[-1] in pcache:
+                    pred[i] = pcache[keys[-1]]
+                else:
+                    todo.append(i)
+            todo = np.array(todo, int)
+            gen = todo[todo >= npool]  # the pool (listed first) is refit-scored whole: the closed form misjudges
+            # multi-horse moves
+            for i in gen:
+                pred[i] = rf.score_quick(cands[i][1])
+            for i in np.r_[todo[todo < npool], gen[np.argsort(pred[gen], kind="stable")[:REFIT_TOP]]].astype(int):
+                pred[i] = rf.score(cands[i][1], sweeps=False)
+            for i in todo[np.argsort(pred[todo], kind="stable")[:SWEEP_TOP]]:
+                pred[i] = rf.score(cands[i][1])
+            for i in todo:
+                pcache[keys[i]] = pred[i]
+                pkeys_h[keys[i]] = hsets[i]
+            neg = [i for i in np.argsort(pred, kind="stable") if pred[i] < -MIN_GAIN]
+            log(f"   core: polish at J {st.J:.1f}: {len(cands)} candidates, {len(todo)} scored, {len(neg)} predicted "
+                f"to lower J" + (f" (best {pred[neg[0]]:+.1f}: {cands[neg[0]][0]})" if neg else ""))
+            if not neg and len(todo) < len(cands):  # kept scores may be stale: all scored afresh before ending
+                pcache.clear()
+                pkeys_h.clear()
+                fresh = True
                 continue
-            log(f"   core: round {rounds}: proposal ({nch} segments) raised J ({st2.J:.1f}); its parts to the polish")
-            pool = [(f"part of round {rounds}'s proposal: {d}", pm) for d, pm in crossovers(ev, lab, prop)]
-            break
-        if steps >= POLISH_STEPS:
-            break
-        U = unaries_of(st, lab)
-        cands = [(d, pm) for d, pm in polish_candidates(model, st, lab, U, pool) if pm.tobytes() not in memo]
-        if not cands:
-            break
-        rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
-        # a candidate's score is kept from an earlier polish round while none of its horses changed since
-        keys, hsets, pred, todo = [], [], np.zeros(len(cands)), []
-        for i, (_d, pm) in enumerate(cands):
-            ch = np.flatnonzero(pm != lab)
-            keys.append((ch.tobytes(), lab[ch].tobytes(), pm[ch].tobytes()))
-            hsets.append(set(lab[ch].tolist()) | set(pm[ch].tolist()))
-            if keys[-1] in pcache:
-                pred[i] = pcache[keys[-1]]
-            else:
-                todo.append(i)
-        todo = np.array(todo, int)
-        for i in todo:
-            pred[i] = rf.score_quick(cands[i][1])
-        for i in todo[np.argsort(pred[todo], kind="stable")[:REFIT_TOP]]:
-            pred[i] = rf.score(cands[i][1], sweeps=False)
-        for i in todo[np.argsort(pred[todo], kind="stable")[:SWEEP_TOP]]:
-            pred[i] = rf.score(cands[i][1])
-        for i in todo:
-            pcache[keys[i]] = pred[i]
-            pkeys_h[keys[i]] = hsets[i]
-        neg = [i for i in np.argsort(pred, kind="stable") if pred[i] < -MIN_GAIN]
-        log(f"   core: polish at J {st.J:.1f}: {len(cands)} candidates, {len(todo)} scored, {len(neg)} predicted to "
-            f"lower J" + (f" (best {pred[neg[0]]:+.1f}: {cands[neg[0]][0]})" if neg else ""))
-        if not neg and len(todo) < len(cands):  # kept scores may be stale: all candidates scored afresh before ending
-            pcache.clear()
-            pkeys_h.clear()
-            fresh = True
+            pool, fresh = [], False
+            if not neg:
+                break
+            # the predicted-negative candidates with disjoint horses and segments, together
+            batch, used_h, used_s = [], set(), np.zeros(len(lab), bool)
+            for i in neg:
+                ch = np.flatnonzero(cands[i][1] != lab)
+                hs = set(lab[ch].tolist()) | set(cands[i][1][ch].tolist())
+                hs.discard(-1)
+                if hs & used_h or used_s[ch].any():
+                    continue
+                batch.append(i)
+                used_h |= hs
+                used_s[ch] = True
+            trials = []
+            if len(batch) > 1:
+                comb = lab.copy()
+                for i in batch:
+                    ch = cands[i][1] != lab
+                    comb[ch] = cands[i][1][ch]
+                trials.append((f"{len(batch)} disjoint candidates together (predicted {pred[batch].sum():+.1f})",
+                               comb, None))
+            trials += [(f"{cands[i][0]} (predicted {pred[i]:+.1f})", cands[i][1], keys[i]) for i in neg]
+            moved = False
+            for desc, pm, kk in trials:
+                if steps >= POLISH_STEPS:
+                    break
+                if pm.tobytes() in memo:
+                    continue
+                steps += 1
+                cnt["steps"] += 1
+                st2 = look(pm)
+                if st2.J < st.J - MIN_GAIN:
+                    log(f"   core: polish step {steps}: {desc}, {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
+                        f"{st2.J:.1f} {_fmt(st2.parts)}")
+                    hist.append((f"polish {steps}", st2.J, int((pm != lab).sum())))
+                    cnt["acc_p"] += 1
+                    changed(lab, pm)
+                    lab, st = pm, st2
+                    moved = True
+                    break
+                log(f"   core: polish step {steps}: {desc} raised J ({st2.J:.1f})")
+                if kk is not None:  # a rejected change is not tried again while its horses keep their labels
+                    pcache[kk] = np.inf
+            if not moved:
+                break
+        return lab, st
+
+    starts, done = [], set()
+    for name, lab0 in inits:
+        if lab0.tobytes() in done:
             continue
-        pool, fresh = [], False
-        if not neg:
+        done.add(lab0.tobytes())
+        st0 = look(lab0)
+        hist.append((name, st0.J, int((lab0 >= 0).sum())))
+        log(f"   core: {name} J {st0.J:.1f} ({int((lab0 >= 0).sum())}/{ev.n_seg} segments labelled)")
+        starts.append((name, lab0, st0))
+    if not polish:
+        starts = [min(starts, key=lambda x: x[2].J)]
+    ends = []
+    for name, lab0, st0 in starts:
+        e = descend(lab0, st0, [])
+        log(f"   core: {name} descends to J {e[1].J:.1f}")
+        if all(not np.array_equal(e[0], o[0]) for o in ends):
+            ends.append(e)
+    lab, st = min(ends, key=lambda e: e[1].J)
+    others = [e for e in ends if not np.array_equal(e[0], lab)]
+    while polish and others:  # the lowest end with the crossover runs toward the other ends as its pool
+        pool = [(f"crossover toward an end at J {sb.J:.1f}: {d}", pm)
+                for lb, sb in others for d, pm in crossovers(ev, lab, lb)]
+        lab2, st2 = descend(lab, st, pool)
+        if st2.J >= st.J - MIN_GAIN:
             break
-        # the predicted-negative candidates with disjoint horses and segments, together
-        batch, used_h, used_s = [], set(), np.zeros(len(lab), bool)
-        for i in neg:
-            ch = np.flatnonzero(cands[i][1] != lab)
-            hs = set(lab[ch].tolist()) | set(cands[i][1][ch].tolist())
-            hs.discard(-1)
-            if hs & used_h or used_s[ch].any():
-                continue
-            batch.append(i)
-            used_h |= hs
-            used_s[ch] = True
-        trials = []
-        if len(batch) > 1:
-            comb = lab.copy()
-            for i in batch:
-                ch = cands[i][1] != lab
-                comb[ch] = cands[i][1][ch]
-            trials.append((f"{len(batch)} disjoint candidates together (predicted {pred[batch].sum():+.1f})", comb, None))
-        trials += [(f"{cands[i][0]} (predicted {pred[i]:+.1f})", cands[i][1], keys[i]) for i in neg]
-        moved = False
-        for desc, pm, kk in trials:
-            if steps >= POLISH_STEPS:
-                break
-            if pm.tobytes() in memo:
-                continue
-            steps += 1
-            st2 = look(pm)
-            if st2.J < st.J - MIN_GAIN:
-                log(f"   core: polish step {steps}: {desc}, {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
-                    f"{st2.J:.1f} {_fmt(st2.parts)}")
-                hist.append((f"polish {steps}", st2.J, int((pm != lab).sum())))
-                acc_p += 1
-                changed(lab, pm)
-                lab, st = pm, st2
-                moved = True
-                break
-            log(f"   core: polish step {steps}: {desc} raised J ({st2.J:.1f})")
-            if kk is not None:  # a rejected change is not tried again while its horses keep their labels
-                pcache[kk] = np.inf
-        if not moved:
-            break
-    log(f"   core: end J {st.J:.1f}; alternation proposals {rounds} (kept {acc_r}), polish steps {steps} (kept {acc_p}), "
-        f"full state steps {n_full[0]}")
+        log(f"   core: crossovers J {st.J:.1f} -> {st2.J:.1f}")
+        lab, st = lab2, st2
+        others = [e for e in others if not np.array_equal(e[0], lab)]
+    log(f"   core: end J {st.J:.1f}; {len(ends)} start ends; alternation proposals {cnt['rounds']} (kept "
+        f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}")
     U = unaries_of(st, lab)
     return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)
 
