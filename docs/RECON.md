@@ -482,7 +482,8 @@ lowest J among the starts is kept.
   - 12: the metric bias and HV shape as point estimates;
   - 14: top-1 OCR integers;
   - the unseated rule (UR) is not ported;
-  - cost: global moves make the replaced stages 170-6,500 CPU s per race; not yet optimised.
+  - cost: the replaced stages take 35-2,800 CPU s per race (most of it global moves and the MILP); not yet at the
+    target of tens of seconds.
 
 ### Lateral in metres
 
