@@ -434,7 +434,7 @@ lowest J among the starts is kept.
 
 **Outputs.**
 - `segs.npz` (identify): segments, links, P(horse), camera-transition detections.
-- `det_labels.npz` / `det_labels_final.npz`: per tracks row, `labels` (argmax, 0 = clutter), `p` (its probability)
+- `det_labels.npz` / `det_labels_final.npz`: per tracks row, `labels` (argmax, 0 = clutter), `prob` (its probability)
   and `marg` (P per runner, last column clutter). `core.marginals` computes the marginals per segment, from its
   conditional given the other labels, with swaps against overlapping holders.
 - `core_video.npz` / `core_final.npz`: segment labels, marginals, the final unaries, J per accepted step.

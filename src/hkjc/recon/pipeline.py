@@ -113,8 +113,8 @@ DEPS = {
     "film": ("hud",),
     "observe": ("pose", "detect", "silk", "hud", "rails", "start", "film"),
     "finish": (),
-    "identify": ("observe", "hud", "silk", "finish"),
-    "fuse_video": ("identify", "observe", "finish", "hud", "silk", "rails"),
+    "identify": ("observe", "hud", "silk", "finish", "pose"),
+    "fuse_video": ("identify", "observe", "finish", "hud", "silk", "rails", "pose"),
     "fuse_final": ("fuse_video",),
     "validate": ("fuse_video", "fuse_final"),
 }
@@ -1610,7 +1610,7 @@ class RaceRun:
         p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]
         name = "det_labels.npz" if product == "video" else "det_labels_final.npz"
         with self.out(name) as fp:
-            np.savez(fp, labels=lab, p=p, marg=res.marg[ev.seg], horses=horses)
+            np.savez(fp, labels=lab, prob=p, marg=res.marg[ev.seg], horses=horses)
         if product == "final":  # contract: -2 log odds of the kept label against the rest (not a stage output)
             with self.out("det_margins_final.npz") as fp:
                 pc = np.clip(p, 1e-12, 1 - 1e-12)
