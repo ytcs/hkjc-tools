@@ -433,13 +433,14 @@ It is the sum of:
 6. Then abreast-pair swaps (`core.swap_moves`): two horses whose paths stay within `ABREAST_S` along and `ABREAST_L`
    across for ≥ `ABREAST_T` s exchange labels over that stretch, widened to the nearest camera cuts.
 7. The loop ends when no proposal lowers J by more than `MIN_GAIN` (2, about one nat). Window proposals that failed
-   are retried only after `WINDOW_RETRY` segments have changed label.
+   are retried only after `WINDOW_RETRY` segments have changed label. There is no iteration cap. Every accepted step
+   lowers J; the log prints J after each.
 
 The candidates of steps 4–6 are screened by a truncated state step (`QUICK_ROUNDS` fault-chain round, at most
 `QUICK_IT` Newton steps, the current state's posterior sds). Only the `SCREEN_KEEP` best within `SCREEN_MARGIN` of
 the current J get a full state step, and only full steps can be accepted or enter the posterior. A family with more
-than `SCREEN_PRE` (40) candidates screens only those with the lowest linearised cost change (the current unaries summed over the relabelled segments). There is no iteration cap. Every accepted step lowers J; the log prints J
-   after each.
+than `SCREEN_PRE` (40) candidates screens only those with the lowest linearised cost change (the current unaries
+summed over the relabelled segments).
 
 Each product solves twice: without the finish camera, then with its crossings (`finish_camera` from the first
 state), the first solve's labels being a candidate start. `fuse_final` also offers the video labels as a start. The
