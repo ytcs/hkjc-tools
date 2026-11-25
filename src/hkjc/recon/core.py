@@ -460,24 +460,29 @@ def list_rows(leg, t_of_frame, horses) -> ListRows:
 
 
 def _hmm(log_e0, log_e1, p_in, p_stay):
-    """Two-state chain (0 = ok, 1 = fault) starting in 0. -> (log Z, P(fault) per step)."""
-    n = len(log_e0)
+    """Two-state chains (0 = ok, 1 = fault) starting in 0, one per row of ``log_e0`` / ``log_e1`` (C x n, or one chain
+    as a 1-d array). -> (log Z per chain, P(fault) per chain and step)."""
+    e0, e1 = np.atleast_2d(log_e0).astype(float), np.atleast_2d(log_e1).astype(float)
+    C, n = e0.shape
     if not n:
-        return 0.0, np.zeros(0)
-    lt = np.log(np.array([[1 - p_in, p_in], [1 - p_stay, p_stay]]))
-    a = np.zeros((n, 2))
-    a[0] = [log_e0[0], np.log(1e-300) + log_e1[0]]
+        return (0.0, np.zeros(0)) if np.ndim(log_e0) == 1 else (np.zeros(C), np.zeros((C, 0)))
+    l00, l01, l10, l11 = np.log(1 - p_in), np.log(p_in), np.log(1 - p_stay), np.log(p_stay)
+    a0 = np.zeros((C, n))
+    a1 = np.zeros((C, n))
+    a0[:, 0] = e0[:, 0]
+    a1[:, 0] = -690.0 + e1[:, 0]
     for i in range(1, n):
-        a[i, 0] = np.logaddexp(a[i - 1, 0] + lt[0, 0], a[i - 1, 1] + lt[1, 0]) + log_e0[i]
-        a[i, 1] = np.logaddexp(a[i - 1, 0] + lt[0, 1], a[i - 1, 1] + lt[1, 1]) + log_e1[i]
-    b = np.zeros((n, 2))
+        a0[:, i] = np.logaddexp(a0[:, i - 1] + l00, a1[:, i - 1] + l10) + e0[:, i]
+        a1[:, i] = np.logaddexp(a0[:, i - 1] + l01, a1[:, i - 1] + l11) + e1[:, i]
+    b0 = np.zeros((C, n))
+    b1 = np.zeros((C, n))
     for i in range(n - 2, -1, -1):
-        e = np.array([log_e0[i + 1], log_e1[i + 1]]) + b[i + 1]
-        b[i, 0] = np.logaddexp(lt[0, 0] + e[0], lt[0, 1] + e[1])
-        b[i, 1] = np.logaddexp(lt[1, 0] + e[0], lt[1, 1] + e[1])
-    lz = float(np.logaddexp(a[-1, 0], a[-1, 1]))
-    post = np.exp(a[:, 1] + b[:, 1] - lz)
-    return lz, np.clip(post, 0.0, 1.0)
+        f0, f1 = e0[:, i + 1] + b0[:, i + 1], e1[:, i + 1] + b1[:, i + 1]
+        b0[:, i] = np.logaddexp(l00 + f0, l01 + f1)
+        b1[:, i] = np.logaddexp(l10 + f0, l11 + f1)
+    lz = np.logaddexp(a0[:, -1], a1[:, -1])
+    post = np.clip(np.exp(a1 + b1 - lz[:, None]), 0.0, 1.0)
+    return (float(lz[0]), post[0]) if np.ndim(log_e0) == 1 else (lz, post)
 
 
 def _p_order(d):
@@ -525,14 +530,20 @@ def statements(L: ListRows, H: int) -> Statements:
                       np.array(uu, bool))
 
 
-def list_chains(L: ListRows, St: Statements, f_stmt, H):
-    """Fault chains at the statements' -2 log p ``f_stmt``, each fact's likelihood taken relative to a clearly kept
-    order (p / p_max). The list-level frozen chain acts on the adjacent facts: a frozen row (only a row identical to
-    the previous full row can be one) makes each fact a coin flip (1/2). Then per horse an
-    omission chain on its unlisted facts: an omitted horse's fact says nothing (likelihood 1, as a clearly kept one).
-    -> (J_list, P(frozen) per row, P(omitted) per (horse, row))."""
+OMIT_MARGIN = 2.4  # m: an omitted horse explains an unlisted horse only ahead of the last listed one by > a length
+
+
+def list_chains(L: ListRows, St: Statements, f_stmt, H, delta=None):
+    """Fault chains at the statements' -2 log p ``f_stmt`` (``delta``: their ahead-minus-behind gaps), each fact's
+    likelihood taken relative to a clearly kept order (q = p / p_max). The list-level frozen chain acts on the adjacent
+    facts: a frozen row (only a row identical to the previous full row can be one) makes each fact a coin flip (1/2).
+    Then one omission chain per horse over every list row on its unlisted facts: an omitted horse explains being ahead
+    of the last listed horse by more than OMIT_MARGIN (likelihood max(q(d), 1 - q(d + OMIT_MARGIN))), so a horse level
+    with the last listed one gains nothing from the omitted state and the list keeps ordering it; a listed horse is
+    not omitted. -> (J_list, P(frozen) per row, P(omitted) per (horse, row))."""
     R = len(L.tau)
-    lp = -0.5 * np.asarray(f_stmt) - np.log(1.0 - 0.5 * EPS_LIST)
+    pmax = 1.0 - 0.5 * EPS_LIST
+    lp = -0.5 * np.asarray(f_stmt) - np.log(pmax)
     adj = ~St.unl
     e_ok = np.bincount(St.row[adj], lp[adj], R) if R else np.zeros(0)
     n_adj = np.bincount(St.row[adj], minlength=R) if R else np.zeros(0)
@@ -540,23 +551,22 @@ def list_chains(L: ListRows, St: Statements, f_stmt, H):
     lz_f, pf = _hmm(e_ok, e_fz, P_FROZEN_IN, P_FROZEN_STAY)
     ok = 1.0 - pf
     om = np.zeros((H, R))
-    lz = lz_f
-    for u in range(H):
-        k = np.flatnonzero(St.unl & (St.b == u))
-        if not len(k):
-            continue
-        rows = St.row[k]
-        listed = np.flatnonzero((L.slots == u).any(1))
-        rr = np.union1d(rows, listed)
-        e0 = np.zeros(len(rr))
-        e1 = np.zeros(len(rr))
-        pos = np.searchsorted(rr, rows)
-        e0[pos] = lp[k] * ok[rows]
-        e1[np.searchsorted(rr, listed)] = -690.0
-        z, p = _hmm(e0, e1, P_OMIT_IN, P_OMIT_STAY)
-        lz += z
-        om[u, rr] = p
-    return -2.0 * lz, pf, om
+    if not R or not St.unl.any():
+        return -2.0 * lz_f, pf, om
+    k = np.flatnonzero(St.unl)
+    d = np.zeros(len(St.a)) if delta is None else np.asarray(delta)
+    q_far = 1.0 - _p_order(d[k] + OMIT_MARGIN)[0] / pmax
+    l_om = np.maximum(lp[k], np.log(np.maximum(q_far, 1e-300)))
+    e0 = np.zeros((H, R))
+    e1 = np.zeros((H, R))
+    np.add.at(e0, (St.b[k], St.row[k]), lp[k] * ok[St.row[k]])
+    np.add.at(e1, (St.b[k], St.row[k]), l_om * ok[St.row[k]])
+    for q in range(L.slots.shape[1]):
+        sl = L.slots[:, q]
+        m = sl >= 0
+        e1[sl[m], np.flatnonzero(m)] = -690.0
+    lz, om = _hmm(e0, e1, P_OMIT_IN, P_OMIT_STAY)
+    return -2.0 * (lz_f + float(lz.sum())), pf, om
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -697,6 +707,20 @@ class Model:
         self.ld_prior_l = _logdet(self.phys_l + self.pri_l[0])[0]
         ks, ws = _interp(tg, self.St.tau)
         self.st_k, self.st_w = ks, ws
+        # the order factors' indices in the node-major joint system and their lower-band Hessian positions
+        H, St = self.H, self.St
+        self.st_II = np.stack([ks * H + St.a, (ks + 1) * H + St.a, ks * H + St.b, (ks + 1) * H + St.b], 1)
+        self.st_vv = np.stack([1 - ws, ws, -(1 - ws), -ws], 1)
+        nn = H * self.n
+        idx, val = [], []
+        for p in range(4):
+            for q in range(p + 1):
+                lo = np.minimum(self.st_II[:, p], self.st_II[:, q])
+                hi = np.maximum(self.st_II[:, p], self.st_II[:, q])
+                idx.append((hi - lo) * nn + lo)
+                val.append(self.st_vv[:, p] * self.st_vv[:, q])
+        self.st_hidx = np.array(idx).reshape(10, -1)
+        self.st_hval = np.array(val).reshape(10, -1)
 
     # -- along-track: the joint system over all horses
     def _joint_base(self, obs: Obs):
@@ -734,79 +758,76 @@ class Model:
         H, n, St = self.H, self.n, self.St
         A0, r0 = self._joint_base(obs)
         x = cho_solve_banded((cholesky_banded(A0, lower=True), True), r0) if X0 is None else X0.T.ravel().copy()
-        g = lambda k, h: k * H + h  # noqa: E731
         k, w = self.st_k, self.st_w
-        ia0, ia1, ib0, ib1 = g(k, St.a), g(k + 1, St.a), g(k, St.b), g(k + 1, St.b)
-        vv = np.stack([1 - w, w, -(1 - w), -w], 1)
-        II = np.stack([ia0, ia1, ib0, ib1], 1)
-
-        def quad(x):
-            return _quad_band(A0, x) - 2.0 * float(r0 @ x)
+        II, vv = self.st_II, self.st_vv
+        ia0, ia1, ib0, ib1 = II.T
+        m_st = len(St.a)
 
         def delta(x):
             return x[ia0] * (1 - w) + x[ia1] * w - x[ib0] * (1 - w) - x[ib1] * w
 
         def hess(cw):
             Hb = A0.copy()
-            if len(St.a):
-                B = Band(H * n, 2 * H)
-                B.ab = Hb
-                for p in range(4):
-                    for q in range(p + 1):
-                        B.add(II[:, p], II[:, q], cw * vv[:, p] * vv[:, q])
+            if m_st:
+                Hb += np.bincount(self.st_hidx.ravel(), (cw[None, :] * self.st_hval).ravel(),
+                                  Hb.size).reshape(Hb.shape)
             return Hb
 
-        wt = np.ones(len(St.a))
+        wt = np.ones(m_st)
         pf = np.zeros(len(self.Lr.tau))
         om = np.zeros((H, len(self.Lr.tau)))
-        for _ in range(rounds if len(St.a) else 1):
-            if len(St.a):
-                f = _p_order(delta(x))[1]
-                _J, pf, om = list_chains(self.Lr, St, f, H)
-                wt = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0)
+        for _ in range(rounds if m_st else 1):
+            if m_st:
+                dl = delta(x)
+                _J, pf, om = list_chains(self.Lr, St, _p_order(dl)[1], H, dl)
+                wt_new = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0)
+                if _ > 0 and np.abs(wt_new - wt).max() < 1e-3:
+                    break
+                wt = wt_new
             for _it in range(30):
-                grad = 2.0 * (_band_matvec(A0, x) - r0)
-                obj = quad(x)
-                cw = np.zeros(len(St.a))
-                if len(St.a):
+                Ax = _band_matvec(A0, x)
+                gq = 2.0 * (Ax - r0)
+                q0 = float(x @ Ax) - 2.0 * float(r0 @ x)
+                grad = gq.copy()
+                obj = q0
+                cw = np.zeros(m_st)
+                if m_st:
                     _p, f, gd, hd = _p_order(delta(x))
                     obj += float((wt * f).sum())
-                    np.add.at(grad, II.ravel(), ((wt * gd)[:, None] * vv).ravel())
+                    grad += np.bincount(II.ravel(), ((wt * gd)[:, None] * vv).ravel(), len(x))
                     cw = 0.5 * wt * hd
                 step = cho_solve_banded((cholesky_banded(hess(cw), lower=True), True), -0.5 * grad)
                 dec = float(-grad @ step)
                 if dec < 1e-6:
                     break
+                g1 = float(gq @ step)
+                g2 = float(step @ _band_matvec(A0, step))
+                ds = delta(step) if m_st else None
+                d0 = delta(x) if m_st else None
                 lam, on = 1.0, np.inf
                 while lam > 1e-4:
-                    xn = x + lam * step
-                    on = quad(xn) + (float((wt * _p_order(delta(xn))[1]).sum()) if len(St.a) else 0.0)
+                    on = q0 + lam * g1 + lam * lam * g2
+                    if m_st:
+                        on += float((wt * _p_order(d0 + lam * ds)[1]).sum())
                     if on <= obj:
                         break
                     lam *= 0.5
                 if on > obj:
                     break
-                x = xn
+                x = x + lam * step
                 if obj - on < 1e-4:
                     break
         Xs = x.reshape(n, H).T.copy()
         # J_s: the objective at the mode with the exact chains, + Laplace log det
         J_list = 0.0
-        hd = np.zeros(len(St.a))
-        if len(St.a):
-            _p, f, _g, hd = _p_order(delta(x))
-            J_list, pf, om = list_chains(self.Lr, St, f, H)
+        hd = np.zeros(m_st)
+        if m_st:
+            dl = delta(x)
+            _p, f, _g, hd = _p_order(dl)
+            J_list, pf, om = list_chains(self.Lr, St, f, H, dl)
             wt = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0)
-        Hb = A0.copy()
-        if len(St.a):
-            B = Band(H * n, 2 * H)
-            B.ab = Hb
-            cw = 0.5 * wt * hd
-            for p in range(4):
-                for q in range(p + 1):
-                    B.add(II[:, p], II[:, q], cw * vv[:, p] * vv[:, q])
-        ld = _logdet(Hb)[0]
-        J_s = quad(x) + self._const_s(obs) + ld - H * self.ld_prior_s
+        ld = _logdet(hess(0.5 * wt * hd))[0]
+        J_s = float(x @ _band_matvec(A0, x)) - 2.0 * float(r0 @ x) + self._const_s(obs) + ld - H * self.ld_prior_s
         # per-horse marginal bands: own physics, prior, observations + the order factors' curvature on its nodes
         As = []
         for h in range(H):
@@ -1319,34 +1340,6 @@ def unaries(model: Model, st: State, seg_lab):
     return U
 
 
-def marginals(U, seg_lab, ev: Evidence):
-    """Per segment P(label) from its conditional given the other segments' labels: horses free in its span (or held by
-    an overlapping segment that would take this segment's label instead: a swap), and clutter. -> (S, H + 1)
-    probabilities, last column clutter."""
-    S, H = U.shape
-    P = np.zeros((S, H + 1))
-    held = {}
-    for k in np.flatnonzero(seg_lab >= 0):
-        held.setdefault(int(seg_lab[k]), []).append(int(k))
-    for k in range(S):
-        c = np.full(H + 1, np.inf)
-        c[H] = 0.0
-        a = seg_lab[k]
-        for h in range(H):
-            if not np.isfinite(U[k, h]) or U[k, h] >= INF / 2:
-                continue
-            rivals = [q for q in held.get(h, []) if q != k and ev.seg_lo[q] <= ev.seg_hi[k] and ev.seg_hi[q] >= ev.seg_lo[k]]
-            extra = 0.0
-            for q in rivals:  # the rival gives h up: takes k's label if it can, else becomes clutter
-                alt = U[q, a] if a >= 0 and np.isfinite(U[q, a]) else 0.0
-                extra += min(alt, 0.0) - U[q, h]
-            c[h] = U[k, h] + extra
-        c = c - c.min()
-        p = np.exp(-0.5 * c)
-        P[k] = p / p.sum()
-    return P
-
-
 @dataclass
 class Result:
     seg_lab: np.ndarray
@@ -1356,20 +1349,79 @@ class Result:
     log: list
 
 
+T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
+ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
+
+
+def swap_moves(model: Model, st: State, lab):
+    """Abreast-pair swaps: for two horses whose paths stay within ABREAST_S along and ABREAST_L across for >= ABREAST_T
+    s, exchange their labels on every segment inside the stretch, widened to the nearest camera cuts (times where >= 3
+    labelled segments start together) or the race's ends. -> list of (description, labelling)."""
+    ev, tg = model.ev, model.tg
+    lo = np.full(ev.n_seg, np.inf)
+    hi = np.full(ev.n_seg, -np.inf)
+    np.minimum.at(lo, ev.seg, ev.t)
+    np.maximum.at(hi, ev.seg, ev.t)
+    st_t, cnt = np.unique(np.round(lo[lab >= 0] * 5) / 5, return_counts=True)
+    cuts = np.r_[tg[0], st_t[cnt >= 3], tg[-1] + 1.0]
+    out = []
+    has = st.has_obs
+    for a in range(model.H):
+        for b in range(a + 1, model.H):
+            if not (has[a] and has[b]):
+                continue
+            close = (np.abs(st.S[a] - st.S[b]) < ABREAST_S) & (np.abs(st.L[a] - st.L[b]) < ABREAST_L)
+            if close.sum() * DT < ABREAST_T:
+                continue
+            edges = np.flatnonzero(np.diff(np.r_[0, close.astype(int), 0]))
+            for r0, r1 in zip(edges[::2], edges[1::2]):
+                if (r1 - r0) * DT < ABREAST_T:
+                    continue
+                w0 = cuts[cuts <= tg[r0]].max(initial=tg[0])
+                w1 = cuts[cuts >= tg[r1 - 1]].min(initial=tg[-1] + 1.0)
+                inside = (lo >= w0 - 0.15) & (hi < w1 - 0.05)
+                new = lab.copy()
+                new[inside & (lab == a)] = b
+                new[inside & (lab == b)] = a
+                if not np.array_equal(new, lab):
+                    out.append((f"swap #{ev.horses[a]}/#{ev.horses[b]} over {w0:.1f}-{w1:.1f} s", new))
+    return out
+
+
+def posterior(seen, lab, J_best, H):
+    """Per segment P(label) (H + 1 columns, the last clutter) over every labelling the solve scored, each weighted by
+    exp(-(J - J_best) / (2 T_POST)); the kept labelling has J_best."""
+    labs = np.array([x for x, _ in seen]) if seen else np.array([lab])
+    J = np.array([j for _, j in seen]) if seen else np.array([J_best])
+    w = np.exp(-(J - J.min()) / (2.0 * T_POST))
+    P = np.zeros((labs.shape[1], H + 1))
+    col = np.where(labs >= 0, labs, H)
+    for i in range(len(w)):
+        P[np.arange(labs.shape[1]), col[i]] += w[i]
+    return P / P.sum(1, keepdims=True)
+
+
 def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print):
     """Start-free global solve, then alternate assignment (MILP on J's linearised increments) and state steps, keeping
     a proposal only when J falls; ends when no proposal lowers J. ``start``: further labellings whose J is compared
     with the start solve's (the lowest is kept)."""
     ev = model.ev
     hist = []
+    seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
+
+    def look(labs, X0=None):
+        st_ = evaluate(model, labs, extra_s, extra_l, X0=X0, s_shift=s_shift)
+        seen.append((np.asarray(labs).copy(), st_.J))
+        return st_
+
     U0 = list_votes(model, None, None) + ev.read_cost + ev.silk_cost
     U0[ev.forbid] = INF
     lab = milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)
-    st = evaluate(model, lab, extra_s, extra_l, s_shift=s_shift)
+    st = look(lab)
     hist.append(("start", st.J, int((lab >= 0).sum())))
     log(f"   core: start solve J {st.J:.1f} ({int((lab >= 0).sum())}/{ev.n_seg} segments labelled)")
     for k, other in enumerate(start):
-        st2 = evaluate(model, np.asarray(other), extra_s, extra_l, s_shift=s_shift)
+        st2 = look(np.asarray(other))
         log(f"   core: start {k + 1} J {st2.J:.1f}")
         if st2.J < st.J:
             lab, st = np.asarray(other).copy(), st2
@@ -1380,7 +1432,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         prop = milp(U, ev)
         cand = np.zeros(0, int)
         if not np.array_equal(prop, lab):
-            st2 = evaluate(model, prop, extra_s, extra_l, X0=st.S, s_shift=s_shift)
+            st2 = look(prop, st.S)
             nch = int((prop != lab).sum())
             if st2.J < st.J - 1e-6:
                 log(f"   core: it{it} {nch} segments relabelled, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
@@ -1400,7 +1452,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 for q in np.flatnonzero(trial == prop[k]):
                     if q != k and ev.seg_lo[q] <= ev.seg_hi[k] and ev.seg_hi[q] >= ev.seg_lo[k]:
                         trial[q] = prop[q] if prop[q] != prop[k] else -1
-            st2 = evaluate(model, trial, extra_s, extra_l, X0=st.S, s_shift=s_shift)
+            st2 = look(trial, st.S)
             if st2.J < st.J - 1e-6:
                 log(f"   core: it{it} proposal raised J; single move seg {k} -> J {st.J:.1f} -> {st2.J:.1f}")
                 hist.append((it, st2.J, 1))
@@ -1419,7 +1471,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 pw = milp(Uw, ev)
                 if np.array_equal(pw, lab):
                     continue
-                st2 = evaluate(model, pw, extra_s, extra_l, X0=st.S, s_shift=s_shift)
+                st2 = look(pw, st.S)
                 if st2.J < st.J - 1e-6:
                     log(f"   core: it{it} window proposal ({delta:.0f} s) relabels {int((pw != lab).sum())} segments, "
                         f"J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
@@ -1431,7 +1483,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         if not moved:  # permutation moves: a cut's label permutation carried over a whole stretch
             best = None
             for T, B, pm in permutation_moves(ev, lab):
-                st2 = evaluate(model, pm, extra_s, extra_l, X0=st.S, s_shift=s_shift)
+                st2 = look(pm, st.S)
                 if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
                     best = (pm, st2, T, B)
             if best is not None:
@@ -1444,7 +1496,20 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         if not moved:  # omission insertions over stretches
             best = None
             for desc, pm in insertion_moves(model, st, lab):
-                st2 = evaluate(model, pm, extra_s, extra_l, X0=st.S, s_shift=s_shift)
+                st2 = look(pm, st.S)
+                if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
+                    best = (pm, st2, desc)
+            if best is not None:
+                pm, st2, desc = best
+                log(f"   core: it{it} {desc} relabels {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
+                    f"{st2.J:.1f} {_fmt(st2.parts)}")
+                hist.append((it, st2.J, int((pm != lab).sum())))
+                lab, st = pm, st2
+                moved = True
+        if not moved:  # abreast-pair swaps: two horses running level exchange labels over a stretch between cuts
+            best = None
+            for desc, pm in swap_moves(model, st, lab):
+                st2 = look(pm, st.S)
                 if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
                     best = (pm, st2, desc)
             if best is not None:
@@ -1458,7 +1523,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             log(f"   core: it{it} no proposal lowers J; stop at J {st.J:.1f}")
             break
     U = unaries(model, st, lab)
-    return Result(lab, st, U, marginals(U, lab, ev), hist)
+    return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)
 
 
 def _fmt(parts):

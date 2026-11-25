@@ -26,7 +26,7 @@ paths.parquet gains
   enclosed_late  hypothesis B-1's regressor: enclosed for >= 1 s in the final 600 m while within four lengths of the
                leader (``box_columns``)
 det_margins_final.npz  per tracks row: 2 log(p / (1 - p)) of the final label, p its probability from the core's
-               per-segment marginals (``core.marginals``); NaN where unlabelled
+               per-segment posterior (``core.posterior``); NaN where unlabelled
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
                held in near-cloth order, the per-crossing position verdicts, the noise table, id_robust's
                per-section and per-horse bend verdicts with the run's yield, the run's lane pitch and origin, and the
@@ -934,7 +934,7 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=No
                    "False)"},
         "noise_table": NOISE_TABLE,
         "margins": {"file": "det_margins_final.npz", "units": "2 log(p / (1 - p))",
-                    "meaning": "log odds of the final label from the core's per-segment marginals"},
+                    "meaning": "log odds of the final label from the core's per-segment posterior"},
         **({} if idr is None else {"id_robust": describe_id_robust(*idr)}),
         **({} if lane is None else {"lane": _finite(lane)}),
         **({} if box is None else {"box": box}),

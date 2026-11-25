@@ -383,7 +383,10 @@ rows. Each fact has probability (1 − ε)Φ(Δ/`SIG_AB`) + ε/2, with ε = `EPS
 order. Two persistent fault chains act on top (`core.list_chains`, forward-backward):
 - a list-level frozen state, in which the row says nothing (each adjacent fact a coin flip). Only a row identical to
   the previous full row can be frozen (`P_FROZEN_IN`, `P_FROZEN_STAY` per row);
-- per runner, an omission state, in which its unlisted facts say nothing (`P_OMIT_IN`, `P_OMIT_STAY`).
+- per runner, over every list row, an omission state that explains an unlisted horse ahead of the last listed one
+  by more than `OMIT_MARGIN` (2.4 m): its fact's likelihood is max(q(d), 1 − q(d + `OMIT_MARGIN`)). A horse level
+  with the last listed one gains nothing from it, so the list keeps ordering the back markers (`P_OMIT_IN`,
+  `P_OMIT_STAY`).
 
 The fact API is source-agnostic: (time, ordered pair, source fault model).
 
@@ -425,7 +428,9 @@ It is the sum of:
    gives horse u a mean P(omitted) > `INSERT_OM`, u is put at rank r of the field and every horse from r to u's old
    rank moves one avatar back. Per horse, the `INSERT_WINDOWS` stretches of ≥ `INSERT_MIN_T` s with the largest
    length × mean P(omitted) are tried, at every rank ahead of u.
-6. The loop ends when no proposal lowers J. There is no iteration cap. Every accepted step lowers J; the log prints J
+6. Then abreast-pair swaps (`core.swap_moves`): two horses whose paths stay within `ABREAST_S` along and `ABREAST_L`
+   across for ≥ `ABREAST_T` s exchange labels over that stretch, widened to the nearest camera cuts.
+7. The loop ends when no proposal lowers J. There is no iteration cap. Every accepted step lowers J; the log prints J
    after each.
 
 Each product solves twice: without the finish camera, then with its crossings (`finish_camera` from the first
@@ -435,8 +440,10 @@ lowest J among the starts is kept.
 **Outputs.**
 - `segs.npz` (identify): segments, links, P(horse), camera-transition detections.
 - `det_labels.npz` / `det_labels_final.npz`: per tracks row, `labels` (argmax, 0 = clutter), `prob` (its probability)
-  and `marg` (P per runner, last column clutter). `core.marginals` computes the marginals per segment, from its
-  conditional given the other labels, with swaps against overlapping holders.
+  and `marg` (P per runner, last column clutter). `core.posterior` computes them per segment over every labelling the
+  solve scored, each weighted by exp(−(J − J_best)/(2 `T_POST`)): J's per-detection terms count correlated errors as
+  independent, so the posterior is tempered (`T_POST` 10). Abreast-pair swaps (below) are always scored, so a pair the
+  evidence cannot order comes out uncertain.
 - `core_video.npz` / `core_final.npz`: segment labels, marginals, the final unaries, J per accepted step.
 - `det_margins_final.npz`: 2 log(p/(1 − p)) of the kept label.
 - `paths_video.parquet`, `fuse_video.pkl` (segment labels, finish observations, paths), `paths.parquet` and the
@@ -469,8 +476,6 @@ lowest J among the starts is kept.
   - 12: the metric bias and HV shape as point estimates;
   - 14: top-1 OCR integers;
   - the unseated rule (UR) is not ported;
-  - the omission chain switches on for an unlisted horse abreast of the 8th listed one (its omitted state emits 1
-    against about 1/2 in the ok state), so back markers near rank 8 are ordered by kinematics alone;
   - cost: global moves make the replaced stages 170-6,500 CPU s per race; not yet optimised.
 
 ### Lateral in metres

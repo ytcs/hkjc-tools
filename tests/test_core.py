@@ -51,12 +51,12 @@ def test_omission_chain_absorbs_a_long_omission_and_frozen_chain_a_held_list():
     St = core.statements(L, H)
     # horse 9 (unlisted) is truly 5 m ahead of the last listed horse on every row: an omission
     d = np.where(St.unl & (St.b == 9), -5.0, 3.0)
-    _J, pf, om = core.list_chains(L, St, core._p_order(d)[1], H)
+    _J, pf, om = core.list_chains(L, St, core._p_order(d)[1], H, d)
     assert om[9, 50:250].min() > 0.9
     assert om[8, 50:250].max() < 0.1
     # every adjacent pair contradicted on a list held identical: frozen
     d2 = np.where(St.unl, 3.0, -3.0)
-    _J2, pf2, _om2 = core.list_chains(L, St, core._p_order(d2)[1], H)
+    _J2, pf2, _om2 = core.list_chains(L, St, core._p_order(d2)[1], H, d2)
     assert pf2[20:280].min() > 0.9 and pf.max() < 0.1
 
 
@@ -100,3 +100,18 @@ def test_unseen_horse_in_a_block_without_list_does_not_take_a_visible_horse():
     blk = (t > 8) & (t < 16)
     assert (lab[blk & (who == 1)] == 1).mean() > 0.95
     assert (lab[blk & (who == 0)] == 0).mean() > 0.95
+
+
+def test_an_unlisted_horse_level_with_the_last_listed_one_is_not_omitted():
+    """The omitted state needs positive evidence: a horse abreast of the 8th listed one (gap 0) stays in the ok state,
+    so the list keeps ordering it; one a length and more ahead is omitted."""
+    H, R = 10, 300
+    slots = np.tile(np.arange(8), (R, 1))
+    L = core.ListRows(np.arange(R) * 0.1, slots, np.ones(R, bool), np.zeros(R, bool))
+    St = core.statements(L, H)
+    d = np.where(St.unl & (St.b == 9), 0.0, 3.0)
+    _J, _pf, om = core.list_chains(L, St, core._p_order(d)[1], H, d)
+    assert om[9].max() < 0.1
+    d = np.where(St.unl & (St.b == 9), -4.0, 3.0)
+    _J, _pf, om = core.list_chains(L, St, core._p_order(d)[1], H, d)
+    assert om[9, 50:250].min() > 0.9

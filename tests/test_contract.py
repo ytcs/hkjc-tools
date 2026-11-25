@@ -16,19 +16,16 @@ def test_node_free_uses_one_length_and_the_abreast_spacing():
     assert f[3][1].tolist() == [True, True]
 
 
-def test_core_marginals_rank_the_ambiguous_segment_lowest():
-    """det_margins_final.npz holds 2 log(p / (1 - p)) of the core's per-segment marginals: a segment whose two horse
-    options cost alike is the least certain; one far cheaper than clutter and its rival is near 1."""
-    from types import SimpleNamespace
-
+def test_core_posterior_is_uncertain_where_scored_labellings_cost_alike():
+    """det_labels_final.npz `prob` comes from the core's posterior over the labellings the solve scored (tempered by
+    T_POST): two labellings of a segment within a few J units leave it uncertain; one far worse leaves it near 1."""
     from hkjc.recon import core
 
-    ev = SimpleNamespace(seg_lo=np.array([0, 20, 40]), seg_hi=np.array([9, 29, 49]))
-    U = np.array([[-60.0, -10.0], [-30.0, -29.0], [5.0, 8.0]])  # clear #1, ambiguous, clutter
-    lab = np.array([0, 0, -1])
-    P = core.marginals(U, lab, ev)
+    seen = [(np.array([0, 1, -1]), 1000.0), (np.array([1, 0, -1]), 1002.0), (np.array([0, 1, 0]), 1400.0)]
+    P = core.posterior(seen, np.array([0, 1, -1]), 1000.0, 2)
     assert np.allclose(P.sum(1), 1.0)
-    assert P[0, 0] > 0.99 and P[1, :2].max() < 0.7 and P[2, 2] > P[2, :2].max()
+    assert 0.4 < P[0, 0] < 0.6 and 0.4 < P[1, 1] < 0.6
+    assert P[2, 2] > 0.99
 
 
 # ------------------------------------------------------------------------------------------- frozen running-order list
