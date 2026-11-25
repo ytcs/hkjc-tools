@@ -26,6 +26,7 @@ the silk term. A proposal is kept only when the state step finds J lower; the lo
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -1451,6 +1452,7 @@ class Result:
 
 
 SCREEN_KEEP, SCREEN_MARGIN = 3, 100.0  # move candidates given a full state step: the best 3 by screening J, within 100
+LIST_SPLIT = 7.0  # s: block length of the split-list inits (off the 10 s grid of the legend masking cells)
 SCREEN_PRE = 40  # at most this many candidates per move family are screened (lowest linearised cost change first)
 T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
@@ -1536,7 +1538,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             qmemo[key] = evaluate(model, labs, extra_s, extra_l, X0=st0.S, s_shift=s_shift, quick=st0).J
         return qmemo[key]
 
-    def screened(cands, st0):
+    def screened(cands, st0, U, lab):
         """Full state steps for the SCREEN_KEEP candidates with the lowest screening J (truncated solve), if within
         SCREEN_MARGIN of the current J; with more than SCREEN_PRE candidates only the SCREEN_PRE with the lowest
         linearised cost change (sum of the current unaries over the relabelled segments) are screened.
@@ -1550,119 +1552,148 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st0.J + SCREEN_MARGIN]
         return [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
 
-    U0 = list_votes(model, None, None) + ev.read_cost + ev.silk_cost
-    U0[ev.forbid] = INF
-    lab = milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)
-    st = look(lab)
-    hist.append(("start", st.J, int((lab >= 0).sum())))
-    log(f"   core: start solve J {st.J:.1f} ({int((lab >= 0).sum())}/{ev.n_seg} segments labelled)")
-    for k, other in enumerate(start):
-        st2 = look(np.asarray(other))
-        log(f"   core: start {k + 1} J {st2.J:.1f}")
-        if st2.J < st.J:
-            lab, st = np.asarray(other).copy(), st2
-    it = 0
-    win_failed = None  # the labelling the window proposals last failed on: retried after WINDOW_RETRY changes
-    while True:
-        it += 1
-        U = unaries(model, st, lab)
-        prop = milp(U, ev)
-        cand = np.zeros(0, int)
-        if not np.array_equal(prop, lab):
-            st2 = look(prop, st.S)
-            nch = int((prop != lab).sum())
-            if st2.J < st.J - MIN_GAIN:
-                log(f"   core: it{it} {nch} segments relabelled, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
-                hist.append((it, st2.J, nch))
-                lab, st = prop, st2
-                continue
-            cand = np.flatnonzero(prop != lab)
-        # the joint proposal raised J: try its changes one segment at a time, best predicted gain first
-        gain = U[np.arange(len(lab)), np.maximum(lab, 0)] * (lab >= 0) - np.where(prop >= 0, U[np.arange(len(prop)),
-                                                                                         np.maximum(prop, 0)], 0.0)
-        cand = cand[np.argsort(-gain[cand])]
-        moved = False
-        for k in cand[:5]:
-            trial = lab.copy()
-            trial[k] = prop[k]
-            if prop[k] >= 0:  # keep exclusivity: drop the label from overlapping holders
-                for q in np.flatnonzero(trial == prop[k]):
-                    if q != k and ev.seg_lo[q] <= ev.seg_hi[k] and ev.seg_hi[q] >= ev.seg_lo[k]:
-                        trial[q] = prop[q] if prop[q] != prop[k] else -1
-            st2 = look(trial, st.S)
-            if st2.J < st.J - MIN_GAIN:
-                log(f"   core: it{it} proposal raised J; single move seg {k} -> J {st.J:.1f} -> {st2.J:.1f}")
-                hist.append((it, st2.J, 1))
-                lab, st = trial, st2
-                moved = True
-                break
-        if not moved and not global_moves:
-            log(f"   core: it{it} no assignment step lowers J; stop at J {st.J:.1f}")
-            break
-        win_ok = win_failed is None or int((lab != win_failed).sum()) >= WINDOW_RETRY
-        if not moved and win_ok:  # window proposals: each horse's nearby labels left out, no rank votes
-            win_failed = lab.copy()
-            base = segment_base(ev)[:, None] + ev.read_cost + ev.silk_cost
-            if st.c_un is not None:
-                fi = np.searchsorted(ev.view["frames"], ev.fr)
-                for h in range(model.H):
-                    base[:, h] += np.bincount(ev.seg, st.c_lab[h, fi] - st.c_un[h, fi], ev.n_seg)
-            for delta in WINDOWS:
-                Uw = window_kin_costs(model, st, delta) + base
-                Uw[ev.forbid] = INF
-                pw = milp(Uw, ev)
-                if np.array_equal(pw, lab):
-                    continue
-                st2 = look(pw, st.S)
+    def descend(lab, st, moves):
+        """Assignment steps and (with moves) the global move families until no proposal lowers J."""
+        it = 0
+        win_failed = None  # the labelling the window proposals last failed on: retried after WINDOW_RETRY changes
+        while True:
+            it += 1
+            U = unaries(model, st, lab)
+            prop = milp(U, ev)
+            cand = np.zeros(0, int)
+            if not np.array_equal(prop, lab):
+                st2 = look(prop, st.S)
+                nch = int((prop != lab).sum())
                 if st2.J < st.J - MIN_GAIN:
-                    log(f"   core: it{it} window proposal ({delta:.0f} s) relabels {int((pw != lab).sum())} segments, "
-                        f"J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
-                    hist.append((it, st2.J, int((pw != lab).sum())))
-                    lab, st = pw, st2
+                    log(f"   core: it{it} {nch} segments relabelled, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
+                    hist.append((it, st2.J, nch))
+                    lab, st = prop, st2
+                    continue
+                cand = np.flatnonzero(prop != lab)
+            # the joint proposal raised J: try its changes one segment at a time, best predicted gain first
+            gain = U[np.arange(len(lab)), np.maximum(lab, 0)] * (lab >= 0) - np.where(prop >= 0, U[np.arange(len(prop)),
+                                                                                             np.maximum(prop, 0)], 0.0)
+            cand = cand[np.argsort(-gain[cand])]
+            moved = False
+            for k in cand[:5]:
+                trial = lab.copy()
+                trial[k] = prop[k]
+                if prop[k] >= 0:  # keep exclusivity: drop the label from overlapping holders
+                    for q in np.flatnonzero(trial == prop[k]):
+                        if q != k and ev.seg_lo[q] <= ev.seg_hi[k] and ev.seg_hi[q] >= ev.seg_lo[k]:
+                            trial[q] = prop[q] if prop[q] != prop[k] else -1
+                st2 = look(trial, st.S)
+                if st2.J < st.J - MIN_GAIN:
+                    log(f"   core: it{it} proposal raised J; single move seg {k} -> J {st.J:.1f} -> {st2.J:.1f}")
+                    hist.append((it, st2.J, 1))
+                    lab, st = trial, st2
                     moved = True
                     break
-                log(f"   core: it{it} window proposal ({delta:.0f} s) raised J ({st2.J:.1f})")
-        if not moved:  # permutation moves: a cut's label permutation carried over a whole stretch
-            best = None
-            cands = [(f"permutation move at {T:.1f} s over {min(B, T):.1f}-{max(B, T):.1f} s", pm)
-                     for T, B, pm in permutation_moves(ev, lab)]
-            for desc, pm, st2 in screened(cands, st):
-                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
-                    best = (pm, st2, desc)
-            if best is not None:
-                pm, st2, desc = best
-                log(f"   core: it{it} {desc} relabels "
-                    f"{int((pm != lab).sum())} segments, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
-                hist.append((it, st2.J, int((pm != lab).sum())))
-                lab, st = pm, st2
-                moved = True
-        if not moved:  # omission insertions over stretches
-            best = None
-            for desc, pm, st2 in screened(insertion_moves(model, st, lab), st):
-                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
-                    best = (pm, st2, desc)
-            if best is not None:
-                pm, st2, desc = best
-                log(f"   core: it{it} {desc} relabels {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
-                    f"{st2.J:.1f} {_fmt(st2.parts)}")
-                hist.append((it, st2.J, int((pm != lab).sum())))
-                lab, st = pm, st2
-                moved = True
-        if not moved:  # abreast-pair swaps: two horses running level exchange labels over a stretch between cuts
-            best = None
-            for desc, pm, st2 in screened(swap_moves(model, st, lab), st):
-                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
-                    best = (pm, st2, desc)
-            if best is not None:
-                pm, st2, desc = best
-                log(f"   core: it{it} {desc} relabels {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
-                    f"{st2.J:.1f} {_fmt(st2.parts)}")
-                hist.append((it, st2.J, int((pm != lab).sum())))
-                lab, st = pm, st2
-                moved = True
-        if not moved:
-            log(f"   core: it{it} no proposal lowers J; stop at J {st.J:.1f}")
-            break
+            if not moved and not moves:
+                log(f"   core: it{it} no assignment step lowers J; stop at J {st.J:.1f}")
+                break
+            win_ok = win_failed is None or int((lab != win_failed).sum()) >= WINDOW_RETRY
+            if not moved and win_ok:  # window proposals: each horse's nearby labels left out, no rank votes
+                win_failed = lab.copy()
+                base = segment_base(ev)[:, None] + ev.read_cost + ev.silk_cost
+                if st.c_un is not None:
+                    fi = np.searchsorted(ev.view["frames"], ev.fr)
+                    for h in range(model.H):
+                        base[:, h] += np.bincount(ev.seg, st.c_lab[h, fi] - st.c_un[h, fi], ev.n_seg)
+                for delta in WINDOWS:
+                    Uw = window_kin_costs(model, st, delta) + base
+                    Uw[ev.forbid] = INF
+                    pw = milp(Uw, ev)
+                    if np.array_equal(pw, lab):
+                        continue
+                    st2 = look(pw, st.S)
+                    if st2.J < st.J - MIN_GAIN:
+                        log(f"   core: it{it} window proposal ({delta:.0f} s) relabels {int((pw != lab).sum())} segments, "
+                            f"J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
+                        hist.append((it, st2.J, int((pw != lab).sum())))
+                        lab, st = pw, st2
+                        moved = True
+                        break
+                    log(f"   core: it{it} window proposal ({delta:.0f} s) raised J ({st2.J:.1f})")
+            if not moved:  # permutation moves: a cut's label permutation carried over a whole stretch
+                best = None
+                cands = [(f"permutation move at {T:.1f} s over {min(B, T):.1f}-{max(B, T):.1f} s", pm)
+                         for T, B, pm in permutation_moves(ev, lab)]
+                for desc, pm, st2 in screened(cands, st, U, lab):
+                    if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
+                        best = (pm, st2, desc)
+                if best is not None:
+                    pm, st2, desc = best
+                    log(f"   core: it{it} {desc} relabels "
+                        f"{int((pm != lab).sum())} segments, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
+                    hist.append((it, st2.J, int((pm != lab).sum())))
+                    lab, st = pm, st2
+                    moved = True
+            if not moved:  # omission insertions over stretches
+                best = None
+                for desc, pm, st2 in screened(insertion_moves(model, st, lab), st, U, lab):
+                    if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
+                        best = (pm, st2, desc)
+                if best is not None:
+                    pm, st2, desc = best
+                    log(f"   core: it{it} {desc} relabels {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
+                        f"{st2.J:.1f} {_fmt(st2.parts)}")
+                    hist.append((it, st2.J, int((pm != lab).sum())))
+                    lab, st = pm, st2
+                    moved = True
+            if not moved:  # abreast-pair swaps: two horses running level exchange labels over a stretch between cuts
+                best = None
+                for desc, pm, st2 in screened(swap_moves(model, st, lab), st, U, lab):
+                    if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
+                        best = (pm, st2, desc)
+                if best is not None:
+                    pm, st2, desc = best
+                    log(f"   core: it{it} {desc} relabels {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
+                        f"{st2.J:.1f} {_fmt(st2.parts)}")
+                    hist.append((it, st2.J, int((pm != lab).sum())))
+                    lab, st = pm, st2
+                    moved = True
+            if not moved:
+                log(f"   core: it{it} no proposal lowers J; stop at J {st.J:.1f}")
+                break
+        return lab, st
+
+    # starts: the init from all the evidence, from the list alone, and from the list rows of alternate LIST_SPLIT s
+    # blocks with the reads and silks (the list votes over-rule J's list term, whose fault chains discount a wrong
+    # stretch; these inits let the descent reach labellings the full vote would not); then the caller's labellings.
+    # Each descends to its own end; the lowest end is kept.
+    inits = []
+    lv0 = list_votes(model, None, None)
+    app = ev.read_cost + ev.silk_cost
+    split = []
+    for par in (0, 1):
+        keep = (np.floor(model.Lr.tau / LIST_SPLIT).astype(int) % 2) == par
+        m2 = copy.copy(model)
+        m2.Lr = ListRows(model.Lr.tau, np.where(keep[:, None], model.Lr.slots, -1), model.Lr.full & keep,
+                         model.Lr.same & keep)
+        split.append((f"split-list init {par}", list_votes(m2, None, None) + app))
+    for name, U0 in [("init", lv0 + app), ("list-only init", lv0)] + split:
+        U0 = np.array(U0, float)
+        U0[ev.forbid] = INF
+        inits.append((name, milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)))
+    inits += [(f"start {k + 1}", np.asarray(o).copy()) for k, o in enumerate(start)]
+    ends, done = [], set()
+    for name, lab in inits:  # every start descends by assignment steps
+        if lab.tobytes() in done:
+            continue
+        done.add(lab.tobytes())
+        st = look(lab)
+        hist.append((name, st.J, int((lab >= 0).sum())))
+        log(f"   core: {name} J {st.J:.1f} ({int((lab >= 0).sum())}/{ev.n_seg} segments labelled)")
+        lab, st = descend(lab, st, False)
+        if all(not np.array_equal(lab, e[0]) for e in ends):
+            ends.append((lab, st))
+    # then the global move families from each distinct end (their order here does not predict their order after)
+    if global_moves:
+        ends = [descend(lab, st, True) for lab, st in ends]
+    best = min(ends, key=lambda e: e[1].J)
+    lab, st = best
+    log(f"   core: lowest end J {st.J:.1f}")
     U = unaries(model, st, lab)
     return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)
 

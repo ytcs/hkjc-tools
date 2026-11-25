@@ -410,7 +410,10 @@ It is the sum of:
 1. Start-free solve: one MILP over segments × runners on the label-free evidence (a row inside a held near-cloth
    read, `contract.legend_frozen`, counts as frozen with P `PF0_FROZEN`; afterwards the frozen chain decides). This is the list's rank-count vote
    with undetected horses ahead at `P_AHEAD_UNSEEN`, plus reads and silk. It keeps only segments with a positive
-   gain.
+   gain. The same MILP also gives three more starts: the list's vote alone, and the vote of the list rows in
+   alternate `LIST_SPLIT` (7) s blocks (each parity) with reads and silk. The rank-count vote is not J's list term:
+   it over-rules labellings whose list disagreements J's fault chains discount, and a descent that starts inside its
+   basin does not leave it. The 7 s blocks are off the 10 s grid of the legend-masking validation cells.
 2. Repeat:
    - Assignment step: a MILP over segments × runners minimises J's increments, linearised at the current state.
      Each increment combines the block predictive of the segment's chunks against each runner's posterior (leave
@@ -437,6 +440,12 @@ It is the sum of:
    are retried only after `WINDOW_RETRY` segments have changed label. There is no iteration cap. Every accepted step
    lowers J; the log prints J after each.
 
+Every start (step 1's four, then the caller's labellings) descends by steps 1–2 alone; the global move families
+(steps 3–6) then run from each distinct end (the order of the ends there does not predict their order after the
+global moves), and the lowest end is kept. Moves are judged
+by J, so more starts can only lower the kept J; the ends of different starts differ by cascades of relabellings, each
+part of which raises J alone, which no single move family reaches.
+
 The candidates of steps 4–6 are screened by a truncated state step (`QUICK_ROUNDS` fault-chain round, at most
 `QUICK_IT` Newton steps, the current state's posterior sds). Only the `SCREEN_KEEP` best within `SCREEN_MARGIN` of
 the current J get a full state step, and only full steps can be accepted or enter the posterior. A family with more
@@ -446,8 +455,7 @@ summed over the relabelled segments).
 Each product solves twice: without the finish camera by assignment steps only (steps 1–2), then in full with the
 camera's crossings (`finish_camera` from the first state), the first solve's labels being a candidate start. The final
 product's second solve also uses assignment steps only: its global moves would search the same render and list
-evidence as the video product's, which already did. `fuse_final` also offers the video labels as a start. The
-lowest J among the starts is kept.
+evidence as the video product's, which already did. `fuse_final` also offers the video labels as a start.
 
 **Outputs.**
 - `segs.npz` (identify): segments, links, P(horse), camera-transition detections.
