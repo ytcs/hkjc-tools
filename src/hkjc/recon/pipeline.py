@@ -1142,10 +1142,18 @@ class RaceRun:
         Td = dict(rows=T["rows"], t=T["t"], s=self.info.distance - np.asarray(T["d"], float), lat=T["lat"])
         g = self.info.geometry
         bend = np.array([g.is_bend(float(x)) for x in np.round(np.asarray(T["d"], float), 0)], bool)
-        return core.build_evidence(horses, Td, [np.asarray(m, int) for m in T["members"]],
-                                   np.load(self.p("pose.npz")), float(box[3] - box[2]),
-                                   self.render_style() == "silk", nums=self._number_reads(T), silk=silk,
-                                   panel_w=float(box[1] - box[0]), bend=bend, s_shift=s_shift)
+        members = [np.asarray(m, int) for m in T["members"]]
+        silk_style = self.render_style() == "silk"
+        ev = core.build_evidence(horses, Td, members, np.load(self.p("pose.npz")), float(box[3] - box[2]),
+                                 silk_style, nums=self._number_reads(T), silk=None if silk_style else silk,
+                                 panel_w=float(box[1] - box[0]), bend=bend, s_shift=s_shift)
+        if silk_style:  # the learned render appearance term is the silk render's appearance evidence
+            from . import appearance
+
+            with np.load(self.p("appearance.npz")) as za:
+                app = {k: za[k] for k in ("logp", "ok", "nos", "has_gif")}
+            ev.silk_cost = appearance.costs(app, T["det_idx"], ev.seg, ev.n_seg, ev.horses, ev.p_horse, members)
+        return ev
 
     NUMBER_CONF = 0.6  # minimum OCR confidence of a disc number read
 
