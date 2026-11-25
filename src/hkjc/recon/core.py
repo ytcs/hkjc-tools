@@ -64,6 +64,7 @@ LAG = 0.3  # s: the list shows the order 0.3 s before its render tick
 SIG_AB = 1.0  # m: order noise of two horses abreast
 EPS_LIST = 0.02  # iid misread / wrong-slot probability of one statement
 P_FROZEN_IN, P_FROZEN_STAY = 1e-3, 0.995  # per list row
+PF0_FROZEN = 0.9  # start solve: P(frozen) of a row inside a held near-cloth read
 P_OMIT_IN, P_OMIT_STAY = 1e-4, 0.999  # per list row, per horse
 P_AHEAD_UNSEEN = 0.25  # start solve: P(an undetected horse is ahead of a detection) before any path exists
 MAX_RANK = 8
@@ -702,6 +703,14 @@ class Model:
         self.H, self.n = len(ev.horses), len(tg)
         self.width = width
         self.St = statements(L, self.H)
+        # the start solve's P(frozen) per row, before any path exists: a near-cloth read held (contract.legend_frozen,
+        # from the list alone) is likely frozen; the state step's frozen chain replaces it
+        self.pf0 = np.zeros(len(L.tau))
+        if len(L.tau):
+            from .contract import legend_frozen
+
+            nums = np.where(L.slots >= 0, np.asarray(ev.horses)[np.maximum(L.slots, 0)], 0)
+            self.pf0 = np.where(legend_frozen(nums, L.tau, self.H)[0], PF0_FROZEN, 0.0)
         a_s = np.where(tg[1:-1] < T_START, A_SD_START, A_SD_S)
         self.phys_s = _physics(self.n, a_s)
         self.phys_l = _physics(self.n, np.full(self.n - 2, A_SD_L), VL_SD)
@@ -1251,7 +1260,7 @@ def list_votes(model: Model, st: State | None, seg_lab):
         r = int(np.argmin(np.abs(L.tau - tf)))
         if abs(L.tau[r] - tf) > 0.15:
             continue
-        ok = 1.0 - (st.pf[r] if st is not None else 0.0)
+        ok = 1.0 - (st.pf[r] if st is not None else model.pf0[r])
         omit = st.om[:, r] if st is not None else np.zeros(H)
         sl = L.slots[r]
         sj = s[j]

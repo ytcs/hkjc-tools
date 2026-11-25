@@ -406,7 +406,8 @@ It is the sum of:
 - hard exclusions (stopped non-finishers after their last section).
 
 **Inference (`core.solve`).**
-1. Start-free solve: one MILP over segments × runners on the label-free evidence. This is the list's rank-count vote
+1. Start-free solve: one MILP over segments × runners on the label-free evidence (a row inside a held near-cloth
+   read, `contract.legend_frozen`, counts as frozen with P `PF0_FROZEN`; afterwards the frozen chain decides). This is the list's rank-count vote
    with undetected horses ahead at `P_AHEAD_UNSEEN`, plus reads and silk. It keeps only segments with a positive
    gain.
 2. Repeat:
@@ -431,7 +432,11 @@ It is the sum of:
    list's order put it.
 6. Then abreast-pair swaps (`core.swap_moves`): two horses whose paths stay within `ABREAST_S` along and `ABREAST_L`
    across for ≥ `ABREAST_T` s exchange labels over that stretch, widened to the nearest camera cuts.
-7. The loop ends when no proposal lowers J. There is no iteration cap. Every accepted step lowers J; the log prints J
+7. The loop ends when no proposal lowers J.
+
+The candidates of steps 4–6 are screened by a truncated state step (`QUICK_ROUNDS` fault-chain round, at most
+`QUICK_IT` Newton steps, the current state's posterior sds). Only the `SCREEN_KEEP` best within `SCREEN_MARGIN` of
+the current J get a full state step, and only full steps can be accepted or enter the posterior. There is no iteration cap. Every accepted step lowers J; the log prints J
    after each.
 
 Each product solves twice: without the finish camera, then with its crossings (`finish_camera` from the first
