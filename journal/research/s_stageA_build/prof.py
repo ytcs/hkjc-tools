@@ -10,7 +10,7 @@ from hkjc.recon.pipeline import RaceRun
 ROOT = Path(__file__).resolve().parents[3] / "data_cache/s_stageA/runs"
 key = sys.argv[1]
 d, v, n = key.split("_")
-run = RaceRun(race_info(d, v, int(n)), root=ROOT / "U", log=lambda m: print(m, flush=True), mask=Mask())
+run = RaceRun(race_info(d, v, int(n)), root=ROOT / (sys.argv[2] if len(sys.argv) > 2 else "U"), log=lambda m: print(m, flush=True), mask=Mask())
 pr = cProfile.Profile()
 pr.enable()
 run.fuse_video()

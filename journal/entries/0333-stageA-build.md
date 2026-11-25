@@ -177,3 +177,39 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
 - 0312-3 U: permutations at 51.4 s (6, 48), 51.6 s over 41.4-51.6 s (39, 93); lg1: (1, 15), (8, 381), (13, 166).
 - 0312-2 lg0: permutation from 40.6 s (11, 95). HV_8 2024: permutation (2, 39 and 60), swap #4/#11 (2, 58).
 - HV_8, 0312-1 (U, lg1): none.
+
+## Round 2 after the coordinator's second NO-GO (code 2af4437, cells m14)
+- **Case 5 (20260301_ST_2): the core reproduces the RENDER, which disagrees with the patrol.** In the render the box
+  the core labels #10 (t7, then t2; lat 3.7-6.3) carries #10's silk (navy body, red cap, light-blue/red sleeves) and
+  the inside box it labels #11 (t1) carries #11's silk (green, orange sash): crop
+  scratchpad/stageA/case5_render_silks_46_52s.jpg (render panels at 46 and 52 s). The list orders 10 ahead of 11 at
+  every row 40-60 s, and the wide box leads the inside one by 3.7-5.3 m from 40 to 80 s (render s). The swap IS scored
+  on re-fitted paths: the whole-race swap (11.0-85.7 s) leaves J_lat unchanged (2,183 both) and costs dJ +3,969 =
+  list +3,052, along-track +837, detection +52; the stretch-only swap (11.0-41.4 s) costs +6,229, mostly lateral
+  (+4,174), because each label then jumps lanes at 41.4 s. The coordinator's patrol reading (#10 inside #11 at
+  41.9-51.9 s) is a render-vs-real conflict that render-only evidence cannot carry (Stage C, patrol).
+- **Case 2 (20241201_ST_10), sectional.** The worsening was all at the finish boundary: every horse's video path
+  crossed 1.0-1.7 s after its official time, interior boundaries no worse. The render's own boxes reach the line late
+  (#3's last labelled box: d 3.2 m at 82.3 s; official 81.2 s) after the render camera change near 78 s. Main's paths
+  were pulled onto the official times by the finish camera, whose clock comes from the label-free registration; in
+  this race the registration's earliest crossings are list-icon tracklets, whose projected crossings fall near the
+  official times. 2cfae52 had excluded those boxes, so the camera clock followed the late render (sectional 0.530 s).
+  Reverted in 45dc97c: sectional 0.314 s (main 0.278), behind-winner 0.481 s (main 0.347). The render metric after
+  camera changes stays unmodelled (decision point 12).
+- **Case 2, #4 at 54 s.** Under the m14 code #4 is labelled on the 4th avatar (s 921.2, sd 0.2) where the list names
+  #14; #14's path sits 0.1 m behind #5 (abreast, cheap), and the unlisted #4 4 m ahead of the 8th listed horse is
+  explained by the omission state (entry about 18, exit about 14). In the m11 run #4 had no box at 54 s and its
+  interpolated path ran 1.2 m ahead of #2, within the order facts' abreast tolerance. Not resolved: the list's
+  statement about #4 is outweighed by that avatar's kinematic continuity, and no appearance term separates them.
+- **Search shortcuts and stability.** With 12 screened candidates per family (2d12e57) the churn of 20240505_ST_10
+  lg0 rose 0.0 -> 16.8 % and of 20260301_ST_2 lg1 1.5 -> 14.2 % (a J-lowering permutation was screened out); 40
+  (858c202) restores 0.0 % and 1.6 %. ST_7's insertion was likewise dropped at 12.
+- **Compute (CPU s, replaced stages, m14):** HV_8 28, HV_8 2024 40, 0312-1 68 / 61, 0312-2 69 / 110, HV_3 98, ST_7
+  105, 0312-3 217 / 221, ST_4 297, ST_10 514, ST_9 890. Profiles: ST_9 (the 2,809 s run, before the screening cap):
+  3,900 screening state steps in 17 screening calls took 471 of 679 profiled s, the fault chains 186 s (since replaced
+  by scans), the MILP 44 s. ST_10 (video only, 149 profiled s, m13 code): full state steps 44 s, unaries 40 s
+  (kinematic blocks 35 s), window proposals 27 s, screening 24 s, MILP 17 s.
+- **Milestone cells (m14, video):** 1: #9 3rd (t2) 20-80 s. 3: #8 t11 / #10 t12, U = lg1, #2 9th at 71-75 s. 4: U =
+  lg0. 5: U = lg1 (#10 t7/t2 wide, #11 t1 inside), prob 1.0. 6: live-list order through the frozen window. 7: #7 t9,
+  #11 t3, #8 t8. 8: #2 t2 wide. 9: #10 t6 as main. 10: #4 t6 at 11-14 s. Churn U vs mask 1.1 / 0.0 / 1.6 % (main
+  2.9 / 7.5 / 16.7).
