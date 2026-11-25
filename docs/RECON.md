@@ -464,10 +464,14 @@ lowest J among the starts is kept.
   - 4: the silk term is still the per-segment clipped histogram LLR (Stage B);
   - 5: observe's appearance and number splits;
   - 6: finish-camera handling: the anchor-or-registration clock inside `finish_camera`, camera crossings computed
-    once from the first state. The camera's `fixed` names, line elimination and blind veto are gone;
+    once from the first state. The label-free registration uses only clean boxes (P(horse) = `P_HORSE0`: no overlay
+    ghost, no box on an occluder band). The camera's `fixed` names, line elimination and blind veto are gone;
   - 12: the metric bias and HV shape as point estimates;
   - 14: top-1 OCR integers;
-  - the unseated rule (UR) is not ported.
+  - the unseated rule (UR) is not ported;
+  - the omission chain switches on for an unlisted horse abreast of the 8th listed one (its omitted state emits 1
+    against about 1/2 in the ok state), so back markers near rank 8 are ordered by kinematics alone;
+  - cost: global moves make the replaced stages 170-6,500 CPU s per race; not yet optimised.
 
 ### Lateral in metres
 

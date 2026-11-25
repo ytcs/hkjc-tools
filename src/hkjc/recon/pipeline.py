@@ -1117,8 +1117,9 @@ class RaceRun:
                  f"{int((ev.p_horse < 0.5).sum())} overlay boxes (P(horse) < 0.5), {int(ev.cam.sum())} detections at "
                  "camera transitions")
 
-    def _evidence(self, T=None):
-        """core.Evidence of this run (tracks.npz s = distance - d)."""
+    def _evidence(self, T=None, s_shift=None):
+        """core.Evidence of this run (tracks.npz s = distance - d; the final product's render metric bias ``s_shift``
+        moves every render s)."""
         from . import core
 
         T = np.load(self.p("tracks.npz"), allow_pickle=True) if T is None else T
@@ -1128,7 +1129,8 @@ class RaceRun:
             zs = np.load(self.p("silk.npz"))
             silk = (zs["feat"][T["det_idx"]], zs["proto_no"], zs["proto"])
         box = np.load(self.p("frames_idx.npz"))["box"]
-        Td = dict(rows=T["rows"], t=T["t"], s=self.info.distance - T["d"], lat=T["lat"])
+        s_run = self.info.distance - np.asarray(T["d"], float)
+        Td = dict(rows=T["rows"], t=T["t"], s=s_run if s_shift is None else s_run + s_shift(s_run), lat=T["lat"])
         g = self.info.geometry
         bend = np.array([g.is_bend(float(x)) for x in np.round(np.asarray(T["d"], float), 0)], bool)
         return core.build_evidence(horses, Td, [np.asarray(m, int) for m in T["members"]],
@@ -1167,7 +1169,7 @@ class RaceRun:
     def _finish_identity(self, T=None, mem=None):
         """({tracklet index: number}, label-free fit) from the finish camera (1D registration of the
         tracklets' line-crossing times to the camera's gaps; tracklets ending < 30 m short are
-        extrapolated). A pure function of tracks.npz + finish.npz: called with no arguments it is
+        extrapolated). A pure function of tracks.npz, finish.npz and the core's P(horse) (segs.npz: only clean boxes): called with no arguments it is
         CACHED on their mtimes (the fuse stage's EM loop calls it repeatedly)."""
         import copy
 
@@ -1175,7 +1177,7 @@ class RaceRun:
             return self._finish_identity_compute(T, mem)
         key = tuple(
             self.p(f).stat().st_mtime_ns if self.p(f).exists() else -1
-            for f in ("tracks.npz", "finish.npz")
+            for f in ("tracks.npz", "finish.npz", "segs.npz")
         )
         c = getattr(self, "_fin_id_cache", None)
         if c is None or c[0] != key:
@@ -1191,6 +1193,12 @@ class RaceRun:
         z = np.load(self.p("finish.npz"))
         order, gaps, _u = finishcam.finish_gaps(self.finish_sc(z))
         gaps = {int(k): v for k, v in gaps.items()}
+        if self.p("segs.npz").exists():  # only clean boxes: no overlay ghost or box on an occluder band (core.p_horse)
+            from .core import P_HORSE0
+
+            ph = np.load(self.p("segs.npz"))["p_horse"]
+            if len(ph) == len(T["t"]):
+                mem = [m[ph[m] >= P_HORSE0] for m in mem]
         if len(gaps) < 3:
             return {}, None
         tc, vs = {}, []
@@ -1568,7 +1576,7 @@ class RaceRun:
         from . import core
 
         T = np.load(self.p("tracks.npz"), allow_pickle=True)
-        ev = self._evidence(T)
+        ev = self._evidence(T, s_shift)
         horses = ev.horses
         col = {int(h): c for c, h in enumerate(horses)}
         if exclude:  # horses that take no detection at s >= s_from (stopped non-finishers)
@@ -1589,8 +1597,9 @@ class RaceRun:
         t0, t1 = min(ts), max(ts) if t_end is None else max(max(ts), t_end)
         tg = np.arange(t0, t1 + fusion.DT / 2, fusion.DT)
         model = core.Model(ev, Lr, tg, self.info.width)
-        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, s_shift=s_shift, log=self.log)
-        paths = self._core_paths(res, ev, model, s_shift)
+        start = tuple(x for x in start if len(x) == ev.n_seg)  # a start from other segments cannot be compared
+        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log)
+        paths = self._core_paths(res, ev, model)
         quiet, self.log = self.log, (lambda *a, **k: None)
         try:
             fin = self.finish_observations(paths)
@@ -1604,8 +1613,8 @@ class RaceRun:
                                                            None, 0.0), 2) for o in fin if o.horse in paths}
             self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
             res = core.solve(model, start=(res.seg_lab, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
-                             s_shift=s_shift, log=self.log)
-            paths = self._core_paths(res, ev, model, s_shift)
+                             log=self.log)
+            paths = self._core_paths(res, ev, model)
         lab = np.where(res.seg_lab[ev.seg] >= 0, horses[np.maximum(res.seg_lab[ev.seg], 0)], 0)
         p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]
         name = "det_labels.npz" if product == "video" else "det_labels_final.npz"
@@ -1637,7 +1646,7 @@ class RaceRun:
                 pl_.append(core.Obs(np.full(m.sum(), c), o.t[m], o.lat[m], np.full(m.sum(), float(o.sd_l))))
         return core.Obs.cat(ps), core.Obs.cat(pl_)
 
-    def _core_paths(self, res, ev, model, s_shift=None) -> dict:
+    def _core_paths(self, res, ev, model) -> dict:
         """{horse: fusion.Path} of every runner with an observation, from the core's state (posterior sd from the
         per-horse marginal bands)."""
         st = res.state
@@ -1733,7 +1742,8 @@ class RaceRun:
         res, _fin, pf = self._core_product("final", start=(V["seg_lab"],), extra=offi, s_shift=shift, t_end=t_end,
                                            exclude=self._nonfin)
         shape = self._shape_bias(raw_bias)
-        if shape is not raw_bias:  # labels fixed: the last state takes the metric-line shape
+        if shape is not raw_bias and self._evidence().n_seg == len(res.seg_lab):  # labels fixed: the last state takes
+            # the metric-line shape
             from . import core
 
             ev = self._evidence()
@@ -1744,7 +1754,7 @@ class RaceRun:
             model = core.Model(ev, core.list_rows(self.legend_rows(), self._tick_of_tracks(), ev.horses),
                                st.tg, self.info.width)
             res.state = core.evaluate(model, res.seg_lab, o_s, o_l, X0=st.S, s_shift=sh)
-            pf = self._core_paths(res, ev, model, sh)
+            pf = self._core_paths(res, ev, model)
         pf = self._end_at_last_label(pf)
         pf, warp = self._official_retime(pf)
         if warp:
