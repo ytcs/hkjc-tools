@@ -1415,9 +1415,7 @@ class Result:
 
 
 SCREEN_KEEP, SCREEN_MARGIN = 3, 100.0  # move candidates given a full state step: the best 3 by screening J, within 100
-SCREEN_PRE = 12  # at most this many candidates per move family are screened (lowest linearised cost change first)
-# insertions shift a chain of horses at once, which the linearised cost cannot see: more of them are screened
-SCREEN_PRE_INSERT = 40
+SCREEN_PRE = 40  # at most this many candidates per move family are screened (lowest linearised cost change first)
 T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
 
@@ -1487,17 +1485,16 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         seen.append((np.asarray(labs).copy(), st_.J))
         return st_
 
-    def screened(cands, st0, pre=None):
+    def screened(cands, st0):
         """Full state steps for the SCREEN_KEEP candidates with the lowest screening J (truncated solve), if within
         SCREEN_MARGIN of the current J; with more than SCREEN_PRE candidates only the SCREEN_PRE with the lowest
         linearised cost change (sum of the current unaries over the relabelled segments) are screened.
         -> list of (description, labelling, State)."""
-        pre = SCREEN_PRE if pre is None else pre
-        if len(cands) > pre:
+        if len(cands) > SCREEN_PRE:
             Uc = np.c_[U, np.zeros(len(U))]  # last column: clutter
             cur = Uc[np.arange(len(lab)), np.where(lab >= 0, lab, -1)]
             du = [float((Uc[np.arange(len(lab)), np.where(pm >= 0, pm, -1)] - cur).sum()) for _d, pm in cands]
-            cands = [cands[i] for i in np.argsort(du)[:pre]]
+            cands = [cands[i] for i in np.argsort(du)[:SCREEN_PRE]]
         qj = [evaluate(model, pm, extra_s, extra_l, X0=st0.S, s_shift=s_shift, quick=st0).J for _d, pm in cands]
         keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st0.J + SCREEN_MARGIN]
         return [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
@@ -1587,7 +1584,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 moved = True
         if not moved:  # omission insertions over stretches
             best = None
-            for desc, pm, st2 in screened(insertion_moves(model, st, lab), st, SCREEN_PRE_INSERT):
+            for desc, pm, st2 in screened(insertion_moves(model, st, lab), st):
                 if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
                     best = (pm, st2, desc)
             if best is not None:
