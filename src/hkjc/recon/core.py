@@ -461,27 +461,33 @@ def list_rows(leg, t_of_frame, horses) -> ListRows:
 
 def _hmm(log_e0, log_e1, p_in, p_stay):
     """Two-state chains (0 = ok, 1 = fault) starting in 0, one per row of ``log_e0`` / ``log_e1`` (C x n, or one chain
-    as a 1-d array). -> (log Z per chain, P(fault) per chain and step)."""
+    as a 1-d array); scaled forward-backward. -> (log Z per chain, P(fault) per chain and step)."""
     e0, e1 = np.atleast_2d(log_e0).astype(float), np.atleast_2d(log_e1).astype(float)
     C, n = e0.shape
     if not n:
         return (0.0, np.zeros(0)) if np.ndim(log_e0) == 1 else (np.zeros(C), np.zeros((C, 0)))
-    l00, l01, l10, l11 = np.log(1 - p_in), np.log(p_in), np.log(1 - p_stay), np.log(p_stay)
-    a0 = np.zeros((C, n))
-    a1 = np.zeros((C, n))
-    a0[:, 0] = e0[:, 0]
-    a1[:, 0] = -690.0 + e1[:, 0]
+    m = np.maximum(e0, e1)
+    E0, E1 = np.exp(e0 - m), np.exp(e1 - m)
+    p00, p01, p10, p11 = 1 - p_in, p_in, 1 - p_stay, p_stay
+    f0 = np.zeros((C, n))
+    f1 = np.zeros((C, n))
+    c = np.zeros((C, n))
+    f0[:, 0], f1[:, 0] = E0[:, 0], 0.0
+    c[:, 0] = f0[:, 0] + f1[:, 0]
+    f0[:, 0] /= c[:, 0]
     for i in range(1, n):
-        a0[:, i] = np.logaddexp(a0[:, i - 1] + l00, a1[:, i - 1] + l10) + e0[:, i]
-        a1[:, i] = np.logaddexp(a0[:, i - 1] + l01, a1[:, i - 1] + l11) + e1[:, i]
-    b0 = np.zeros((C, n))
-    b1 = np.zeros((C, n))
+        a0 = (f0[:, i - 1] * p00 + f1[:, i - 1] * p10) * E0[:, i]
+        a1 = (f0[:, i - 1] * p01 + f1[:, i - 1] * p11) * E1[:, i]
+        c[:, i] = a0 + a1
+        f0[:, i], f1[:, i] = a0 / c[:, i], a1 / c[:, i]
+    b0 = np.ones((C, n))
+    b1 = np.ones((C, n))
     for i in range(n - 2, -1, -1):
-        f0, f1 = e0[:, i + 1] + b0[:, i + 1], e1[:, i + 1] + b1[:, i + 1]
-        b0[:, i] = np.logaddexp(l00 + f0, l01 + f1)
-        b1[:, i] = np.logaddexp(l10 + f0, l11 + f1)
-    lz = np.logaddexp(a0[:, -1], a1[:, -1])
-    post = np.clip(np.exp(a1 + b1 - lz[:, None]), 0.0, 1.0)
+        g0, g1 = E0[:, i + 1] * b0[:, i + 1], E1[:, i + 1] * b1[:, i + 1]
+        b0[:, i] = (p00 * g0 + p01 * g1) / c[:, i + 1]
+        b1[:, i] = (p10 * g0 + p11 * g1) / c[:, i + 1]
+    lz = (np.log(c) + m).sum(1)
+    post = np.clip(f1 * b1, 0.0, 1.0)
     return (float(lz[0]), post[0]) if np.ndim(log_e0) == 1 else (lz, post)
 
 
@@ -752,7 +758,7 @@ class Model:
         sb = X[St.b, k] * (1 - w) + X[St.b, k + 1] * w
         return sa - sb
 
-    def solve_s(self, obs: Obs, X0=None, rounds=4):
+    def solve_s(self, obs: Obs, X0=None, rounds=4, max_it=30):
         """Joint mode of every horse's s under physics, observations and the weighted order factors (EM over the
         fault chains, Newton with line search). -> (X, J_s, J_list, pf, om, per-horse marginal bands)."""
         H, n, St = self.H, self.n, self.St
@@ -784,7 +790,7 @@ class Model:
                 if _ > 0 and np.abs(wt_new - wt).max() < 1e-3:
                     break
                 wt = wt_new
-            for _it in range(30):
+            for _it in range(max_it):
                 Ax = _band_matvec(A0, x)
                 gq = 2.0 * (Ax - r0)
                 q0 = float(x @ Ax) - 2.0 * float(r0 @ x)
@@ -938,19 +944,26 @@ def label_terms(ev: Evidence, seg_lab):
     return J
 
 
-def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift=None):
-    """State step for the labelling ``seg_lab`` (-1 = clutter): the joint mode and J."""
+QUICK_ROUNDS, QUICK_IT = 1, 6  # screening state step: one fault-chain round, at most 6 Newton steps, sds reused
+
+
+def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift=None, quick=None):
+    """State step for the labelling ``seg_lab`` (-1 = clutter): the joint mode and J. ``quick`` (a State): a screening
+    value of J only, from a truncated Newton solve (QUICK_ROUNDS, QUICK_IT) with that state's posterior sds."""
     ev = model.ev
     os_, ol = chunk_obs(ev, seg_lab, s_shift)
     os_ = Obs.cat([os_, extra_s])
     ol = Obs.cat([ol, extra_l])
-    Xs, J_s, J_list, pf, om, As = model.solve_s(os_, X0)
+    if quick is None:
+        Xs, J_s, J_list, pf, om, As = model.solve_s(os_, X0)
+    else:
+        Xs, J_s, J_list, pf, om, As = model.solve_s(os_, X0, QUICK_ROUNDS, QUICK_IT)
     Xl, J_l, Al = model.solve_l(ol)
     J_lab = label_terms(ev, seg_lab)
     has = np.zeros(model.H, bool)
     has[np.unique(os_.h)] = True
     st = State(model.tg, Xs, Xl, As, Al, pf, om, 0.0, {}, os_, ol, has)
-    st.sdS, st.sdL = st.sd(As), st.sd(Al)
+    st.sdS, st.sdL = (st.sd(As), st.sd(Al)) if quick is None else (quick.sdS, quick.sdL)
     st.pin = in_view(ev, Xs, Xl, st.sdS, st.sdL, model.tg)
     J_det, st.p_det, st.c_un, st.c_lab = miss_terms(ev, st.pin, seg_lab)
     st.J = J_s + J_l + J_list + J_lab + J_det
@@ -1362,6 +1375,7 @@ class Result:
     log: list
 
 
+SCREEN_KEEP, SCREEN_MARGIN = 3, 100.0  # move candidates given a full state step: the best 3 by screening J, within 100
 T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
 
@@ -1431,6 +1445,13 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         seen.append((np.asarray(labs).copy(), st_.J))
         return st_
 
+    def screened(cands, st0):
+        """Full state steps for the SCREEN_KEEP candidates with the lowest screening J (truncated solve), if within
+        SCREEN_MARGIN of the current J. -> list of (description, labelling, State)."""
+        qj = [evaluate(model, pm, extra_s, extra_l, X0=st0.S, s_shift=s_shift, quick=st0).J for _d, pm in cands]
+        keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st0.J + SCREEN_MARGIN]
+        return [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
+
     U0 = list_votes(model, None, None) + ev.read_cost + ev.silk_cost
     U0[ev.forbid] = INF
     lab = milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)
@@ -1499,21 +1520,21 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 log(f"   core: it{it} window proposal ({delta:.0f} s) raised J ({st2.J:.1f})")
         if not moved:  # permutation moves: a cut's label permutation carried over a whole stretch
             best = None
-            for T, B, pm in permutation_moves(ev, lab):
-                st2 = look(pm, st.S)
+            cands = [(f"permutation move at {T:.1f} s over {min(B, T):.1f}-{max(B, T):.1f} s", pm)
+                     for T, B, pm in permutation_moves(ev, lab)]
+            for desc, pm, st2 in screened(cands, st):
                 if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
-                    best = (pm, st2, T, B)
+                    best = (pm, st2, desc)
             if best is not None:
-                pm, st2, T, B = best
-                log(f"   core: it{it} permutation move at {T:.1f} s over {min(B, T):.1f}-{max(B, T):.1f} s relabels "
+                pm, st2, desc = best
+                log(f"   core: it{it} {desc} relabels "
                     f"{int((pm != lab).sum())} segments, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
                 hist.append((it, st2.J, int((pm != lab).sum())))
                 lab, st = pm, st2
                 moved = True
         if not moved:  # omission insertions over stretches
             best = None
-            for desc, pm in insertion_moves(model, st, lab):
-                st2 = look(pm, st.S)
+            for desc, pm, st2 in screened(insertion_moves(model, st, lab), st):
                 if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
                     best = (pm, st2, desc)
             if best is not None:
@@ -1525,8 +1546,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 moved = True
         if not moved:  # abreast-pair swaps: two horses running level exchange labels over a stretch between cuts
             best = None
-            for desc, pm in swap_moves(model, st, lab):
-                st2 = look(pm, st.S)
+            for desc, pm, st2 in screened(swap_moves(model, st, lab), st):
                 if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
                     best = (pm, st2, desc)
             if best is not None:
