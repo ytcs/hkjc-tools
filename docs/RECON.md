@@ -424,10 +424,11 @@ It is the sum of:
    segments ending and starting at a camera cut pair up by along-track rank, the label permutation is carried over a
    whole stretch, back to an earlier or on to a later camera cut (a time where ≥ 3 labelled segments start together).
    The move lowering J most is kept (`core.permutation_moves`).
-5. Then omission insertions (`core.insertion_moves`): over a stretch between camera cuts where the omission chain
-   gives horse u a mean P(omitted) > `INSERT_OM`, u is put at rank r of the field and every horse from r to u's old
-   rank moves one avatar back. Per horse, the `INSERT_WINDOWS` stretches of ≥ `INSERT_MIN_T` s with the largest
-   length × mean P(omitted) are tried, at every rank ahead of u.
+5. Then insertions (`core.insertion_moves`): over a stretch of ≥ `INSERT_MIN_T` s between camera cuts, a horse whose
+   box rank in the first labelled frame after the stretch (or the last before it) is at least `INSERT_JUMP` places
+   ahead of its rank by mean position inside the stretch is put at that rank, and every horse from there to its old
+   rank moves one avatar back. This is the move a list omission needs: the omitted horse sits ahead of where the
+   list's order put it.
 6. Then abreast-pair swaps (`core.swap_moves`): two horses whose paths stay within `ABREAST_S` along and `ABREAST_L`
    across for ≥ `ABREAST_T` s exchange labels over that stretch, widened to the nearest camera cuts.
 7. The loop ends when no proposal lowers J. There is no iteration cap. Every accepted step lowers J; the log prints J

@@ -1104,48 +1104,61 @@ def permutation_moves(ev: Evidence, lab):
     return out
 
 
-INSERT_OM, INSERT_MIN_T, INSERT_WINDOWS = 0.3, 10.0, 6
+INSERT_MIN_T, INSERT_JUMP = 10.0, 2  # s, ranks
 
 
 def insertion_moves(model: Model, st: State, lab):
-    """Omission insertions: over a window between camera cuts (times where >= 3 labelled segments start together, or
-    the race's ends) in which the list's omission chain gives horse u a mean P(omitted) > INSERT_OM, u is put at
-    rank r of the field (ranked by the window's mean position) and every horse from rank r to u's old rank moves one
-    avatar back. Per horse, the INSERT_WINDOWS windows of >= INSERT_MIN_T s with the largest length x mean P(omitted)
-    are tried, at every rank ahead of u. -> list of (description, labelling)."""
-    ev, L, tg = model.ev, model.Lr, model.tg
-    if not len(L.tau):
-        return []
+    """Insertions over a stretch between camera cuts (times where >= 3 labelled segments start together, or the race's
+    ends): where a horse's box rank in the first labelled frame after the stretch (or the last before it) is at least
+    INSERT_JUMP places ahead of its rank by mean position inside the stretch, the horse is put at that rank over the
+    stretch and every horse from there to its old rank moves one avatar back (a horse the list omitted sits ahead of
+    where the list's order put it). Stretches of >= INSERT_MIN_T s. -> list of (description, labelling)."""
+    ev, tg = model.ev, model.tg
     lo = np.full(ev.n_seg, np.inf)
     hi = np.full(ev.n_seg, -np.inf)
     np.minimum.at(lo, ev.seg, ev.t)
     np.maximum.at(hi, ev.seg, ev.t)
     st_t, cnt = np.unique(np.round(lo[lab >= 0] * 5) / 5, return_counts=True)
     cuts = np.r_[tg[0], st_t[cnt >= 3], tg[-1] + 1.0]
-    out = []
-    for u in range(model.H):
-        cand = []
-        for i, b0 in enumerate(cuts):
-            for b1 in cuts[i + 1:]:
-                rows = (L.tau >= b0) & (L.tau < b1)
-                if b1 - b0 < INSERT_MIN_T or rows.sum() < 10:
-                    continue
-                om = float(st.om[u, rows].mean())
-                if om > INSERT_OM:
-                    cand.append(((b1 - b0) * om, b0, b1))
-        for _score, b0, b1 in sorted(cand, reverse=True)[:INSERT_WINDOWS]:
-            rows = (L.tau >= b0) & (L.tau < b1)
-            k, w = _interp(tg, L.tau[rows])
+    lab_det = lab[ev.seg]
+    frames = np.unique(ev.fr[lab_det >= 0])
+    ft = np.array([ev.t[ev.fr == f][0] for f in frames]) if len(frames) else np.zeros(0)
+
+    def ranks_at(f):
+        j = np.flatnonzero((ev.fr == f) & (lab_det >= 0))
+        j = j[np.argsort(-ev.s[j])]
+        return {int(lab_det[x]): r for r, x in enumerate(j)}
+
+    out, seen = [], set()
+    for i, b0 in enumerate(cuts):
+        for b1 in cuts[i + 1:]:
+            if b1 - b0 < INSERT_MIN_T:
+                continue
+            k, w = _interp(tg, np.clip(np.arange(b0, b1, 0.5), tg[0], tg[-1]))
             order = list(np.argsort(-(st.S[:, k] * (1 - w) + st.S[:, k + 1] * w).mean(1)))
-            q = order.index(u)
             inside = np.flatnonzero((lo >= b0 - 0.15) & (hi < b1 - 0.05) & (lab >= 0))
-            for r in range(q):
-                mp = {order[r]: u, **{order[j]: order[j - 1] for j in range(r + 1, q + 1)}}
-                new = lab.copy()
-                for s_ in inside:
-                    new[s_] = mp.get(int(lab[s_]), lab[s_])
-                if not np.array_equal(new, lab):
-                    out.append((f"insert #{ev.horses[u]} at rank {r + 1} over {b0:.1f}-{b1:.1f} s", new))
+            if not len(inside):
+                continue
+            edge = []
+            after = frames[ft >= b1]
+            before = frames[ft < b0]
+            if len(after):
+                edge.append(ranks_at(after[0]))
+            if len(before):
+                edge.append(ranks_at(before[-1]))
+            for rk in edge:
+                for u, r in rk.items():
+                    q = order.index(u)
+                    if q - r < INSERT_JUMP:
+                        continue
+                    mp = {order[r]: u, **{order[j]: order[j - 1] for j in range(r + 1, q + 1)}}
+                    new = lab.copy()
+                    for s_ in inside:
+                        new[s_] = mp.get(int(lab[s_]), lab[s_])
+                    key = new.tobytes()
+                    if key not in seen and not np.array_equal(new, lab):
+                        seen.add(key)
+                        out.append((f"insert #{ev.horses[u]} at rank {r + 1} over {b0:.1f}-{b1:.1f} s", new))
     return out
 
 
