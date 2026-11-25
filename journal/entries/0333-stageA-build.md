@@ -213,3 +213,54 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   lg0. 5: U = lg1 (#10 t7/t2 wide, #11 t1 inside), prob 1.0. 6: live-list order through the frozen window. 7: #7 t9,
   #11 t3, #8 t8. 8: #2 t2 wide. 9: #10 t6 as main. 10: #4 t6 at 11-14 s. Churn U vs mask 1.1 / 0.0 / 1.6 % (main
   2.9 / 7.5 / 16.7).
+
+## Convergence of the global solve (coordinator priority, 2026-11-24 evening)
+
+- **Measurement (frozen code 6e7faff, video evidence with the cell's finish camera; tools multistart.py, crossj.py,
+  whystuck.py, unarycheck.py in journal/research/s_stageA_build).** Each (race, cell) solved from several starts:
+  the solver's own init, the other cells' stored labellings, two seeded perturbations of the init's end (10 random
+  two-runner exchanges over one segment's span). Results in the reply to the coordinator and in
+  data_cache/s_stageA (ms_before.log, ms_q*.log, triage.log). Of 20 tune-split U-vs-lg pairs, 15 had one side's own
+  evidence prefer the other side's labels (search failure, 8-2,276 J); one (20250716_HV_6 lg1) is an evidence
+  difference (half of the list masked decides it).
+- **Causes found.** (1) The assignment step's unaries are not a linearisation of J: on 20241013_ST_2 the list-vote
+  term predicted +35 / +80 / +29 / +56 for single relabellings whose exact J_list change was -3 / +5 / 0 / 0, and
+  single moves that lower J by 25-71 were never proposed. Dropping the list votes from the step unaries made spreads
+  worse (ST_2 U init end 42,763 -> 43,168), so they stay as the proposal's steering. (2) The gaps between ends are
+  cascades: split into label-connected parts, each part alone raises J (HV_9 U vs lg0: 27 parts summing to +2,611
+  for a joint -2,142), so no single-family move reaches them. (3) J does not depend on the state step's warm start
+  (ST_2: cold vs warm within 10 J), so the ends are true local minima of the move set.
+- **Slot breach.** One whystuck.py run went through slot.sh while both diagnostic queues held slots (3 slots for a
+  few minutes). Not repeated.
+- **Declared before results: acceptance of the fix.** (a) On the bench (20241013_ST_2 U/lg1, 20240501_HV_9 U,
+  20241109_ST_9 lg1, 20251012_ST_4 lg1, 20240207_HV_4 lg1) the product's solve ends within MIN_GAIN of J_ref (the
+  lowest J any source has reached on that evidence) on at least 4 of 6, and its median gap falls by >= 80 %.
+  (b) multistart.py on the new code (the product's solve, then the same with each extra start given as a start):
+  every end <= the J of its given start; median end-J spread over race-cells falls by >= 80 % against the frozen
+  code, and no race-cell's spread grows. (c) CPU of the replaced stages reported per race (not gated).
+  (d) The evidence-subset inits must not use the harness's 10 s legend-mask grid.
+- **Fix (24cbf3d, 3f7728d).** Five inits (all evidence; list vote only; reads + silk only; list rows of alternate
+  7 s blocks with reads + silk, each parity), each descended by assignment steps; the global move families from
+  every distinct end; then crossovers between the lowest end and every other end (runs of label-connected
+  difference parts, screened like the other families), descending again until none lowers J. Rejected on the way
+  (journal/research/s_stageA_build/parked_*.patch, bench logs): proposal parts (no change on ST_2 U); wider abreast
+  swaps (U J -286 on ST_2, lg1 unmoved, CPU x1.7); dropping list votes from the step unaries (worse ends); global
+  moves from only the 2 lowest assignment-step ends (lost 335 J on ST_9 lg1 and 435 J on ST_4 lg1: the ranking
+  after assignment steps does not predict the ranking after global moves); seeded random kicks (no gain on ST_2 lg1
+  for +50 s).
+- **Bench (video evidence; J_ref = lowest J any source reached before the fix):**
+
+  | race cell | frozen init end | J_ref | 3f7728d end | CPU frozen -> 3f7728d |
+  |---|---|---|---|---|
+  | 20241013_ST_2 lg1 | 42,455 | 41,981 | 41,881 | 22 -> 140 |
+  | 20240501_HV_9 U | 68,095 | 65,956 | 66,099 | 57 -> 616 |
+  | 20241109_ST_9 lg1 | 72,369 | 71,736 | 71,450 | 35 -> 416 |
+  | 20240207_HV_4 lg1 | 75,184 | 74,860 | 74,942 | 12 -> 170 |
+  | 20241013_ST_2 U | 42,763 | 42,640 | 42,467 | 28 -> 168 |
+  | 20251012_ST_4 lg1 (24cbf3d) | 83,492 | 83,103 | 83,056 | 196 -> 747 |
+
+  Acceptance (a): 4 of 6 at or below J_ref (HV_9 U +143, HV_4 lg1 +82); median gap 388 -> 0. Met.
+  Profile (ST_9 lg1, 290 s): screening quick steps 85 s, MILP 68 s (106 calls), window costs 56 s, unaries 55 s.
+- **Final product.** Global moves in the final solve (on top of the multi-start) lowered final J by 11 (ST_2 U, +71
+  CPU s) and 84 (20231001_ST_1 U, +211 s); kept off. Crossovers run in every solve.
+- **Merged listfault (a6c5177) as 0c72d55.** Clean merge; 187 tests pass.

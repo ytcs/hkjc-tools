@@ -1,0 +1,12 @@
+20240501_HV_9 U: end J spread 2151.8 (best: cell lg0)
+  init       start J    71576.3 -> end J    68095.1 (+ 2139.5)  segments differ  67  rows differ   663  CPU   75.4 s
+  cell lg0   start J    65955.6 -> end J    65955.6 (+    0.0)  segments differ   0  rows differ     0  CPU   19.6 s
+  cell lg1   start J    67463.7 -> end J    67283.3 (+ 1327.7)  segments differ  87  rows differ   947  CPU   46.1 s
+  perturb 0  start J    75334.9 -> end J    68107.4 (+ 2151.8)  segments differ  73  rows differ   780  CPU   35.8 s
+  perturb 1  start J    78415.4 -> end J    67275.2 (+ 1319.6)  segments differ  55  rows differ   719  CPU   42.8 s
+20240501_HV_9 lg1: end J spread 15312.0 (best: cell U)
+  init       start J    74335.9 -> end J    65686.9 (+  474.3)  segments differ  73  rows differ   699  CPU  151.3 s
+  cell U     start J    67083.5 -> end J    65212.7 (+    0.0)  segments differ   0  rows differ     0  CPU   57.7 s
+  perturb 0  start J   116781.1 -> end J    80524.7 (+15312.0)  segments differ 213  rows differ  5489  CPU  202.3 s
+  perturb 1  start J    85077.6 -> end J    65734.1 (+  521.4)  segments differ  74  rows differ   750  CPU   86.5 s
+Terminated                 MEM=${SLOT_MEM:-2G} "$(dirname "$0")/capped.sh" "$@"

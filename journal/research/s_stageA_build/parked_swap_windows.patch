@@ -1,0 +1,91 @@
+diff --git a/docs/RECON.md b/docs/RECON.md
+index 6319b0d..5c658ec 100644
+--- a/docs/RECON.md
++++ b/docs/RECON.md
+@@ -432,7 +432,9 @@ It is the sum of:
+    rank moves one avatar back. This is the move a list omission needs: the omitted horse sits ahead of where the
+    list's order put it.
+ 6. Then abreast-pair swaps (`core.swap_moves`): two horses whose paths stay within `ABREAST_S` along and `ABREAST_L`
+-   across for ≥ `ABREAST_T` s exchange labels over that stretch, widened to the nearest camera cuts.
++   across for ≥ `ABREAST_T` s exchange labels over a window overlapping that stretch. Window ends are camera cuts, the
++   two horses' own segment ends within `SWAP_PAD` s of the stretch, and the race's ends. Any two horses labelled
++   between two camera cuts may also exchange labels there.
+ 7. The loop ends when no proposal lowers J by more than `MIN_GAIN` (2, about one nat). Window proposals that failed
+    are retried only after `WINDOW_RETRY` segments have changed label. There is no iteration cap. Every accepted step
+    lowers J; the log prints J after each.
+diff --git a/src/hkjc/recon/core.py b/src/hkjc/recon/core.py
+index b7aed00..a96adb1 100644
+--- a/src/hkjc/recon/core.py
++++ b/src/hkjc/recon/core.py
+@@ -1454,13 +1454,15 @@ SCREEN_KEEP, SCREEN_MARGIN = 3, 100.0  # move candidates given a full state step
+ SCREEN_PRE = 40  # at most this many candidates per move family are screened (lowest linearised cost change first)
+ T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
+ ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
++SWAP_PAD = 20.0  # s: segment ends this close to an abreast stretch can end a swap window
+ 
+ 
+ def swap_moves(model: Model, st: State, lab):
+     """Abreast-pair swaps: for two horses whose paths stay within ABREAST_S along and ABREAST_L across for >= ABREAST_T
+-    s, exchange their labels on every segment inside the stretch, widened to the nearest camera cuts (times where >= 3
+-    labelled segments start together) or the race's ends, and from there to the race's end or from its start.
+-    -> list of (description, labelling)."""
++    s, exchange their labels on every segment inside a window that overlaps the stretch; window ends are camera cuts
++    (times where >= 3 labelled segments start together), the two horses' own segment ends within SWAP_PAD s of the
++    stretch, and the race's ends. Also any two horses labelled between two camera cuts (or the race's ends) exchange
++    labels there. -> list of (description, labelling)."""
+     ev, tg = model.ev, model.tg
+     lo = np.full(ev.n_seg, np.inf)
+     hi = np.full(ev.n_seg, -np.inf)
+@@ -1468,7 +1470,7 @@ def swap_moves(model: Model, st: State, lab):
+     np.maximum.at(hi, ev.seg, ev.t)
+     st_t, cnt = np.unique(np.round(lo[lab >= 0] * 5) / 5, return_counts=True)
+     cuts = np.r_[tg[0], st_t[cnt >= 3], tg[-1] + 1.0]
+-    out = []
++    out, seen = [], set()
+     has = st.has_obs
+     for a in range(model.H):
+         for b in range(a + 1, model.H):
+@@ -1481,16 +1483,36 @@ def swap_moves(model: Model, st: State, lab):
+             for r0, r1 in zip(edges[::2], edges[1::2]):
+                 if (r1 - r0) * DT < ABREAST_T:
+                     continue
+-                w0 = cuts[cuts <= tg[r0]].max(initial=tg[0])
+-                w1 = cuts[cuts >= tg[r1 - 1]].min(initial=tg[-1] + 1.0)
+-                # the stretch itself, and the exchange carried on to the race's end or back to its start (two
+-                # horses that ran level may have been told apart wrongly for the rest of the race)
+-                for x0, x1 in ((w0, w1), (w0, tg[-1] + 1.0), (tg[0], w1)):
+-                    inside = (lo >= x0 - 0.15) & (hi < x1 - 0.05)
++                t0, t1 = tg[r0], tg[r1 - 1]
++                # window ends: camera cuts, the two horses' own segment ends near the stretch, the race's ends (the
++                # exchange may hold over the stretch only, or carry on to the race's end or back to its start)
++                mine = (lab == a) | (lab == b)
++                ends = np.r_[lo[mine], hi[mine] + 0.1]
++                ends = ends[(ends >= t0 - SWAP_PAD) & (ends <= t1 + SWAP_PAD)]
++                B = np.unique(np.round(np.r_[cuts, ends, tg[0], tg[-1] + 1.0], 1))
++                for x0 in B[B <= t1]:
++                    for x1 in B[(B >= t0) & (B > x0 + 1.0)]:
++                        inside = (lo >= x0 - 0.15) & (hi < x1 - 0.05)
++                        new = lab.copy()
++                        new[inside & (lab == a)] = b
++                        new[inside & (lab == b)] = a
++                        key = new.tobytes()
++                        if not np.array_equal(new, lab) and key not in seen:
++                            seen.add(key)
++                            out.append((f"swap #{ev.horses[a]}/#{ev.horses[b]} over {x0:.1f}-{x1:.1f} s", new))
++    # any two horses exchanging labels between two camera cuts (or the race's ends), where continuity is weakest
++    for i, x0 in enumerate(cuts):
++        for x1 in cuts[i + 1:]:
++            inside = (lo >= x0 - 0.15) & (hi < x1 - 0.05) & (lab >= 0)
++            present = np.unique(lab[inside])
++            for ia, a in enumerate(present):
++                for b in present[ia + 1:]:
+                     new = lab.copy()
+                     new[inside & (lab == a)] = b
+                     new[inside & (lab == b)] = a
+-                    if not np.array_equal(new, lab) and not any(np.array_equal(new, o) for _d, o in out):
++                    key = new.tobytes()
++                    if key not in seen:
++                        seen.add(key)
+                         out.append((f"swap #{ev.horses[a]}/#{ev.horses[b]} over {x0:.1f}-{x1:.1f} s", new))
+     return out
+ 

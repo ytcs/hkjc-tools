@@ -1,0 +1,75 @@
+20231001_ST_1 U: end J spread 5521.3 (best: perturb 0)
+  init       start J    95273.7 -> end J    92914.2 (+  200.0)  segments differ  10  rows differ   272  CPU   21.9 s
+  cell lg1   start J    93059.5 -> end J    92875.9 (+  161.8)  segments differ  15  rows differ   289  CPU   24.1 s
+  perturb 0  start J   152349.4 -> end J    92714.1 (+    0.0)  segments differ   0  rows differ     0  CPU   82.1 s
+  perturb 1  start J   112213.8 -> end J    98235.4 (+ 5521.3)  segments differ  40  rows differ  6513  CPU   86.9 s
+20240501_HV_9 lg1: end J spread 15312.0 (best: cell U)
+  init       start J    74335.9 -> end J    65686.9 (+  474.3)  segments differ  73  rows differ   699  CPU  121.2 s
+  cell U     start J    67083.5 -> end J    65212.7 (+    0.0)  segments differ   0  rows differ     0  CPU   45.3 s
+  perturb 0  start J   116781.1 -> end J    80524.7 (+15312.0)  segments differ 213  rows differ  5489  CPU  167.0 s
+  perturb 1  start J    85077.6 -> end J    65734.1 (+  521.4)  segments differ  74  rows differ   750  CPU   50.3 s
+20251012_ST_4 lg1: end J spread 389.0 (best: cell U)
+  init       start J    91646.1 -> end J    83491.5 (+  389.0)  segments differ  51  rows differ   565  CPU  195.7 s
+  cell U     start J    83102.5 -> end J    83102.5 (+    0.0)  segments differ   0  rows differ     0  CPU   51.9 s
+  perturb 0  start J    86693.1 -> end J    83391.7 (+  289.2)  segments differ  44  rows differ   528  CPU   95.8 s
+  perturb 1  start J    89597.4 -> end J    83367.5 (+  265.0)  segments differ  38  rows differ   499  CPU   76.0 s
+20241201_ST_10 U: end J spread 1336.0 (best: init)
+  init       start J   127715.3 -> end J    89703.4 (+    0.0)  segments differ   0  rows differ     0  CPU  130.0 s
+  list-only  start J   127325.6 -> end J    91039.4 (+ 1336.0)  segments differ  46  rows differ  4114  CPU  149.2 s
+  reads+silk start J   123654.2 -> end J    90510.1 (+  806.8)  segments differ  61  rows differ  5433  CPU  145.5 s
+  perturb 0  start J   105126.0 -> end J    89997.3 (+  293.9)  segments differ  24  rows differ  1909  CPU   56.6 s
+  perturb 1  start J   106568.4 -> end J    90233.3 (+  530.0)  segments differ  42  rows differ  2652  CPU  122.8 s
+20241109_ST_9 lg1: end J spread 4246.7 (best: cell U)
+  init       start J    76745.5 -> end J    72369.0 (+  632.6)  segments differ  24  rows differ   108  CPU   30.4 s
+  cell U     start J    71885.7 -> end J    71736.4 (+    0.0)  segments differ   0  rows differ     0  CPU   16.3 s
+  list-only  start J    77857.3 -> end J    71930.5 (+  194.1)  segments differ  56  rows differ  1450  CPU   83.0 s
+  reads+silk start J   105939.6 -> end J    75983.1 (+ 4246.7)  segments differ 138  rows differ  3570  CPU   89.7 s
+  perturb 0  start J    79779.9 -> end J    73443.9 (+ 1707.5)  segments differ  35  rows differ   787  CPU   28.5 s
+  perturb 1  start J    75956.5 -> end J    72340.3 (+  603.9)  segments differ  31  rows differ   183  CPU   27.0 s
+20240511_ST_7 U: end J spread 20008.8 (best: init)
+  init       start J    86426.7 -> end J    79917.6 (+    0.0)  segments differ   0  rows differ     0  CPU   38.2 s
+  list-only  start J    86426.7 -> end J    79917.6 (+    0.0)  segments differ   0  rows differ     0  CPU   31.4 s
+  reads+silk start J   125957.6 -> end J    89418.7 (+ 9501.1)  segments differ 101  rows differ  6471  CPU  144.6 s
+  perturb 0  start J   148191.7 -> end J    99926.4 (+20008.8)  segments differ 113  rows differ  7229  CPU   75.3 s
+  perturb 1  start J   117957.6 -> end J    80069.3 (+  151.6)  segments differ   0  rows differ     0  CPU   15.1 s
+20251126_HV_3 U: end J spread 14973.7 (best: init)
+  init       start J    85442.4 -> end J    81861.7 (+    0.0)  segments differ   0  rows differ     0  CPU   43.4 s
+  list-only  start J    85309.8 -> end J    81933.8 (+   72.1)  segments differ  33  rows differ  1445  CPU   43.3 s
+  reads+silk start J   103402.7 -> end J    86467.0 (+ 4605.3)  segments differ  68  rows differ  4920  CPU   44.8 s
+  perturb 0  start J    99183.4 -> end J    82023.6 (+  161.9)  segments differ  14  rows differ   794  CPU   22.6 s
+  perturb 1  start J   153962.6 -> end J    96835.4 (+14973.7)  segments differ  68  rows differ  5434  CPU   18.6 s
+20240207_HV_4 lg1: end J spread 4702.4 (best: cell U)
+  init       start J    78592.8 -> end J    75184.4 (+  324.0)  segments differ  11  rows differ  1220  CPU    8.0 s
+  cell U     start J    74860.4 -> end J    74860.4 (+    0.0)  segments differ   0  rows differ     0  CPU    8.8 s
+  list-only  start J    78660.0 -> end J    75040.6 (+  180.2)  segments differ   7  rows differ   551  CPU   27.6 s
+  reads+silk start J    98540.0 -> end J    79562.8 (+ 4702.4)  segments differ  51  rows differ  6472  CPU   25.5 s
+  perturb 0  start J   116149.7 -> end J    74942.4 (+   82.0)  segments differ   3  rows differ   420  CPU   24.3 s
+  perturb 1  start J    89785.0 -> end J    75184.4 (+  324.0)  segments differ  11  rows differ  1220  CPU   24.9 s
+20251012_ST_4 U: end J spread 740.3 (best: list-only)
+  init       start J    87262.8 -> end J    84586.4 (+  261.5)  segments differ  32  rows differ   829  CPU  492.5 s
+  cell lg1   start J    85065.1 -> end J    85065.1 (+  740.3)  segments differ  44  rows differ   612  CPU   48.1 s
+  list-only  start J    86767.6 -> end J    84324.8 (+    0.0)  segments differ   0  rows differ     0  CPU  200.0 s
+  reads+silk start J   128419.6 -> end J    84745.8 (+  421.0)  segments differ  35  rows differ   988  CPU  581.0 s
+  perturb 0  start J    88243.7 -> end J    84581.1 (+  256.3)  segments differ  32  rows differ   826  CPU  137.7 s
+  perturb 1  start J    92657.6 -> end J    84493.6 (+  168.8)  segments differ  35  rows differ  1052  CPU  218.3 s
+20260301_ST_2 U: end J spread 18490.4 (best: reads+silk)
+  init       start J   107725.3 -> end J    94070.9 (+  785.4)  segments differ  53  rows differ  2156  CPU   96.1 s
+  cell lg1   start J    94065.7 -> end J    94065.7 (+  780.3)  segments differ  50  rows differ  2175  CPU   48.9 s
+  list-only  start J   108619.5 -> end J    96261.2 (+ 2975.8)  segments differ  89  rows differ  2953  CPU   93.2 s
+  reads+silk start J   134543.5 -> end J    93285.4 (+    0.0)  segments differ   0  rows differ     0  CPU  398.4 s
+  perturb 0  start J   113200.3 -> end J    94609.1 (+ 1323.7)  segments differ  63  rows differ  2236  CPU   65.8 s
+  perturb 1  start J   154786.4 -> end J   111775.8 (+18490.4)  segments differ 158  rows differ  6543  CPU  110.1 s
+20241109_ST_9 U: end J spread 9093.6 (best: perturb 0)
+  init       start J    74798.5 -> end J    73007.8 (+  187.9)  segments differ  47  rows differ   571  CPU   63.6 s
+  cell lg1   start J    73712.3 -> end J    73712.3 (+  892.4)  segments differ  44  rows differ   601  CPU   20.7 s
+  list-only  start J    75033.2 -> end J    73545.3 (+  725.4)  segments differ  62  rows differ  1324  CPU   73.0 s
+  reads+silk start J   110479.2 -> end J    81913.5 (+ 9093.6)  segments differ 150  rows differ  6166  CPU   88.2 s
+  perturb 0  start J    78304.3 -> end J    72819.9 (+    0.0)  segments differ   0  rows differ     0  CPU   86.1 s
+  perturb 1  start J    84085.9 -> end J    72963.5 (+  143.6)  segments differ  45  rows differ   537  CPU   25.5 s
+20231001_ST_1 lg1: end J spread 2368.6 (best: list-only)
+  init       start J    94768.5 -> end J    91136.2 (+  465.9)  segments differ   7  rows differ    78  CPU   17.2 s
+  cell U     start J    91376.3 -> end J    91119.6 (+  449.4)  segments differ   1  rows differ    64  CPU   18.5 s
+  list-only  start J    94814.6 -> end J    90670.2 (+    0.0)  segments differ   0  rows differ     0  CPU   19.9 s
+  reads+silk start J   138527.9 -> end J    91031.5 (+  361.3)  segments differ   9  rows differ  1109  CPU   35.6 s
+  perturb 0  start J   139114.3 -> end J    91194.4 (+  524.2)  segments differ   8  rows differ   156  CPU   35.9 s
+  perturb 1  start J   125369.0 -> end J    93038.9 (+ 2368.6)  segments differ  27  rows differ  2145  CPU   42.6 s

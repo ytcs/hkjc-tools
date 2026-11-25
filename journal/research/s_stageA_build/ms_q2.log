@@ -1,0 +1,26 @@
+20241013_ST_2 U: end J spread 401.8 (best: init)
+  init       start J    45537.3 -> end J    42763.1 (+    0.0)  segments differ   0  rows differ     0  CPU   27.5 s
+  cell lg1   start J    43247.7 -> end J    42979.8 (+  216.8)  segments differ  24  rows differ   152  CPU   30.5 s
+  perturb 0  start J    60066.9 -> end J    43164.8 (+  401.8)  segments differ  32  rows differ   209  CPU   20.8 s
+  perturb 1  start J    49664.2 -> end J    42925.7 (+  162.7)  segments differ   6  rows differ    44  CPU   21.4 s
+20241013_ST_2 lg1: end J spread 407.4 (best: cell U)
+  init       start J    49086.7 -> end J    42455.2 (+  343.6)  segments differ  45  rows differ   717  CPU   26.7 s
+  cell U     start J    42111.6 -> end J    42111.6 (+    0.0)  segments differ   0  rows differ     0  CPU    8.7 s
+  perturb 0  start J    56755.6 -> end J    42469.3 (+  357.7)  segments differ  44  rows differ   716  CPU   13.5 s
+  perturb 1  start J    46125.5 -> end J    42519.0 (+  407.4)  segments differ  47  rows differ   743  CPU   15.1 s
+20240207_HV_4 lg1: end J spread 324.0 (best: cell U)
+  init       start J    78592.8 -> end J    75184.4 (+  324.0)  segments differ  11  rows differ  1220  CPU   12.1 s
+  cell U     start J    74860.4 -> end J    74860.4 (+    0.0)  segments differ   0  rows differ     0  CPU    8.4 s
+  perturb 0  start J   116149.7 -> end J    74942.4 (+   82.0)  segments differ   3  rows differ   420  CPU   18.5 s
+  perturb 1  start J    89785.0 -> end J    75184.4 (+  324.0)  segments differ  11  rows differ  1220  CPU   15.0 s
+20231001_ST_1 U: end J spread 5521.3 (best: perturb 0)
+  init       start J    95273.7 -> end J    92914.2 (+  200.0)  segments differ  10  rows differ   272  CPU   14.1 s
+  cell lg1   start J    93059.5 -> end J    92875.9 (+  161.8)  segments differ  15  rows differ   289  CPU   14.0 s
+  perturb 0  start J   152349.4 -> end J    92714.1 (+    0.0)  segments differ   0  rows differ     0  CPU  113.6 s
+  perturb 1  start J   112213.8 -> end J    98235.4 (+ 5521.3)  segments differ  40  rows differ  6513  CPU  137.0 s
+20231001_ST_1 lg1: end J spread 1919.2 (best: cell U)
+  init       start J    94768.5 -> end J    91136.2 (+   16.5)  segments differ   6  rows differ    14  CPU   17.0 s
+  cell U     start J    91376.3 -> end J    91119.6 (+    0.0)  segments differ   0  rows differ     0  CPU   20.4 s
+  perturb 0  start J   139114.3 -> end J    91194.4 (+   74.8)  segments differ   9  rows differ   220  CPU   33.5 s
+  perturb 1  start J   125369.0 -> end J    93038.9 (+ 1919.2)  segments differ  28  rows differ  2209  CPU   52.5 s
+Terminated                 MEM=${SLOT_MEM:-2G} "$(dirname "$0")/capped.sh" "$@"

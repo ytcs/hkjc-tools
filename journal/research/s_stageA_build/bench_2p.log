@@ -1,0 +1,64 @@
+   core: init J 49086.7 (57/129 segments labelled)
+   core: it8 no assignment step lowers J; stop at J 43542.1
+   core: list-only init J 50121.1 (48/129 segments labelled)
+   core: it6 no assignment step lowers J; stop at J 42670.0
+   core: it7 no assignment step lowers J; stop at J 43461.9
+   core: it6 no assignment step lowers J; stop at J 43525.9
+   core: it2 no proposal lowers J; stop at J 42177.0
+   core: it18 no proposal lowers J; stop at J 42266.8
+   core: lowest end J 42177.0
+20241013_ST_2 lg1 base init        end J    42177.0  CPU   46.0
+20241013_ST_2 lg1 base LOWEST 42177.0 (init) total CPU 46.0
+   core: init J 71576.3 (228/247 segments labelled)
+   core: it7 no assignment step lowers J; stop at J 68426.1
+   core: list-only init J 71854.9 (228/247 segments labelled)
+   core: it7 no assignment step lowers J; stop at J 67875.9
+   core: it6 no assignment step lowers J; stop at J 67336.8
+   core: it5 no assignment step lowers J; stop at J 68123.6
+   core: it3 no proposal lowers J; stop at J 67246.8
+   core: it6 no proposal lowers J; stop at J 67544.8
+   core: lowest end J 67246.8
+20240501_HV_9 U base init        end J    67246.8  CPU  142.3
+20240501_HV_9 U base LOWEST 67246.8 (init) total CPU 142.3
+   core: init J 76745.5 (127/186 segments labelled)
+   core: it6 no assignment step lowers J; stop at J 72369.0
+   core: list-only init J 77857.3 (113/186 segments labelled)
+   core: it4 no assignment step lowers J; stop at J 72275.8
+   core: it6 no assignment step lowers J; stop at J 73079.7
+   core: it7 no assignment step lowers J; stop at J 72197.7
+   core: it1 no proposal lowers J; stop at J 72197.7
+   core: it9 no proposal lowers J; stop at J 71930.5
+   core: lowest end J 71930.5
+20241109_ST_9 lg1 base init        end J    71930.5  CPU  134.2
+20241109_ST_9 lg1 base LOWEST 71930.5 (init) total CPU 134.2
+   core: init J 91646.1 (82/205 segments labelled)
+   core: it7 no assignment step lowers J; stop at J 84038.9
+   core: list-only init J 91406.4 (73/205 segments labelled)
+   core: it5 no assignment step lowers J; stop at J 83738.8
+   core: it5 no assignment step lowers J; stop at J 84190.5
+   core: it11 no assignment step lowers J; stop at J 84101.0
+   core: it3 no proposal lowers J; stop at J 83580.4
+   core: it11 no proposal lowers J; stop at J 83491.5
+   core: lowest end J 83491.5
+20251012_ST_4 lg1 base init        end J    83491.5  CPU  367.6
+20251012_ST_4 lg1 base LOWEST 83491.5 (init) total CPU 367.6
+   core: init J 78592.8 (48/60 segments labelled)
+   core: it3 no assignment step lowers J; stop at J 75184.4
+   core: list-only init J 78660.0 (47/60 segments labelled)
+   core: it3 no assignment step lowers J; stop at J 75154.6
+   core: it3 no assignment step lowers J; stop at J 75346.6
+   core: it2 no assignment step lowers J; stop at J 75612.9
+   core: it4 no proposal lowers J; stop at J 75040.6
+   core: it1 no proposal lowers J; stop at J 75184.4
+   core: lowest end J 75040.6
+20240207_HV_4 lg1 base init        end J    75040.6  CPU   52.3
+20240207_HV_4 lg1 base LOWEST 75040.6 (init) total CPU 52.3
+   core: init J 45537.3 (118/129 segments labelled)
+   core: it3 no assignment step lowers J; stop at J 43825.7
+   core: it5 no assignment step lowers J; stop at J 43655.8
+   core: it3 no assignment step lowers J; stop at J 43638.4
+   core: it8 no proposal lowers J; stop at J 43119.6
+   core: it1 no proposal lowers J; stop at J 43655.8
+   core: lowest end J 43119.6
+20241013_ST_2 U base init        end J    43119.6  CPU   36.7
+20241013_ST_2 U base LOWEST 43119.6 (init) total CPU 36.7
