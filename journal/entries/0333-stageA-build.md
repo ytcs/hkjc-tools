@@ -264,3 +264,11 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
 - **Final product.** Global moves in the final solve (on top of the multi-start) lowered final J by 11 (ST_2 U, +71
   CPU s) and 84 (20231001_ST_1 U, +211 s); kept off. Crossovers run in every solve.
 - **Merged listfault (a6c5177) as 0c72d55.** Clean merge; 187 tests pass.
+- **Solver CPU, exact (5062cb3, c2c4cf2).** MILP pairs whose cost exceeds every link reward of their segment get no
+  variable (never optimal; step MILPs 0.3-1.6 s -> 0.06-0.3 s, same solutions); unaries cached by (state,
+  labelling); lateral window columns cached by band; fault-chain scans on separate entry arrays (bit-exact on random
+  chains, 2.1x); banded LAPACK calls without the finiteness scan. Bench (4 race-cells, merged code 0c72d55): same
+  labels, J and marginals; CPU 230/224/156/340 -> 191/132/105/239 s (sum 951 -> 667). Remaining profile (ST_9 lg1):
+  screening state steps 110 s (fault chains 69 s of it), kinematic unaries 49 s, window costs 38 s, MILP 17 s.
+- **Dev-list P1 runs.** before = 6e7faff (runs/p1before), after = c2c4cf2 (runs/p1after; a few half-b cells may come
+  from the 0c72d55 export, claimed exact), cells U + lg0/lg1 (silk) or dc0/dc1 (disc).
