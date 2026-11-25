@@ -1369,7 +1369,8 @@ ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this c
 def swap_moves(model: Model, st: State, lab):
     """Abreast-pair swaps: for two horses whose paths stay within ABREAST_S along and ABREAST_L across for >= ABREAST_T
     s, exchange their labels on every segment inside the stretch, widened to the nearest camera cuts (times where >= 3
-    labelled segments start together) or the race's ends. -> list of (description, labelling)."""
+    labelled segments start together) or the race's ends, and from there to the race's end or from its start.
+    -> list of (description, labelling)."""
     ev, tg = model.ev, model.tg
     lo = np.full(ev.n_seg, np.inf)
     hi = np.full(ev.n_seg, -np.inf)
@@ -1392,12 +1393,15 @@ def swap_moves(model: Model, st: State, lab):
                     continue
                 w0 = cuts[cuts <= tg[r0]].max(initial=tg[0])
                 w1 = cuts[cuts >= tg[r1 - 1]].min(initial=tg[-1] + 1.0)
-                inside = (lo >= w0 - 0.15) & (hi < w1 - 0.05)
-                new = lab.copy()
-                new[inside & (lab == a)] = b
-                new[inside & (lab == b)] = a
-                if not np.array_equal(new, lab):
-                    out.append((f"swap #{ev.horses[a]}/#{ev.horses[b]} over {w0:.1f}-{w1:.1f} s", new))
+                # the stretch itself, and the exchange carried on to the race's end or back to its start (two
+                # horses that ran level may have been told apart wrongly for the rest of the race)
+                for x0, x1 in ((w0, w1), (w0, tg[-1] + 1.0), (tg[0], w1)):
+                    inside = (lo >= x0 - 0.15) & (hi < x1 - 0.05)
+                    new = lab.copy()
+                    new[inside & (lab == a)] = b
+                    new[inside & (lab == b)] = a
+                    if not np.array_equal(new, lab) and not any(np.array_equal(new, o) for _d, o in out):
+                        out.append((f"swap #{ev.horses[a]}/#{ev.horses[b]} over {x0:.1f}-{x1:.1f} s", new))
     return out
 
 
