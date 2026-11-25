@@ -1617,8 +1617,10 @@ class RaceRun:
             dts = {o.horse: round(float(o.t[0]) - crossing(paths[o.horse].t, self.info.distance - paths[o.horse].s,
                                                            None, 0.0), 2) for o in fin if o.horse in paths}
             self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
+        # the final product starts from the video labelling and adapts it to the official evidence by assignment
+        # steps; the global moves (whose evidence, the render and its list, is the video product's) run once, there
         res = core.solve(model, start=(res.seg_lab, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
-                         log=self.log)
+                         log=self.log, global_moves=product == "video")
         paths = self._core_paths(res, ev, model)
         lab = np.where(res.seg_lab[ev.seg] >= 0, horses[np.maximum(res.seg_lab[ev.seg], 0)], 0)
         p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]

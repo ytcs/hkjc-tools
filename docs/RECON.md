@@ -444,7 +444,9 @@ than `SCREEN_PRE` (40) candidates screens only those with the lowest linearised 
 summed over the relabelled segments).
 
 Each product solves twice: without the finish camera by assignment steps only (steps 1–2), then in full with the
-camera's crossings (`finish_camera` from the first state), the first solve's labels being a candidate start. `fuse_final` also offers the video labels as a start. The
+camera's crossings (`finish_camera` from the first state), the first solve's labels being a candidate start. The final
+product's second solve also uses assignment steps only: its global moves would search the same render and list
+evidence as the video product's, which already did. `fuse_final` also offers the video labels as a start. The
 lowest J among the starts is kept.
 
 **Outputs.**
