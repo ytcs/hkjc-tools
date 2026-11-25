@@ -1583,7 +1583,7 @@ class Result:
     U: np.ndarray
     marg: np.ndarray
     log: list
-    ends: list = field(default_factory=list)  # every start's alternation end (labellings)
+    ends: list = field(default_factory=list)  # the DESCENTS lowest alternation ends (labellings)
 
 
 REFIT_ROUNDS = 30  # alternation proposals (MILP + full state step) per descent at most
@@ -1592,6 +1592,7 @@ LIST_SPLIT = 7.0  # s: block length of the split-list inits (off the 10 s grid o
 POLISH_STEPS = 16  # polish full state steps per descent at most
 EXACT_TAIL, TAIL_SLACK = 3, 30.0  # a polish round with no predicted gain gives full steps to its best 3 within +30
 NEWTON_IT = 10  # one-horse refit: Newton steps at most
+LIST_EXACT = 30.0  # a refit whose frozen-weight list change exceeds this takes the list term exactly
 REFIT_SWEEPS, SWEEP_IT = 2, 3  # Gauss-Seidel sweeps over a candidate's horses after their first refits, Newton steps
 REFIT_TOP, SWEEP_TOP = 200, 60  # polish candidates re-scored by one-horse refits (the lowest by the closed-form
 # score), and of those again with the sweeps (the lowest by their refit score)
@@ -1840,8 +1841,8 @@ class Refit:
     def score(self, new, sweeps=True):
         """One-horse-refit estimate of J(new) - J(state's labelling): every horse whose segments change re-solved alone
         (REFIT_SWEEPS Gauss-Seidel sweeps over them when several change, each against the others' re-solved paths), the
-        list's statements touching them at the re-solved paths with the fault weights frozen, J_lab exactly, J_det at
-        the re-solved paths."""
+        list's statements touching them at the re-solved paths with the fault weights frozen (above LIST_EXACT, the
+        list's chains exactly at the re-solved paths), J_lab exactly, J_det at the re-solved paths."""
         st, lab = self.st, self.lab
         ch = np.flatnonzero(new != lab)
         if not len(ch):
@@ -1863,7 +1864,12 @@ class Refit:
                 cur[h] = self.horse(h, segs[h], S)
                 S[h], L[h] = cur[h][2], cur[h][3]
         dJ += sum(cur[h][0] + cur[h][1] for h in hs)
-        dJ += self.list_part(S, hs) - self.list_part(S0, hs)
+        lp = self.list_part(S, hs) - self.list_part(S0, hs)
+        if lp > LIST_EXACT:  # a large list cost may switch fault chains on: the list term exactly, at the new paths
+            m = self.model
+            d = m._stmt_delta(S)
+            lp = list_chains(m.Lr, m.St, _p_order(d, m.St.eps)[1], m.H, d)[0] - st.parts["J_list"]
+        dJ += lp
         return float(dJ + self.d_det(hs, new, S, L))
 
 
@@ -2210,7 +2216,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     accepted change touched; an accepted step resumes the alternation. Then the lowest end descends again with the
     crossover runs toward every other end (``crossovers``) as its pool, while that lowers J. The pre-solve without
     the finish camera (``polish`` False) keeps the lowest alternation end; the solve after it starts from the
-    pre-solve's alternation ends instead of the init MILPs (``inits`` False)."""
+    pre-solve's DESCENTS lowest alternation ends instead of the init MILPs (``inits`` False)."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
@@ -2455,7 +2461,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}; CPU s "
         + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))
     U = unaries_of(st, lab)
-    return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist, [a[1] for a in alt])
+    return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist, [a[1] for a in alt[:DESCENTS]])
 
 
 def _fmt(parts):
