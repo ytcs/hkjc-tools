@@ -115,3 +115,17 @@ def test_an_unlisted_horse_level_with_the_last_listed_one_is_not_omitted():
     d = np.where(St.unl & (St.b == 9), -4.0, 3.0)
     _J, _pf, om = core.list_chains(L, St, core._p_order(d)[1], H, d)
     assert om[9, 50:250].min() > 0.9
+
+
+def test_a_box_wholly_inside_the_list_band_is_an_icon():
+    """Silk render: a box whose top lies below the list band's top is one of the list's icons (P_GHOST), whatever its
+    confidence or tracklet length; a box straddling the band's edge is P_EDGE; a box in open grass P_HORSE0."""
+    H = 535.0
+    field = [[f, 100 + 40 * k, 330 + 10 * k, 30, 30, 0.9] for f in range(5) for k in range(8)]  # cy 330-400
+    icon = [[f, 300, 470, 40, 50, 0.9] for f in range(5)]  # top 445
+    edge = [[f, 500, 430, 30, 40, 0.9] for f in range(5)]  # top 410, bottom 450
+    rows = np.array(field + icon + edge, float)
+    p = core.p_horse(rows, np.zeros(len(rows)), np.full(len(rows), 500), H, True)
+    lt = core.legend_top(rows[:, 2], H)
+    assert 300 < lt < 440
+    assert (p[:40] == core.P_HORSE0).all() and (p[40:45] == core.P_GHOST).all() and (p[45:] == core.P_EDGE).all()

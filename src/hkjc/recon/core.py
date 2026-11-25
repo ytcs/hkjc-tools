@@ -150,8 +150,9 @@ def occluder_edge(rows, panel_h: float, silk: bool = True):
 def p_horse(rows, lat, trk_len, panel_h: float, silk: bool = True) -> np.ndarray:
     """Per detection (``rows``: [frame, cx, cy, w, h, conf] in panel px): P(the box is a horse). P_GHOST for a
     short-lived (tracklet < GHOST_TRACK) box in an overlay zone: legend icon band or the dark corner beside it below
-    GHOST_CONF (silk render), the disclaimer band at glyph size, or the left edge far outside its frame's field;
-    P_EDGE for any other box overlapping an occluder band (``occluder_edge``); else P_HORSE0."""
+    GHOST_CONF (silk render), the disclaimer band at glyph size, or the left edge far outside its frame's field; and
+    any box wholly inside the list band (silk render: a list icon; a horse there is hidden, not boxed). P_EDGE for any
+    other box overlapping an occluder band (``occluder_edge``); else P_HORSE0."""
     from .video import DISCLAIMER_ROWS
 
     rows = np.asarray(rows, float)
@@ -169,6 +170,8 @@ def p_horse(rows, lat, trk_len, panel_h: float, silk: bool = True) -> np.ndarray
             band = cy <= lt + LEGEND_BAND - 4
             zone |= (cf < GHOST_CONF) & (((cy >= lt + 4) & band) | ((cx < GHOST_CORNER_X) & ~band & (cy > lt)))
     zone &= np.asarray(trk_len) < GHOST_TRACK
+    if silk and len(rows):  # a box wholly inside the list band is one of its icons: a horse there is hidden
+        zone |= rows[:, 2] - rows[:, 4] / 2 >= legend_top(rows[:, 2], panel_h) + 4
     over, _near = occluder_edge(rows, panel_h, silk) if len(rows) else (zone, zone)
     return np.where(zone, P_GHOST, np.where(over, P_EDGE, P_HORSE0))
 

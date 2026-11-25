@@ -347,7 +347,8 @@ appearance and number splits of `observe` still cut tracklets; in the core they 
 
 **Per-box P(horse).** `core.p_horse` gives `P_GHOST` (0.01) to a short-lived box (tracklet < 50 detections) in an
 overlay zone: the list's icon band or the dark corner beside it (confidence < 0.75, silk render), the disclaimer band
-at glyph size, or the left edge far outside its frame's field. Any other box overlapping an occluder band gets
+at glyph size, or the left edge far outside its frame's field; so does any box wholly inside the list band (a list
+icon: a horse there is hidden, not boxed). Any other box overlapping an occluder band gets
 `P_EDGE` (0.5); every other box gets `P_HORSE0` (0.97). A labelled detection costs −2 log(P/`P_HORSE0`). An
 unlabelled one costs `CLUTTER` − 2 log((1 − P)/(1 − `P_HORSE0`)). Rank counts weight each detection by P.
 
