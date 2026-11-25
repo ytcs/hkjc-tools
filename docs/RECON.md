@@ -491,8 +491,12 @@ below J and how many of those the full state step did not confirm.
 
 Each product solves twice: without the finish camera by assignment steps only (steps 1–2), then in full with the
 camera's crossings (`finish_camera` from the first state), the first solve's labels being a candidate start. The final
-product's second solve also uses assignment steps only: its global moves would search the same render and list
-evidence as the video product's, which already did. `fuse_final` also offers the video labels as a start.
+product's second solve runs steps 1–2 and, from its lowest end, the pair exchanges, chain moves and relabel pass (not
+steps 3–6, which search the render and list evidence the video product's solve already searched); the official
+interior times re-identify horses in it (20260301_ST_2: three chains from 44 s, which TV order facts confirm), and
+without the exchanges a re-identification left a pair swapped by continuity (#10/#11 at 11–43 s, 247 J above the
+restored pair). The preliminary (camera-free) solve runs steps 1–2 only. `fuse_final` also offers the video labels
+as a start.
 
 **Outputs.**
 - `segs.npz` (identify): segments, links, P(horse), camera-transition detections.

@@ -1931,8 +1931,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         return ucache[key][1]
 
     def descend(lab, st, moves, exchanges=False):
-        """Assignment steps and (with moves) the global move families, (with exchanges) the pair exchanges too, until
-        no proposal lowers J."""
+        """Assignment steps, (with moves) the global move families, (with exchanges) the pair exchanges and chain moves,
+        until no proposal lowers J."""
         it = 0
         win_failed = None  # the labelling the window proposals last failed on: retried after WINDOW_RETRY changes
         while True:
@@ -1968,11 +1968,11 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                     lab, st = trial, st2
                     moved = True
                     break
-            if not moved and not moves:
+            if not moved and not moves and not exchanges:
                 log(f"   core: it{it} no assignment step lowers J; stop at J {st.J:.1f}")
                 break
             win_ok = win_failed is None or int((lab != win_failed).sum()) >= WINDOW_RETRY
-            if not moved and win_ok:  # window proposals: each horse's nearby labels left out, no rank votes
+            if moves and not moved and win_ok:  # window proposals: each horse's nearby labels left out, no rank votes
                 win_failed = lab.copy()
                 base = segment_base(ev)[:, None] + ev.read_cost + ev.silk_cost
                 if st.c_un is not None:
@@ -1994,7 +1994,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                         moved = True
                         break
                     log(f"   core: it{it} window proposal ({delta:.0f} s) raised J ({st2.J:.1f})")
-            if not moved:  # permutation moves: a cut's label permutation carried over a whole stretch
+            if moves and not moved:  # permutation moves: a cut's label permutation carried over a whole stretch
                 best = None
                 cands = [(f"permutation move at {T:.1f} s over {min(B, T):.1f}-{max(B, T):.1f} s", pm)
                          for T, B, pm in permutation_moves(ev, lab)]
@@ -2008,7 +2008,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                     hist.append((it, st2.J, int((pm != lab).sum())))
                     lab, st = pm, st2
                     moved = True
-            if not moved:  # omission insertions over stretches
+            if moves and not moved:  # omission insertions over stretches
                 best = None
                 for desc, pm, st2 in screened(insertion_moves(model, st, lab), st, U, lab):
                     if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
@@ -2020,7 +2020,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                     hist.append((it, st2.J, int((pm != lab).sum())))
                     lab, st = pm, st2
                     moved = True
-            if not moved:  # abreast-pair swaps: two horses running level exchange labels over a stretch between cuts
+            if moves and not moved:  # abreast-pair swaps: two horses running level exchange labels over a stretch between cuts
                 best = None
                 for desc, pm, st2 in screened(swap_moves(model, st, lab), st, U, lab):
                     if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
@@ -2101,10 +2101,11 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         hist.append(("crossover", best[1].J, int((best[0] != lab).sum())))
         lab, st = descend(best[0], best[1], global_moves)
         others = [e for e in others if not np.array_equal(e[0], lab)]
-    # last, the lowest end descends once more with the pair exchanges (each screened by a truncated state step, too
-    # costly to run inside every start's descent)
-    if global_moves:
-        lab, st = descend(lab, st, True, exchanges=True)
+    # last, the lowest end descends once more with the pair exchanges and chain moves (each screened by a truncated
+    # state step, too costly to run inside every start's descent); a product's solve (relabel) has them whether or not
+    # it runs the other global families
+    if global_moves or relabel:
+        lab, st = descend(lab, st, global_moves, exchanges=True)
     if relabel:
         # exact single-relabel pass: long segments' relabels screened by the truncated state step, the best given a
         # full step, until none lowers J; the last pass's screened labellings join the posterior

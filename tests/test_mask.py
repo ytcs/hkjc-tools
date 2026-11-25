@@ -145,9 +145,10 @@ def test_official_observations_follow_the_mask():
 def test_interior_official_times_are_soft_and_the_finish_near_hard():
     obs = [o for o in _bare(_info(), Mask()).official_observations() if o.feed == "official"]
     for o in obs:
-        sd = RaceRun.OFFICIAL_SD if np.all(o.s == D) else RaceRun.OFFICIAL_INTERIOR_SD
+        sd = (RaceRun.OFFICIAL_SD if np.all(o.s == D) else RaceRun.OFFICIAL_400_SD if np.all(np.abs(o.s - (D - 400)) < 1)
+              else RaceRun.OFFICIAL_INTERIOR_SD)
         assert o.sd_s == sd and (np.all(o.s == D) or np.all(o.s < D))
-    assert RaceRun.OFFICIAL_INTERIOR_SD > 5 * RaceRun.OFFICIAL_SD
+    assert min(RaceRun.OFFICIAL_INTERIOR_SD, RaceRun.OFFICIAL_400_SD) > 5 * RaceRun.OFFICIAL_SD
 
 
 def _paths():

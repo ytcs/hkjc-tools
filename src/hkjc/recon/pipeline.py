@@ -1380,7 +1380,7 @@ class RaceRun:
         """FINAL-product observations (official outcome data): the gate draw fixes every runner's
         lateral at t=0 (standing start, s=0); the official finish time is a near-hard crossing at d = 0
         (OFFICIAL_SD) and the official interior sectional times are measured crossings at d = 400 k
-        (OFFICIAL_INTERIOR_SD); what the mask withholds is absent."""
+        (OFFICIAL_400_SD at 400 m, OFFICIAL_INTERIOR_SD at the others); what the mask withholds is absent."""
         D = self.info.distance
         out = []
         for r in self.info.runners:
@@ -1404,7 +1404,9 @@ class RaceRun:
                                       horse=h, tid=40_000 + h))
         for h, c in cum.items():
             c, b = np.asarray(c, float), np.asarray(bnd, float)
-            for part, sd, tid in ((b > 0, self.OFFICIAL_INTERIOR_SD, 30_000), (b == 0, self.OFFICIAL_SD, 40_000)):
+            parts = (((b > 0) & (np.abs(b - 400) >= 1), self.OFFICIAL_INTERIOR_SD, 30_000),
+                     (np.abs(b - 400) < 1, self.OFFICIAL_400_SD, 35_000), (b == 0, self.OFFICIAL_SD, 40_000))
+            for part, sd, tid in parts:
                 ok = part & np.isfinite(c)
                 if ok.any():
                     out.append(fusion.Obs(c[ok], D - b[ok], None, sd, 1.0, "official", horse=int(h), tid=tid + int(h)))
@@ -1413,10 +1415,12 @@ class RaceRun:
     # official finish times are photo-finish, published to 0.01 s (~0.1 m at race speed): near-hard in the final
     # product, so a mislabelled render tracklet conflicts with them (and is demoted) instead of bending them
     OFFICIAL_SD = 0.1
-    # official INTERIOR times are the leader's time plus a margin quantised to 0.04 s: against identity-verified horses
-    # their horse-specific error has a robust sd of 0.58-0.59 m (disc and legend-confirmed silk races) once a per
-    # race-boundary field-spread term is removed (raw, disc races: ~0.93 m); that term is not modelled
-    OFFICIAL_INTERIOR_SD = 0.6
+    # official INTERIOR times (the leader's time plus a margin quantised to 0.04 s) against the video paths, once each
+    # boundary's shared offset is removed: pooled robust sd over the 60 Stage A development races, residuals beyond 3
+    # robust sd left out (5 %: the gross misses, which stay identity claims): 0.99 m at 400 m to go (after the render's
+    # late camera change), 0.88 m at the other boundaries
+    OFFICIAL_INTERIOR_SD = 0.88
+    OFFICIAL_400_SD = 0.99
 
     def _write_paths(self, paths, name, contract=None):
         """``contract`` (fuse_final only): {"anchors": s of the visible boundaries the metric bias was set at}; the
