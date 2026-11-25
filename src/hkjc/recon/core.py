@@ -1508,10 +1508,11 @@ def posterior(seen, lab, J_best, H):
     return P / P.sum(1, keepdims=True)
 
 
-def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print):
+def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, global_moves=True):
     """Start-free global solve, then alternate assignment (MILP on J's linearised increments) and state steps, keeping
     a proposal only when J falls; ends when no proposal lowers J. ``start``: further labellings whose J is compared
-    with the start solve's (the lowest is kept)."""
+    with the start solve's (the lowest is kept). ``global_moves`` False: assignment steps and single-segment moves
+    only (the pass that places the finish camera's crossings)."""
     ev = model.ev
     hist = []
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
@@ -1581,6 +1582,9 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 lab, st = trial, st2
                 moved = True
                 break
+        if not moved and not global_moves:
+            log(f"   core: it{it} no assignment step lowers J; stop at J {st.J:.1f}")
+            break
         win_ok = win_failed is None or int((lab != win_failed).sum()) >= WINDOW_RETRY
         if not moved and win_ok:  # window proposals: each horse's nearby labels left out, no rank votes
             win_failed = lab.copy()

@@ -952,8 +952,18 @@ class RaceRun:
 
         s0 = np.empty(len(fu))
         s1 = np.full(len(fu), np.nan)
+        # a box wholly inside the silk render's list band is a list icon, not a horse: never the leader
+        s_lead_px = s_px
+        if self.render_style() == "silk" and len(rows):
+            from .core import legend_top
+
+            box = np.load(self.p("frames_idx.npz"))["box"]
+            icon = rows[:, 2] - rows[:, 4] / 2 >= legend_top(rows[:, 2], float(box[3] - box[2])) + 4
+            if icon.any() and not icon.all():
+                s_lead_px = np.where(icon, -np.inf, s_px)
         for n, f in enumerate(fu):
-            ss = np.sort(s_px[rows[:, 0] == f])[::-1]
+            ss = np.sort(s_lead_px[rows[:, 0] == f])[::-1]
+            ss = ss[np.isfinite(ss)] if np.isfinite(ss).any() else np.sort(s_px[rows[:, 0] == f])[::-1]
             s0[n] = ss[0]
             if len(ss) > 1:
                 s1[n] = ss[1]
@@ -1563,8 +1573,9 @@ class RaceRun:
         self.log(f"   fuse_video: {len(paths)}/{self.info.n} horses")
 
     def _core_product(self, product, start=(), extra=(), s_shift=None, t_end=None, exclude=None):
-        """One product of the core: evidence, list, grid, model; the solve without the finish camera, the camera's
-        crossings from that state, then the solve with them (the first solve's labels a candidate start).
+        """One product of the core: evidence, list, grid, model; a solve without the finish camera by assignment steps
+        only, the camera's crossings from that state, then the full solve with them (the first solve's labels a
+        candidate start).
         -> (core.Result, finish fusion.Obs list, {horse: fusion.Path})."""
         from . import core
 
@@ -1591,13 +1602,14 @@ class RaceRun:
         tg = np.arange(t0, t1 + fusion.DT / 2, fusion.DT)
         model = core.Model(ev, Lr, tg, self.info.width)
         start = tuple(x for x in start if len(x) == ev.n_seg)  # a start from other segments cannot be compared
-        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log)
+        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, global_moves=False)
         paths = self._core_paths(res, ev, model)
         quiet, self.log = self.log, (lambda *a, **k: None)
         try:
             fin = self.finish_observations(paths)
         finally:
             self.log = quiet
+        f_s = None
         if fin:
             from .validate import crossing
 
@@ -1605,9 +1617,9 @@ class RaceRun:
             dts = {o.horse: round(float(o.t[0]) - crossing(paths[o.horse].t, self.info.distance - paths[o.horse].s,
                                                            None, 0.0), 2) for o in fin if o.horse in paths}
             self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
-            res = core.solve(model, start=(res.seg_lab, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
-                             log=self.log)
-            paths = self._core_paths(res, ev, model)
+        res = core.solve(model, start=(res.seg_lab, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
+                         log=self.log)
+        paths = self._core_paths(res, ev, model)
         lab = np.where(res.seg_lab[ev.seg] >= 0, horses[np.maximum(res.seg_lab[ev.seg], 0)], 0)
         p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]
         name = "det_labels.npz" if product == "video" else "det_labels_final.npz"

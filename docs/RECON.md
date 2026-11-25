@@ -443,8 +443,8 @@ the current J get a full state step, and only full steps can be accepted or ente
 than `SCREEN_PRE` (40) candidates screens only those with the lowest linearised cost change (the current unaries
 summed over the relabelled segments).
 
-Each product solves twice: without the finish camera, then with its crossings (`finish_camera` from the first
-state), the first solve's labels being a candidate start. `fuse_final` also offers the video labels as a start. The
+Each product solves twice: without the finish camera by assignment steps only (steps 1–2), then in full with the
+camera's crossings (`finish_camera` from the first state), the first solve's labels being a candidate start. `fuse_final` also offers the video labels as a start. The
 lowest J among the starts is kept.
 
 **Outputs.**
