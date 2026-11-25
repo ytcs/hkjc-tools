@@ -322,3 +322,17 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   observations per horse at each 400 m boundary); relabels they force cascade by continuity (case 5 lg1's #10/#11
   at 11-43 s). The kept state's J differs from a cold re-evaluation of the same labels by -293 to -907 J (HV_3 U:
   72,284.8 kept, 71,377.3 cold): the state step's mode depends on its warm start.
+- **Miss-test race set and metric (fixed 2026-11-25, before any further commit's numbers).** Races: the c/d races
+  finished on 9a94af5 at this time: 20240313_HV_1, 20240501_HV_9, 20260204_HV_3, 20261111_HV_2, 20260503_ST_4,
+  20240701_ST_2, 20260624_HV_4, 20240908_ST_9, 20231001_ST_1. Per race and masked cell, gap = J(masked cell's video
+  labels) - J(U's own) under U's video evidence, both from scratch (misses.py). Main criterion: the summed negative
+  gap S = sum of gaps below -2 J (MIN_GAIN) over races and cells; also the count of races with any gap below -2 J,
+  and P3 (confident flips at p >= 0.9 / 0.99). 9a94af5: S = -1,667.0 (HV_9 -1,033.1 and -294.9, ST_9 -271.3,
+  ST_4 -37.9, HV_3 -16.3, HV_4 -11.1 and -2.4), count 5 of 9.
+- **Warm-start J.** The 293-907 J "kept vs from scratch" gaps in finaldec were my artefact: fuse_final re-evaluates
+  the kept state on the metric-line shape after the solve, changing res.state; at the solve the kept J equals the
+  from-scratch J exactly (HV_3 U 71,377.3 both). What does exist: the state step's EM over the fault chains stops at 4
+  rounds before its weights converge. From scratch twice agree exactly; warm starts from neighbouring labellings
+  differ by up to 11.8 J (ST_7 U) and 3.9 J (HV_3 U); with 12 rounds every start lands within 1.5 J of the
+  from-scratch value (ST_7 79,912.9 at 4 rounds -> 79,901.6 at 12; case 5 U 91,975.7 -> 91,971.4; 40 rounds equal
+  to 0.05). The Newton cap (30) does not bind.

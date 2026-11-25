@@ -32,7 +32,7 @@ _solve = core.solve
 
 def capture(model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, **kw):
     res = _solve(model, start=start, extra_s=extra_s, extra_l=extra_l, s_shift=s_shift, log=lambda m: None, **kw)
-    cap.append(dict(model=model, extra_s=extra_s, extra_l=extra_l, s_shift=s_shift, res=res))
+    cap.append(dict(model=model, extra_s=extra_s, extra_l=extra_l, s_shift=s_shift, res=res, J=res.state.J))
     return res
 
 
@@ -43,7 +43,8 @@ first, second = cap[0], cap[1]
 m, es, el, sh = second["model"], second["extra_s"], second["extra_l"], second["s_shift"]
 F = second["res"].seg_lab
 stF = core.evaluate(m, F, es, el, s_shift=sh)
-print(f"{key} {cell}: kept final J {second['res'].state.J:.1f}, re-evaluated {stF.J:.1f}; segments V != F "
+print(f"{key} {cell}: kept final J at the solve {second['J']:.1f} (after fuse_final's metric-line re-evaluation "
+      f"{second['res'].state.J:.1f}), re-evaluated {stF.J:.1f}; segments V != F "
       f"{int((V != F).sum())}")
 
 
