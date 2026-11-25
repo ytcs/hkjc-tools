@@ -1577,6 +1577,56 @@ class Refit:
         for h in range(model.H):
             ia, ib = np.flatnonzero(St.a == h), np.flatnonzero(St.b == h)
             self.stq.append((np.r_[ia, ib], np.r_[np.ones(len(ia)), -np.ones(len(ib))], np.r_[St.b[ia], St.a[ib]]))
+        # label terms by segment (the change of J_lab is a sum over changed segments and their links)
+        self.seg_cost = segment_base(ev)[:, None] + ev.read_cost + ev.silk_cost
+        self.seg_links = [[] for _ in range(ev.n_seg)]
+        for i, (a, b, _w) in enumerate(ev.links):
+            self.seg_links[int(a)].append(i)
+            self.seg_links[int(b)].append(i)
+        # detection terms by frame: per segment its frames; per frame the in-view sum, labelled count, unlabelled sum
+        if st.pin.shape[1]:
+            fi = np.searchsorted(ev.view["frames"], ev.fr)
+            o = np.argsort(ev.seg, kind="stable")
+            db = np.r_[0, np.cumsum(np.bincount(ev.seg, minlength=ev.n_seg))]
+            self.seg_fr = [np.unique(fi[o[db[k]:db[k + 1]]]) for k in range(ev.n_seg)]
+            self.labd = np.zeros(st.pin.shape, bool)
+            for k in np.flatnonzero(self.lab >= 0):
+                self.labd[self.lab[k], self.seg_fr[k]] = True
+            self.p_sum = st.pin.sum(0)
+            self.n_lab = self.labd.sum(0)
+            self.u_sum = (st.pin * ~self.labd).sum(0)
+
+    def d_lab(self, ch, new):
+        """J_lab(new) - J_lab(state's labelling); ``ch`` the changed segments."""
+        ev, lab = self.model.ev, self.lab
+        o, n = lab[ch], new[ch]
+        d = float(np.where(n >= 0, self.seg_cost[ch, np.maximum(n, 0)], 0.0).sum()
+                  - np.where(o >= 0, self.seg_cost[ch, np.maximum(o, 0)], 0.0).sum())
+        if ev.forbid[ch[n >= 0], n[n >= 0]].any():
+            d += INF
+        li = sorted({i for k in ch for i in self.seg_links[k]})
+        if li:
+            L = ev.links[li]
+            a, b, w = L[:, 0].astype(int), L[:, 1].astype(int), L[:, 2]
+            d += float(w[(new[a] != new[b]) | (new[a] < 0)].sum() - w[(lab[a] != lab[b]) | (lab[a] < 0)].sum())
+        return d
+
+    def d_det(self, hs, new, S, L):
+        """J_det at the paths S, L (rows ``hs`` changed) and labelling ``new`` minus the state's J_det."""
+        st, ev = self.st, self.model.ev
+        if not st.pin.shape[1]:
+            return 0.0
+        rows = in_view(ev, S[hs], L[hs], st.sdS[hs], st.sdL[hs], self.model.tg)
+        lb = np.zeros(rows.shape, bool)
+        for i, h in enumerate(hs):
+            for k in np.flatnonzero(new == h):
+                lb[i, self.seg_fr[k]] = True
+        p_sum = self.p_sum - st.pin[hs].sum(0) + rows.sum(0)
+        n_lab = self.n_lab - self.labd[hs].sum(0) + lb.sum(0)
+        u_sum = self.u_sum - (st.pin[hs] * ~self.labd[hs]).sum(0) + (rows * ~lb).sum(0)
+        V = ev.view
+        p = np.clip((V["n"] + 1.0) / (p_sum + 2.0), P_DET_MIN, V["cap"])
+        return float((n_lab * (-2.0 * np.log(p)) + u_sum * (-2.0 * np.log(1.0 - p))).sum()) - st.parts["J_det"]
 
     def chunks(self, segs):
         segs = np.asarray(segs, int)
@@ -1687,13 +1737,13 @@ class Refit:
     def score_quick(self, new):
         """Closed-form estimate of J(new) - J(state's labelling): ``horse_quick`` per changed horse, its lateral
         smoother exactly, J_lab exactly, J_det at the new paths."""
-        ev, st, lab = self.model.ev, self.st, self.lab
+        st, lab = self.st, self.lab
         ch = np.flatnonzero(new != lab)
         if not len(ch):
             return 0.0
         hs = np.unique(np.r_[lab[ch], new[ch]])
         hs = hs[hs >= 0]
-        dJ = label_terms(ev, new) - st.parts["J_lab"]
+        dJ = self.d_lab(ch, new)
         S, L = st.S.copy(), st.L.copy()
         for h in hs:
             drop = self.chunks(ch[(lab[ch] == h)])
@@ -1702,11 +1752,7 @@ class Refit:
             Jn, Jb = self.lat(h, np.flatnonzero(new == h)), self.lat(h, np.flatnonzero(lab == h))
             dJ += d_s + Jn[1] - Jb[1]
             L[h] = Jn[0]
-        if st.pin.shape[1]:
-            pin = st.pin.copy()
-            pin[hs] = in_view(ev, S[hs], L[hs], st.sdS[hs], st.sdL[hs], self.model.tg)
-            dJ += miss_terms(ev, pin, new)[0] - st.parts["J_det"]
-        return float(dJ)
+        return float(dJ + self.d_det(hs, new, S, L))
 
     def lat(self, h, segs):
         """(lateral mode, J_lat term) of horse h holding ``segs``."""
@@ -1729,13 +1775,13 @@ class Refit:
         (REFIT_SWEEPS Gauss-Seidel sweeps over them when several change, each against the others' re-solved paths), the
         list's statements touching them at the re-solved paths with the fault weights frozen, J_lab exactly, J_det at
         the re-solved paths."""
-        ev, st, lab = self.model.ev, self.st, self.lab
+        st, lab = self.st, self.lab
         ch = np.flatnonzero(new != lab)
         if not len(ch):
             return 0.0
         hs = np.unique(np.r_[lab[ch], new[ch]])
         hs = hs[hs >= 0]
-        dJ = label_terms(ev, new) - st.parts["J_lab"]
+        dJ = self.d_lab(ch, new)
         S0, S, L = st.S.copy(), st.S.copy(), st.L.copy()
         segs = {h: np.flatnonzero(new == h) for h in hs}
         cur = {}
@@ -1751,11 +1797,7 @@ class Refit:
                 S[h], L[h] = cur[h][2], cur[h][3]
         dJ += sum(cur[h][0] + cur[h][1] for h in hs)
         dJ += self.list_part(S, hs) - self.list_part(S0, hs)
-        if st.pin.shape[1]:
-            pin = st.pin.copy()
-            pin[hs] = in_view(ev, S[hs], L[hs], st.sdS[hs], st.sdL[hs], self.model.tg)
-            dJ += miss_terms(ev, pin, new)[0] - st.parts["J_det"]
-        return float(dJ)
+        return float(dJ + self.d_det(hs, new, S, L))
 
 
 def crossovers(ev: Evidence, lab, other):

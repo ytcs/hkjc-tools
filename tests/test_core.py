@@ -230,3 +230,27 @@ def test_refit_scores_track_the_exact_change_of_j():
     assert exact < -core.MIN_GAIN
     assert rf.score(right) < -core.MIN_GAIN and rf.score_quick(right) < -core.MIN_GAIN
     assert rf.score(wrong) == 0.0
+
+
+def test_refit_label_and_detection_terms_are_exact_increments():
+    """Refit's incremental label and detection terms equal label_terms / miss_terms of the new labelling at the same
+    paths."""
+    rows, t, s, lat, who = _race(n_h=3, speeds=[16.0, 16.0, 15.0], start_s=[100.0, 97.0, 94.0])
+    members = [np.flatnonzero(who == h) for h in range(3)]
+    horses = np.array([1, 2, 3])
+    ev = _evidence(rows, t, s, lat, members, horses)
+    m = core.Model(ev, core.list_rows(None, lambda f: f, horses), np.arange(1.0, 20.0, core.DT), width=20.0)
+    lab = np.array([who[ev.seg == k][0] for k in range(ev.n_seg)])
+    st = core.evaluate(m, lab)
+    rf = core.Refit(m, st, lab)
+    new = lab.copy()
+    new[lab == 0], new[lab == 1] = 1, 0
+    new[np.flatnonzero(lab == 2)[:1]] = -1
+    ch = np.flatnonzero(new != lab)
+    assert abs(rf.d_lab(ch, new) - (core.label_terms(ev, new) - core.label_terms(ev, lab))) < 1e-6
+    if st.pin.shape[1]:
+        hs = np.array([0, 1, 2])
+        S, L = st.S[[1, 0, 2]], st.L[[1, 0, 2]]
+        pin = core.in_view(ev, S, L, st.sdS, st.sdL, m.tg)
+        ref = core.miss_terms(ev, pin, new)[0] - st.parts["J_det"]
+        assert abs(rf.d_det(hs, new, S, L) - ref) < 1e-6
