@@ -1,0 +1,15 @@
+20260301_ST_2 U: kept final J 93605.5, re-evaluated 93301.3; segments V != F 28
+  final evidence                     J(V) - J(F)   +8729.9  (J_s 10134, J_lat 212, J_list 723, J_lab -1811, J_det -529)
+  without official s observations    J(V) - J(F)   -1945.3  (J_s 338, J_lat 212, J_list 662, J_lab -1811, J_det -1347)
+  without finish crossings           J(V) - J(F)   +8403.7  (J_s 10183, J_lat 212, J_list 755, J_lab -1811, J_det -935)
+  without extra lateral observations J(V) - J(F)   +8713.7  (J_s 10134, J_lat 196, J_list 723, J_lab -1811, J_det -529)
+  metric shift undone                J(V) - J(F)   +6750.2  (J_s 8168, J_lat 212, J_list 717, J_lab -1785, J_det -562)
+  no shift, no extra observations    J(V) - J(F)   -1747.6  (J_s 167, J_lat 196, J_list 821, J_lab -1785, J_det -1146)
+  by window (F with V's labels on the segments starting in it; final evidence):
+       10- 20 s:   2 segments, J   +241.6 (J_s 34, J_lat 167, J_list -18, J_lab 4, J_det 54)
+       30- 40 s:   2 segments, J   +203.1 (J_s 17, J_lat 147, J_list -18, J_lab 3, J_det 54)
+       40- 50 s:   4 segments, J    +21.1 (J_s 93, J_lat 6, J_list -16, J_lab -42, J_det -20)
+       50- 60 s:  13 segments, J  +8032.2 (J_s 7525, J_lat 1699, J_list 692, J_lab -1731, J_det -152)
+       60- 70 s:   5 segments, J  +1069.4 (J_s 307, J_lat 129, J_list -40, J_lab 12, J_det 661)
+       70- 80 s:   1 segments, J  +2115.7 (J_s 1237, J_lat 33, J_list 126, J_lab 3, J_det 717)
+       80- 90 s:   1 segments, J   +809.6 (J_s 676, J_lat 115, J_list 22, J_lab -32, J_det 30)

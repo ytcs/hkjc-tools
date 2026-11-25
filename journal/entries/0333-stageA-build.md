@@ -307,3 +307,18 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   re-labels 11-83 s wholesale (#10/#11, #4/#9/#11, #1/#4/#5, ...). My offline final-evidence reconstruction
   (finaleval.py) does not yet reproduce the pipeline's J (103,167 for the stored final labels), so the term
   attribution is open.
+- **15202bf (chain moves + relabel pass) checks.** Gate-1: case 6, 4 (U = lg0, 0.00 %), 1 identical to round 3;
+  case 3 U final moves #2 from 9th to 6th at 71-75 s (video unchanged; the final's 2-segment relabel is lower J
+  under video-only evidence too, +62.6, J_lab +370 for F); case 5 U keeps the TV-confirmed #10/#11, lg1 final still
+  flips them (U vs lg1 27.7 % video, 10.4 % final). Miss races (same 5): misses 3 of 5 as on 9a94af5 (HV_9
+  -1,058/-346, HV_3 -16, ST_4 -38); P3 flips at p >= 0.99 pooled 4,780 / 65,372 (7.3 %; 9a94af5 5.2 %; HV_9 22 -> 33 %).
+  CPU per race (U + two masked cells): HV_3 1,308, HV_9 2,521, HV_2 81, ST_4 2,160, HV_1 302 s; case 5 U 3,226,
+  lg1 3,426 s.
+- **Final-stage departure (finaldec.py: the product's final run with its inputs captured).** J(V) - J(F) under the
+  final evidence and with parts left out: case 5 lg1 +7,720 (63 segments; without official along-track observations
+  -3,349; 50-60 s window +6,966 of it, J_s +9,079); case 5 U +8,730 (28; without official -1,945; 50-60 s +8,032);
+  HV_9 lg0 +739 (2, 60-70 s; without official -378); HV_9 U +9 (1); HV_3 U 0; case 3 U +66 (2; same without
+  extras: a search find, not an evidence term). The term: the official interior sectional times (0.6 m along-track
+  observations per horse at each 400 m boundary); relabels they force cascade by continuity (case 5 lg1's #10/#11
+  at 11-43 s). The kept state's J differs from a cold re-evaluation of the same labels by -293 to -907 J (HV_3 U:
+  72,284.8 kept, 71,377.3 cold): the state step's mode depends on its warm start.
