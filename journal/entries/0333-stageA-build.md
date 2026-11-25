@@ -350,3 +350,13 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   lg0 #11 +7.0). (c) Stage C TV facts (render-independent; factcheck.py, identities P >= 0.8): #4/#9/#11 at
   44-84 s, 5 TV along facts: both video labellings agree 0 %, both finals 100 %; #10/#11 at 10-45 s, 2 facts: U video,
   U final, lg1 video 100 %, lg1 final 0 %.
+- **Miss baseline re-scored (converged evaluation, b875ce2 code on 9a94af5's labellings).** S = -1,694.3 (HV_9
+  -1,054.5 and -272.9, ST_9 -272.2, ST_4 -64.9, HV_3 -16.3, HV_4 -11.1 and -2.4), count 5 of 9. The b875ce2 runs of
+  the set were stopped (superseded by the next commit).
+- **OFFICIAL_INTERIOR_SD re-derived (sigma.py; written before any rerun uses it).** Over all 60 dev races' U video
+  paths (code per race: 9a94af5 11, 6e7faff 10, 3048af2 7, 9460adb 3, main 29), per interior boundary the residual
+  r = horse's video s at its official time - the boundary's s - the boundary's median of that. Pooled by class:
+  400 m to go n 746, robust sd 1.060 m; others n 1,200, robust sd 0.934 m. Excluding |r - median| > 3 robust sd and
+  taking the robust sd of the rest: 400 m 0.99 m, others 0.88 m (plain sd of the rest 1.08 / 0.97). Values:
+  OFFICIAL_INTERIOR_SD 0.99 m at the 400 m boundary, 0.88 m at the others (was 0.6 for all). Beyond 3 sd (the gross
+  misses that stay identity claims): 400 m 4.7 % (35 of 746), others 5.5 % (66 of 1,200).
