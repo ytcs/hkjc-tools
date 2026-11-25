@@ -28,6 +28,7 @@ falls, then a bounded polish: candidate labellings scored by one-horse refits, t
 from __future__ import annotations
 
 import copy
+import time
 
 from dataclasses import dataclass, field
 from functools import partial
@@ -1566,7 +1567,7 @@ class Result:
 
 
 REFIT_ROUNDS = 30  # alternation proposals (MILP + full state step) per descent at most
-DESCENTS = 2  # starts that descend: the lowest by J at the start (the pre-solve: the lowest)
+DESCENTS = 2  # alternation ends that are polished: the lowest by J
 LIST_SPLIT = 7.0  # s: block length of the split-list inits (off the 10 s grid of the legend masking cells)
 POLISH_STEPS = 16  # polish full state steps per descent at most
 NEWTON_IT = 10  # one-horse refit: Newton steps at most
@@ -2155,28 +2156,32 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
 
 def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True):
     """Global solve. Starts: five init MILPs (list votes with reads and silk; list votes; reads and silk; the list
-    rows of alternate LIST_SPLIT s blocks of each parity with reads and silk) and the caller's labellings; the DESCENTS
-    lowest by J (the pre-solve: the lowest) descend. A descent: alternation of the exact MILP assignment over segments on unaries
-    at the current state (one-horse-refit kinematic block) with a full state step of its proposal, kept when J falls
-    by more than MIN_GAIN, until the MILP returns the current labelling or its proposal raises J (REFIT_ROUNDS proposals
-    at most per descent); then (``polish``) a bounded polish (POLISH_STEPS full state steps at most per descent):
+    rows of alternate LIST_SPLIT s blocks of each parity with reads and silk) and the caller's labellings. Every start
+    alternates: the exact MILP assignment over segments on unaries at the current state (one-horse-refit kinematic
+    block), then a full state step of its proposal, kept when J falls by more than MIN_GAIN, until the MILP returns the
+    current labelling or its proposal raises J (REFIT_ROUNDS proposals at most per descent). The DESCENTS lowest
+    distinct alternation ends then descend with a bounded polish (POLISH_STEPS full state steps at most per descent):
     candidates (the pool: the rejected proposal's label-connected parts; single segments whose unaries prefer another
     label; the move generators' labellings) scored by one-horse refits (generator candidates first in closed form,
     ``Refit.score_quick``, the REFIT_TOP lowest of those by refits), the SWEEP_TOP lowest again with Gauss-Seidel
     sweeps over their horses; the predicted-negative ones with disjoint horses go together into one full state step,
-    on rejection the single best ones one at a time; an accepted step resumes the alternation. Then the lowest end
-    descends again with the crossover runs toward every other end (``crossovers``) as its pool, while that lowers J.
-    The pre-solve without the finish camera runs the alternation only (``polish`` False)."""
+    on rejection the single best ones one at a time, then the round's other predicted-negative ones whose horses no
+    accepted change touched; an accepted step resumes the alternation. Then the lowest end descends again with the
+    crossover runs toward every other end (``crossovers``) as its pool, while that lowers J. The pre-solve without
+    the finish camera (``polish`` False) keeps the lowest alternation end."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
     cnt = dict(full=0, rounds=0, steps=0, acc_r=0, acc_p=0)
+    cpu = dict(state=0.0, unaries=0.0, milp=0.0, scores=0.0)
 
     def look(labs):  # the state step from scratch: J a function of the labelling alone
         key = np.asarray(labs).tobytes()
         if key in memo:
             return memo[key]
+        t0 = time.process_time()
         st_ = evaluate(model, labs, extra_s, extra_l, s_shift=s_shift)
+        cpu["state"] += time.process_time() - t0
         cnt["full"] += 1
         seen.append((np.asarray(labs).copy(), st_.J))
         memo[key] = st_
@@ -2207,10 +2212,12 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         key = (id(st_), np.asarray(labs).tobytes())
         if key not in ucache or ucache[key][0] is not st_:
             ucache.clear()
+            t0 = time.process_time()
             ucache[key] = (st_, unaries(model, st_, labs))
+            cpu["unaries"] += time.process_time() - t0
         return ucache[key][1]
 
-    def descend(lab, st, pool):
+    def descend(lab, st, pool, polish=polish):
         rounds = steps = 0
         pcache, pkeys_h = {}, {}  # polish scores by candidate change, and the horses each changes
 
@@ -2224,7 +2231,9 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         while True:
             while not fresh and rounds < REFIT_ROUNDS:  # alternation: exact assignment, joint state step
                 U = unaries_of(st, lab)
+                t0 = time.process_time()
                 prop = milp(U, ev)
+                cpu["milp"] += time.process_time() - t0
                 if np.array_equal(prop, lab):
                     log(f"   core: assignment fixed point at J {st.J:.1f}")
                     break
@@ -2250,11 +2259,13 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             pool = list({pm.tobytes(): (d, pm) for d, pm in pool
                          if pm.tobytes() not in memo and not np.array_equal(pm, lab)}.values())
             npool = len(pool)
+            t0 = time.process_time()
             cands = polish_candidates(model, st, lab, U, pool)
             cands = cands[:npool] + [(d, pm) for d, pm in cands[npool:] if pm.tobytes() not in memo]
             if not cands:
                 break
             rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
+            lab_r = lab
             # a candidate's score is kept from an earlier polish round while none of its horses changed since
             keys, hsets, pred, todo = [], [], np.zeros(len(cands)), []
             for i, (_d, pm) in enumerate(cands):
@@ -2277,6 +2288,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             for i in todo:
                 pcache[keys[i]] = pred[i]
                 pkeys_h[keys[i]] = hsets[i]
+            cpu["scores"] += time.process_time() - t0
             neg = [i for i in np.argsort(pred, kind="stable") if pred[i] < -MIN_GAIN]
             log(f"   core: polish at J {st.J:.1f}: {len(cands)} candidates, {len(todo)} scored, {len(neg)} predicted "
                 f"to lower J" + (f" (best {pred[neg[0]]:+.1f}: {cands[neg[0]][0]})" if neg else ""))
@@ -2331,6 +2343,32 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                     pcache[kk] = np.inf
             if not moved:
                 break
+            # the round's other predicted-negative candidates whose horses no accepted change touched, each applied
+            # on the current labelling
+            touched = set(np.unique(np.r_[lab_r[lab_r != lab], lab[lab_r != lab]]).tolist()) - {-1}
+            for i in neg:
+                if steps >= POLISH_STEPS:
+                    break
+                if hsets[i] - {-1} & touched:
+                    continue
+                ch = np.flatnonzero(cands[i][1] != lab_r)
+                pm = lab.copy()
+                pm[ch] = cands[i][1][ch]
+                if pm.tobytes() in memo:
+                    continue
+                steps += 1
+                cnt["steps"] += 1
+                st2 = look(pm)
+                if st2.J < st.J - MIN_GAIN:
+                    log(f"   core: polish step {steps}: {cands[i][0]} (predicted {pred[i]:+.1f}), {len(ch)} segments, "
+                        f"J {st.J:.1f} -> {st2.J:.1f}")
+                    hist.append((f"polish {steps}", st2.J, len(ch)))
+                    cnt["acc_p"] += 1
+                    changed(lab, pm)
+                    touched |= hsets[i] - {-1}
+                    lab, st = pm, st2
+                else:
+                    pcache[keys[i]] = np.inf
         return lab, st
 
     starts, done = [], set()
@@ -2342,11 +2380,18 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         hist.append((name, st0.J, int((lab0 >= 0).sum())))
         log(f"   core: {name} J {st0.J:.1f} ({int((lab0 >= 0).sum())}/{ev.n_seg} segments labelled)")
         starts.append((name, lab0, st0))
-    starts = sorted(starts, key=lambda x: x[2].J)[:DESCENTS if polish else 1]
-    ends = []
+    alt = []  # every start's alternation end (no polish); the DESCENTS lowest distinct ends are polished
     for name, lab0, st0 in starts:
-        e = descend(lab0, st0, [])
-        log(f"   core: {name} descends to J {e[1].J:.1f}")
+        la, sa = descend(lab0, st0, [], polish=False)
+        log(f"   core: {name} alternates to J {sa.J:.1f}")
+        if all(not np.array_equal(la, o[1]) for o in alt):
+            alt.append((name, la, sa))
+    alt.sort(key=lambda x: x[2].J)
+    ends = []
+    for name, la, sa in alt[:DESCENTS] if polish else alt[:1]:
+        e = descend(la, sa, []) if polish else (la, sa)
+        if polish:
+            log(f"   core: {name}'s end polishes to J {e[1].J:.1f}")
         if all(not np.array_equal(e[0], o[0]) for o in ends):
             ends.append(e)
     lab, st = min(ends, key=lambda e: e[1].J)
@@ -2361,7 +2406,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         lab, st = lab2, st2
         others = [e for e in others if not np.array_equal(e[0], lab)]
     log(f"   core: end J {st.J:.1f}; {len(ends)} start ends; alternation proposals {cnt['rounds']} (kept "
-        f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}")
+        f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}; CPU s "
+        + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))
     U = unaries_of(st, lab)
     return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)
 
