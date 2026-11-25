@@ -874,7 +874,7 @@ identical. Not bit-exact:
 - **Silk evidence.** The render appearance term pools a tracklet to about two detections (a whole tracklet's read
   is the product's label about three times in four on races the model never saw; look-alike silks, the red and
   blue families and navy rendered teal are systematic), so it costs at most about 12 J units per tracklet and
-  decides near-ties only (it never makes a segment cheaper to label than to leave as clutter); the draw does not enter identity.
+  decides near-ties only (summed over a tracklet it never makes labelling cheaper than clutter); the draw does not enter identity.
 - **Finish-short horses.** A horse unobserved over the last metres has a path to the grid end, extrapolated with
   growing sd; once sd_s exceeds `SD_MAX`, or the grid ends first, it has no scored finish crossing.
 - **Blind near-line cost.** It can remove correctly placed unread back markers. More generally, near the line a horse's
