@@ -45,7 +45,7 @@ tg = np.arange(min(ts), max(ts) + fusion.DT / 2, fusion.DT)
 m = core.Model(ev, Lr, tg, run.info.width)
 
 _lv = core.list_votes
-LOG = (lambda s: print(s) if (' init J' in s or 'crossover' in s or 'start 1 J' in s or 'stop at' in s or 'lowest' in s) else None) if __import__('os').environ.get('SOLVELOG') else (lambda s: None)
+LOG = (lambda s: print(s) if (' init J' in s or 'crossover' in s or 'exchange' in s or 'chain' in s or 'relabel' in s or 'start 1 J' in s or 'stop at' in s or 'lowest' in s) else None) if __import__('os').environ.get('SOLVELOG') else (lambda s: None)
 
 
 def solve_from(lab0):

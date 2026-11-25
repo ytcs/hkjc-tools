@@ -30,6 +30,8 @@ if mode == "multi":
         sl = core.milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)
         r, c = solve_from(sl)
         ends.append((name, r.state.J, c))
+if __import__("os").environ.get("SAVE"):
+    np.savez(__import__("os").environ["SAVE"], seg_lab=r0.seg_lab, J=r0.state.J, marg=r0.marg)
 for name, j, c in ends:
     print(f"{key} {cell} {mode} {name:11s} end J {j:10.1f}  CPU {c:6.1f}")
 best = min(ends, key=lambda x: x[1])

@@ -1,0 +1,183 @@
+diff --git a/src/hkjc/recon/core.py b/src/hkjc/recon/core.py
+index 2a6a48e..03a16ba 100644
+--- a/src/hkjc/recon/core.py
++++ b/src/hkjc/recon/core.py
+@@ -1562,6 +1562,8 @@ SCREEN_PRE = 40  # at most this many candidates per move family are screened (lo
+ T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
+ ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
+ EXCH_S, EXCH_L = 3.0, 4.0  # m, units: two paths this close at a camera cut may exchange labels from it on
++REMATCH_MAX = 3  # horses per re-matching group and slots per cut (all assignments are screened)
++LONG_N, REL_GATE = 20, 15.0  # detections, m: the exact single-relabel pass's segments and horses
+ # (pair exchanges are screened by the truncated state step alone: a linearised cost change cannot rank a
+ # race-long exchange, e.g. +85,616 for one whose J change is -13 on 20251126_HV_3)
+ 
+@@ -1637,6 +1639,104 @@ def pair_exchanges(ev: Evidence, lab, st: State):
+     return out
+ 
+ 
++def _seg_bounds(ev: Evidence):
++    lo = np.full(ev.n_seg, np.inf)
++    hi = np.full(ev.n_seg, -np.inf)
++    np.minimum.at(lo, ev.seg, ev.t)
++    np.maximum.at(hi, ev.seg, ev.t)
++    return lo, hi
++
++
++def _seg_first_s(ev: Evidence):
++    o = np.argsort(ev.t, kind="stable")
++    first = np.full(ev.n_seg, -1)
++    first[ev.seg[o[::-1]]] = o[::-1]
++    return ev.s[first]
++
++
++def cut_rematches(ev: Evidence, lab, st: State):
++    """Re-matchings at camera cuts (times where >= 3 labelled segments start together): the horses whose paths are
++    within EXCH_S along and EXCH_L across at the cut form groups (<= REMATCH_MAX, the closest along the track); the
++    group's slots are the segments starting at the cut that are labelled with one of its horses or are clutter with
++    P(horse) >= 0.5 starting within EXCH_S of one of them. Every assignment of the group's labels (each at most once) or
++    clutter to the slots is carried over the stretch to the next cut and to the race's end: a slot's old label maps to
++    its new one on every segment of the stretch; a horse that gets a slot without having held one loses its other
++    segments in the stretch. -> list of (description, labelling)."""
++    from itertools import product
++
++    tg = st.tg
++    lo, hi = _seg_bounds(ev)
++    ph = np.bincount(ev.seg, ev.p_horse, ev.n_seg) / np.maximum(np.bincount(ev.seg, minlength=ev.n_seg), 1)
++    s0 = _seg_first_s(ev)
++    st_t, cnt = np.unique(np.round(lo[lab >= 0] * 5) / 5, return_counts=True)
++    cuts = st_t[cnt >= 3]
++    out, seen = [], {lab.tobytes()}
++    for i, T in enumerate(cuts):
++        k = int(np.clip(np.searchsorted(tg, T), 0, len(tg) - 1))
++        starting = np.flatnonzero((lo >= T - 0.11) & (lo <= T + 0.35) & ((lab >= 0) | (ph >= 0.5)))
++        ending = np.flatnonzero((lab >= 0) & (hi < T - 0.01) & (hi >= T - 0.35))
++        horses = np.unique(np.r_[lab[ending], lab[starting][lab[starting] >= 0]]).astype(int)
++        if not len(horses):
++            continue
++        Sk, Lk = st.S[horses, k], st.L[horses, k]
++        near = (np.abs(Sk[:, None] - Sk[None]) <= EXCH_S) & (np.abs(Lk[:, None] - Lk[None]) <= EXCH_L)
++        groups = set()
++        for a in range(len(horses)):  # each horse with its closest neighbours (by along-track gap) that are near it
++            nb = [b for b in np.argsort(np.abs(Sk - Sk[a])) if near[a, b]][:REMATCH_MAX]
++            groups.add(tuple(sorted(int(horses[b]) for b in nb)))
++        ends = [cuts[i + 1] if i + 1 < len(cuts) else tg[-1] + 1.0, tg[-1] + 1.0]
++        for G in groups:
++            Gs = set(G)
++            slots = [int(x) for x in starting if lab[x] in Gs or (lab[x] < 0 and np.min(np.abs(st.S[list(G), k]
++                                                                                              - s0[x])) <= EXCH_S)]
++            if not slots or len(slots) > REMATCH_MAX:
++                continue
++            for assign in product(list(G) + [-1], repeat=len(slots)):
++                used = [x for x in assign if x >= 0]
++                if len(used) != len(set(used)) or all(int(lab[x]) == y for x, y in zip(slots, assign)):
++                    continue
++                sigma = {int(lab[x]): y for x, y in zip(slots, assign) if lab[x] >= 0}
++                for W in dict.fromkeys(ends):
++                    win = (lo >= T - 0.11) & (hi < W - 0.05)
++                    new = lab.copy()
++                    for a, b in sigma.items():
++                        new[win & (lab == a)] = b
++                    for b in set(used) - set(sigma):  # a horse taking a slot it did not hold drops its other segments
++                        new[win & (lab == b)] = -1
++                    for x, y in zip(slots, assign):
++                        new[x] = y
++                    key = new.tobytes()
++                    if key not in seen:
++                        seen.add(key)
++                        out.append((f"re-match at {T:.1f} s over {T:.1f}-{min(W, tg[-1]):.1f} s "
++                                    f"({len(slots)} slots, horses {[int(ev.horses[g]) for g in G]})", new))
++    return out
++
++
++def single_relabels(ev: Evidence, lab, st: State):
++    """Single relabels of long segments (>= LONG_N detections; clutter ones with P(horse) >= 0.5): each segment to
++    clutter or to every horse whose path is within REL_GATE along the track of the segment's first position; a horse's
++    overlapping segments become clutter. -> list of (segment, label, labelling)."""
++    lo, hi = _seg_bounds(ev)
++    n = np.bincount(ev.seg, minlength=ev.n_seg)
++    ph = np.bincount(ev.seg, ev.p_horse, ev.n_seg) / np.maximum(n, 1)
++    s0 = _seg_first_s(ev)
++    tg = st.tg
++    out = []
++    for x in np.flatnonzero((n >= LONG_N) & ((lab >= 0) | (ph >= 0.5))):
++        k = int(np.clip(np.searchsorted(tg, lo[x]), 0, len(tg) - 1))
++        hs = np.flatnonzero(np.abs(st.S[:, k] - s0[x]) <= REL_GATE)
++        for y in list(hs) + [-1]:
++            if y == lab[x]:
++                continue
++            new = lab.copy()
++            if y >= 0:
++                new[(lab == y) & (ev.seg_lo <= ev.seg_hi[x]) & (ev.seg_hi >= ev.seg_lo[x])] = -1
++            new[x] = y
++            out.append((int(x), int(y), new))
++    return out
++
++
+ def swap_moves(model: Model, st: State, lab):
+     """Abreast-pair swaps: for two horses whose paths stay within ABREAST_S along and ABREAST_L across for >= ABREAST_T
+     s, exchange their labels on every segment inside the stretch, widened to the nearest camera cuts (times where >= 3
+@@ -1689,7 +1789,8 @@ def posterior(seen, lab, J_best, H):
+     return P / P.sum(1, keepdims=True)
+ 
+ 
+-def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, global_moves=True):
++def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, global_moves=True,
++          relabel=True):
+     """Start-free global solve, then alternate assignment (MILP on J's linearised increments) and state steps, keeping
+     a proposal only when J falls; ends when no proposal lowers J. ``start``: further labellings whose J is compared
+     with the start solve's (the lowest is kept). ``global_moves`` False: assignment steps and single-segment moves
+@@ -1853,9 +1954,10 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
+                     hist.append((it, st2.J, int((pm != lab).sum())))
+                     lab, st = pm, st2
+                     moved = True
+-            if not moved and exchanges:  # pair exchanges: two horses over the whole race, cut -> end, start -> cut
++            if not moved and exchanges:  # pair exchanges and cut re-matchings
+                 best = None
+-                for desc, pm, st2 in screened(pair_exchanges(ev, lab, st), st, U, lab, check=True, prerank=False):
++                cands = pair_exchanges(ev, lab, st) + cut_rematches(ev, lab, st)
++                for desc, pm, st2 in screened(cands, st, U, lab, check=True, prerank=False):
+                     if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
+                         best = (pm, st2, desc)
+                 if best is not None:
+@@ -1925,6 +2027,27 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
+     # costly to run inside every start's descent)
+     if global_moves:
+         lab, st = descend(lab, st, True, exchanges=True)
++    if relabel:
++        # exact single-relabel pass: long segments' relabels screened by the truncated state step, the best given a
++        # full step, until none lowers J; the last pass's screened labellings join the posterior
++        while True:
++            cands = single_relabels(ev, lab, st)
++            qj = [quick_j(pm, st) for _x, _y, pm in cands]
++            keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st.J - MIN_GAIN]
++            best = None
++            for i in keep:
++                st2 = look(cands[i][2], st.S)
++                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
++                    best = (cands[i], st2)
++            if best is None:
++                seen.extend((pm, q) for (_x, _y, pm), q in zip(cands, qj))
++                break
++            (x, y, pm), st2 = best
++            log(f"   core: relabel pass: segment {x} -> {'#' + str(ev.horses[y]) if y >= 0 else 'clutter'}, "
++                f"J {st.J:.1f} -> {st2.J:.1f}")
++            hist.append(("relabel", st2.J, 1))
++            lab, st = descend(pm, st2, False)
++        log(f"   core: relabel pass screened {len(cands)} relabels")
+     log(f"   core: lowest end J {st.J:.1f}")
+     if n_screen_low[0]:
+         log(f"   core: pair exchanges screened below J: {n_screen_low[0]}, not confirmed by the full step: "
+diff --git a/src/hkjc/recon/pipeline.py b/src/hkjc/recon/pipeline.py
+index 5d22645..0384f14 100644
+--- a/src/hkjc/recon/pipeline.py
++++ b/src/hkjc/recon/pipeline.py
+@@ -1602,7 +1602,8 @@ class RaceRun:
+         tg = np.arange(t0, t1 + fusion.DT / 2, fusion.DT)
+         model = core.Model(ev, Lr, tg, self.info.width)
+         start = tuple(x for x in start if len(x) == ev.n_seg)  # a start from other segments cannot be compared
+-        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, global_moves=False)
++        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, global_moves=False,
++                         relabel=False)
+         paths = self._core_paths(res, ev, model)
+         quiet, self.log = self.log, (lambda *a, **k: None)
+         try:

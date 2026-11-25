@@ -1,0 +1,64 @@
+   core: init J 107742.8 (184/192 segments labelled)
+   core: it1 21 segments relabelled, J 107742.8 -> 95009.4 (J_s 2620, J_lat 2875, J_list 1375, J_lab 84162, J_det 3977)
+   core: it2 7 segments relabelled, J 95009.4 -> 94949.3 (J_s 2589, J_lat 2840, J_list 1376, J_lab 84182, J_det 3962)
+   core: it3 no assignment step lowers J; stop at J 94949.3
+   core: list-only init J 108638.7 (184/192 segments labelled)
+   core: it1 15 segments relabelled, J 108638.7 -> 96954.3 (J_s 4125, J_lat 3136, J_list 1420, J_lab 84168, J_det 4105)
+   core: it2 6 segments relabelled, J 96954.3 -> 96302.0 (J_s 3491, J_lat 3061, J_list 1372, J_lab 84236, J_det 4142)
+   core: it3 no assignment step lowers J; stop at J 96302.0
+   core: appearance-only init J 135942.5 (52/192 segments labelled)
+   core: it1 135 segments relabelled, J 135942.5 -> 107189.0 (J_s 9220, J_lat 5440, J_list 6804, J_lab 81868, J_det 3857)
+   core: it2 47 segments relabelled, J 107189.0 -> 102562.4 (J_s 4545, J_lat 2818, J_list 6689, J_lab 83809, J_det 4703)
+   core: it3 24 segments relabelled, J 102562.4 -> 100664.3 (J_s 5074, J_lat 2739, J_list 6614, J_lab 82205, J_det 4033)
+   core: it29 no assignment step lowers J; stop at J 98748.4
+   core: it1 93 segments relabelled, J 112937.3 -> 96473.4 (J_s 2884, J_lat 3035, J_list 1472, J_lab 84594, J_det 4489)
+   core: it2 30 segments relabelled, J 96473.4 -> 95689.8 (J_s 2673, J_lat 3024, J_list 1380, J_lab 84288, J_det 4325)
+   core: it3 20 segments relabelled, J 95689.8 -> 95310.4 (J_s 2644, J_lat 2860, J_list 1375, J_lab 84204, J_det 4227)
+   core: it4 9 segments relabelled, J 95310.4 -> 95235.6 (J_s 2609, J_lat 2852, J_list 1375, J_lab 84184, J_det 4217)
+   core: it5 4 segments relabelled, J 95235.6 -> 95189.7 (J_s 2552, J_lat 2758, J_list 1377, J_lab 84244, J_det 4259)
+   core: it6 2 segments relabelled, J 95189.7 -> 95176.9 (J_s 2542, J_lat 2770, J_list 1377, J_lab 84234, J_det 4254)
+   core: it7 no assignment step lowers J; stop at J 95176.9
+   core: it1 21 segments relabelled, J 105636.1 -> 94398.5 (J_s 2419, J_lat 2171, J_list 1465, J_lab 84289, J_det 4054)
+   core: it2 10 segments relabelled, J 94398.5 -> 94235.7 (J_s 2378, J_lat 2165, J_list 1480, J_lab 84259, J_det 3953)
+   core: it3 5 segments relabelled, J 94235.7 -> 94204.6 (J_s 2389, J_lat 2164, J_list 1474, J_lab 84232, J_det 3946)
+   core: it4 2 segments relabelled, J 94204.6 -> 94196.2 (J_s 2395, J_lat 2161, J_list 1475, J_lab 84223, J_det 3942)
+   core: it5 no assignment step lowers J; stop at J 94196.2
+   core: it1 permutation move at 50.8 s over 41.4-50.8 s relabels 25 segments, J 94949.3 -> 94857.6 (J_s 2554, J_lat 2756, J_list 1419, J_lab 84262, J_det 3867)
+   core: it2 17 segments relabelled, J 94857.6 -> 94097.9 (J_s 2420, J_lat 2196, J_list 1423, J_lab 84082, J_det 3977)
+   core: it3 no proposal lowers J; stop at J 94097.9
+   core: it1 swap #1/#2 over 11.0-41.4 s relabels 4 segments, J 96302.0 -> 96284.3 (J_s 3491, J_lat 3046, J_list 1372, J_lab 84233, J_det 4143)
+   core: it2 swap #2/#5 over 11.0-41.4 s relabels 4 segments, J 96284.3 -> 96280.0 (J_s 3492, J_lat 3040, J_list 1372, J_lab 84237, J_det 4138)
+   core: it3 no proposal lowers J; stop at J 96280.0
+   core: it1 permutation move at 40.8 s over 40.8-41.4 s relabels 1 segments, J 98748.4 -> 98741.7 (J_s 4353, J_lat 2492, J_list 6315, J_lab 81946, J_det 3634)
+   core: it2 swap #2/#9 over 10.8-85.7 s relabels 25 segments, J 98741.7 -> 98170.2 (J_s 4330, J_lat 2492, J_list 5748, J_lab 81959, J_det 3641)
+   core: it3 swap #9/#13 over 10.8-85.7 s relabels 30 segments, J 98170.2 -> 98100.6 (J_s 4341, J_lat 2492, J_list 5660, J_lab 81973, J_det 3634)
+   core: it4 swap #4/#8 over 11.0-41.4 s relabels 4 segments, J 98100.6 -> 98067.3 (J_s 4354, J_lat 2489, J_list 5660, J_lab 81979, J_det 3585)
+   core: it5 no proposal lowers J; stop at J 98067.3
+   core: it1 permutation move at 52.8 s over 52.8-56.8 s relabels 10 segments, J 95176.9 -> 94806.5 (J_s 2687, J_lat 2757, J_list 1391, J_lab 84375, J_det 3596)
+   core: it3 swap #3/#10 over 41.4-50.8 s relabels 3 segments, J 94788.8 -> 94717.1 (J_s 2702, J_lat 2614, J_list 1416, J_lab 84357, J_det 3627)
+   core: it4 8 segments relabelled, J 94717.1 -> 94442.0 (J_s 2678, J_lat 2429, J_list 1402, J_lab 84294, J_det 3639)
+   core: it5 1 segments relabelled, J 94442.0 -> 94435.8 (J_s 2679, J_lat 2440, J_list 1402, J_lab 84285, J_det 3629)
+   core: it6 no proposal lowers J; stop at J 94435.8
+   core: it1 no proposal lowers J; stop at J 94196.2
+   core: crossover of parts 4-9 of 14 (9 segments), J 94097.9 -> 94012.4
+   core: it1 4 segments relabelled, J 94012.4 -> 93914.2 (J_s 2358, J_lat 2095, J_list 1391, J_lab 84193, J_det 3877)
+   core: it2 swap #1/#5 over 41.4-51.4 s relabels 5 segments, J 93914.2 -> 93892.6 (J_s 2359, J_lat 2089, J_list 1390, J_lab 84199, J_det 3856)
+   core: it3 2 segments relabelled, J 93892.6 -> 93886.9 (J_s 2367, J_lat 2089, J_list 1390, J_lab 84185, J_det 3856)
+   core: it4 no proposal lowers J; stop at J 93886.9
+   core: crossover of parts 4-4 of 16 (1 segments), J 93886.9 -> 93867.2
+   core: it1 no proposal lowers J; stop at J 93867.2
+   core: it1 re-match at 41.4 s over 41.4-50.8 s (2 slots, horses [1, 9]) relabels 2 segments, J 93867.2 -> 93856.1 (J_s 2328, J_lat 2082, J_list 1381, J_lab 84285, J_det 3781)
+   core: it3 no proposal lowers J; stop at J 93853.6
+   core: relabel pass: segment 105 -> #6, J 93853.6 -> 93656.3
+   core: it1 4 segments relabelled, J 93656.3 -> 93610.7 (J_s 2691, J_lat 2087, J_list 1397, J_lab 83655, J_det 3781)
+   core: it2 1 segments relabelled, J 93610.7 -> 93587.6 (J_s 2572, J_lat 2084, J_list 1397, J_lab 83706, J_det 3828)
+   core: it3 no assignment step lowers J; stop at J 93587.6
+   core: relabel pass: segment 177 -> #8, J 93587.6 -> 93487.6
+   core: it2 no assignment step lowers J; stop at J 93480.2
+   core: relabel pass: segment 177 -> clutter, J 93480.2 -> 93466.9
+   core: it1 no assignment step lowers J; stop at J 93466.9
+   core: relabel pass screened 628 relabels
+   core: lowest end J 93466.9
+   core: pair exchanges screened below J: 3, not confirmed by the full step: 0
+20260301_ST_2 U base init        end J    93466.9  CPU 2065.9
+20260301_ST_2 U base LOWEST 93466.9 (init) total CPU 2065.9

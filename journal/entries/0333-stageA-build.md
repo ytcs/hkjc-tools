@@ -290,3 +290,20 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   exchanges screened below J on case 6 (every-descent run), 0 not confirmed by the full step.
 - **Dev runs restarted on 9a94af5** (stale c2c4cf2 rows moved to runs/p1after_c2c4cf2_stale); split c/d 20 races
   each (coordinator), e/f 10 each (mine, after the Gate-1 reruns of cases 6, 4, 1, 3, 5).
+- **Case 5 search miss and chain moves (WIP, not committed; wip_chain_relabel.patch).** Gap U vs lg1 under U's
+  evidence 2,228 J: three tracker chains (A 44-83 s, B 47-83 s, C 48-83 s) permuted; U left C's tail (segment 105,
+  253 detections, P(horse) 0.97) as clutter. The approved cut re-matching (paths-gated) could not reach it: U's paths
+  for #4/#9/#11 are 4-11 m apart at the 56.8 s cut. Tracker-chain moves (exchanges and 3-cycles of whole chains and
+  from the change point, carrying unambiguous continuations incl. clutter; partners: the 8 chains closest by boxes
+  within 1 s of the change) plus a chain-aware exact relabel pass (segments >= 10 detections) in the last descent:
+  case 5 U 93,960 -> 91,968 (bar 91,732, not met: +236), #10/#11 unchanged at P 1.000 (swap dJ +505 under video
+  evidence), CPU 2,644 s; bench J 0 / -314 / 0 / -377 vs 9a94af5, CPU 628 -> 1,130 s.
+- **Linearised vs one-horse refit (relabel candidates, full-step dJ):** case 5 U (257 of 1,028 evaluated): Spearman
+  0.800 -> 0.884, exact-negative in top 50: 1/2 -> 2/2; ST_2 U (old labels): 0.938 -> 0.939 (1 exact-negative).
+- **Miss rate on c/d races (9a94af5, 5 races):** gaps (lg0, lg1) HV_1 0/+455, HV_9 -1,033/-295, HV_3 -0.4/-16,
+  HV_2 0/+65, 20260503_ST_4 +406/-38 -> 3 of 5 miss; P3 flips at p >= 0.99 pooled 3,396 / 65,472 (5.2 %).
+- **Case 5 lg1 final flip.** In the pipeline the lg1 final's second solve scored its start 2 (the video labelling)
+  at 99,879 and kept an end at 90,372: under final evidence the video labelling is 9,507 J worse, and the final
+  re-labels 11-83 s wholesale (#10/#11, #4/#9/#11, #1/#4/#5, ...). My offline final-evidence reconstruction
+  (finaleval.py) does not yet reproduce the pipeline's J (103,167 for the stored final labels), so the term
+  attribution is open.
