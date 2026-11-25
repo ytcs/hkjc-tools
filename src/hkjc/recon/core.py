@@ -1843,8 +1843,8 @@ class Refit:
         """One-horse-refit estimate of J(new) - J(state's labelling): every horse whose segments change re-solved alone
         (REFIT_SWEEPS Gauss-Seidel sweeps over them when several change, each against the others' re-solved paths), the
         list's statements touching them at the re-solved paths with the fault weights frozen (above LIST_EXACT: the
-        weights re-estimated at the re-solved paths, the horses re-solved under them, the list's chains exactly), J_lab
-        exactly, J_det at the re-solved paths."""
+        list's chains exactly; with sweeps, first the weights re-estimated at the re-solved paths and the horses
+        re-solved under them, LIST_EM rounds), J_lab exactly, J_det at the re-solved paths."""
         st, lab = self.st, self.lab
         ch = np.flatnonzero(new != lab)
         if not len(ch):
@@ -1871,7 +1871,7 @@ class Refit:
             # the moved horses re-solved under them, the list term exactly
             m, St = self.model, self.model.St
             dJ -= sum(cur[h][0] for h in hs)
-            for _ in range(LIST_EM):
+            for _ in range(LIST_EM if sweeps else 0):
                 d = m._stmt_delta(S)
                 _J, pf, om, pw = list_chains(m.Lr, St, _p_order(d, St.eps)[1], m.H, d)
                 wt2 = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0 - pw)
