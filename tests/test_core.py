@@ -186,3 +186,23 @@ def test_pair_exchanges_cover_every_pair_over_the_whole_race():
     assert {d.split(" over ")[0] for d, _ in cands} == {"exchange #1/#2", "exchange #1/#3", "exchange #2/#3"}
     for _d, new in cands:
         assert sorted(new.tolist()) == sorted(lab.tolist())
+
+
+def test_a_chain_move_carries_a_tracklets_clutter_continuation():
+    """A tracklet cut at a camera transition is one tracker chain; when its tail is clutter, the chain move carrying the
+    chain's label over its continuation labels the tail too."""
+    rows, t, s, lat, who = _race(n_h=2, gap_lat=3.0, start_s=[100.0, 90.0])
+    members = [np.flatnonzero(who == h) for h in range(2)]
+    horses = np.array([1, 2])
+    cam = int(rows[np.searchsorted(t, 10.0), 0])
+    ev = _evidence(rows, t, s, lat, members, horses, n_cam=(cam,))
+    succ, chains = core.tracker_chains(ev)
+    assert all(len(c) == 2 for c in chains)  # each horse's tracklet: two segments joined across the transition
+    m = core.Model(ev, core.list_rows(None, lambda f: f, horses), np.arange(1.0, 20.0, core.DT), width=20.0)
+    lab = np.array([who[ev.seg == k][0] for k in range(ev.n_seg)])
+    tail = chains[0][1]
+    lab[tail] = -1
+    st = core.evaluate(m, lab)
+    full = lab.copy()
+    full[tail] = lab[chains[0][0]]
+    assert any(np.array_equal(new, full) for _d, new in core.chain_moves(ev, lab, st))

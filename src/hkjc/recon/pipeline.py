@@ -1602,7 +1602,8 @@ class RaceRun:
         tg = np.arange(t0, t1 + fusion.DT / 2, fusion.DT)
         model = core.Model(ev, Lr, tg, self.info.width)
         start = tuple(x for x in start if len(x) == ev.n_seg)  # a start from other segments cannot be compared
-        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, global_moves=False)
+        res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, global_moves=False,
+                         relabel=False)
         paths = self._core_paths(res, ev, model)
         quiet, self.log = self.log, (lambda *a, **k: None)
         try:

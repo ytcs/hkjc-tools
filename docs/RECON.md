@@ -460,7 +460,20 @@ with any other end lowers J. Last, the lowest end descends once more with pair e
 (`core.pair_exchanges`): any two labelled horses exchange labels over the whole race, or from a camera cut to the end
 or from the start to the cut where the two paths are within `EXCH_S` along and `EXCH_L` across at the cut. Two horses
 that never run level can be told apart wrongly for a whole race (20251126_HV_3: #7 and #9, 3-4 lateral units apart),
-and no other family exchanges them. The lowest end is kept. Moves are judged by J, so more starts can only lower the
+and no other family exchanges them. The same descent adds tracker-chain moves (`core.chain_moves`). A chain is a run
+of segments joined by unambiguous tracker links (`core.tracker_chains`: one link out of the first, one into the
+second, both with P(horse) ≥ 0.5). Where a chain's label changes along it, it trades labels with the `CHAIN_K` (8)
+chains whose boxes are closest along the track in the frames within `CHAIN_DT` (1 s) of the change (median, within
+`CHAIN_NEAR`): its own label carried over its continuation, the exchange with one partner and both 3-cycles with
+two, over the whole chains and from the change onwards, every linked continuation (clutter included) moving with
+its chain. The partners are chosen on the boxes, not on the fitted paths: paths fitted to wrong labels are far apart
+exactly where the labels are wrong (20260301_ST_2: three chains permuted from 44 s, one's tail left as clutter). Then
+an exact relabel pass: every segment of ≥ `LONG_N` (10) detections (clutter ones with P(horse) ≥ 0.5), with its
+unambiguous continuation, to clutter or to each horse whose path is within `REL_GATE` (15 m) of its first box, is
+screened by the truncated state step; the best get full steps, and the pass repeats (assignment steps after each
+accepted relabel) until none lowers J. The last pass's screened labellings join the posterior, so a label's
+probability is bounded by its nearest single alternatives. The product's preliminary solve (before the finish
+camera) skips the pass. The lowest end is kept. Moves are judged by J, so more starts can only lower the
 kept J; the ends of different starts differ by cascades of relabellings, each part of which raises J alone, which no
 single move family reaches.
 
