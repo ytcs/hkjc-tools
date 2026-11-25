@@ -387,7 +387,17 @@ order. Two persistent fault chains act on top (`core.list_chains`, forward-backw
 - per runner, over every list row, an omission state that explains an unlisted horse ahead of the last listed one
   by more than `OMIT_MARGIN` (2.4 m): its fact's likelihood is max(q(d), 1 − q(d + `OMIT_MARGIN`)). A horse level
   with the last listed one gains nothing from it, so the list keeps ordering the back markers (`P_OMIT_IN`,
-  `P_OMIT_STAY`).
+  `P_OMIT_STAY`). A listed horse is not omitted unless its read can be a dropped-digit partner's number (below);
+- per unordered pair the list states adjacent, over that pair's adjacent facts, an order-wrong state in which the
+  pair's stated order says nothing (a coin flip): a list that misplaces a horse for a stretch costs the chain's entry
+  and a coin flip per row, not a misread per row (`P_WRONG_IN` 3e-3, `P_WRONG_STAY` 0.98 per fact, fitted by maximum
+  likelihood of held-out list rows of the development races against masked runs' paths). Its emission is the ratio
+  to the kept order, weighted by the row's P(not frozen); a fact's factor weight is (1 − P(frozen))(1 − P(wrong)),
+  and the rank-count vote treats a slot in proportion to its pair facts' P(wrong).
+
+A slot read whose number has a dropped-digit partner among the runners (1 ↔ 11, 12, …; 2 ↔ 12) is the partner with
+probability `P_DROP` (1e-3, the list's one-row flickers between a partner's reads): its facts carry that extra misread
+probability, and the listed horse can stay in its omission state through such a read at P_DROP.
 
 The fact API is source-agnostic: (time, ordered pair, source fault model).
 
