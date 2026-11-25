@@ -456,15 +456,21 @@ Every start (step 1's five, then the caller's labellings) descends by steps 1–
 global moves). Then crossovers (`core.crossovers`): the lowest end takes another end's labels over a run of
 consecutive parts of the segments where they differ (a part links differing segments that overlap in time and share
 a label, so a run keeps exclusivity), screened like steps 4–6; a lower labelling descends again, until no crossover
-with any other end lowers J. The lowest end is kept. Moves are judged
-by J, so more starts can only lower the kept J; the ends of different starts differ by cascades of relabellings, each
-part of which raises J alone, which no single move family reaches.
+with any other end lowers J. Last, the lowest end descends once more with pair exchanges added to steps 2–6
+(`core.pair_exchanges`): any two labelled horses exchange labels over the whole race, or from a camera cut to the end
+or from the start to the cut where the two paths are within `EXCH_S` along and `EXCH_L` across at the cut. Two horses
+that never run level can be told apart wrongly for a whole race (20251126_HV_3: #7 and #9, 3-4 lateral units apart),
+and no other family exchanges them. The lowest end is kept. Moves are judged by J, so more starts can only lower the
+kept J; the ends of different starts differ by cascades of relabellings, each part of which raises J alone, which no
+single move family reaches.
 
 The candidates of steps 4–6 are screened by a truncated state step (`QUICK_ROUNDS` fault-chain round, at most
 `QUICK_IT` Newton steps, the current state's posterior sds). Only the `SCREEN_KEEP` best within `SCREEN_MARGIN` of
 the current J get a full state step, and only full steps can be accepted or enter the posterior. A family with more
 than `SCREEN_PRE` (40) candidates screens only those with the lowest linearised cost change (the current unaries
-summed over the relabelled segments).
+summed over the relabelled segments); pair exchanges are all screened, because the linearised change cannot rank a
+race-long exchange (+85,616 for one whose J change is −13). The log reports how many pair exchanges the screen scored
+below J and how many of those the full state step did not confirm.
 
 Each product solves twice: without the finish camera by assignment steps only (steps 1–2), then in full with the
 camera's crossings (`finish_camera` from the first state), the first solve's labels being a candidate start. The final

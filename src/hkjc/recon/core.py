@@ -1561,6 +1561,9 @@ LIST_SPLIT = 7.0  # s: block length of the split-list inits (off the 10 s grid o
 SCREEN_PRE = 40  # at most this many candidates per move family are screened (lowest linearised cost change first)
 T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
+EXCH_S, EXCH_L = 3.0, 4.0  # m, units: two paths this close at a camera cut may exchange labels from it on
+# (pair exchanges are screened by the truncated state step alone: a linearised cost change cannot rank a
+# race-long exchange, e.g. +85,616 for one whose J change is -13 on 20251126_HV_3)
 
 
 def crossovers(ev: Evidence, lab, other):
@@ -1594,6 +1597,43 @@ def crossovers(ev: Evidence, lab, other):
             new = lab.copy()
             new[g] = other[g]
             out.append((f"crossover of parts {i + 1}-{j + 1} of {len(parts)} ({len(g)} segments)", new))
+    return out
+
+
+def pair_exchanges(ev: Evidence, lab, st: State):
+    """Every two labelled horses exchange labels on every segment inside a window: the whole race, or from a camera
+    cut (a time where >= 3 labelled segments start together) to the race's end or from its start to the cut, where
+    the two paths are within EXCH_S along and EXCH_L across at the cut (elsewhere the exchange makes both paths
+    jump there). -> list of (description, labelling)."""
+    tg = st.tg
+    lo = np.full(ev.n_seg, np.inf)
+    hi = np.full(ev.n_seg, -np.inf)
+    np.minimum.at(lo, ev.seg, ev.t)
+    np.maximum.at(hi, ev.seg, ev.t)
+    st_t, cnt = np.unique(np.round(lo[lab >= 0] * 5) / 5, return_counts=True)
+    cuts = st_t[cnt >= 3]
+    t0, t1 = tg[0] - 1.0, tg[-1] + 1.0
+    wins = [(t0, t1, None)] + [(c, t1, c) for c in cuts] + [(t0, c, c) for c in cuts]
+    present = np.unique(lab[lab >= 0])
+    out, seen = [], {lab.tobytes()}
+    for x0, x1, tc in wins:
+        inside = (lo >= x0 - 0.15) & (hi < x1 - 0.05)
+        k = None if tc is None else int(np.clip(np.searchsorted(tg, tc), 0, len(tg) - 1))
+        for ia, a in enumerate(present):
+            ma = inside & (lab == a)
+            for b in present[ia + 1:]:
+                if k is not None and (abs(st.S[a, k] - st.S[b, k]) > EXCH_S or abs(st.L[a, k] - st.L[b, k]) > EXCH_L):
+                    continue
+                mb = inside & (lab == b)
+                if not (ma.any() or mb.any()):
+                    continue
+                new = lab.copy()
+                new[ma], new[mb] = b, a
+                key = new.tobytes()
+                if key not in seen:
+                    seen.add(key)
+                    out.append((f"exchange #{ev.horses[a]}/#{ev.horses[b]} over {max(x0, tg[0]):.1f}-"
+                                f"{min(x1, tg[-1]):.1f} s", new))
     return out
 
 
@@ -1677,19 +1717,29 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             qmemo[key] = evaluate(model, labs, extra_s, extra_l, X0=st0.S, s_shift=s_shift, quick=st0).J
         return qmemo[key]
 
-    def screened(cands, st0, U, lab):
+    disagree = []  # pair exchanges the screen scored below the current J that the full state step did not confirm
+    n_screen_low = [0]  # pair exchanges given a full step that the screen scored below the current J
+
+    def screened(cands, st0, U, lab, check=False, prerank=True):
         """Full state steps for the SCREEN_KEEP candidates with the lowest screening J (truncated solve), if within
         SCREEN_MARGIN of the current J; with more than SCREEN_PRE candidates only the SCREEN_PRE with the lowest
         linearised cost change (sum of the current unaries over the relabelled segments) are screened.
         -> list of (description, labelling, State)."""
-        if len(cands) > SCREEN_PRE:
+        if prerank and len(cands) > SCREEN_PRE:
             Uc = np.c_[U, np.zeros(len(U))]  # last column: clutter
             cur = Uc[np.arange(len(lab)), np.where(lab >= 0, lab, -1)]
             du = [float((Uc[np.arange(len(lab)), np.where(pm >= 0, pm, -1)] - cur).sum()) for _d, pm in cands]
             cands = [cands[i] for i in np.argsort(du)[:SCREEN_PRE]]
         qj = [quick_j(pm, st0) for _d, pm in cands]
         keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st0.J + SCREEN_MARGIN]
-        return [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
+        out = [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
+        if check:
+            for i, (desc, _pm, st2) in zip(keep, out):
+                if qj[i] < st0.J - MIN_GAIN:
+                    n_screen_low[0] += 1
+                    if st2.J >= st0.J - MIN_GAIN:
+                        disagree.append((desc, qj[i] - st0.J, st2.J - st0.J))
+        return out
 
     ucache = {}  # the assignment step's unaries by (state, labelling): a descent's last step is the next one's first
 
@@ -1701,8 +1751,9 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             ucache[key] = (st_, unaries(model, st_, labs))
         return ucache[key][1]
 
-    def descend(lab, st, moves):
-        """Assignment steps and (with moves) the global move families until no proposal lowers J."""
+    def descend(lab, st, moves, exchanges=False):
+        """Assignment steps and (with moves) the global move families, (with exchanges) the pair exchanges too, until
+        no proposal lowers J."""
         it = 0
         win_failed = None  # the labelling the window proposals last failed on: retried after WINDOW_RETRY changes
         while True:
@@ -1802,6 +1853,18 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                     hist.append((it, st2.J, int((pm != lab).sum())))
                     lab, st = pm, st2
                     moved = True
+            if not moved and exchanges:  # pair exchanges: two horses over the whole race, cut -> end, start -> cut
+                best = None
+                for desc, pm, st2 in screened(pair_exchanges(ev, lab, st), st, U, lab, check=True, prerank=False):
+                    if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
+                        best = (pm, st2, desc)
+                if best is not None:
+                    pm, st2, desc = best
+                    log(f"   core: it{it} {desc} relabels {int((pm != lab).sum())} segments, J {st.J:.1f} -> "
+                        f"{st2.J:.1f} {_fmt(st2.parts)}")
+                    hist.append((it, st2.J, int((pm != lab).sum())))
+                    lab, st = pm, st2
+                    moved = True
             if not moved:
                 log(f"   core: it{it} no proposal lowers J; stop at J {st.J:.1f}")
                 break
@@ -1858,7 +1921,14 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         hist.append(("crossover", best[1].J, int((best[0] != lab).sum())))
         lab, st = descend(best[0], best[1], global_moves)
         others = [e for e in others if not np.array_equal(e[0], lab)]
+    # last, the lowest end descends once more with the pair exchanges (each screened by a truncated state step, too
+    # costly to run inside every start's descent)
+    if global_moves:
+        lab, st = descend(lab, st, True, exchanges=True)
     log(f"   core: lowest end J {st.J:.1f}")
+    if n_screen_low[0]:
+        log(f"   core: pair exchanges screened below J: {n_screen_low[0]}, not confirmed by the full step: "
+            f"{len(disagree)}" + "".join(f"; {d} (screen {q:+.1f}, full {f:+.1f})" for d, q, f in disagree[:10]))
     U = unaries_of(st, lab)
     return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)
 

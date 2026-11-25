@@ -170,3 +170,19 @@ def test_a_box_wholly_inside_the_list_band_is_an_icon():
     lt = core.legend_top(rows[:, 2], H)
     assert 300 < lt < 440
     assert (p[:40] == core.P_HORSE0).all() and (p[40:45] == core.P_GHOST).all() and (p[45:] == core.P_EDGE).all()
+
+
+def test_pair_exchanges_cover_every_pair_over_the_whole_race():
+    """Any two labelled horses get a whole-race exchange, however far apart they run; every exchange keeps the
+    labels' multiset."""
+    rows, t, s, lat, who = _race(n_h=3, gap_lat=3.0, start_s=[100.0, 90.0, 80.0])
+    members = [np.flatnonzero(who == h) for h in range(3)]
+    horses = np.array([1, 2, 3])
+    ev = _evidence(rows, t, s, lat, members, horses)
+    m = core.Model(ev, core.list_rows(None, lambda f: f, horses), np.arange(1.0, 20.0, core.DT), width=20.0)
+    lab = np.array([who[ev.seg == k][0] for k in range(ev.n_seg)])
+    st = core.evaluate(m, lab)
+    cands = core.pair_exchanges(ev, lab, st)
+    assert {d.split(" over ")[0] for d, _ in cands} == {"exchange #1/#2", "exchange #1/#3", "exchange #2/#3"}
+    for _d, new in cands:
+        assert sorted(new.tolist()) == sorted(lab.tolist())
