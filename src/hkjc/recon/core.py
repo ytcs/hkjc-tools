@@ -992,6 +992,8 @@ def _block_cov(ab, H_rows):
 
 
 WINDOWS = (10.0, 30.0)  # s: window proposals leave each horse's own observations this close to the segment out
+WINDOW_RETRY = 5  # window proposals that failed are retried only after this many segments changed label
+MIN_GAIN = 2.0  # a proposal is kept when it lowers J by more than this (about 1 nat; below T_POST's resolution)
 
 
 def _band_add_obs(ab, r, tg, t, y, sd, sign=1.0):
@@ -1473,6 +1475,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         if st2.J < st.J:
             lab, st = np.asarray(other).copy(), st2
     it = 0
+    win_failed = None  # the labelling the window proposals last failed on: retried after WINDOW_RETRY changes
     while True:
         it += 1
         U = unaries(model, st, lab)
@@ -1481,7 +1484,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         if not np.array_equal(prop, lab):
             st2 = look(prop, st.S)
             nch = int((prop != lab).sum())
-            if st2.J < st.J - 1e-6:
+            if st2.J < st.J - MIN_GAIN:
                 log(f"   core: it{it} {nch} segments relabelled, J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
                 hist.append((it, st2.J, nch))
                 lab, st = prop, st2
@@ -1500,13 +1503,15 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                     if q != k and ev.seg_lo[q] <= ev.seg_hi[k] and ev.seg_hi[q] >= ev.seg_lo[k]:
                         trial[q] = prop[q] if prop[q] != prop[k] else -1
             st2 = look(trial, st.S)
-            if st2.J < st.J - 1e-6:
+            if st2.J < st.J - MIN_GAIN:
                 log(f"   core: it{it} proposal raised J; single move seg {k} -> J {st.J:.1f} -> {st2.J:.1f}")
                 hist.append((it, st2.J, 1))
                 lab, st = trial, st2
                 moved = True
                 break
-        if not moved:  # window proposals: each horse's nearby labels left out, the list's rank votes not used
+        win_ok = win_failed is None or int((lab != win_failed).sum()) >= WINDOW_RETRY
+        if not moved and win_ok:  # window proposals: each horse's nearby labels left out, no rank votes
+            win_failed = lab.copy()
             base = segment_base(ev)[:, None] + ev.read_cost + ev.silk_cost
             if st.c_un is not None:
                 fi = np.searchsorted(ev.view["frames"], ev.fr)
@@ -1519,7 +1524,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 if np.array_equal(pw, lab):
                     continue
                 st2 = look(pw, st.S)
-                if st2.J < st.J - 1e-6:
+                if st2.J < st.J - MIN_GAIN:
                     log(f"   core: it{it} window proposal ({delta:.0f} s) relabels {int((pw != lab).sum())} segments, "
                         f"J {st.J:.1f} -> {st2.J:.1f} {_fmt(st2.parts)}")
                     hist.append((it, st2.J, int((pw != lab).sum())))
@@ -1532,7 +1537,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             cands = [(f"permutation move at {T:.1f} s over {min(B, T):.1f}-{max(B, T):.1f} s", pm)
                      for T, B, pm in permutation_moves(ev, lab)]
             for desc, pm, st2 in screened(cands, st):
-                if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
+                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
                     best = (pm, st2, desc)
             if best is not None:
                 pm, st2, desc = best
@@ -1544,7 +1549,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         if not moved:  # omission insertions over stretches
             best = None
             for desc, pm, st2 in screened(insertion_moves(model, st, lab), st):
-                if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
+                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
                     best = (pm, st2, desc)
             if best is not None:
                 pm, st2, desc = best
@@ -1556,7 +1561,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         if not moved:  # abreast-pair swaps: two horses running level exchange labels over a stretch between cuts
             best = None
             for desc, pm, st2 in screened(swap_moves(model, st, lab), st):
-                if st2.J < st.J - 1e-6 and (best is None or st2.J < best[1].J):
+                if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
                     best = (pm, st2, desc)
             if best is not None:
                 pm, st2, desc = best

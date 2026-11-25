@@ -432,7 +432,8 @@ It is the sum of:
    list's order put it.
 6. Then abreast-pair swaps (`core.swap_moves`): two horses whose paths stay within `ABREAST_S` along and `ABREAST_L`
    across for ≥ `ABREAST_T` s exchange labels over that stretch, widened to the nearest camera cuts.
-7. The loop ends when no proposal lowers J.
+7. The loop ends when no proposal lowers J by more than `MIN_GAIN` (2, about one nat). Window proposals that failed
+   are retried only after `WINDOW_RETRY` segments have changed label.
 
 The candidates of steps 4–6 are screened by a truncated state step (`QUICK_ROUNDS` fault-chain round, at most
 `QUICK_IT` Newton steps, the current state's posterior sds). Only the `SCREEN_KEEP` best within `SCREEN_MARGIN` of
@@ -477,8 +478,7 @@ lowest J among the starts is kept.
   - 4: the silk term is still the per-segment clipped histogram LLR (Stage B);
   - 5: observe's appearance and number splits;
   - 6: finish-camera handling: the anchor-or-registration clock inside `finish_camera`, camera crossings computed
-    once from the first state. The label-free registration uses only clean boxes (P(horse) = `P_HORSE0`: no overlay
-    ghost, no box on an occluder band). The camera's `fixed` names, line elimination and blind veto are gone;
+    once from the first state. The camera's `fixed` names, line elimination and blind veto are gone;
   - 12: the metric bias and HV shape as point estimates;
   - 14: top-1 OCR integers;
   - the unseated rule (UR) is not ported;

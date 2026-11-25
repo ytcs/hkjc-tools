@@ -1169,7 +1169,7 @@ class RaceRun:
     def _finish_identity(self, T=None, mem=None):
         """({tracklet index: number}, label-free fit) from the finish camera (1D registration of the
         tracklets' line-crossing times to the camera's gaps; tracklets ending < 30 m short are
-        extrapolated). A pure function of tracks.npz, finish.npz and the core's P(horse) (segs.npz: only clean boxes): called with no arguments it is
+        extrapolated). A pure function of tracks.npz + finish.npz: called with no arguments it is
         CACHED on their mtimes (the fuse stage's EM loop calls it repeatedly)."""
         import copy
 
@@ -1177,7 +1177,7 @@ class RaceRun:
             return self._finish_identity_compute(T, mem)
         key = tuple(
             self.p(f).stat().st_mtime_ns if self.p(f).exists() else -1
-            for f in ("tracks.npz", "finish.npz", "segs.npz")
+            for f in ("tracks.npz", "finish.npz")
         )
         c = getattr(self, "_fin_id_cache", None)
         if c is None or c[0] != key:
@@ -1193,12 +1193,6 @@ class RaceRun:
         z = np.load(self.p("finish.npz"))
         order, gaps, _u = finishcam.finish_gaps(self.finish_sc(z))
         gaps = {int(k): v for k, v in gaps.items()}
-        if self.p("segs.npz").exists():  # only clean boxes: no overlay ghost or box on an occluder band (core.p_horse)
-            from .core import P_HORSE0
-
-            ph = np.load(self.p("segs.npz"))["p_horse"]
-            if len(ph) == len(T["t"]):
-                mem = [m[ph[m] >= P_HORSE0] for m in mem]
         if len(gaps) < 3:
             return {}, None
         tc, vs = {}, []
