@@ -259,7 +259,7 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   | 20241013_ST_2 U | 42,763 | 42,640 | 42,467 | 28 -> 168 |
   | 20251012_ST_4 lg1 (24cbf3d) | 83,492 | 83,103 | 83,056 | 196 -> 747 |
 
-  Acceptance (a): 4 of 6 at or below J_ref (HV_9 U +143, HV_4 lg1 +82); median gap 388 -> 0. Met.
+  Acceptance (a): 4 of 6 at or below J_ref (HV_9 U +143, HV_4 lg1 +82); median gap 431 -> 0. Met.
   Profile (ST_9 lg1, 290 s): screening quick steps 85 s, MILP 68 s (106 calls), window costs 56 s, unaries 55 s.
 - **Final product.** Global moves in the final solve (on top of the multi-start) lowered final J by 11 (ST_2 U, +71
   CPU s) and 84 (20231001_ST_1 U, +211 s); kept off. Crossovers run in every solve.
