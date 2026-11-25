@@ -54,7 +54,7 @@ for name, st in (("found", a), ("shifted", b)):
         k, w = core._interp(model.tg, Sw.tau)
         X = st.S
         dl = X[Sw.a, k] * (1 - w) + X[Sw.a, k + 1] * w - X[Sw.b, k] * (1 - w) - X[Sw.b, k + 1] * w
-        J, pf, om = core.list_chains(Lw, Sw, core._p_order(dl)[1], model.H)
+        J, pf, om = core.list_chains(Lw, Sw, core._p_order(dl)[1], model.H, dl)
         top = [(int(ev.horses[h]), round(float(om[h].mean()), 2)) for h in range(model.H) if om[h].mean() > 0.2]
         out.append(f"{w0}s J {J:.0f} pf {pf.mean():.2f} om {top}")
     print(name, " | ".join(out))

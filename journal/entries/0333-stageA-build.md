@@ -124,3 +124,56 @@ block A as is: an optimisation pass and pruning of the move enumeration come bef
   and the viewer runs (seconds, CPU, the last ones with GPU devices hidden as slot.sh does) ran outside slot.sh; jobs
   killed by explicit PID: a queued debug job (never started), the insertion prototype, and the m1 / m2 queues A, B, D
   and job E when code changed under them.
+
+## Re-submission after the Gate 1 NO-GO (code 8d8d048; cells m7, HV_3 m8)
+Fixes, in the coordinator's order:
+1. **Omission state** (606930b): an omitted horse explains only a lead of more than `OMIT_MARGIN` (2.4 m) over the
+   last listed horse (fact likelihood max(q(d), 1 - q(d + 2.4))); a horse level with the 8th listed one gains nothing
+   from it. Chains run over every list row (vectorised). Insertion candidates now come from rank jumps at stretch
+   edges, not from the omission posterior of the current labelling (1b12c65).
+2. **Posterior** (606930b, 211e2d0): per segment over every labelling the solve scored with a full state step, weighted
+   exp(-(J - J_best)/(2 T_POST)), T_POST 10; abreast-pair swaps (the stretch, and carried to the race's end / from its
+   start) are always scored.
+3. **`prob`** in both label files (631e05f); the m2 files the coordinator read predate it.
+4. **Large moves**: every accepted move with its segments and gain is listed below.
+5. **Compute** (606930b, f80c537): precomputed Hessian positions, quadratic line search, vectorised and scaled
+   forward-backward, move candidates screened by a truncated state step (best 3 get a full step). Replaced stages per
+   cell (CPU s, unmasked unless stated): HV_8 35, HV_8 2024 39, 0312-1 59 / lg1 48, 0312-2 58 / lg0 62, HV_3 84,
+   ST_7 97, 0312-3 185 / lg1 254, ST_4 335, ST_10 651, ST_9 2,809. Before: 170-6,500. ST_9 and ST_10 are still far
+   from "tens of seconds".
+6. Also: the start solve counts rows of a held near-cloth read (contract.legend_frozen) as frozen with P 0.9
+   (8d8d048), after HV_3 followed the frozen list under the m7 code; only HV_3 has such a window among the cells.
+
+Milestone cells (video products; movements):
+- 1. ST_7: #9 on t2, 3rd, 20-80 s; order at 42.7 s 2, 8, 9, 4, 1, 7, 3, 10, 5, 6.
+- 2. ST_10: #13 on t3, #11 on t7, #8 on t4 at 76.5-80 s, no flips. Gates: behind-winner 0.347 -> 0.184 s, finish rho
+  0.867 -> 0.956, sectional 0.278 -> 0.530 s (worse).
+- 3. 0312-1: #8 on t11 from 70 s, #10 on t12 from 71 s in U and lg1; #2 9th at 71-75 s in both (list 10, 7, 8, 6, 4,
+  1, 9, 5).
+- 4. 0312-2: U and lg0 identical (#3 t6 then t8, #1 t11 then t6).
+- 5. 0312-3: U and lg1 identical (#10 t7, #11 t1). prob 1.0 on both: the swap alternatives cost dJ +6,229 (the
+  abreast stretch 11.0-41.4 s, mostly lateral and detection terms: the tracklets keep distinct lanes past 41 s) and
+  +3,958 (to the race's end, mostly the list once the pair separates).
+- 6. HV_3: #11, #12, #10 behind #2 throughout the frozen window, #1 7th (t7), #3 at the back: the order of the live
+  lists at 15 s and 45 s.
+- 7. HV_8: #7 t9, #11 t3, #8 t8, 24.6-55 s.
+- 8. ST_4: #2 on t2 (wide).
+- 9. ST_9: #10 on t6 as main, 7 m behind #13 at 14.6 s; #8 now on t7 (lat 13-14) 3.5 m ahead of its main position.
+- 10. HV_8 2024: #4 and #8 unlabelled at 8.9-9.5 s; #4 on t6 at 11-14 s (lilac crop; list at 11 s has #4 3rd, product
+  3rd).
+
+Churn U vs masked (video / final): 0312-1 1.1 / 1.1 % (main 2.9 / 2.4), 0312-2 0.0 / 0.0 % (main 7.5 / 3.2),
+0312-3 1.5 / 1.4 % (main 16.7 / 13.8). Prob on 0312-3's pair rows over 12-52 s: median 1.000, share < 0.9 0.000 in both
+arms.
+
+Accepted global moves (segments, gain in J), m7 / m8 logs:
+- ST_7: permutation 12.4-14.4 s (6, 424); insert #9 at rank 3 over 12.1-71.0 s (81, 372); swap #9/#10 over 71.0-97.1 s
+  (1, 376).
+- ST_4: insert #12 at rank 10 over 11.0-48.6 s (13, 233); permutations at 48.6 s over 11.0-48.6 (10, 84), 43.4-48.6
+  (5, 25), 48.6-56.6 (10, 216).
+- ST_9: inserts #10 at rank 5 over 0-63.4 s (21, 156), #10 at rank 9 over 65.2-98.4 s (18, 309), #14 at rank 11 over
+  12.0-50.2 s (20, 184), #3 at rank 5 over 50.2-69.0 s (27, 36); permutations (10, 171; 2, 13; 2, 2; 3, 1; 2, 14);
+  swaps #2/#14 (10, 19), #3/#7 (2, 24), #6/#10 (2, 244), #8/#14 (6, 23), #9/#10 over 0-60.6 s (11, 628).
+- 0312-3 U: permutations at 51.4 s (6, 48), 51.6 s over 41.4-51.6 s (39, 93); lg1: (1, 15), (8, 381), (13, 166).
+- 0312-2 lg0: permutation from 40.6 s (11, 95). HV_8 2024: permutation (2, 39 and 60), swap #4/#11 (2, 58).
+- HV_8, 0312-1 (U, lg1): none.
