@@ -712,17 +712,23 @@ class State:
     obs_l: Obs = None
     has_obs: np.ndarray = None  # per horse: any observation
 
-    def sd(self, A, every=10):
-        """Posterior sd of every horse on the grid (from the per-horse marginal bands)."""
+    def sd(self, A, every=10, cache=None):
+        """Posterior sd of every horse on the grid (from the per-horse marginal bands); ``cache`` (dict keyed by the
+        band's id) reuses rows of bands seen before (the lateral solve's cached bands)."""
         n = len(self.tg)
         idx = np.unique(np.r_[np.arange(0, n, every), n - 1])
         out = np.zeros((len(A), n))
         for h, ab in enumerate(A):
+            if cache is not None and id(ab) in cache and cache[id(ab)][0] is ab:
+                out[h] = cache[id(ab)][1]
+                continue
             c = cholesky_banded(ab, lower=True)
             e = np.zeros((n, len(idx)))
             e[idx, np.arange(len(idx))] = 1.0
             v = np.einsum("ij,ij->j", e, cho_solve_banded((c, True), e))
             out[h] = np.sqrt(np.interp(np.arange(n), idx, v))
+            if cache is not None:
+                cache[id(ab)] = (ab, out[h].copy())
         return out
 
 
@@ -916,11 +922,21 @@ class Model:
         base = self.phys_l + self.pri_l[0]
         kk, ww = _interp(self.tg, obs.t) if len(obs.h) else (None, None)
         lb, ub = L_MIN, self.width - L_MIN
+        cache = self.__dict__.setdefault("_lcache", {})
+        if len(cache) > 4000:
+            cache.clear()
         for h in range(H):
+            m = obs.h == h if len(obs.h) else np.zeros(0, bool)
+            key = (h, obs.t[m].tobytes(), obs.y[m].tobytes(), obs.sd[m].tobytes()) if m.any() else (h,)
+            if key in cache:  # this horse's lateral observations unchanged: its solve is too
+                x, Jh, ab = cache[key]
+                X[h] = x
+                A.append(ab)
+                J += Jh
+                continue
             ab = base.copy()
             r = self.pri_l[1].copy()
             c = (0.5 * self.width / self.width) ** 2
-            m = obs.h == h if len(obs.h) else np.zeros(0, bool)
             if m.any():
                 a, b, y = (1 - ww[m]) / obs.sd[m], ww[m] / obs.sd[m], obs.y[m] / obs.sd[m]
                 np.add.at(ab[0], kk[m], a * a)
@@ -943,7 +959,9 @@ class Model:
                 tgt[hi_v] = ub
             X[h] = x
             A.append(ab)
-            J += _quad_band(ab, x) - 2.0 * float(r @ x) + c + _logdet(ab)[0] - self.ld_prior_l
+            Jh = _quad_band(ab, x) - 2.0 * float(r @ x) + c + _logdet(ab)[0] - self.ld_prior_l
+            J += Jh
+            cache[key] = (x, Jh, ab)
         return X, J, A
 
 
@@ -1003,7 +1021,10 @@ def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift
     has = np.zeros(model.H, bool)
     has[np.unique(os_.h)] = True
     st = State(model.tg, Xs, Xl, As, Al, pf, om, 0.0, {}, os_, ol, has)
-    st.sdS, st.sdL = (st.sd(As), st.sd(Al)) if quick is None else (quick.sdS, quick.sdL)
+    sdl_cache = model.__dict__.setdefault("_sdl_cache", {})
+    if len(sdl_cache) > 4000:
+        sdl_cache.clear()
+    st.sdS, st.sdL = (st.sd(As), st.sd(Al, cache=sdl_cache)) if quick is None else (quick.sdS, quick.sdL)
     st.pin = in_view(ev, Xs, Xl, st.sdS, st.sdL, model.tg)
     J_det, st.p_det, st.c_un, st.c_lab = miss_terms(ev, st.pin, seg_lab)
     st.J = J_s + J_l + J_list + J_lab + J_det
@@ -1242,13 +1263,25 @@ def kin_costs(model: Model, st: State, seg_lab):
         X = st.S if coord == "s" else st.L
         y = (ev.ch_s if coord == "s" else ev.ch_l)[allc]
         R = ((ev.ch_sds if coord == "s" else ev.ch_sdl)[allc]) ** 2
+        bcache = model.__dict__.setdefault("_block_cache", {})
+        if len(bcache) > 300:
+            bcache.clear()
         for h in range(H):
-            c = cholesky_banded(A[h], lower=True)
-            Z = cho_solve_banded((c, True), Hm.T)  # n x M
+            hit = bcache.get(id(A[h])) if coord == "l" else None
+            if hit is not None and hit[0] is A[h]:  # a cached lateral band: its chunk covariance blocks too
+                blocks = hit[1]
+            else:
+                c = cholesky_banded(A[h], lower=True)
+                Z = cho_solve_banded((c, True), Hm.T)  # n x M
+                blocks = [Z[k0[bnd[q]:bnd[q + 1]], bnd[q]:bnd[q + 1]] * (1 - w0[bnd[q]:bnd[q + 1]])[:, None]
+                          + Z[k0[bnd[q]:bnd[q + 1]] + 1, bnd[q]:bnd[q + 1]] * w0[bnd[q]:bnd[q + 1]][:, None]
+                          for q in range(len(segs))]
+                if coord == "l":
+                    bcache[id(A[h])] = (A[h], blocks)
             mu = Hsp @ X[h]
             for q, k in enumerate(segs):
                 a, b = bnd[q], bnd[q + 1]
-                C = Z[k0[a:b], a:b] * (1 - w0[a:b])[:, None] + Z[k0[a:b] + 1, a:b] * w0[a:b][:, None]
+                C = blocks[q]
                 m = mu[a:b]
                 yy, rr = y[a:b], R[a:b]
                 if seg_lab[k] == h:  # leave this segment out
