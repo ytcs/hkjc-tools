@@ -417,94 +417,66 @@ It is the sum of:
 - hard exclusions (stopped non-finishers after their last section).
 
 **Inference (`core.solve`).**
-1. Start-free solve: one MILP over segments × runners on the label-free evidence (a row inside a held near-cloth
-   read, `contract.legend_frozen`, counts as frozen with P `PF0_FROZEN`; afterwards the frozen chain decides). This is the list's rank-count vote
-   with undetected horses ahead at `P_AHEAD_UNSEEN`, plus reads and silk. It keeps only segments with a positive
-   gain. The same MILP also gives four more starts: the list's vote alone, reads and silk alone, and the vote of the
-   list rows in alternate `LIST_SPLIT` (7) s blocks (each parity) with reads and silk. The rank-count vote is not
-   J's list term: it over-rules labellings whose list disagreements J's fault chains discount, and a descent that
-   starts inside its basin does not leave it. The 7 s blocks are off the 10 s grid of the legend-masking validation
-   cells.
-2. Repeat:
-   - Assignment step: a MILP over segments × runners minimises J's increments, linearised at the current state.
-     Each increment combines the block predictive of the segment's chunks against each runner's posterior (leave
-     the segment out for its owner), the rank-count vote, the horse/clutter prior, reads, silk and links.
-   - State step: J is evaluated at the proposal. The proposal is kept if J falls. Otherwise its changes are tried
-     one segment at a time, in order of predicted gain, and the first that lowers J is kept.
-3. When neither the proposal nor any of its five best single-segment changes lowers J, window proposals follow
-   (`WINDOWS`, 10 s then 30 s). Each is a MILP whose kinematic term leaves out each horse's own observations within
-   the window around the segment. Its evidence farther away, the extra observations and the order curvature stay.
-   The window MILP leaves out the rank votes. A list omission shifts every horse behind the omitted one at once, and
-   only such a move reaches that labelling.
-4. Then permutation moves: at a cut where tracker links are broken between labelled segments, or where the
-   segments ending and starting at a camera cut pair up by along-track rank, the label permutation is carried over a
-   whole stretch, back to an earlier or on to a later camera cut (a time where ≥ 3 labelled segments start together).
-   The move lowering J most is kept (`core.permutation_moves`).
-5. Then insertions (`core.insertion_moves`): over a stretch of ≥ `INSERT_MIN_T` s between camera cuts, a horse whose
-   box rank in the first labelled frame after the stretch (or the last before it) is at least `INSERT_JUMP` places
-   ahead of its rank by mean position inside the stretch is put at that rank, and every horse from there to its old
-   rank moves one avatar back. This is the move a list omission needs: the omitted horse sits ahead of where the
-   list's order put it.
-6. Then abreast-pair swaps (`core.swap_moves`): two horses whose paths stay within `ABREAST_S` along and `ABREAST_L`
-   across for ≥ `ABREAST_T` s exchange labels over that stretch, widened to the nearest camera cuts.
-7. The loop ends when no proposal lowers J by more than `MIN_GAIN` (2, about one nat). Window proposals that failed
-   are retried only after `WINDOW_RETRY` segments have changed label. There is no iteration cap. Every accepted step
-   lowers J; the log prints J after each.
-
-Every start (step 1's five, then the caller's labellings) descends by steps 1–2 alone; the global move families
-(steps 3–6) then run from each distinct end (the order of the ends there does not predict their order after the
-global moves). Then crossovers (`core.crossovers`): the lowest end takes another end's labels over a run of
-consecutive parts of the segments where they differ (a part links differing segments that overlap in time and share
-a label, so a run keeps exclusivity), screened like steps 4–6; a lower labelling descends again, until no crossover
-with any other end lowers J. Last, the lowest end descends once more with pair exchanges added to steps 2–6
-(`core.pair_exchanges`): any two labelled horses exchange labels over the whole race, or from a camera cut to the end
-or from the start to the cut where the two paths are within `EXCH_S` along and `EXCH_L` across at the cut. Two horses
-that never run level can be told apart wrongly for a whole race (20251126_HV_3: #7 and #9, 3-4 lateral units apart),
-and no other family exchanges them. The same descent adds tracker-chain moves (`core.chain_moves`). A chain is a run
-of segments joined by unambiguous tracker links (`core.tracker_chains`: one link out of the first, one into the
-second, both with P(horse) ≥ 0.5). Where a chain's label changes along it, it trades labels with the `CHAIN_K` (8)
-chains whose boxes are closest along the track in the frames within `CHAIN_DT` (1 s) of the change (median, within
-`CHAIN_NEAR`): its own label carried over its continuation, the exchange with one partner and both 3-cycles with
-two, over the whole chains and from the change onwards, every linked continuation (clutter included) moving with
-its chain. The partners are chosen on the boxes, not on the fitted paths: paths fitted to wrong labels are far apart
-exactly where the labels are wrong (20260301_ST_2: three chains permuted from 44 s, one's tail left as clutter). Then
-an exact relabel pass: every segment of ≥ `LONG_N` (10) detections (clutter ones with P(horse) ≥ 0.5), with its
-unambiguous continuation, to clutter or to each horse whose path is within `REL_GATE` (15 m) of its first box, is
-screened by the truncated state step; the best get full steps, and the pass repeats (assignment steps after each
-accepted relabel) until none lowers J. The last pass's screened labellings join the posterior, so a label's
-probability is bounded by its nearest single alternatives. The product's preliminary solve (before the finish
-camera) skips the pass. The lowest end is kept. Moves are judged by J, so more starts can only lower the
-kept J; the ends of different starts differ by cascades of relabellings, each part of which raises J alone, which no
-single move family reaches.
+1. Starts: five MILPs over segments × runners on the label-free evidence (a row inside a held near-cloth read,
+   `contract.legend_frozen`, counts as frozen with P `PF0_FROZEN`; afterwards the frozen chain decides), each keeping
+   only segments with a positive gain: the list's rank-count vote (undetected horses ahead at `P_AHEAD_UNSEEN`) with
+   reads and silk; the vote alone; reads and silk alone; the vote of the list rows in alternate `LIST_SPLIT` (7) s
+   blocks (each parity) with reads and silk. A list stretch the full vote gets wrong is outvoted only from a start
+   that leaves it out (20260301_ST_2's final: the split-list start reaches the TV-confirmed chains). Then the caller's
+   labellings. Each distinct start gets a full state step.
+2. Alternation, from every start: the assignment step is a MILP over segments × runners (per-frame exclusivity, link
+   rewards) on unaries at the current state, followed by a full state step of its proposal. The proposal is kept when
+   J falls by more than `MIN_GAIN` (2, about one nat). The alternation stops at a fixed point (the MILP returns the
+   current labelling) or at a rejected proposal, whose label-connected parts (`core.crossovers`) join the polish pool;
+   at most `REFIT_ROUNDS` proposals per descent. The unaries (`core.unaries`):
+   - the kinematic block (`core.kin_costs`): the block predictive of the segment's chunks against each runner's
+     posterior; for its owner with the segment left out; for a runner holding other segments that overlap it in time,
+     with those segments' chunks left out (a one-horse refit, by a low-rank downdate of the runner's marginal): the
+     segment is scored against the path the runner would have holding it instead, not against the path that holds
+     its rival;
+   - the rank-count vote, the horse/clutter prior, the detection term, reads, silk, linearised at the state.
+3. Polish (at most `POLISH_STEPS` full state steps per descent). Candidates: the pool; every single segment moved to a
+   label whose unary is less than `SEG_SLACK` above its current one; the single relabels (`core.single_relabels`:
+   segments of ≥ `LONG_N` detections with their unambiguous tracker continuation, to clutter or to each horse within
+   `REL_GATE` of the segment's first box), pair exchanges (`core.pair_exchanges`: any two horses over the whole race,
+   or from a camera cut on, or up to it, where their paths are within `EXCH_S` along and `EXCH_L` across at the cut),
+   tracker-chain moves (`core.chain_moves`), abreast-pair swaps (`core.swap_moves`), permutation moves
+   (`core.permutation_moves`) and insertions (`core.insertion_moves`). They are scored by one-horse refits
+   (`core.Refit`): every horse whose segments change is re-solved alone (its along-track mode under physics, prior,
+   its observations and its order statements against the other horses' paths, the fault weights frozen at the state;
+   its lateral smoother exactly); the list term over the statements touching the moved horses, J_lab and J_det
+   (detection probabilities per frame) are taken exactly at the re-solved paths. Where the frozen-weight list change
+   exceeds `LIST_EXACT` (30), a fault chain may switch (an omission or order-wrong stretch): the weights are
+   re-estimated from the chains at the re-solved paths and the moved horses re-solved under them (`LIST_EM` rounds),
+   and the list term is taken exactly. Generator candidates are screened
+   first in closed form (`Refit.score_quick`: the quadratic change under the state's marginal band) and the
+   `REFIT_TOP` lowest are refit; pool candidates are refit whole (the closed form misjudges multi-horse moves); the
+   `SWEEP_TOP` lowest get `REFIT_SWEEPS` Gauss-Seidel sweeps over their horses, each re-solved against the others'
+   re-solved paths. The predicted-negative candidates with disjoint horses and segments are applied together in one
+   full state step; on rejection the single best are tried one at a time, then the round's other predicted-negative
+   candidates whose horses no accepted change touched. A round with no predicted gain gives full steps to its
+   `EXACT_TAIL` (8) best candidates within `TAIL_SLACK` (50) of J. An accepted step resumes the alternation. A
+   candidate's score is kept while none of its horses change label; a rejected change is not retried while its horses
+   keep their labels; before the polish ends, every candidate is scored afresh.
+4. Only the `DESCENTS` (2) lowest distinct alternation ends are polished (step 3); the lowest polished end then
+   descends again with the crossover runs toward the other end as its pool, while that lowers J. Moves are judged by
+   full state steps of J only.
 
 Every full state step starts from scratch and runs the EM over the fault chains to convergence (weights changing
 < 1e-3, at most `EM_ROUNDS` 20), so J is a function of the labelling alone: with the earlier 4 rounds, warm starts from
 neighbouring labellings moved J by up to 12.
 
-The candidates of steps 4–6 are screened by a truncated state step (`QUICK_ROUNDS` fault-chain round, at most
-`QUICK_IT` Newton steps, the current state's posterior sds). Only the `SCREEN_KEEP` best within `SCREEN_MARGIN` of
-the current J get a full state step, and only full steps can be accepted or enter the posterior. A family with more
-than `SCREEN_PRE` (40) candidates screens only those with the lowest linearised cost change (the current unaries
-summed over the relabelled segments); pair exchanges are all screened, because the linearised change cannot rank a
-race-long exchange (+85,616 for one whose J change is −13). The log reports how many pair exchanges the screen scored
-below J and how many of those the full state step did not confirm.
-
-Each product solves twice: without the finish camera by assignment steps only (steps 1–2), then in full with the
-camera's crossings (`finish_camera` from the first state), the first solve's labels being a candidate start. The final
-product's second solve runs steps 1–2 and, from its lowest end, the pair exchanges, chain moves and relabel pass (not
-steps 3–6, which search the render and list evidence the video product's solve already searched); the official
-interior times re-identify horses in it (20260301_ST_2: three chains from 44 s, which TV order facts confirm), and
-without the exchanges a re-identification left a pair swapped by continuity (#10/#11 at 11–43 s, 247 J above the
-restored pair). The preliminary (camera-free) solve runs steps 1–2 only. `fuse_final` also offers the video labels
-as a start.
+Each product solves twice: a pre-solve without the finish camera (steps 1–2, the lowest alternation end kept) whose
+state places the camera's crossings (`finish_camera`), then the full solve with them, the pre-solve's `DESCENTS`
+lowest alternation ends and (for the final product) the video labels being further starts. The official interior times re-identify horses in the final
+product's solve (20260301_ST_2: three chains from 44 s, which TV order facts confirm).
 
 **Outputs.**
 - `segs.npz` (identify): segments, links, P(horse), camera-transition detections.
 - `det_labels.npz` / `det_labels_final.npz`: per tracks row, `labels` (argmax, 0 = clutter), `prob` (its probability)
   and `marg` (P per runner, last column clutter). `core.posterior` computes them per segment over every labelling the
   solve scored, each weighted by exp(−(J − J_best)/(2 `T_POST`)): J's per-detection terms count correlated errors as
-  independent, so the posterior is tempered (`T_POST` 10). Abreast-pair swaps (below) are always scored, so a pair the
-  evidence cannot order comes out uncertain.
+  independent, so the posterior is tempered (`T_POST` 10).
 - `core_video.npz` / `core_final.npz`: segment labels, marginals, the final unaries, J per accepted step.
 - `det_margins_final.npz`: 2 log(p/(1 − p)) of the kept label.
 - `paths_video.parquet`, `fuse_video.pkl` (segment labels, finish observations, paths), `paths.parquet` and the
@@ -538,8 +510,8 @@ as a start.
   - 12: the metric bias and HV shape as point estimates;
   - 14: top-1 OCR integers;
   - the unseated rule (UR) is not ported;
-  - cost: the replaced stages take 28-890 CPU s per race (state steps for move candidates, unaries, window proposals,
-    the MILP); not yet at the target of tens of seconds.
+  - cost: the replaced stages' CPU per race is measured per release (journal); state steps, unaries and polish
+    scores dominate.
 
 ### Lateral in metres
 
