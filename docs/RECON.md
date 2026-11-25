@@ -102,8 +102,8 @@ Select it with `RaceRun(info, mask=...)`, CLI `--mask SPEC`, or env `HKJC_MASK`;
 non-empty mask in `mask.txt`, and a run refuses a dir whose mask-dependent artifacts were made under another
 mask (the outcome part governs `fuse_final`/`validate`, the evidence part `observe` and everything downstream;
 an evidence-masked run therefore starts from a dir without `observe`'s outputs). A withheld boundary is absent
-from the official observations, sets no metric bias and is not re-timed, so the product's error there is
-independent of that record. The yardsticks built on the mask are in §6.
+from the official observations, sets no metric bias (a withheld finish takes the prior step `FINISH_STEP` from the
+last visible boundary, §4) and is not re-timed, so the product's error there is independent of that record. The yardsticks built on the mask are in §6.
 
 ## 4. Pipeline
 
@@ -485,6 +485,8 @@ evidence as the video product's, which already did. `fuse_final` also offers the
 
 `fuse_final` then:
 1. sets the render metric bias at the visible boundaries from the video paths (`_metric_bias`), as a shift of chunk s;
+   a withheld finish takes the last visible boundary's bias plus `FINISH_STEP` (the render's step between the last
+   boundary and the line, a per-style median over the development list's tune half: silk 1.07 m, disc 0);
 2. runs the core with the draw, the official times and the stopped horses' exclusions;
 3. re-evaluates the state once on the metric-line shape (HV), labels fixed;
 4. ends stopped horses at their last labelled detection;

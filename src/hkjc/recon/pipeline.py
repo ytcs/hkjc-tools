@@ -1914,9 +1914,15 @@ class RaceRun:
             out.append(ob)
         return out
 
+    # m: the render metric bias at the line minus at the last official boundary before it (median over the tune half
+    # of the Stage A development list, main's video paths: silk +1.07 (check half +1.68); disc -0.50, within its
+    # spread of zero (sd 2.4 m over 10 races), so 0)
+    FINISH_STEP = {"silk": 1.07, "disc": 0.0}
+
     def _metric_bias(self, paths):
         """(s at the official boundaries, shared render metric bias b there, m) or None; a boundary the
-        mask withholds sets no bias."""
+        mask withholds sets no bias, except the line: withheld, it takes the last visible boundary's bias plus
+        ``FINISH_STEP``."""
         from .validate import crossing
 
         bnd, cum = self.info.official_boundaries()
@@ -1934,9 +1940,12 @@ class RaceRun:
                     v = np.interp(tr, p.t[1:], np.diff(p.s) / np.diff(p.t))
                     r.append((tr - c[j]) * v)  # path late by dt -> render s short by v*dt
             bs.append((D - bd, float(np.median(r)) if len(r) >= 3 else np.nan))
+        fin_hidden = bool(len(bnd)) and bnd[-1] == 0 and not any(np.isfinite(c[-1]) for c in cum.values())
         bs = [(sb, b) for sb, b in bs if np.isfinite(b)]
         if not bs:
             return None
+        if fin_hidden:  # the line: the last visible boundary's bias plus the render's own step there
+            bs.append((float(D), bs[-1][1] + self.FINISH_STEP[self.render_style()]))
         sb, b = np.array(bs).T
         o = np.argsort(sb)
         sb, b = sb[o], b[o]
