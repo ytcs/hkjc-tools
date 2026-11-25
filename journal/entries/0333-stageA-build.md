@@ -272,3 +272,10 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   screening state steps 110 s (fault chains 69 s of it), kinematic unaries 49 s, window costs 38 s, MILP 17 s.
 - **Dev-list P1 runs.** before = 6e7faff (runs/p1before), after = c2c4cf2 (runs/p1after; a few half-b cells may come
   from the 0c72d55 export, claimed exact), cells U + lg0/lg1 (silk) or dc0/dc1 (disc).
+- **Finish sectional (f788005).** On the 60 dev races (main's video paths, findt.py / finbias.py) the render's metric
+  bias at the line exceeds the last boundary's: silk median +1.07 m (tune half; check half +1.68; in time the silk
+  finish crossing is 0.08 s later than the 400 m bias implies, t about 3.9 over 40 races), disc -0.50 m (sd 2.4, not
+  distinct from 0). A withheld finish now takes the last visible boundary's bias plus that step (silk 1.07, disc 0).
+  Offline estimate on main's F cells (finstep_eval.py, dt - step / v): silk check half median |dt| 0.125 -> 0.091 s,
+  p90 0.390 -> 0.351; tune half 0.117 -> 0.123, p90 0.483 -> 0.425. To be measured on F cells run with the code.
+  It changes only cells with the finish withheld (not P1's cells).
