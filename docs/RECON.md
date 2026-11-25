@@ -418,9 +418,11 @@ It is the sum of:
   dets.npz rows; a silk-render run without it fails). The softmax has no "not a horse" outcome, so each detection's
   ratio to a uniform read is P(horse)·G·p + (1 − P(horse)) (G runners with an official silk). Detections of one
   avatar are strongly correlated, so the unit is the tracker tracklet: each detection weighs 1/(1 + (n − 1) `RHO`),
-  n the tracklet's P(horse)-weighted count, and the tracklet reads q = (1 − `EPS`) softmax + `EPS`/H, costing
-  −2 log(H q). The tracklet's cost is split additively over its segments (each keeps its own rows' evidence and its
-  share of the normaliser and floor), so a tracklet costs the same however it is cut. `RHO` (0.48: a tracklet
+  n the tracklet's P(horse)-weighted count, and the tracklet reads q = (1 − `EPS`) softmax + `EPS`/H. Appearance
+  says which runner an avatar is, not whether it is a horse (a list icon looks like a runner's silk), so the cost is
+  −2 log(q_h / max q) ≥ 0, against the best-matching runner; labelled versus clutter stays with P(horse) and the
+  kinematics. The tracklet's cost is split additively over its segments (each keeps its own rows' evidence and its
+  share of the rest), so a tracklet costs the same however it is cut. `RHO` (0.48: a tracklet
   pools to about two detections) and `EPS` (0.031) were fitted by maximum likelihood on development races the model
   never saw, against confident product tracklet labels. On the circle render: −2 × the clipped `silkmap` LLR of
   each segment with ≥ 10 features;
@@ -872,7 +874,7 @@ identical. Not bit-exact:
 - **Silk evidence.** The render appearance term pools a tracklet to about two detections (a whole tracklet's read
   is the product's label about three times in four on races the model never saw; look-alike silks, the red and
   blue families and navy rendered teal are systematic), so it costs at most about 12 J units per tracklet and
-  decides near-ties only; the draw does not enter identity.
+  decides near-ties only (it never makes a segment cheaper to label than to leave as clutter); the draw does not enter identity.
 - **Finish-short horses.** A horse unobserved over the last metres has a path to the grid end, extrapolated with
   growing sd; once sd_s exceeds `SD_MAX`, or the grid ends first, it has no scored finish crossing.
 - **Blind near-line cost.** It can remove correctly placed unread back markers. More generally, near the line a horse's

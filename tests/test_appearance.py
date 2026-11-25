@@ -12,15 +12,16 @@ def _app(n, horses, read, p=0.9):
                 has_gif=np.ones(H, bool))
 
 
-def test_cost_is_a_likelihood_ratio_against_a_uniform_read():
+def test_cost_is_a_likelihood_ratio_against_the_best_matching_runner():
     horses = [1, 2, 3, 4]
     app = _app(20, horses, 3)
     seg = np.zeros(20, int)
     C = A.costs(app, np.arange(20), seg, 1, horses, np.full(20, 0.97), [np.arange(20)])
-    assert C[0, 2] < 0 < C[0, 0]
-    sm = np.exp(-C[0] / 2) / len(horses)  # H x likelihood ratio -> the segment's runner distribution
-    assert abs(sm.sum() - 1.0) < 1e-9
-    assert C.max() <= -2 * np.log(A.EPS) + 1e-9 and C.min() >= -2 * np.log(len(horses)) - 1e-9
+    assert abs(C[0, 2]) < 1e-9 and C[0, 0] > 0  # appearance never makes labelling a box cheaper than clutter
+    q = np.exp(-C[0] / 2)
+    q /= q.sum()  # the tracklet's runner distribution
+    assert int(np.argmax(q)) == 2 and q.max() <= 1.0 - A.EPS + A.EPS / len(horses) + 1e-9
+    assert C.max() <= 2 * np.log((1 - A.EPS + A.EPS / 4) / (A.EPS / 4)) + 1e-9
 
 
 def test_repeated_detections_of_one_tracklet_saturate():

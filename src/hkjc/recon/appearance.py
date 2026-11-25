@@ -15,18 +15,20 @@ tracklet is its own): the same avatar renders the same way frame after frame, so
 w = 1 / (1 + (n_tau - 1) RHO), n_tau the tracklet's P(horse)-weighted count of scored rows, and the tracklet's pooled
 evidence saturates at about 1 / RHO detections. The tracklet's read is
 
-  L_tau,h = sum_{d in tau} w log r_dh,   q_tau = (1 - EPS) softmax(L_tau) + EPS / H,   cost -2 log(H q_tau,h)
+  L_tau,h = sum_{d in tau} w log r_dh,   q_tau = (1 - EPS) softmax(L_tau) + EPS / H
 
-EPS is the share of avatars that render like another runner's silk (systematic, not averaged away by pooling). The
-core's segments cut tracklets, so the tracklet's cost is split over its segments additively: segment k of tracklet
-tau carries its own rows' evidence and its share a_k (of the tracklet's P(horse)-weighted scored rows) of the
-tracklet's normaliser and floor,
+EPS is the share of avatars that render like another runner's silk (systematic, not averaged away by pooling).
+Appearance says WHICH runner an avatar is, not WHETHER it is a horse: a box that is not a horse (a list icon, a
+glyph) can look like any runner's silk, so the tracklet's cost is taken against its best-matching runner,
 
-  C_kh = -2 L_kh + a_k [2 (logsumexp(L_tau) - log H) - 2 log((1 - EPS) + EPS / (H softmax_h(L_tau)))],
+  CT_tau,h = -2 log(q_tau,h / max_h' q_tau,h')  >= 0,
 
-so a tracklet whose segments share one label costs exactly -2 log(H q_tau,h), however it is cut, and segments of a
-tracklet that changes avatar each keep their own read. RHO and EPS were fitted by maximum likelihood on development
-races the model never trained on, against the stored product's confident tracklet labels.
+and the labelled-versus-clutter balance stays with P(horse) and the kinematic terms. The core's segments cut
+tracklets, so CT is split over the tracklet's segments additively: segment k carries its own rows' evidence -2 L_kh
+plus its share a_k (of the tracklet's P(horse)-weighted scored rows) of CT_tau,h + 2 L_tau,h. A tracklet whose
+segments share one label costs exactly CT_tau,h however it is cut, and segments of a tracklet that changes avatar
+each keep their own read. RHO and EPS were fitted by maximum likelihood of q on development races the model never
+trained on, against the stored product's confident tracklet labels.
 """
 
 from __future__ import annotations
@@ -83,8 +85,8 @@ def costs(app, det_idx, seg, n_seg, horses, p_horse, members) -> np.ndarray:
     w = 1.0 / (1.0 + (np.maximum(cnt, 1.0)[trk] - 1.0) * RHO)
     Lt = np.zeros((n_trk, H))
     np.add.at(Lt, trk, w[:, None] * logr)
-    lse = logsumexp(Lt, axis=1, keepdims=True)
-    lift = 2.0 * (lse - np.log(H)) - 2.0 * np.log((1.0 - EPS) + EPS / (H * np.exp(Lt - lse)))
+    q = (1.0 - EPS) * np.exp(Lt - logsumexp(Lt, axis=1, keepdims=True)) + EPS / H
+    lift = 2.0 * (np.log(q.max(1, keepdims=True)) - np.log(q)) + 2.0 * Lt
     L = np.zeros((n_seg, H))
     np.add.at(L, seg, w[:, None] * logr)
     seg_trk = np.zeros(n_seg, int)
