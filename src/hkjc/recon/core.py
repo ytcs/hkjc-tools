@@ -28,10 +28,16 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+from functools import partial
 
 import numpy as np
-from scipy.linalg import cho_solve_banded, cholesky_banded
+from scipy.linalg import cho_solve_banded as _cho_solve_banded
+from scipy.linalg import cholesky_banded as _cholesky_banded
 from scipy.special import ndtr
+
+# banded factor and solve without the finiteness scan (the bands are finite by construction)
+cholesky_banded = partial(_cholesky_banded, check_finite=False)
+cho_solve_banded = partial(_cho_solve_banded, check_finite=False)
 
 DT = 0.1
 # detections
@@ -482,27 +488,28 @@ def list_rows(leg, t_of_frame, horses) -> ListRows:
 
 def _scan(M, L, reverse=False):
     """Inclusive prefix (or, ``reverse``, suffix) products of 2 x 2 matrices M (C, n, 2, 2) kept normalised, with their
-    log scales L (C, n): Hillis-Steele doubling, log2(n) vectorised steps."""
-    M, L = M.copy(), L.copy()
+    log scales L (C, n): Hillis-Steele doubling, log2(n) vectorised steps (on the four entries as separate arrays)."""
+    m00, m01, m10, m11 = (np.ascontiguousarray(M[..., i, j]) for i, j in ((0, 0), (0, 1), (1, 0), (1, 1)))
+    L = L.copy()
     n = M.shape[1]
     k = 1
     while k < n:
-        A, B = M[:, :-k], M[:, k:]
-        P = np.empty_like(A)
-        P[..., 0, 0] = A[..., 0, 0] * B[..., 0, 0] + A[..., 0, 1] * B[..., 1, 0]
-        P[..., 0, 1] = A[..., 0, 0] * B[..., 0, 1] + A[..., 0, 1] * B[..., 1, 1]
-        P[..., 1, 0] = A[..., 1, 0] * B[..., 0, 0] + A[..., 1, 1] * B[..., 1, 0]
-        P[..., 1, 1] = A[..., 1, 0] * B[..., 0, 1] + A[..., 1, 1] * B[..., 1, 1]
+        a00, a01, a10, a11 = m00[:, :-k], m01[:, :-k], m10[:, :-k], m11[:, :-k]
+        b00, b01, b10, b11 = m00[:, k:], m01[:, k:], m10[:, k:], m11[:, k:]
+        p00 = a00 * b00 + a01 * b10
+        p01 = a00 * b01 + a01 * b11
+        p10 = a10 * b00 + a11 * b10
+        p11 = a10 * b01 + a11 * b11
         Ln = L[:, :-k] + L[:, k:]
-        sc = np.maximum(P.max((2, 3)), 1e-300)
-        P = P / sc[..., None, None]
+        sc = np.maximum(np.maximum(np.maximum(p00, p01), np.maximum(p10, p11)), 1e-300)
         Ln = Ln + np.log(sc)
-        if reverse:
-            M[:, :-k], L[:, :-k] = P, Ln
-        else:
-            M[:, k:], L[:, k:] = P, Ln
+        dst = np.s_[:, :-k] if reverse else np.s_[:, k:]
+        m00[dst], m01[dst], m10[dst], m11[dst] = p00 / sc, p01 / sc, p10 / sc, p11 / sc
+        L[dst] = Ln
         k *= 2
-    return M, L
+    out = np.empty_like(M)
+    out[..., 0, 0], out[..., 0, 1], out[..., 1, 0], out[..., 1, 1] = m00, m01, m10, m11
+    return out, L
 
 
 def _hmm(log_e0, log_e1, p_in, p_stay):
