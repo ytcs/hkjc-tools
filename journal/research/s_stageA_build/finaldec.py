@@ -5,7 +5,8 @@ kept labelling's J, then evaluates the video labelling V and the final labelling
 - with the official along-track observations left out, with the finish crossings left out, with the extra lateral
   observations left out, and with the metric shift undone (evidence rebuilt unshifted);
 - by time window: F with V's labels on the segments starting in each 10 s window (final evidence).
-Nothing is written to the run dir (fuse_final's outputs go to a scratch copy)."""
+Env SPECS: further labellings scored against F ('U': the U cell's final labelling; 'a/b@t0-t1': F with a and b
+exchanged there). Nothing is written to the run dir (fuse_final's outputs go to a scratch copy)."""
 import pickle
 import shutil
 import sys
@@ -80,4 +81,26 @@ for w0 in np.arange(np.floor(lo[np.isfinite(lo)].min() / 10) * 10, lo[np.isfinit
     st = core.evaluate(m, H, es, el, X0=stF.S, s_shift=sh)
     print(f"    {w0:5.0f}-{w0 + 10:3.0f} s: {int(inside.sum()):3d} segments, J {st.J - stF.J:+8.1f} "
           + core._fmt({k: st.parts[k] - stF.parts[k] for k in st.parts}))
+import os  # noqa: E402
+
+col = {int(h): i for i, h in enumerate(ev.horses)}
+hi = np.full(ev.n_seg, -np.inf)
+np.maximum.at(hi, ev.seg, ev.t)
+for spec in [x for x in os.environ.get("SPECS", "").split() if x]:  # other labellings, from scratch, against F
+    if spec == "U":
+        lab = np.load(root / "U" / key / "core_final.npz")["seg_lab"]
+    else:
+        lab = F.copy()
+        for one in spec.split("+"):
+            pr, span = one.split("@")
+            a, b = (col[int(x)] for x in pr.split("/"))
+            t0, t1 = (float(x) for x in span.split("-"))
+            inside = (lo >= t0 - 0.15) & (hi <= t1 + 0.05)
+            ia, ib = inside & (F == a), inside & (F == b)
+            lab[ia], lab[ib] = b, a
+    if len(lab) != ev.n_seg:
+        print(f"  {spec}: segment count differs")
+        continue
+    st = core.evaluate(m, lab, es, el, s_shift=sh)
+    print(f"  {spec}: J - J(F) {st.J - stF.J:+.1f} " + core._fmt({k: st.parts[k] - stF.parts[k] for k in st.parts}))
 shutil.rmtree(tmp)

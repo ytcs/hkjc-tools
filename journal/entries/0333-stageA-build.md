@@ -336,3 +336,17 @@ Accepted global moves (segments, gain in J), m7 / m8 logs:
   differ by up to 11.8 J (ST_7 U) and 3.9 J (HV_3 U); with 12 rounds every start lands within 1.5 J of the
   from-scratch value (ST_7 79,912.9 at 4 rounds -> 79,901.6 at 12; case 5 U 91,975.7 -> 91,971.4; 40 rounds equal
   to 0.05). The Newton cap (30) does not bind.
+- **Converged EM (b875ce2).** Full state steps from scratch, EM to convergence (<= 20 rounds). Bench, all labellings
+  re-scored under the converged evaluation: ST_2 lg1 41,730.1 (15202bf's labels 42,070.3), ST_2 U 42,429.7 (same),
+  HV_4 lg1 74,549.7 (same), ST_9 lg1 71,195.0 (71,194.4); CPU 1,130 -> 1,308 s. Note the converged J of a fixed
+  labelling can be higher than its 4-round J (ST_2 lg1 +408): the 4-round value was not a bound.
+- **Official times (item 2).** (a) Exact final model of case 5 lg1 (finaldec, 15202bf): U final's labelling scores
+  +9,265 against lg1 final; lg1 final with only #10/#11 restored over 11-43.9 s scores -247.2: the #10/#11 flip is a
+  final-stage search miss (the final solve runs assignment steps only), not forced by the term. Here the kept J at
+  the solve (93,445.3) and the from-scratch J (93,152.2) differ by 293 (4-round EM). (b) Misses of the official
+  interior times under the video labelling (missm.py; r = horse's miss minus the boundary's median): case 5 U robust
+  sd 0.86 / 0.75 / 1.55 m at 1200 / 800 / 400 m to go, lg1 0.98 / 1.06 / 1.96, HV_9 lg0 1.12 / 2.34 at 800 / 400; but
+  single horses miss by many metres at 400 m (case 5 U #11 -8.9, #6 -4.5, #9 +4.1; lg1 #4 +10.8, #11 -8.2; HV_9
+  lg0 #11 +7.0). (c) Stage C TV facts (render-independent; factcheck.py, identities P >= 0.8): #4/#9/#11 at
+  44-84 s, 5 TV along facts: both video labellings agree 0 %, both finals 100 %; #10/#11 at 10-45 s, 2 facts: U video,
+  U final, lg1 video 100 %, lg1 final 0 %.
