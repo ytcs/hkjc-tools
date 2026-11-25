@@ -1620,9 +1620,9 @@ class RaceRun:
             dts = {o.horse: round(float(o.t[0]) - crossing(paths[o.horse].t, self.info.distance - paths[o.horse].s,
                                                            None, 0.0), 2) for o in fin if o.horse in paths}
             self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
-        # the first solve's labelling (and, for the final product, the video labelling) are candidate starts
-        res = core.solve(model, start=(res.seg_lab, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
-                         log=self.log)
+        # the first solve's alternation ends (and, for the final product, the video labelling) are the starts
+        res = core.solve(model, start=(*res.ends, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
+                         log=self.log, inits=False)
         paths = self._core_paths(res, ev, model)
         lab = np.where(res.seg_lab[ev.seg] >= 0, horses[np.maximum(res.seg_lab[ev.seg], 0)], 0)
         p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]

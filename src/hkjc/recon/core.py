@@ -36,6 +36,7 @@ from functools import partial
 import numpy as np
 from scipy.linalg import cho_solve_banded as _cho_solve_banded
 from scipy.linalg import cholesky_banded as _cholesky_banded
+from scipy.linalg import solve_triangular
 from scipy.special import ndtr
 
 # banded factor and solve without the finiteness scan (the bands are finite by construction)
@@ -1367,15 +1368,33 @@ def _refit_block(W, p0, p1, w0, y, R, mu, bnd, segs, lab, h, ev, rcost, rok, coo
             cS = np.linalg.cholesky(0.5 * (Sm + Sm.T))
         except np.linalg.LinAlgError:
             continue
-        t2 = np.linalg.solve(cS, (y[rm] - mu[rm]) / sr)
-        for q in qs:
-            c = np.arange(bnd[q], bnd[q + 1])
-            T = np.linalg.solve(cS, (_cov(W, p0, p1, w0, c, rm) / sr[None, :]).T)
-            Ck = _cov(W, p0, p1, w0, c, c) + T.T @ T
-            v = _block_cost(0.5 * (Ck + Ck.T), R[c], y[c] - (mu[c] - T.T @ t2))
-            if v < INF / 2:
-                rcost[segs[q], h, ci] = v
-                rok[segs[q], h, ci] = True
+        t2 = solve_triangular(cS, (y[rm] - mu[rm]) / sr, lower=True)
+        qs = np.asarray(qs)
+        sizes = bnd[qs + 1] - bnd[qs]
+        for m_ in np.unique(sizes):  # segments of equal chunk count together
+            qm = qs[sizes == m_]
+            ix = bnd[qm][:, None] + np.arange(m_)[None, :]  # (G, m)
+            flat = ix.ravel()
+            T = solve_triangular(cS, (_cov(W, p0, p1, w0, flat, rm) / sr[None, :]).T, lower=True)  # r x G m
+            T = T.reshape(len(rm), len(qm), m_)
+            a0, a1, wa = p0[ix], p1[ix], w0[ix]
+            C = ((1 - wa)[:, :, None] * (1 - wa)[:, None, :] * W[a0[:, :, None], a0[:, None, :]]
+                 + (1 - wa)[:, :, None] * wa[:, None, :] * W[a0[:, :, None], a1[:, None, :]]
+                 + wa[:, :, None] * (1 - wa)[:, None, :] * W[a1[:, :, None], a0[:, None, :]]
+                 + wa[:, :, None] * wa[:, None, :] * W[a1[:, :, None], a1[:, None, :]])
+            C = C + np.einsum("rgi,rgj->gij", T, T)
+            C = 0.5 * (C + C.transpose(0, 2, 1))
+            res = y[ix] - (mu[ix] - np.einsum("rgi,r->gi", T, t2))
+            Rg = R[ix]
+            try:
+                cp = np.linalg.cholesky(C + np.einsum("gi,ij->gij", Rg, np.eye(m_)))
+                z = np.linalg.solve(cp, res[:, :, None])[:, :, 0]
+                v = (z * z).sum(1) + 2.0 * np.log(np.diagonal(cp, axis1=1, axis2=2)).sum(1) - np.log(Rg).sum(1)
+            except np.linalg.LinAlgError:
+                v = np.array([_block_cost(C[g], Rg[g], res[g]) for g in range(len(qm))])
+            ok = v < INF / 2
+            rcost[segs[qm[ok]], h, ci] = v[ok]
+            rok[segs[qm[ok]], h, ci] = True
 
 
 def _block_cost(C, rr, r):
@@ -1564,12 +1583,14 @@ class Result:
     U: np.ndarray
     marg: np.ndarray
     log: list
+    ends: list = field(default_factory=list)  # every start's alternation end (labellings)
 
 
 REFIT_ROUNDS = 30  # alternation proposals (MILP + full state step) per descent at most
 DESCENTS = 2  # alternation ends that are polished: the lowest by J
 LIST_SPLIT = 7.0  # s: block length of the split-list inits (off the 10 s grid of the legend masking cells)
 POLISH_STEPS = 16  # polish full state steps per descent at most
+EXACT_TAIL, TAIL_SLACK = 3, 30.0  # a polish round with no predicted gain gives full steps to its best 3 within +30
 NEWTON_IT = 10  # one-horse refit: Newton steps at most
 REFIT_SWEEPS, SWEEP_IT = 2, 3  # Gauss-Seidel sweeps over a candidate's horses after their first refits, Newton steps
 REFIT_TOP, SWEEP_TOP = 200, 60  # polish candidates re-scored by one-horse refits (the lowest by the closed-form
@@ -1637,12 +1658,32 @@ class Refit:
             d += float(w[(new[a] != new[b]) | (new[a] < 0)].sum() - w[(lab[a] != lab[b]) | (lab[a] < 0)].sum())
         return d
 
+    def view_rows(self, hs, S, L):
+        """``in_view`` for the rows ``hs`` (the frames' grid interpolation kept from the first call)."""
+        st, ev = self.st, self.model.ev
+        V = ev.view
+        if not hasattr(self, "_vk"):
+            self._vk = _interp(self.model.tg, V["t"])
+        k, w = self._vk
+
+        def at(X):
+            return X[:, k] * (1 - w) + X[:, k + 1] * w
+
+        s_, l_, ss, sl = at(S[hs]), at(L[hs]), at(st.sdS[hs]), at(st.sdL[hs])
+        A = V["A"]
+        cx = s_ * A[None, :, 0, 0] + l_ * A[None, :, 1, 0] + A[None, :, 2, 0]
+        cy = s_ * A[None, :, 0, 1] + l_ * A[None, :, 1, 1] + A[None, :, 2, 1]
+        ux = np.hypot(ss * A[None, :, 0, 0], sl * A[None, :, 1, 0]) + VIEW_PX
+        uy = np.hypot(ss * A[None, :, 0, 1], sl * A[None, :, 1, 1]) + VIEW_PX
+        (x0, x1), (y0, y1) = V["x"], V["y"]
+        return ndtr((cx - x0) / ux) * ndtr((x1 - cx) / ux) * ndtr((cy - y0) / uy) * ndtr((y1 - cy) / uy)
+
     def d_det(self, hs, new, S, L):
         """J_det at the paths S, L (rows ``hs`` changed) and labelling ``new`` minus the state's J_det."""
         st, ev = self.st, self.model.ev
         if not st.pin.shape[1]:
             return 0.0
-        rows = in_view(ev, S[hs], L[hs], st.sdS[hs], st.sdL[hs], self.model.tg)
+        rows = self.view_rows(hs, S, L)
         lb = np.zeros(rows.shape, bool)
         for i, h in enumerate(hs):
             for k in np.flatnonzero(new == h):
@@ -2154,7 +2195,7 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
     return out
 
 
-def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True):
+def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True, inits=True):
     """Global solve. Starts: five init MILPs (list votes with reads and silk; list votes; reads and silk; the list
     rows of alternate LIST_SPLIT s blocks of each parity with reads and silk) and the caller's labellings. Every start
     alternates: the exact MILP assignment over segments on unaries at the current state (one-horse-refit kinematic
@@ -2168,7 +2209,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     on rejection the single best ones one at a time, then the round's other predicted-negative ones whose horses no
     accepted change touched; an accepted step resumes the alternation. Then the lowest end descends again with the
     crossover runs toward every other end (``crossovers``) as its pool, while that lowers J. The pre-solve without
-    the finish camera (``polish`` False) keeps the lowest alternation end."""
+    the finish camera (``polish`` False) keeps the lowest alternation end; the solve after it starts from the
+    pre-solve's alternation ends instead of the init MILPs (``inits`` False)."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
@@ -2188,20 +2230,21 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         return st_
 
     hist = []
+    inits_on = inits
     # inits: MILPs on the list votes with reads and silk, the list votes alone, reads and silk alone, and the list
     # rows of alternate LIST_SPLIT s blocks (each parity) with reads and silk (a list stretch the full vote gets wrong
     # can be outvoted only from a start that leaves it out); then the caller's labellings
     lv0 = list_votes(model, None, None)
     app = ev.read_cost + ev.silk_cost
     vot = [("init", lv0 + app), ("list-only init", lv0), ("appearance-only init", app)]
-    for par in (0, 1):
+    for par in (0, 1) if inits_on else ():
         keep = (np.floor(model.Lr.tau / LIST_SPLIT).astype(int) % 2) == par
         m2 = copy.copy(model)
         m2.Lr = ListRows(model.Lr.tau, np.where(keep[:, None], model.Lr.slots, -1), model.Lr.full & keep,
                          model.Lr.same & keep)
         vot.append((f"split-list init {par}", list_votes(m2, None, None) + app))
     inits = []
-    for name, U0 in vot:
+    for name, U0 in vot if inits_on else []:
         U0 = np.array(U0, float)
         U0[ev.forbid] = INF
         inits.append((name, milp(np.where(U0 < 0, U0, 0.0) - 1e-3 * (U0 < 0), ev, allow=U0 < 0)))
@@ -2298,11 +2341,14 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 fresh = True
                 continue
             pool, fresh = [], False
-            if not neg:
-                break
+            tail = not neg
+            if tail:  # none predicted to lower J: the EXACT_TAIL best scores within TAIL_SLACK get full steps
+                neg = [i for i in np.argsort(pred, kind="stable") if pred[i] < TAIL_SLACK][:EXACT_TAIL]
+                if not neg:
+                    break
             # the predicted-negative candidates with disjoint horses and segments, together
             batch, used_h, used_s = [], set(), np.zeros(len(lab), bool)
-            for i in neg:
+            for i in neg if not tail else []:
                 ch = np.flatnonzero(cands[i][1] != lab)
                 hs = set(lab[ch].tolist()) | set(cands[i][1][ch].tolist())
                 hs.discard(-1)
@@ -2409,7 +2455,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}; CPU s "
         + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))
     U = unaries_of(st, lab)
-    return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)
+    return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist, [a[1] for a in alt])
 
 
 def _fmt(parts):
