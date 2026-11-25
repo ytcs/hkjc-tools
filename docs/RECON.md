@@ -189,8 +189,8 @@ on ≥ 4 % of frames there is overlay text.
 `detect.silk_feature` per detection drops turf and brown pixels and keeps 12 hue bins (pastel and vivid),
 white and dark. Matching collapses pastel and vivid, because the render desaturates. `silkmap.SILK_MAP` maps each
 runner's official silk prototype (`detect.silk_prototype`) into render appearance: a ridge fit on legend-confident
-tracklets, legend labels only. Consumers: the appearance split in `observe` and the silk likelihood ratio in
-`identify`.
+tracklets, legend labels only. Consumers: the appearance split in `observe` and, on the circle render, the silk
+likelihood ratio in the core (the silk render uses the learned appearance term, `recon.appearance`, below).
 
 ### hud
 
@@ -413,7 +413,17 @@ It is the sum of:
 - the rewards of broken links;
 - disc reads: per detection, error `READ_ERR`, `READ_ERR_TOUCH` with another disc within 50 px, `READ_ERR_DROP`
   between dropped-digit partners;
-- silk: −2 × the clipped `silkmap` LLR of each segment with ≥ 10 features;
+- appearance (silk render, `recon.appearance`): the learned avatar model's calibrated per-detection log
+  p(runner | crop), read from the run dir's `appearance.npz` (an upstream artifact of the frozen M3-R2 model, rows =
+  dets.npz rows; a silk-render run without it fails). The softmax has no "not a horse" outcome, so each detection's
+  ratio to a uniform read is P(horse)·G·p + (1 − P(horse)) (G runners with an official silk). Detections of one
+  avatar are strongly correlated, so the unit is the tracker tracklet: each detection weighs 1/(1 + (n − 1) `RHO`),
+  n the tracklet's P(horse)-weighted count, and the tracklet reads q = (1 − `EPS`) softmax + `EPS`/H, costing
+  −2 log(H q). The tracklet's cost is split additively over its segments (each keeps its own rows' evidence and its
+  share of the normaliser and floor), so a tracklet costs the same however it is cut. `RHO` (0.48: a tracklet
+  pools to about two detections) and `EPS` (0.031) were fitted by maximum likelihood on development races the model
+  never saw, against confident product tracklet labels. On the circle render: −2 × the clipped `silkmap` LLR of
+  each segment with ≥ 10 features;
 - hard exclusions (stopped non-finishers after their last section).
 
 **Inference (`core.solve`).**
@@ -508,7 +518,7 @@ product's solve (20260301_ST_2: three chains from 44 s, which TV order facts con
   - 13: the RANK_ATTR cap;
   - 8: skeleton replacement (official times are observations in J).
 - **Pending:**
-  - 4: the silk term is still the per-segment clipped histogram LLR (Stage B);
+  - 4: on the circle render the silk term is still the per-segment clipped histogram LLR;
   - 5: observe's appearance and number splits;
   - 6: finish-camera handling: the anchor-or-registration clock inside `finish_camera`, camera crossings computed
     once from the first state. The camera's `fixed` names, line elimination and blind veto are gone;
@@ -859,8 +869,10 @@ identical. Not bit-exact:
   should ship with the flag attached, not filtered by it.
 - **Render-vs-official conflicts.** A horse whose render path and official interior times disagree by more than a
   few metres keeps its render path; the video alone cannot say which side is wrong.
-- **Silk evidence.** Legend votes add per frame and silk once per tracklet (±3), so silk rarely overturns a legend
-  label; back markers get only elimination evidence and the weak silk term; the draw does not enter identity.
+- **Silk evidence.** The render appearance term pools a tracklet to about two detections (a whole tracklet's read
+  is the product's label about three times in four on races the model never saw; look-alike silks, the red and
+  blue families and navy rendered teal are systematic), so it costs at most about 12 J units per tracklet and
+  decides near-ties only; the draw does not enter identity.
 - **Finish-short horses.** A horse unobserved over the last metres has a path to the grid end, extrapolated with
   growing sd; once sd_s exceeds `SD_MAX`, or the grid ends first, it has no scored finish crossing.
 - **Blind near-line cost.** It can remove correctly placed unread back markers. More generally, near the line a horse's
