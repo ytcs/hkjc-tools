@@ -2516,9 +2516,9 @@ def probability_output(model: Model, lab, extra_s=None, extra_l=None, s_shift=No
                        log=print):
     """Per segment P(label) for a final labelling and its evidence, independent of how the labelling was found: the
     alternatives (alternatives()) screened in closed form (Refit.score_quick); those screened at most POST_PRUNE
-    re-screened by their one-horse-refit scores (Refit.score); a full state step from scratch for those screened
-    below POST_BAND and for the POST_K lowest screened below POST_FULL (``known``: labelling bytes -> J of full state
-    steps already taken); combined by alternative_posterior at T_PROB. ``rf``: a Refit at (lab, st) to reuse.
+    re-screened by their one-horse-refit scores without sweeps (Refit.score); a full state step from scratch for those
+    screened below POST_BAND and for the POST_K lowest screened below POST_FULL (``known``: labelling bytes -> J of
+    full state steps already taken); combined by alternative_posterior at T_PROB. ``rf``: a Refit at (lab, st) to reuse.
     -> (P (segments x H + 1), list of (labelling, dJ))."""
     lab = np.asarray(lab)
     if st is None:
@@ -2530,7 +2530,7 @@ def probability_output(model: Model, lab, extra_s=None, extra_l=None, s_shift=No
     qd = np.array([rf.score_quick(pm) for pm in alts])
     near = np.flatnonzero(qd <= POST_PRUNE)
     for i in near:
-        qd[i] = rf.score(alts[i])
+        qd[i] = rf.score(alts[i], sweeps=False)
     low = np.argsort(qd, kind="stable")[:POST_K]
     full = set(low[qd[low] < POST_FULL].tolist()) | set(np.flatnonzero(qd < POST_BAND).tolist())
     dj = qd.tolist()
