@@ -1139,7 +1139,16 @@ def window_kin_costs(model: Model, st: State, delta: float):
         ob = st.obs_s if coord == "s" else st.obs_l
         y = (ev.ch_s if coord == "s" else ev.ch_l)
         R = (ev.ch_sds if coord == "s" else ev.ch_sdl) ** 2
+        wcache = model.__dict__.setdefault("_window_cache", {})
+        if len(wcache) > 400:
+            wcache.clear()
         for h in range(H):
+            if coord == "l":  # a lateral band is shared by every state with the same lateral observations of h
+                hit = wcache.get((id(A[h]), delta))
+                if hit is not None and hit[0] is A[h]:
+                    out[:, h] += hit[1]
+                    continue
+            col = np.zeros(S)
             mine = ob.h == h
             r_full = _band_matvec(A[h], X[h])
             # only the chunk observations are left out; extra observations (finish, official) carry no segment
@@ -1153,7 +1162,7 @@ def window_kin_costs(model: Model, st: State, delta: float):
                 try:
                     cb = cholesky_banded(ab, lower=True)
                 except np.linalg.LinAlgError:
-                    out[k, h] += INF
+                    col[k] += INF
                     continue
                 x = cho_solve_banded((cb, True), r)
                 kk, ww = _interp(tg, ev.ch_t[c])
@@ -1166,10 +1175,13 @@ def window_kin_costs(model: Model, st: State, delta: float):
                 try:
                     cp = np.linalg.cholesky(C)
                 except np.linalg.LinAlgError:
-                    out[k, h] += INF
+                    col[k] += INF
                     continue
                 z = np.linalg.solve(cp, y[c] - mu)
-                out[k, h] += float(z @ z) + 2.0 * float(np.log(np.diag(cp)).sum()) - float(np.log(R[c]).sum())
+                col[k] += float(z @ z) + 2.0 * float(np.log(np.diag(cp)).sum()) - float(np.log(R[c]).sum())
+            out[:, h] += col
+            if coord == "l":
+                wcache[(id(A[h]), delta)] = (A[h], col)
     return out
 
 
@@ -1451,50 +1463,68 @@ def segment_base(ev: Evidence):
 
 def milp(U, ev: Evidence, allow=None):
     """min sum U x - sum link rewards z over x[segment, horse] binary (a segment has at most one horse; leaving it
-    out is clutter, cost 0), one segment per horse per frame, z[link, horse] <= x at both ends."""
+    out is clutter, cost 0), one segment per horse per frame, z[link, horse] <= x at both ends. A pair whose cost
+    exceeds every link reward its segment could collect is never in an optimum and gets no variable."""
     from scipy.optimize import Bounds, LinearConstraint, milp as _milp
     from scipy.sparse import coo_matrix
 
     S, H = U.shape
-    ok = np.isfinite(U) & (U < INF / 2) & (~ev.forbid)
+    links = ev.links
+    reward = np.zeros(S)
+    if len(links):
+        np.add.at(reward, links[:, 0].astype(int), links[:, 2])
+        np.add.at(reward, links[:, 1].astype(int), links[:, 2])
+    ok = np.isfinite(U) & (U < INF / 2) & (~ev.forbid) & (U <= reward[:, None])
     if allow is not None:
         ok &= allow
-    links = ev.links
-    nx, nz = S * H, len(links) * H
-    c = np.r_[np.where(ok, U, 0.0).ravel(), -np.repeat(links[:, 2], H) if len(links) else np.zeros(0)]
-    rows, cols, vals = [], [], []
-    r = 0
-    for s in range(S):
-        rows += [r] * H
-        cols += list(range(s * H, s * H + H))
-        vals += [1] * H
-        r += 1
+    vs, vh = np.nonzero(ok)  # x variables
+    nx = len(vs)
+    if not nx:
+        return np.full(S, -1)
+    vid = np.full((S, H), -1)
+    vid[vs, vh] = np.arange(nx)
+    rows, cols = [vid[vs, vh] * 0 + vs], [np.arange(nx)]  # one horse per segment
+    r = S
     lo, hi = ev.seg_lo, ev.seg_hi
-    for x in np.unique(lo):
+    for x in np.unique(lo):  # one segment per horse per frame
         cl = np.flatnonzero((lo <= x) & (hi >= x))
         if len(cl) > 1:
-            for h in range(H):
-                rows += [r] * len(cl)
-                cols += [int(k) * H + h for k in cl]
-                vals += [1] * len(cl)
+            sub = vid[cl]
+            for h in np.flatnonzero((sub >= 0).sum(0) > 1):
+                v = sub[:, h][sub[:, h] >= 0]
+                rows.append(np.full(len(v), r))
+                cols.append(v)
                 r += 1
     n_ub1 = r
-    for li, (a, b, _w) in enumerate(links):
-        for h in range(H):
-            zi = nx + li * H + h
-            for s in (int(a), int(b)):
-                rows += [r, r]
-                cols += [zi, s * H + h]
-                vals += [1, -1]
-                r += 1
+    zc, za, zb = [], [], []
+    for a, b, w in links:  # z only where both ends can hold the horse
+        a, b = int(a), int(b)
+        for h in np.flatnonzero((vid[a] >= 0) & (vid[b] >= 0)):
+            zc.append(-w)
+            za.append(vid[a, h])
+            zb.append(vid[b, h])
+    nz = len(zc)
+    zi = nx + np.arange(nz)
+    if nz:
+        rr = r + np.arange(2 * nz)
+        rows += [rr, rr]
+        cols += [np.repeat(zi, 2), np.ravel(np.c_[za, zb])]
+        r += 2 * nz
+    rows = np.concatenate(rows)
+    cols = np.concatenate(cols)
+    vals = np.ones(len(rows))
+    if nz:
+        vals[-2 * nz:] = -1.0  # the x entries of the link rows
     A = coo_matrix((vals, (rows, cols)), shape=(r, nx + nz)).tocsr()
-    ub = np.r_[ok.ravel().astype(float), np.ones(nz)]
+    c = np.r_[U[vs, vh], np.asarray(zc, float)]
     res = _milp(c, constraints=LinearConstraint(A, -np.inf, np.r_[np.ones(n_ub1), np.zeros(r - n_ub1)]),
-                integrality=np.ones(nx + nz), bounds=Bounds(0, ub), options=dict(time_limit=300))
+                integrality=np.ones(nx + nz), bounds=Bounds(0, 1), options=dict(time_limit=300))
     if res.x is None:
         raise RuntimeError(f"segment MILP failed: {res.message}")
-    x = np.round(res.x[:nx]).reshape(S, H)
-    return np.where(x.max(1) > 0.5, x.argmax(1), -1)
+    out = np.full(S, -1)
+    on = np.round(res.x[:nx]) > 0.5
+    out[vs[on]] = vh[on]
+    return out
 
 
 def unaries(model: Model, st: State, seg_lab):
@@ -1654,13 +1684,23 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         keep = [i for i in np.argsort(qj)[:SCREEN_KEEP] if qj[i] < st0.J + SCREEN_MARGIN]
         return [(cands[i][0], cands[i][1], look(cands[i][1], st0.S)) for i in keep]
 
+    ucache = {}  # the assignment step's unaries by (state, labelling): a descent's last step is the next one's first
+
+    def unaries_of(st_, labs):
+        key = (id(st_), np.asarray(labs).tobytes())
+        if key not in ucache or ucache[key][0] is not st_:
+            if len(ucache) > 16:
+                ucache.clear()
+            ucache[key] = (st_, unaries(model, st_, labs))
+        return ucache[key][1]
+
     def descend(lab, st, moves):
         """Assignment steps and (with moves) the global move families until no proposal lowers J."""
         it = 0
         win_failed = None  # the labelling the window proposals last failed on: retried after WINDOW_RETRY changes
         while True:
             it += 1
-            U = unaries(model, st, lab)
+            U = unaries_of(st, lab)
             prop = milp(U, ev)
             cand = np.zeros(0, int)
             if not np.array_equal(prop, lab):
@@ -1800,7 +1840,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     others = [e for e in ends if not np.array_equal(e[0], lab)]
     while others:
         best = None
-        U = unaries(model, st, lab)
+        U = unaries_of(st, lab)
         for lb, _sb in others:
             for desc, pm, st2 in screened(crossovers(ev, lab, lb), st, U, lab):
                 if st2.J < st.J - MIN_GAIN and (best is None or st2.J < best[1].J):
@@ -1812,7 +1852,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         lab, st = descend(best[0], best[1], global_moves)
         others = [e for e in others if not np.array_equal(e[0], lab)]
     log(f"   core: lowest end J {st.J:.1f}")
-    U = unaries(model, st, lab)
+    U = unaries_of(st, lab)
     return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist)
 
 
