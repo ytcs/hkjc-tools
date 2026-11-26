@@ -283,3 +283,21 @@ def test_an_assignment_with_the_same_inputs_is_solved_once():
         assert solve.call_count == 1 and a.tolist() == b.tolist() == [1, 0]
         ev.forbid = np.array([[False, True], [False, False]])
         assert core.milp(U, ev).tolist() == [-1, 0] and solve.call_count == 2
+
+
+
+def test_every_solved_assignment_records_its_highs_status_gap_nodes_and_wall_time():
+    """core.MILP_STATS gets one (status, gap, nodes, wall s) per MILP solved (a memo hit adds none); status 0 is an
+    optimum, 1 a stop at MILP_TIME_LIMIT."""
+    from types import SimpleNamespace
+
+    ev = SimpleNamespace(links=np.zeros((0, 3)), seg_lo=np.array([0, 0]), seg_hi=np.array([9, 9]),
+                         forbid=np.zeros((2, 2), bool))
+    U = np.array([[-6.0, -51.0], [-41.0, -2.0]])
+    core._MILP_MEMO.clear()
+    n0 = len(core.MILP_STATS)
+    core.milp(U, ev)
+    core.milp(U, ev)
+    assert len(core.MILP_STATS) == n0 + 1
+    status, gap, nodes, wall = core.MILP_STATS[-1]
+    assert status == 0 and gap == 0.0 and nodes >= 0 and wall >= 0.0

@@ -1497,6 +1497,8 @@ def segment_base(ev: Evidence):
 
 _MILP_MEMO: dict = {}  # input digest -> labelling: an assignment already solved in this process is not solved again
 MILP_MEMO_MAX = 256
+MILP_TIME_LIMIT = 300  # s, wall clock: HiGHS stops here (a stopped MILP returns its best labelling so far)
+MILP_STATS: list = []  # per MILP solved (memo hits excluded): (HiGHS status, relative gap, B&B nodes, wall s)
 
 
 def _digest(*arrays) -> bytes:
@@ -1580,8 +1582,12 @@ def _milp_solve(U, ev: Evidence, allow=None):
         vals[-2 * nz:] = -1.0  # the x entries of the link rows
     A = coo_matrix((vals, (rows, cols)), shape=(r, nx + nz)).tocsr()
     c = np.r_[U[vs, vh], np.asarray(zc, float)]
+    t0 = time.perf_counter()
     res = _milp(c, constraints=LinearConstraint(A, -np.inf, np.r_[np.ones(n_ub1), np.zeros(r - n_ub1)]),
-                integrality=np.ones(nx + nz), bounds=Bounds(0, 1), options=dict(time_limit=300))
+                integrality=np.ones(nx + nz), bounds=Bounds(0, 1), options=dict(time_limit=MILP_TIME_LIMIT))
+    gap, nodes = getattr(res, "mip_gap", None), getattr(res, "mip_node_count", None)
+    MILP_STATS.append((int(res.status), np.nan if gap is None else float(gap), -1 if nodes is None else int(nodes),
+                       time.perf_counter() - t0))
     if res.x is None:
         raise RuntimeError(f"segment MILP failed: {res.message}")
     out = np.full(S, -1)
@@ -2285,6 +2291,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     last_rf = []  # the latest polish round's Refit (its state and memoised one-horse refits)
     cnt = dict(full=0, rounds=0, steps=0, acc_r=0, acc_p=0)
     cpu = dict(state=0.0, unaries=0.0, milp=0.0, scores=0.0)
+    n_milp0 = len(MILP_STATS)
 
     def look(labs):  # the state step from scratch: J a function of the labelling alone
         key = np.asarray(labs).tobytes()
@@ -2520,6 +2527,12 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         log(f"   core: crossovers J {st.J:.1f} -> {st2.J:.1f}")
         lab, st = lab2, st2
         others = [e for e in others if not np.array_equal(e[0], lab)]
+    ms = MILP_STATS[n_milp0:]
+    stopped = [(round(g, 4), round(w)) for stt, g, _nd, w in ms if stt == 1]
+    log(f"   core: MILPs solved {len(ms)}: stopped at the {MILP_TIME_LIMIT} s time limit {len(stopped)}"
+        + (f" (gap, wall s: {stopped})" if stopped else "")
+        + (f"; max nodes {max(nd for _s, _g, nd, _w in ms)}, max gap {max(g for _s, g, _n, _w in ms):.2e}, max wall "
+           f"{max(w for _s, _g, _n, w in ms):.1f} s" if ms else ""))
     log(f"   core: end J {st.J:.1f}; {len(ends)} start ends; alternation proposals {cnt['rounds']} (kept "
         f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}; CPU s "
         + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))

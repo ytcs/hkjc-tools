@@ -436,7 +436,9 @@ It is the sum of:
    blocks (each parity) with reads and silk. A list stretch the full vote gets wrong is outvoted only from a start
    that leaves it out (20260301_ST_2's final: the split-list start reaches the TV-confirmed chains). Then the caller's
    labellings. Each distinct start gets a full state step. `core.milp` memoises its solutions in-process by a digest
-   of every input, so a product's pre-solve and solve (same model) solve the start MILPs once.
+   of every input, so a product's pre-solve and solve (same model) solve the start MILPs once. HiGHS stops a MILP at
+   `MILP_TIME_LIMIT` (300 s, wall clock) with its best labelling so far; each solve logs its MILPs' count, those
+   stopped there (with gap and wall time), and the largest node count, gap and wall time.
 2. Alternation, from every start: the assignment step is a MILP over segments × runners (per-frame exclusivity, link
    rewards) on unaries at the current state, followed by a full state step of its proposal. The proposal is kept when
    J falls by more than `MIN_GAIN` (2, about one nat). The alternation stops at a fixed point (the MILP returns the
