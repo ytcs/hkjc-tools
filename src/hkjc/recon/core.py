@@ -1466,57 +1466,97 @@ def list_votes(model: Model, st: State | None, seg_lab):
             np.maximum.at(pws, (St.row[adj], St.slot[adj] + off), st.pw[adj])
     part = (L.partner if L.partner is not None else np.zeros((H, H), bool)).any(1)
     eps_h = 1.0 - (1.0 - EPS_LIST) * (1.0 - P_DROP) ** part.astype(float)  # a read with a dropped-digit partner
+    # the list's frames (a row within 0.15 s), in frame order; their detections padded to the largest frame
+    fj, fr_row = [], []
     for a, b in zip(bnd[:-1], bnd[1:]):
         j = o[a:b]
         tf = t[j[0]]
         r = int(np.argmin(np.abs(L.tau - tf)))
         if abs(L.tau[r] - tf) > 0.15:
             continue
-        ok = 1.0 - (st.pf[r] if st is not None else model.pf0[r])
-        omit = st.om[:, r] if st is not None else np.zeros(H)
-        sl = L.slots[r]
-        sj = s[j]
-        if st is None or lab_det is None:
-            w = ev.p_horse[j]
-            n_un = max(0, H - int((w >= 0.5).sum()))
-            und_p = np.full(n_un, P_AHEAD_UNSEEN)[None, :].repeat(len(j), 0)
-        else:
-            lj = lab_det[j]
-            w = np.where(lj >= 0, 1.0 - omit[np.maximum(lj, 0)], 0.0)
-            seen = set(lj[lj >= 0].tolist())
-            un = np.array([h for h in range(H) if h not in seen and st.has_obs[h]], int)
-            blind = np.array([h for h in range(H) if h not in seen and not st.has_obs[h]], int)
-            k, ww = _interp(model.tg, np.array([tf]))
-            mu = st.S[un, k[0]] * (1 - ww[0]) + st.S[un, k[0] + 1] * ww[0]
-            sdv = st.sdS[un, k[0]]
-            und_p = ndtr((mu[None, :] - sj[:, None]) / np.sqrt(sdv[None, :] ** 2 + SIG_AB**2))
-            und_p = np.concatenate([und_p * (1 - omit[un])[None, :],
-                                    np.full((len(j), len(blind)), P_AHEAD_UNSEEN) * (1 - omit[blind])[None, :]], 1)
-        pa = ndtr((sj[None, :] - sj[:, None]) / SIG_AB) * w[None, :]
-        np.fill_diagonal(pa, 0.0)
-        probs = np.concatenate([pa, und_p], 1)  # D x (D + U)
-        # Poisson-binomial count of horses ahead, per detection
-        cnt = np.zeros((len(j), H + 1))
-        cnt[:, 0] = 1.0
-        for q in range(probs.shape[1]):
-            p = probs[:, q:q + 1]
-            cnt[:, 1:] = cnt[:, 1:] * (1 - p) + cnt[:, :-1] * p
-            cnt[:, 0] *= 1 - p[:, 0]
-        cnt /= np.maximum(cnt.sum(1, keepdims=True), 1e-300)
-        segj = ev.seg[j]
+        fj.append(j)
+        fr_row.append(r)
+    if not fj:
+        return out
+    F = len(fj)
+    nd = np.array([len(j) for j in fj])
+    D = int(nd.max())
+    jj = np.zeros((F, D), int)
+    dm = np.arange(D)[None, :] < nd[:, None]  # real detections
+    for i, j in enumerate(fj):
+        jj[i, :len(j)] = j
+    rr = np.array(fr_row)
+    tf = t[jj[:, 0]]
+    sj = np.where(dm, s[jj], 0.0)
+    ok = 1.0 - (st.pf[rr] if st is not None else model.pf0[rr])  # (F,)
+    omit = st.om[:, rr].T if st is not None else np.zeros((F, H))  # (F, H)
+    if st is None or lab_det is None:
+        w = np.where(dm, ev.p_horse[jj], 0.0)
+        n_un = np.maximum(0, H - (np.where(dm, ev.p_horse[jj], 0.0) >= 0.5).sum(1))
+        und = np.where(np.arange(H)[None, None, :] < n_un[:, None, None], P_AHEAD_UNSEEN, 0.0)
+        und = np.broadcast_to(und, (F, D, H))
+    else:
+        lj = np.where(dm, lab_det[jj], -1)
+        w = np.where(lj >= 0, 1.0 - np.take_along_axis(omit, np.maximum(lj, 0), 1), 0.0)
+        seen = np.zeros((F, H), bool)
+        fi, di = np.nonzero(lj >= 0)
+        seen[fi, lj[fi, di]] = True
+        k, ww = _interp(model.tg, tf)
+        mu = (st.S[:, k] * (1 - ww) + st.S[:, k + 1] * ww).T  # (F, H)
+        sdv = st.sdS[:, k].T
+        unp = ndtr((mu[:, None, :] - sj[:, :, None]) / np.sqrt(sdv[:, None, :] ** 2 + SIG_AB**2))
+        unp = unp * (1 - omit)[:, None, :]
+        bl = np.full((F, D, H), P_AHEAD_UNSEEN) * (1 - omit)[:, None, :]
+        # columns per frame: the unseen horses with a path (ascending), then those without (ascending), then nothing
+        is_un = ~seen & st.has_obs[None, :]
+        is_bl = ~seen & ~st.has_obs[None, :]
+        key = np.where(is_un, 0, np.where(is_bl, 1, 2)) * H + np.arange(H)[None, :]
+        cols = np.argsort(key, axis=1, kind="stable")  # (F, H)
+        val = np.where(is_un[:, None, :], unp, np.where(is_bl[:, None, :], bl, 0.0))
+        und = np.take_along_axis(val, np.broadcast_to(cols[:, None, :], (F, D, H)), 2)
+    pa = ndtr((sj[:, None, :] - sj[:, :, None]) / SIG_AB) * w[:, None, :]
+    pa[:, np.arange(D), np.arange(D)] = 0.0
+    pa = np.where(dm[:, None, :], pa, 0.0)
+    probs = np.concatenate([pa, und], 2)  # F x D x (D + H); padded columns are 0 (no-ops in the recursion)
+    # Poisson-binomial count of horses ahead, per detection
+    cnt = np.zeros((F, D, H + 1))
+    cnt[:, :, 0] = 1.0
+    for q in range(probs.shape[2]):
+        p = probs[:, :, q:q + 1]
+        cnt[:, :, 1:] = cnt[:, :, 1:] * (1 - p) + cnt[:, :, :-1] * p
+        cnt[:, :, 0] *= 1 - p[:, :, 0]
+    cnt /= np.maximum(cnt.sum(2, keepdims=True), 1e-300)
+    sl = L.slots[rr]  # (F, slots)
+    for h in range(H):  # per runner its votes over the frames, accumulated in the frame loop's order (frame, slot)
+        rows_v, rows_f, rows_q = [], [], []
         for q in range(need):
-            h = sl[q]
-            if h < 0:
+            on = np.flatnonzero(sl[:, q] == h)
+            if not len(on):
                 continue
-            e, wq = eps_h[h], pws[r, q]
-            P = ok * ((1 - wq) * ((1 - e) * cnt[:, q] + e / H) + wq / H) + (1 - ok) / H
-            np.add.at(out[:, h], segj, -2.0 * np.log(P * H))
-        if L.full[r] and H > MAX_RANK:
-            base = (H - MAX_RANK) / H
-            pb = cnt[:, MAX_RANK:].sum(1)
-            for h in sorted(set(range(H)) - set(sl[:need].tolist())):
-                P = ok * ((1 - omit[h]) * ((1 - EPS_LIST) * pb + EPS_LIST * base) + omit[h] * base) + (1 - ok) * base
-                np.add.at(out[:, h], segj, -2.0 * np.log(P / base))
+            e, wq = eps_h[h], pws[rr[on], q]
+            okq = ok[on][:, None]
+            P = okq * ((1 - wq)[:, None] * ((1 - e) * cnt[on, :, q] + e / H) + wq[:, None] / H) + (1 - okq) / H
+            rows_v.append(-2.0 * np.log(P * H))
+            rows_f.append(on)
+            rows_q.append(np.full(len(on), q))
+        if H > MAX_RANK:
+            unl = np.flatnonzero(L.full[rr] & ~(sl[:, :need] == h).any(1))
+            if len(unl):
+                base = (H - MAX_RANK) / H
+                pb = cnt[unl, :, MAX_RANK:].sum(2)
+                oh = omit[unl, h][:, None]
+                okq = ok[unl][:, None]
+                P = okq * ((1 - oh) * ((1 - EPS_LIST) * pb + EPS_LIST * base) + oh * base) + (1 - okq) * base
+                rows_v.append(-2.0 * np.log(P / base))
+                rows_f.append(unl)
+                rows_q.append(np.full(len(unl), need))
+        if not rows_v:
+            continue
+        fv, qv, vv = np.concatenate(rows_f), np.concatenate(rows_q), np.concatenate(rows_v)
+        o2 = np.lexsort((qv, fv))
+        fv, vv = fv[o2], vv[o2]
+        m_ = dm[fv]
+        np.add.at(out[:, h], ev.seg[jj[fv]][m_], vv[m_])
     return out
 
 
