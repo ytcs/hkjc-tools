@@ -2353,6 +2353,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     last_rf = []  # the latest polish round's Refit (its state and memoised one-horse refits)
     cnt = dict(full=0, rounds=0, steps=0, acc_r=0, acc_p=0)
     cpu = dict(state=0.0, unaries=0.0, milp=0.0, scores=0.0)
+    pol = dict(candidates=0.0, refit_setup=0.0, closed_form=0.0, refits=0.0, sweeps=0.0)  # parts of cpu["scores"]
     n_milp0 = len(MILP_STATS)
 
     def look(labs):  # the state step from scratch: J a function of the labelling alone
@@ -2442,6 +2443,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             t0 = time.process_time()
             cands = polish_candidates(model, st, lab, U, pool)
             cands = cands[:npool] + [(d, pm) for d, pm in cands[npool:] if pm.tobytes() not in memo]
+            t1 = time.process_time()
+            pol["candidates"] += t1 - t0
             if not cands:
                 break
             rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
@@ -2460,12 +2463,19 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
             todo = np.array(todo, int)
             gen = todo[todo >= npool]  # the pool (listed first) is refit-scored whole: the closed form misjudges
             # multi-horse moves
+            t2 = time.process_time()
+            pol["refit_setup"] += t2 - t1
             for i in gen:
                 pred[i] = rf.score_quick(cands[i][1])
+            t3 = time.process_time()
+            pol["closed_form"] += t3 - t2
             for i in np.r_[todo[todo < npool], gen[np.argsort(pred[gen], kind="stable")[:REFIT_TOP]]].astype(int):
                 pred[i] = rf.score(cands[i][1], sweeps=False)
+            t4 = time.process_time()
+            pol["refits"] += t4 - t3
             for i in todo[np.argsort(pred[todo], kind="stable")[:SWEEP_TOP]]:
                 pred[i] = rf.score(cands[i][1])
+            pol["sweeps"] += time.process_time() - t4
             for i in todo:
                 pcache[keys[i]] = pred[i]
                 pkeys_h[keys[i]] = hsets[i]
@@ -2596,6 +2606,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         + (f"; max nodes {max(nd for _s, _g, nd, _w in ms)}, max gap {max(g for _s, g, _n, _w in ms):.2e}, max wall "
            f"{max(w for _s, _g, _n, w in ms):.1f} s, max root-solved wall "
            f"{max((w for _s, _g, nd, w in ms if nd <= 1), default=0.0):.1f} s" if ms else ""))
+    log("   core: polish scores CPU s " + ", ".join(f"{k} {v:.1f}" for k, v in pol.items()))
     log(f"   core: end J {st.J:.1f}; {len(ends)} start ends; alternation proposals {cnt['rounds']} (kept "
         f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}; CPU s "
         + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))

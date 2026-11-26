@@ -476,7 +476,8 @@ It is the sum of:
    candidates whose horses no accepted change touched. A round with no predicted gain gives full steps to its
    `EXACT_TAIL` (8) best candidates within `TAIL_SLACK` (50) of J. An accepted step resumes the alternation. A
    candidate's score is kept while none of its horses change label; a rejected change is not retried while its horses
-   keep their labels; before the polish ends, every candidate is scored afresh.
+   keep their labels; before the polish ends, every candidate is scored afresh. Each solve logs the polish scoring's CPU by part
+   (candidates, Refit setup, closed form, refits, sweeps).
 4. Only the `DESCENTS` (2) lowest distinct alternation ends are polished (step 3); the lowest polished end then
    descends again with the crossover runs toward the other end as its pool, while that lowers J. Moves are judged by
    full state steps of J only.
