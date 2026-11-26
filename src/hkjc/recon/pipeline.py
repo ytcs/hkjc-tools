@@ -1618,7 +1618,8 @@ class RaceRun:
         if all(int(h) in vis or int(h) in self._nonfin for h in horses):
             # every runner's finish is an official time (or it stopped): the camera adds no observation, so the solve
             # runs once, on the evidence a pre-solve would have
-            res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log)
+            res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log,
+                             marginals=product == "final")
             return self._core_outputs(product, res, ev, model, horses), [], self._core_paths(res, ev, model)
         res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, polish=False)
         paths = self._core_paths(res, ev, model)
@@ -1637,12 +1638,18 @@ class RaceRun:
             self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
         # the first solve's lowest alternation ends (and, for the final product, the video labelling) are starts
         res = core.solve(model, start=(*res.ends, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
-                         log=self.log)
+                         log=self.log, marginals=product == "final")  # only the final product's feed modelling
         return self._core_outputs(product, res, ev, model, horses), fin, self._core_paths(res, ev, model)
 
     def _core_outputs(self, product, res, ev, model, horses):
         """Writes a product's labels, probabilities and core arrays; -> res."""
         lab = np.where(res.seg_lab[ev.seg] >= 0, horses[np.maximum(res.seg_lab[ev.seg], 0)], 0)
+        if res.marg is None:  # the video product: labels only (nothing reads its probabilities)
+            with self.out("det_labels.npz") as fp:
+                np.savez(fp, labels=lab, horses=horses)
+            with self.out(f"core_{product}.npz") as fp:
+                np.savez(fp, seg_lab=res.seg_lab, U=res.U, J=np.array([h[1] for h in res.log]))
+            return res
         p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]
         name = "det_labels.npz" if product == "video" else "det_labels_final.npz"
         with self.out(name) as fp:

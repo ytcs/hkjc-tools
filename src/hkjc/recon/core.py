@@ -1699,7 +1699,7 @@ class Result:
     seg_lab: np.ndarray
     state: State
     U: np.ndarray
-    marg: np.ndarray
+    marg: np.ndarray | None  # None for a solve asked for no marginals
     log: list
     ends: list = field(default_factory=list)  # the DESCENTS lowest alternation ends (labellings)
 
@@ -2382,7 +2382,7 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
     return out
 
 
-def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True):
+def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True, marginals=True):
     """Global solve. Starts: five init MILPs (list votes with reads and silk; list votes; reads and silk; the list
     rows of alternate LIST_SPLIT s blocks of each parity with reads and silk) and the caller's labellings. Every start
     alternates: the exact MILP assignment over segments on unaries at the current state (one-horse-refit kinematic
@@ -2672,6 +2672,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     ends = [a[1] for a in alt[:DESCENTS]]
     if not polish:  # a preliminary solve: its marginals are not a product's
         return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist, ends)
+    if not marginals:  # a product whose probabilities nothing reads
+        return Result(lab, st, U, None, hist, ends)
     t0 = time.process_time()
     rf = last_rf[0] if last_rf and last_rf[0].st is st and np.array_equal(last_rf[0].lab, lab) else None
     known = {k: v.J for k, v in memo.items()}
