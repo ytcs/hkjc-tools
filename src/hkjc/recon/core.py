@@ -1710,6 +1710,7 @@ class Refit:
         self.order = np.argsort(ev.ch_seg, kind="stable")
         self.cb = np.r_[0, np.cumsum(np.bincount(ev.ch_seg, minlength=ev.n_seg))]
         self.memo, self.lmemo, self.ld0 = {}, {}, {}
+        self.smemo = {}  # (screen, labelling bytes) -> score: a labelling scored at this state is not scored again
         self.stq = []  # per horse: its statements, the sign of its side, the other horse
         for h in range(model.H):
             ia, ib = np.flatnonzero(St.a == h), np.flatnonzero(St.b == h)
@@ -1891,9 +1892,20 @@ class Refit:
         x = cho_solve_banded((cf, True), r)
         return dc - float(r @ x) + q0 + 2.0 * float(np.log(cf[0]).sum()) - ld0, x
 
+    def _memo(self, key, f):
+        hit = self.smemo.get(key)
+        if hit is None:
+            if len(self.smemo) > 20000:
+                self.smemo.clear()
+            hit = self.smemo[key] = f()
+        return hit
+
     def score_quick(self, new):
         """Closed-form estimate of J(new) - J(state's labelling): ``horse_quick`` per changed horse, its lateral
-        smoother exactly, J_lab exactly, J_det at the new paths."""
+        smoother exactly, J_lab exactly, J_det at the new paths (memoised per labelling at this state)."""
+        return self._memo(("quick", np.asarray(new).tobytes()), lambda: self._score_quick(new))
+
+    def _score_quick(self, new):
         st, lab = self.st, self.lab
         ch = np.flatnonzero(new != lab)
         if not len(ch):
@@ -1932,7 +1944,11 @@ class Refit:
         (REFIT_SWEEPS Gauss-Seidel sweeps over them when several change, each against the others' re-solved paths), the
         list's statements touching them at the re-solved paths with the fault weights frozen (above LIST_EXACT: the
         list's chains exactly; with sweeps, first the weights re-estimated at the re-solved paths and the horses
-        re-solved under them, LIST_EM rounds), J_lab exactly, J_det at the re-solved paths."""
+        re-solved under them, LIST_EM rounds), J_lab exactly, J_det at the re-solved paths (memoised per labelling and
+        sweeps at this state)."""
+        return self._memo(("refit", bool(sweeps), np.asarray(new).tobytes()), lambda: self._score(new, sweeps))
+
+    def _score(self, new, sweeps):
         st, lab = self.st, self.lab
         ch = np.flatnonzero(new != lab)
         if not len(ch):
