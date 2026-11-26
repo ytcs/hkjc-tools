@@ -1711,6 +1711,8 @@ class Refit:
         self.cb = np.r_[0, np.cumsum(np.bincount(ev.ch_seg, minlength=ev.n_seg))]
         self.memo, self.lmemo, self.ld0 = {}, {}, {}
         self.smemo = {}  # (screen, labelling bytes) -> score: a labelling scored at this state is not scored again
+        self.qmemo = {}  # (horse, dropped chunks, added chunks) -> horse_quick's result at this state
+        self.q_calls = self.q_hits = 0
         self.stq = []  # per horse: its statements, the sign of its side, the other horse
         for h in range(model.H):
             ia, ib = np.flatnonzero(St.a == h), np.flatnonzero(St.b == h)
@@ -1871,7 +1873,20 @@ class Refit:
 
     def horse_quick(self, h, drop, add):
         """Closed-form along-track change of horse h's J_s when its render chunks ``drop`` leave and ``add`` join, under
-        the state's marginal band (the order factors as the quadratic at the state) -> (dJ_s, s mode)."""
+        the state's marginal band (the order factors as the quadratic at the state) -> (dJ_s, s mode); memoised per
+        (horse, dropped chunks, added chunks) at this state."""
+        key = (int(h), np.asarray(drop).tobytes(), np.asarray(add).tobytes())
+        self.q_calls += 1
+        hit = self.qmemo.get(key)
+        if hit is not None:
+            self.q_hits += 1
+            return hit
+        if len(self.qmemo) > 20000:
+            self.qmemo.clear()
+        out = self.qmemo[key] = self._horse_quick(h, drop, add)
+        return out
+
+    def _horse_quick(self, h, drop, add):
         st, tg, ev = self.st, self.model.tg, self.model.ev
         A, X = st.As[h], st.S[h]
         ld0 = self.ld0.get(h)
@@ -2354,6 +2369,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     cnt = dict(full=0, rounds=0, steps=0, acc_r=0, acc_p=0)
     cpu = dict(state=0.0, unaries=0.0, milp=0.0, scores=0.0)
     pol = dict(candidates=0.0, refit_setup=0.0, closed_form=0.0, refits=0.0, sweeps=0.0)  # parts of cpu["scores"]
+    q_count = [0, 0]  # closed-form horse terms requested / memo hits
     n_milp0 = len(MILP_STATS)
 
     def look(labs):  # the state step from scratch: J a function of the labelling alone
@@ -2469,6 +2485,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
                 pred[i] = rf.score_quick(cands[i][1])
             t3 = time.process_time()
             pol["closed_form"] += t3 - t2
+            q_count[0] += rf.q_calls
+            q_count[1] += rf.q_hits
             for i in np.r_[todo[todo < npool], gen[np.argsort(pred[gen], kind="stable")[:REFIT_TOP]]].astype(int):
                 pred[i] = rf.score(cands[i][1], sweeps=False)
             t4 = time.process_time()
@@ -2606,7 +2624,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         + (f"; max nodes {max(nd for _s, _g, nd, _w in ms)}, max gap {max(g for _s, g, _n, _w in ms):.2e}, max wall "
            f"{max(w for _s, _g, _n, w in ms):.1f} s, max root-solved wall "
            f"{max((w for _s, _g, nd, w in ms if nd <= 1), default=0.0):.1f} s" if ms else ""))
-    log("   core: polish scores CPU s " + ", ".join(f"{k} {v:.1f}" for k, v in pol.items()))
+    log("   core: polish scores CPU s " + ", ".join(f"{k} {v:.1f}" for k, v in pol.items())
+        + f"; closed-form horse terms {q_count[0]}, memo hits {q_count[1]}")
     log(f"   core: end J {st.J:.1f}; {len(ends)} start ends; alternation proposals {cnt['rounds']} (kept "
         f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}; CPU s "
         + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))

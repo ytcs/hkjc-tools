@@ -429,3 +429,31 @@ def test_the_vectorised_milp_builder_gives_the_row_by_row_arrays_exactly():
             assert np.array_equal(g, f)
         assert np.array_equal(got[1].indptr, ref[1].indptr) and np.array_equal(got[1].indices, ref[1].indices)
         assert np.array_equal(got[1].data, ref[1].data) and got[1].shape == ref[1].shape
+
+
+
+def test_a_horses_closed_form_change_is_computed_once_per_refit():
+    """Refit.horse_quick memoises per (horse, dropped chunks, added chunks): two closed-form scores that share one
+    horse's change compute it once (the other horses' changes once each), and a repeated score recomputes nothing; the
+    values equal a fresh Refit's."""
+    from unittest import mock
+
+    rows, t, s, lat, who = _race(n_h=3, speeds=[16.0, 16.0, 15.0], start_s=[100.0, 97.0, 94.0])
+    members = [np.flatnonzero(who == h) for h in range(3)]
+    horses = np.array([1, 2, 3])
+    ev = _evidence(rows, t, s, lat, members, horses)
+    m = core.Model(ev, core.list_rows(None, lambda f: f, horses), np.arange(1.0, 20.0, core.DT), width=20.0)
+    lab = np.array([who[ev.seg == k][0] for k in range(ev.n_seg)])
+    st = core.evaluate(m, lab)
+    k = int(np.flatnonzero(lab == 0)[0])
+    to1, to2 = lab.copy(), lab.copy()
+    to1[k], to2[k] = 1, 2  # both drop segment k from horse 0
+    rf = core.Refit(m, st, lab)
+    with mock.patch.object(rf, "_horse_quick", wraps=rf._horse_quick) as hq:
+        a, b = rf.score_quick(to1), rf.score_quick(to2)
+        assert hq.call_count == 3  # horse 0 losing k once, horse 1 and horse 2 gaining k
+        rf.smemo.clear()
+        assert rf.score_quick(to1) == a and hq.call_count == 3
+    assert rf.q_calls == 6 and rf.q_hits == 3
+    fresh = core.Refit(m, st, lab)
+    assert fresh.score_quick(to2) == b
