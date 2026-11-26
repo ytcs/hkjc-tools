@@ -502,8 +502,7 @@ Every full state step starts from scratch and runs the EM over the fault chains 
 < 1e-3, at most `EM_ROUNDS` 20), so J is a function of the labelling alone: with the earlier 4 rounds, warm starts from
 neighbouring labellings moved J by up to 12.
 
-Each product solves twice: a pre-solve without the finish camera (steps 1–2 from the init start, list votes with reads
-and silk, and the caller's labels only; the lowest alternation end kept) whose
+Each product solves twice: a pre-solve without the finish camera (steps 1–2, the lowest alternation end kept) whose
 state places the camera's crossings (`finish_camera`), then the full solve with them, the pre-solve's `DESCENTS`
 lowest alternation ends and (for the final product) the video labels being further starts. When every runner's finish
 is an official time (or it stopped), the final product's camera adds no observation and it solves once, from the
