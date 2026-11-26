@@ -2396,7 +2396,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     on rejection the single best ones one at a time, then the round's other predicted-negative ones whose horses no
     accepted change touched; an accepted step resumes the alternation. Then the lowest end descends again with the
     crossover runs toward every other end (``crossovers``) as its pool, while that lowers J. The pre-solve without
-    the finish camera (``polish`` False) keeps the lowest alternation end; its DESCENTS lowest alternation ends are
+    the finish camera (``polish`` False) starts from the init MILP (list votes with reads and silk) and the caller's
+    labellings only and keeps the lowest alternation end; its DESCENTS lowest alternation ends are
     further starts of the solve after it."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
@@ -2428,7 +2429,9 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     lv0 = list_votes(model, None, None)
     app = ev.read_cost + ev.silk_cost
     vot = [("init", lv0 + app), ("list-only init", lv0), ("appearance-only init", app)]
-    for par in (0, 1):
+    if not polish:  # the pre-solve places the finish camera's crossings: the init start alone
+        vot = vot[:1]
+    for par in (0, 1) if polish else ():
         keep = (np.floor(model.Lr.tau / LIST_SPLIT).astype(int) % 2) == par
         m2 = copy.copy(model)
         m2.Lr = ListRows(model.Lr.tau, np.where(keep[:, None], model.Lr.slots, -1), model.Lr.full & keep,
