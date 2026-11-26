@@ -1586,7 +1586,8 @@ class RaceRun:
 
     def _core_product(self, product, start=(), extra=(), s_shift=None, t_end=None, exclude=None):
         """One product of the core: evidence, list, grid, model; a solve without the finish camera, the camera's
-        crossings from that state, then the solve with them (the first solve's labels a candidate start).
+        crossings from that state, then the solve with them (the first solve's labels a candidate start). When every
+        runner's finish is an official time (or it stopped), the camera has nothing to add and the solve runs once.
         -> (core.Result, finish fusion.Obs list, {horse: fusion.Path})."""
         from . import core
 
@@ -1613,6 +1614,12 @@ class RaceRun:
         tg = np.arange(t0, t1 + fusion.DT / 2, fusion.DT)
         model = core.Model(ev, Lr, tg, self.info.width)
         start = tuple(x for x in start if len(x) == ev.n_seg)  # a start from other segments cannot be compared
+        vis = {h for h, tt in (self._official_clock or {}).items() if np.isfinite(tt)}
+        if all(int(h) in vis or int(h) in self._nonfin for h in horses):
+            # every runner's finish is an official time (or it stopped): the camera adds no observation, so the solve
+            # runs once, on the evidence a pre-solve would have
+            res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log)
+            return self._core_outputs(product, res, ev, model, horses), [], self._core_paths(res, ev, model)
         res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, polish=False)
         paths = self._core_paths(res, ev, model)
         quiet, self.log = self.log, (lambda *a, **k: None)
@@ -1631,7 +1638,10 @@ class RaceRun:
         # the first solve's lowest alternation ends (and, for the final product, the video labelling) are starts
         res = core.solve(model, start=(*res.ends, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
                          log=self.log)
-        paths = self._core_paths(res, ev, model)
+        return self._core_outputs(product, res, ev, model, horses), fin, self._core_paths(res, ev, model)
+
+    def _core_outputs(self, product, res, ev, model, horses):
+        """Writes a product's labels, probabilities and core arrays; -> res."""
         lab = np.where(res.seg_lab[ev.seg] >= 0, horses[np.maximum(res.seg_lab[ev.seg], 0)], 0)
         p = res.marg[ev.seg, np.where(res.seg_lab[ev.seg] >= 0, res.seg_lab[ev.seg], len(horses))]
         name = "det_labels.npz" if product == "video" else "det_labels_final.npz"
@@ -1643,7 +1653,7 @@ class RaceRun:
                 np.savez(fp, margin=np.where(lab > 0, 2.0 * np.log(pc / (1 - pc)), np.nan), labels=lab)
         with self.out(f"core_{product}.npz") as fp:
             np.savez(fp, seg_lab=res.seg_lab, marg=res.marg, U=res.U, J=np.array([h[1] for h in res.log]))
-        return res, fin, paths
+        return res
 
     @staticmethod
     def _core_obs(obs, col):

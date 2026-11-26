@@ -491,7 +491,9 @@ neighbouring labellings moved J by up to 12.
 
 Each product solves twice: a pre-solve without the finish camera (steps 1–2, the lowest alternation end kept) whose
 state places the camera's crossings (`finish_camera`), then the full solve with them, the pre-solve's `DESCENTS`
-lowest alternation ends and (for the final product) the video labels being further starts. The official interior times re-identify horses in the final
+lowest alternation ends and (for the final product) the video labels being further starts. When every runner's finish
+is an official time (or it stopped), the final product's camera adds no observation and it solves once, from the
+video labels and the starts. The official interior times re-identify horses in the final
 product's solve (20260301_ST_2: three chains from 44 s, which TV order facts confirm).
 
 **Outputs.**
