@@ -435,7 +435,8 @@ It is the sum of:
    reads and silk; the vote alone; reads and silk alone; the vote of the list rows in alternate `LIST_SPLIT` (7) s
    blocks (each parity) with reads and silk. A list stretch the full vote gets wrong is outvoted only from a start
    that leaves it out (20260301_ST_2's final: the split-list start reaches the TV-confirmed chains). Then the caller's
-   labellings. Each distinct start gets a full state step.
+   labellings. Each distinct start gets a full state step. `core.milp` memoises its solutions in-process by a digest
+   of every input, so a product's pre-solve and solve (same model) solve the start MILPs once.
 2. Alternation, from every start: the assignment step is a MILP over segments × runners (per-frame exclusivity, link
    rewards) on unaries at the current state, followed by a full state step of its proposal. The proposal is kept when
    J falls by more than `MIN_GAIN` (2, about one nat). The alternation stops at a fixed point (the MILP returns the

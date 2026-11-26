@@ -264,3 +264,22 @@ def test_probabilities_come_from_the_alternative_set_alone():
     P = core.alternative_posterior(lab, [(alt, 2 * core.T_PROB * np.log(3.0))], 2)
     assert np.allclose(P[0], [0.75, 0.25, 0.0]) and np.allclose(P[1], [0.25, 0.75, 0.0])
     assert np.allclose(P[2], [0.0, 0.0, 1.0])
+
+
+
+def test_an_assignment_with_the_same_inputs_is_solved_once():
+    """core.milp memoises by a digest of every input: the same inputs return the first solve's labelling without a new
+    solve; any changed input (here one exclusion) is solved afresh."""
+    from types import SimpleNamespace
+    from unittest import mock
+
+    ev = SimpleNamespace(links=np.zeros((0, 3)), seg_lo=np.array([0, 0]), seg_hi=np.array([9, 9]),
+                         forbid=np.zeros((2, 2), bool))
+    U = np.array([[-5.0, -50.0], [-40.0, -1.0]])
+    core._MILP_MEMO.clear()
+    with mock.patch.object(core, "_milp_solve", wraps=core._milp_solve) as solve:
+        a = core.milp(U, ev)
+        b = core.milp(U.copy(), ev)
+        assert solve.call_count == 1 and a.tolist() == b.tolist() == [1, 0]
+        ev.forbid = np.array([[False, True], [False, False]])
+        assert core.milp(U, ev).tolist() == [-1, 0] and solve.call_count == 2

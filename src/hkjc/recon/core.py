@@ -28,6 +28,7 @@ falls, then a bounded polish: candidate labellings scored by one-horse refits, t
 from __future__ import annotations
 
 import copy
+import hashlib
 import time
 
 from dataclasses import dataclass, field
@@ -1494,10 +1495,39 @@ def segment_base(ev: Evidence):
     return b + np.bincount(ev.ch_seg, ev.ch_scat, ev.n_seg)
 
 
+_MILP_MEMO: dict = {}  # input digest -> labelling: an assignment already solved in this process is not solved again
+MILP_MEMO_MAX = 256
+
+
+def _digest(*arrays) -> bytes:
+    h = hashlib.sha256()
+    for a in arrays:
+        if a is None:
+            h.update(b"none")
+            continue
+        a = np.ascontiguousarray(a)
+        h.update(str((a.dtype.str, a.shape)).encode())
+        h.update(a.tobytes())
+    return h.digest()
+
+
 def milp(U, ev: Evidence, allow=None):
     """min sum U x - sum link rewards z over x[segment, horse] binary (a segment has at most one horse; leaving it
     out is clutter, cost 0), one segment per horse per frame, z[link, horse] <= x at both ends. A pair whose cost
-    exceeds every link reward its segment could collect is never in an optimum and gets no variable."""
+    exceeds every link reward its segment could collect is never in an optimum and gets no variable. Results are
+    memoised by a digest of every input (U, allow, the links, the segments' frame spans, the exclusions)."""
+    key = _digest(U, allow, ev.links, ev.seg_lo, ev.seg_hi, ev.forbid)
+    hit = _MILP_MEMO.get(key)
+    if hit is not None:
+        return hit.copy()
+    out = _milp_solve(U, ev, allow)
+    if len(_MILP_MEMO) >= MILP_MEMO_MAX:
+        _MILP_MEMO.clear()
+    _MILP_MEMO[key] = out.copy()
+    return out
+
+
+def _milp_solve(U, ev: Evidence, allow=None):
     from scipy.optimize import Bounds, LinearConstraint, milp as _milp
     from scipy.sparse import coo_matrix
 
