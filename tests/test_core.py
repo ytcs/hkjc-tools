@@ -328,3 +328,104 @@ def test_the_assignment_reaches_the_exhaustive_optimum_with_branching_links():
         best = min(best, obj(lab))
     core._MILP_MEMO.clear()
     assert np.isclose(obj(core.milp(U, ev).tolist()), best)
+
+
+
+def _milp_problem_reference(U, ev, allow=None):
+    """The segment MILP's arrays built row by row (the plain loops core._milp_problem vectorises)."""
+    from scipy.sparse import coo_matrix
+
+    S, H = U.shape
+    links = ev.links
+    reward = np.zeros(S)
+    if len(links):
+        np.add.at(reward, links[:, 0].astype(int), links[:, 2])
+        np.add.at(reward, links[:, 1].astype(int), links[:, 2])
+    ok = np.isfinite(U) & (U < core.INF / 2) & (~ev.forbid) & (U <= reward[:, None])
+    if allow is not None:
+        ok &= allow
+    vs, vh = np.nonzero(ok)
+    nx = len(vs)
+    vid = np.full((S, H), -1)
+    vid[vs, vh] = np.arange(nx)
+    rows, cols = [vs.copy()], [np.arange(nx)]
+    r = S
+    lo, hi = ev.seg_lo, ev.seg_hi
+    for x in np.unique(lo):
+        cl = np.flatnonzero((lo <= x) & (hi >= x))
+        if len(cl) > 1:
+            sub = vid[cl]
+            for h in np.flatnonzero((sub >= 0).sum(0) > 1):
+                v = sub[:, h][sub[:, h] >= 0]
+                rows.append(np.full(len(v), r))
+                cols.append(v)
+                r += 1
+    n_ub1 = r
+    zc, za, zb = [], [], []
+    succ, pred = {}, {}
+    for a, b, w in links:
+        a, b = int(a), int(b)
+        for h in np.flatnonzero((vid[a] >= 0) & (vid[b] >= 0)):
+            succ.setdefault((a, int(h)), []).append((b, len(zc)))
+            pred.setdefault((b, int(h)), []).append((a, len(zc)))
+            zc.append(-w)
+            za.append(vid[a, h])
+            zb.append(vid[b, h])
+    nz = len(zc)
+    zi = nx + np.arange(nz)
+    if nz:
+        rr = r + np.arange(2 * nz)
+        rows += [rr, rr]
+        cols += [np.repeat(zi, 2), np.ravel(np.c_[za, zb])]
+        r += 2 * nz
+    rows = np.concatenate(rows)
+    cols = np.concatenate(cols)
+    vals = np.ones(len(rows))
+    if nz:
+        vals[-2 * nz:] = -1.0
+    ar, ac, av = [], [], []
+    for groups in (succ, pred):
+        for (a, h), lst in groups.items():
+            rest = sorted(lst, key=lambda p: (lo[p[0]], p[1]))
+            while len(rest) > 1:
+                cl, keep = [rest[0]], []
+                for p in rest[1:]:
+                    if all(lo[p[0]] <= hi[q[0]] and lo[q[0]] <= hi[p[0]] for q in cl):
+                        cl.append(p)
+                    else:
+                        keep.append(p)
+                rest = keep
+                if len(cl) > 1:
+                    ar += [r] * (len(cl) + 1)
+                    ac += [nx + k for _b, k in cl] + [vid[a, h]]
+                    av += [1.0] * len(cl) + [-1.0]
+                    r += 1
+    if ar:
+        rows, cols, vals = np.r_[rows, ar], np.r_[cols, ac], np.r_[vals, av]
+    A = coo_matrix((vals, (rows, cols)), shape=(r, nx + nz)).tocsr()
+    return np.r_[U[vs, vh], np.asarray(zc, float)], A, np.r_[np.ones(n_ub1), np.zeros(r - n_ub1)], vs, vh
+
+
+def test_the_vectorised_milp_builder_gives_the_row_by_row_arrays_exactly():
+    """core._milp_problem returns the same c, CSR A (indptr, indices, data) and ub, element for element and in the same
+    order, as the row-by-row construction, on random instances with overlapping segments and branching links."""
+    from types import SimpleNamespace
+
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        S, H = int(rng.integers(5, 40)), int(rng.integers(2, 8))
+        lo = rng.integers(0, 60, S)
+        hi = lo + rng.integers(0, 15, S)
+        L = int(rng.integers(0, 3 * S))
+        links = np.c_[rng.integers(0, S, (L, 2)), rng.choice([1.0, 2.0, 4.0], L)] if L else np.zeros((0, 3))
+        ev = SimpleNamespace(links=links, seg_lo=lo, seg_hi=hi, forbid=rng.random((S, H)) < 0.1)
+        U = rng.normal(-1.0, 3.0, (S, H))
+        allow = rng.random((S, H)) < 0.8 if rng.random() < 0.5 else None
+        got, ref = core._milp_problem(U, ev, allow), _milp_problem_reference(U, ev, allow)
+        if got is None:
+            assert len(ref[3]) == 0
+            continue
+        for g, f in zip(got[:1] + got[2:], ref[:1] + ref[2:]):
+            assert np.array_equal(g, f)
+        assert np.array_equal(got[1].indptr, ref[1].indptr) and np.array_equal(got[1].indices, ref[1].indices)
+        assert np.array_equal(got[1].data, ref[1].data) and got[1].shape == ref[1].shape

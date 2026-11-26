@@ -1532,6 +1532,31 @@ def milp(U, ev: Evidence, allow=None):
 
 def _milp_solve(U, ev: Evidence, allow=None):
     from scipy.optimize import Bounds, LinearConstraint, milp as _milp
+
+    S = U.shape[0]
+    prob = _milp_problem(U, ev, allow)
+    if prob is None:
+        return np.full(S, -1)
+    c, A, ub, vs, vh = prob
+    nx = len(vs)
+    t0 = time.perf_counter()
+    res = _milp(c, constraints=LinearConstraint(A, -np.inf, ub), integrality=np.ones(len(c)), bounds=Bounds(0, 1),
+                options=dict(node_limit=MILP_NODE_LIMIT))
+    gap, nodes = getattr(res, "mip_gap", None), getattr(res, "mip_node_count", None)
+    MILP_STATS.append((int(res.status), np.nan if gap is None else float(gap), -1 if nodes is None else int(nodes),
+                       time.perf_counter() - t0))
+    if res.x is None:
+        raise RuntimeError(f"segment MILP failed: {res.message}")
+    out = np.full(S, -1)
+    on = np.round(res.x[:nx]) > 0.5
+    out[vs[on]] = vh[on]
+    return out
+
+
+def _milp_problem(U, ev: Evidence, allow=None):
+    """The segment MILP's arrays: objective c over the x (segment, horse) then z (link, horse) variables, the
+    constraint matrix A (CSR) with upper bounds ub (rows: one horse per segment, one segment per horse per frame, z <= x
+    at both link ends, link aggregation), and the x variables' segments and horses; None without any variable."""
     from scipy.sparse import coo_matrix
 
     S, H = U.shape
@@ -1546,33 +1571,31 @@ def _milp_solve(U, ev: Evidence, allow=None):
     vs, vh = np.nonzero(ok)  # x variables
     nx = len(vs)
     if not nx:
-        return np.full(S, -1)
+        return None
     vid = np.full((S, H), -1)
     vid[vs, vh] = np.arange(nx)
-    rows, cols = [vid[vs, vh] * 0 + vs], [np.arange(nx)]  # one horse per segment
+    rows, cols = [vs.copy()], [np.arange(nx)]  # one horse per segment
     r = S
-    lo, hi = ev.seg_lo, ev.seg_hi
-    for x in np.unique(lo):  # one segment per horse per frame
-        cl = np.flatnonzero((lo <= x) & (hi >= x))
-        if len(cl) > 1:
-            sub = vid[cl]
-            for h in np.flatnonzero((sub >= 0).sum(0) > 1):
-                v = sub[:, h][sub[:, h] >= 0]
-                rows.append(np.full(len(v), r))
-                cols.append(v)
-                r += 1
+    lo, hi = np.asarray(ev.seg_lo), np.asarray(ev.seg_hi)
+    # one segment per horse per frame: per first frame x of a segment (ascending), per horse (ascending), the variables
+    # of the segments covering x (ascending), when there are at least two
+    xs = np.unique(lo)
+    cover = (lo[None, :] <= xs[:, None]) & (hi[None, :] >= xs[:, None])  # (frames x, segments)
+    has = cover[:, :, None] & (vid >= 0)[None, :, :]  # (x, segment, horse)
+    keep = has.sum(1) > 1  # (x, horse) rows that exist
+    ex, eh, es = np.nonzero(has.transpose(0, 2, 1) & keep[:, :, None])  # entries in (x, horse, segment) order
+    row_id = np.cumsum(keep.ravel()) - 1
+    rows.append(r + row_id[ex * H + eh])
+    cols.append(vid[es, eh])
+    r += int(keep.sum())
     n_ub1 = r
-    zc, za, zb = [], [], []
-    succ, pred = {}, {}  # (segment, horse) -> [(partner segment, z index)] over its links forward / backward
-    for a, b, w in links:  # z only where both ends can hold the horse
-        a, b = int(a), int(b)
-        for h in np.flatnonzero((vid[a] >= 0) & (vid[b] >= 0)):
-            succ.setdefault((a, int(h)), []).append((b, len(zc)))
-            pred.setdefault((b, int(h)), []).append((a, len(zc)))
-            zc.append(-w)
-            za.append(vid[a, h])
-            zb.append(vid[b, h])
-    nz = len(zc)
+    # z only where both ends can hold the horse, in (link, horse) order
+    la, lb = links[:, 0].astype(int) if len(links) else np.zeros(0, int), links[:, 1].astype(int) if len(links) else \
+        np.zeros(0, int)
+    zl, zh = np.nonzero((vid[la] >= 0) & (vid[lb] >= 0)) if len(links) else (np.zeros(0, int), np.zeros(0, int))
+    zc = -links[zl, 2] if len(links) else np.zeros(0)
+    za, zb = vid[la[zl], zh], vid[lb[zl], zh]
+    nz = len(zl)
     zi = nx + np.arange(nz)
     if nz:
         rr = r + np.arange(2 * nz)
@@ -1586,40 +1609,37 @@ def _milp_solve(U, ev: Evidence, allow=None):
         vals[-2 * nz:] = -1.0  # the x entries of the link rows
     # link aggregation (valid, tightens the LP): a segment's links with one horse to partners that pairwise overlap in
     # frames can hold that horse at most once together, so their z sum to at most the segment's x (greedy cliques of
-    # partners, in order of first frame)
+    # partners, in order of first frame); groups (segment, horse) in order of their first link, forward then backward
     ar, ac, av = [], [], []
-    for groups in (succ, pred):
-        for (a, h), lst in groups.items():
-            rest = sorted(lst, key=lambda p: (lo[p[0]], p[1]))
+    for own, other in ((la[zl], lb[zl]), (lb[zl], la[zl])):
+        code = own * H + zh
+        order = np.argsort(code, kind="stable")
+        bnd = np.r_[0, np.flatnonzero(np.diff(code[order])) + 1, nz]
+        firsts = [(order[i], i, j) for i, j in zip(bnd[:-1], bnd[1:]) if j - i > 1]
+        for _f, i, j in sorted(firsts):
+            mem = order[i:j]
+            part = other[mem]
+            o2 = np.lexsort((mem, lo[part]))
+            rest = list(zip(part[o2].tolist(), mem[o2].tolist()))
+            a_, h_ = int(own[mem[0]]), int(zh[mem[0]])
             while len(rest) > 1:
-                cl, keep = [rest[0]], []
+                cl, kp = [rest[0]], []
                 for p in rest[1:]:
                     if all(lo[p[0]] <= hi[q[0]] and lo[q[0]] <= hi[p[0]] for q in cl):
                         cl.append(p)
                     else:
-                        keep.append(p)
-                rest = keep
+                        kp.append(p)
+                rest = kp
                 if len(cl) > 1:
                     ar += [r] * (len(cl) + 1)
-                    ac += [nx + k for _b, k in cl] + [vid[a, h]]
+                    ac += [nx + k for _b, k in cl] + [vid[a_, h_]]
                     av += [1.0] * len(cl) + [-1.0]
                     r += 1
     if ar:
         rows, cols, vals = np.r_[rows, ar], np.r_[cols, ac], np.r_[vals, av]
     A = coo_matrix((vals, (rows, cols)), shape=(r, nx + nz)).tocsr()
     c = np.r_[U[vs, vh], np.asarray(zc, float)]
-    t0 = time.perf_counter()
-    res = _milp(c, constraints=LinearConstraint(A, -np.inf, np.r_[np.ones(n_ub1), np.zeros(r - n_ub1)]),
-                integrality=np.ones(nx + nz), bounds=Bounds(0, 1), options=dict(node_limit=MILP_NODE_LIMIT))
-    gap, nodes = getattr(res, "mip_gap", None), getattr(res, "mip_node_count", None)
-    MILP_STATS.append((int(res.status), np.nan if gap is None else float(gap), -1 if nodes is None else int(nodes),
-                       time.perf_counter() - t0))
-    if res.x is None:
-        raise RuntimeError(f"segment MILP failed: {res.message}")
-    out = np.full(S, -1)
-    on = np.round(res.x[:nx]) > 0.5
-    out[vs[on]] = vh[on]
-    return out
+    return c, A, np.r_[np.ones(n_ub1), np.zeros(r - n_ub1)], vs, vh
 
 
 def unaries(model: Model, st: State, seg_lab):
