@@ -457,3 +457,59 @@ def test_a_horses_closed_form_change_is_computed_once_per_refit():
     assert rf.q_calls == 6 and rf.q_hits == 3
     fresh = core.Refit(m, st, lab)
     assert fresh.score_quick(to2) == b
+
+
+def test_the_end_step_keeps_only_moves_that_lower_j():
+    """At a labelling with the tracker swap left in, the end step against an init labelling without it takes the
+    crossover part that undoes the swap; every kept step lowers J by more than MIN_GAIN and the end J is the right
+    labelling's. Against an init equal to the labelling, nothing changes."""
+    rows, t, s, lat, who = _race(n_h=2, speeds=[16.0, 16.0], start_s=[100.0, 96.0], gap_lat=1.5)
+    a = np.flatnonzero(((who == 0) & (t < 10)) | ((who == 1) & (t >= 10)))
+    b = np.flatnonzero(((who == 1) & (t < 10)) | ((who == 0) & (t >= 10)))
+    horses = np.array([3, 7])
+    ev = _evidence(rows, t, s, lat, [a, b], horses)
+    fr = np.unique(rows[:, 0])
+    leg = np.c_[fr, np.tile([3, 7, 0, 0, 0, 0, 0, 0], (len(fr), 1))]
+    Lr = core.list_rows(leg, lambda f: np.asarray(f, float) * 0.1 + 1.0, horses)
+    m = core.Model(ev, Lr, np.arange(1.0, 20.0, core.DT), width=20.0)
+    right = np.array([np.bincount(who[ev.seg == k], minlength=2).argmax() for k in range(ev.n_seg)])
+    late = np.array([ev.t[ev.seg == k].min() >= 10 for k in range(ev.n_seg)])
+    wrong = np.where(late, 1 - right, right)
+    st0 = core.evaluate(m, wrong)
+    steps = []
+
+    def look(lab):
+        return core.evaluate(m, lab)
+
+    def log(msg):
+        if " -> " in msg:
+            j0, j1 = (float(x) for x in msg.rsplit("J ", 1)[1].split(" -> "))
+            steps.append((j0, j1))
+
+    lab, st = core.end_step(m, wrong.copy(), st0, [right], look, log=log)
+    assert steps and all(j1 < j0 - core.MIN_GAIN for j0, j1 in steps)
+    assert st.J <= core.evaluate(m, right).J + 1e-6 and st.J < st0.J - core.MIN_GAIN
+    steps.clear()
+    lab2, st2 = core.end_step(m, right.copy(), core.evaluate(m, right), [right], look, log=log)
+    assert all(j1 < j0 - core.MIN_GAIN for j0, j1 in steps) and st2.J <= core.evaluate(m, right).J + 1e-6
+
+
+def test_the_no_order_screen_computes_each_horse_set_once_per_refit():
+    """Refit.horse_p1 memoises per (horse, segments): two P1 scores that share one horse's old and new segment sets
+    compute them once, a repeated score recomputes nothing, and the values equal a fresh Refit's."""
+    rows, t, s, lat, who = _race(n_h=3, speeds=[16.0, 16.0, 15.0], start_s=[100.0, 97.0, 94.0])
+    members = [np.flatnonzero(who == h) for h in range(3)]
+    horses = np.array([1, 2, 3])
+    ev = _evidence(rows, t, s, lat, members, horses)
+    m = core.Model(ev, core.list_rows(None, lambda f: f, horses), np.arange(1.0, 20.0, core.DT), width=20.0)
+    lab = np.array([who[ev.seg == k][0] for k in range(ev.n_seg)])
+    st = core.evaluate(m, lab)
+    k = int(np.flatnonzero(lab == 0)[0])
+    to1, to2 = lab.copy(), lab.copy()
+    to1[k], to2[k] = 1, 2  # both drop segment k from horse 0
+    rf = core.Refit(m, st, lab)
+    a, b = rf.score_p1(to1), rf.score_p1(to2)
+    assert rf.p1_calls == 8 and rf.p1_hits == 2  # horse 0's old and new sets shared by the two scores
+    rf.smemo.clear()
+    assert rf.score_p1(to1) == a and rf.p1_calls == 12 and rf.p1_hits == 6
+    assert core.Refit(m, st, lab).score_p1(to2) == b

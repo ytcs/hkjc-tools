@@ -1756,6 +1756,10 @@ REFIT_SWEEPS, SWEEP_IT = 2, 3  # Gauss-Seidel sweeps over a candidate's horses a
 REFIT_TOP, SWEEP_TOP = 200, 60  # polish candidates re-scored by one-horse refits (the lowest by the closed-form
 # score), and of those again with the sweeps (the lowest by their refit score)
 SEG_SLACK = 50.0  # single-segment polish candidates: labels whose unary is at most this above the current one
+END_N, END_ROUNDS = 50, 3  # the final product's end step: init-crossover parts refit per round (the lowest in closed
+# form), rounds at most (another only after a kept one)
+END_STEPS, END_P1 = 10, 50  # its finish: single-segment steps at most; of the REFIT_TOP refit, the lowest by
+# Refit.score_p1 (the rest the lowest in closed form)
 POST_K, POST_BAND = 20, 20.0  # alternatives given a full state step for the probabilities: the K lowest, any within
 # POST_BAND J of the kept labelling
 T_PROB = 50.0  # the probability output's temperature: fitted on a race-hashed half of the dev null-pair races (0333)
@@ -1789,6 +1793,8 @@ class Refit:
         self.smemo = {}  # (screen, labelling bytes) -> score: a labelling scored at this state is not scored again
         self.qmemo = {}  # (horse, dropped chunks, added chunks) -> horse_quick's result at this state
         self.q_calls = self.q_hits = 0
+        self.p1memo = {}  # (horse, segments) -> its along-track mode and cost without the order factors
+        self.p1_calls = self.p1_hits = 0
         self.stq = []  # per horse: its statements, the sign of its side, the other horse
         for h in range(model.H):
             ia, ib = np.flatnonzero(St.a == h), np.flatnonzero(St.b == h)
@@ -2014,6 +2020,57 @@ class Refit:
             L[h] = Jn[0]
         return float(dJ + self.d_det(hs, new, S, L))
 
+    def horse_p1(self, h, segs):
+        """Horse h holding ``segs`` under physics, prior and its observations alone (no order factors) -> (quadratic +
+        log det of that system at its mode, the mode); memoised per (horse, segments): it does not depend on the
+        state."""
+        segs = np.sort(np.asarray(segs, int))
+        key = (int(h), segs.tobytes())
+        self.p1_calls += 1
+        hit = self.p1memo.get(key)
+        if hit is not None:
+            self.p1_hits += 1
+            return hit
+        m, ev = self.model, self.model.ev
+        c = self.chunks(segs)
+        t, y, sd = ev.ch_t[c], self.ys[c], ev.ch_sds[c]
+        if self.ex_s is not None:
+            e = self.ex_s.h == h
+            t, y, sd = np.r_[t, self.ex_s.t[e]], np.r_[y, self.ex_s.y[e]], np.r_[sd, self.ex_s.sd[e]]
+        ab = m.phys_s + m.pri_s[0]
+        r = m.pri_s[1].copy()
+        _band_add_obs(ab, r, m.tg, t, y, sd)
+        cf = cholesky_banded(ab, lower=True)
+        x = cho_solve_banded((cf, True), r)
+        if len(self.p1memo) > 20000:
+            self.p1memo.clear()
+        out = self.p1memo[key] = (float(((y / sd) ** 2).sum()) - float(r @ x) + 2.0 * float(np.log(cf[0]).sum()), x)
+        return out
+
+    def score_p1(self, new):
+        """Estimate of J(new) - J(state's labelling) without the order factors' curvature: per changed horse the
+        change of ``horse_p1``, the list's statements touching the changed horses at those modes (fault weights frozen),
+        its lateral smoother exactly, J_lab exactly, J_det at the new paths (memoised per labelling at this state)."""
+        return self._memo(("p1", np.asarray(new).tobytes()), lambda: self._score_p1(new))
+
+    def _score_p1(self, new):
+        st, lab = self.st, self.lab
+        ch = np.flatnonzero(new != lab)
+        if not len(ch):
+            return 0.0
+        hs = np.unique(np.r_[lab[ch], new[ch]])
+        hs = hs[hs >= 0]
+        dJ = self.d_lab(ch, new)
+        S0, S, L = st.S.copy(), st.S.copy(), st.L.copy()
+        for h in hs:
+            Jb, S0[h] = self.horse_p1(h, np.flatnonzero(lab == h))
+            Jn, S[h] = self.horse_p1(h, np.flatnonzero(new == h))
+            ln, lb = self.lat(h, np.flatnonzero(new == h)), self.lat(h, np.flatnonzero(lab == h))
+            dJ += Jn - Jb + ln[1] - lb[1]
+            L[h] = ln[0]
+        dJ += self.list_part(S, hs) - self.list_part(S0, hs)
+        return float(dJ + self.d_det(hs, new, S, L))
+
     def lat(self, h, segs):
         """(lateral mode, J_lat term) of horse h holding ``segs``."""
         segs = np.sort(np.asarray(segs, int))
@@ -2080,10 +2137,10 @@ class Refit:
         return float(dJ + self.d_det(hs, new, S, L))
 
 
-def crossovers(ev: Evidence, lab, other):
-    """Labellings that take ``other``'s labels over a run of consecutive parts (in time) of the segments where the two
-    differ; a part links differing segments that overlap in time and share a label (old or new), so every run keeps
-    per-frame exclusivity. -> list of (description, labelling)."""
+def crossover_parts(ev: Evidence, lab, other):
+    """The parts of the segments where ``lab`` and ``other`` differ, in time order: a part links differing segments
+    that overlap in time and share a label (old or new), so taking ``other``'s labels on a part keeps per-frame
+    exclusivity. -> list of segment index arrays."""
     ch = np.flatnonzero(lab != other)
     if not len(ch):
         return []
@@ -2103,7 +2160,13 @@ def crossovers(ev: Evidence, lab, other):
             if ev.seg_lo[a] <= ev.seg_hi[b] and ev.seg_hi[a] >= ev.seg_lo[b] and la & {int(lab[b]), int(other[b])}:
                 par[root(i)] = root(j)
     r = np.array([root(i) for i in range(len(ch))])
-    parts = sorted((ch[r == u] for u in np.unique(r)), key=lambda g: ev.seg_lo[g].min())
+    return sorted((ch[r == u] for u in np.unique(r)), key=lambda g: ev.seg_lo[g].min())
+
+
+def crossovers(ev: Evidence, lab, other):
+    """Labellings that take ``other``'s labels over a run of consecutive parts (in time) of the segments where the two
+    differ (``crossover_parts``). -> list of (description, labelling)."""
+    parts = crossover_parts(ev, lab, other)
     out = []
     for i in range(len(parts)):
         for j in range(i, len(parts)):
@@ -2388,14 +2451,12 @@ def posterior(seen, lab, J_best, H):
     return P / P.sum(1, keepdims=True)
 
 
-def polish_candidates(model: Model, st: State, lab, U, pool=()):
-    """The polish's candidate labellings: ``pool`` (description, labelling) first; every single segment moved to a
-    horse (its overlapping segments become clutter) or to clutter whose unary at the state is less than SEG_SLACK
-    above its current one; the single relabels, pair exchanges, tracker-chain moves, abreast swaps, permutation moves
-    and insertions at the state; distinct, each different from ``lab``. -> list of (description, labelling)."""
+def segment_moves(model: Model, lab, U):
+    """Every single segment moved to a horse (the horse's segments overlapping it become clutter) or to clutter, where
+    its unary at the state is less than SEG_SLACK above its current one. -> list of (description, labelling)."""
     ev = model.ev
     H = ev.horses
-    cands = list(pool)
+    out = []
     Uc = np.c_[U, np.zeros(len(U))]
     cur = Uc[np.arange(len(lab)), np.where(lab >= 0, lab, -1)]
     for k, y in zip(*np.nonzero(Uc < cur[:, None] + SEG_SLACK)):
@@ -2406,7 +2467,18 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
         if y >= 0:
             new[(lab == y) & (ev.seg_lo <= ev.seg_hi[k]) & (ev.seg_hi >= ev.seg_lo[k])] = -1
         new[k] = y
-        cands.append((f"segment {k} -> {'#' + str(H[y]) if y >= 0 else 'clutter'}", new))
+        out.append((f"segment {k} -> {'#' + str(H[y]) if y >= 0 else 'clutter'}", new))
+    return out
+
+
+def polish_candidates(model: Model, st: State, lab, U, pool=()):
+    """The polish's candidate labellings: ``pool`` (description, labelling) first; every single segment moved to a
+    horse (its overlapping segments become clutter) or to clutter whose unary at the state is less than SEG_SLACK
+    above its current one; the single relabels, pair exchanges, tracker-chain moves, abreast swaps, permutation moves
+    and insertions at the state; distinct, each different from ``lab``. -> list of (description, labelling)."""
+    ev = model.ev
+    H = ev.horses
+    cands = list(pool) + segment_moves(model, lab, U)
     cands += [(f"relabel seg {x} -> {'#' + str(H[y]) if y >= 0 else 'clutter'}", pm)
               for x, y, pm in single_relabels(ev, lab, st)]
     cands += pair_exchanges(ev, lab, st) + chain_moves(ev, lab, st) + swap_moves(model, st, lab)
@@ -2422,7 +2494,61 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
     return out
 
 
-def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True, marginals=True):
+def end_step(model: Model, lab, st: State, inits, look, extra_s=None, extra_l=None, s_shift=None, log=print):
+    """The final product's end step at the solve's best end. Init crossovers: every single part
+    (``crossover_parts``) of the labelling against each init labelling, the END_N lowest in closed form
+    (``Refit.score_quick``) re-scored by one-horse refits (``Refit.score`` without sweeps), the lowest refit given a
+    full state step (``look``) and kept when J falls by more than MIN_GAIN; again from a kept labelling, END_ROUNDS
+    rounds at most. Then the finish: the single-segment moves (``segment_moves``), the REFIT_TOP - END_P1 lowest in
+    closed form and the END_P1 lowest by ``Refit.score_p1`` (filled to REFIT_TOP distinct from the closed-form order)
+    re-scored by refits, the lowest refit given a full state step and kept when J falls by more than MIN_GAIN,
+    END_STEPS steps at most. -> (labelling, state)."""
+    ev = model.ev
+    tried = set()
+    for rnd in range(END_ROUNDS):
+        parts = []
+        for x in inits:
+            for g in crossover_parts(ev, lab, x):
+                new = lab.copy()
+                new[g] = x[g]
+                if new.tobytes() not in tried:
+                    tried.add(new.tobytes())
+                    parts.append(new)
+        if not parts:
+            break
+        rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
+        q = np.array([rf.score_quick(pm) for pm in parts])
+        top = np.argsort(q, kind="stable")[:END_N]
+        i = int(top[int(np.argmin([rf.score(parts[j], sweeps=False) for j in top]))])
+        st2 = look(parts[i])
+        if st2.J >= st.J - MIN_GAIN:
+            break
+        log(f"   core: end step init crossover {rnd + 1} ({len(parts)} parts): {int((parts[i] != lab).sum())} segments, "
+            f"J {st.J:.1f} -> {st2.J:.1f}")
+        lab, st = parts[i], st2
+    for k in range(END_STEPS):
+        cands = [pm for _d, pm in segment_moves(model, lab, unaries(model, st, lab))]
+        if not cands:
+            break
+        rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
+        oq = np.argsort([rf.score_quick(pm) for pm in cands], kind="stable")
+        op = np.argsort([rf.score_p1(pm) for pm in cands], kind="stable")
+        sel = list(dict.fromkeys([int(i) for i in oq[:REFIT_TOP - END_P1]] + [int(i) for i in op[:END_P1]]))
+        for i in oq[REFIT_TOP - END_P1:]:
+            if len(sel) >= REFIT_TOP:
+                break
+            if int(i) not in sel:
+                sel.append(int(i))
+        i = sel[int(np.argmin([rf.score(cands[j], sweeps=False) for j in sel]))]
+        st2 = look(cands[i])
+        if st2.J >= st.J - MIN_GAIN:
+            break
+        log(f"   core: end step finish {k + 1}: {int((cands[i] != lab).sum())} segments, J {st.J:.1f} -> {st2.J:.1f}")
+        lab, st = cands[i], st2
+    return lab, st
+
+
+def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True, final=True):
     """Global solve. Starts: five init MILPs (list votes with reads and silk; list votes; reads and silk; the list
     rows of alternate LIST_SPLIT s blocks of each parity with reads and silk) and the caller's labellings. Every start
     alternates: the exact MILP assignment over segments on unaries at the current state (one-horse-refit kinematic
@@ -2438,7 +2564,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     crossover runs toward every other end (``crossovers``) as its pool, while that lowers J. The pre-solve without
     the finish camera (``polish`` False) starts from the init MILP (list votes with reads and silk) and the caller's
     labellings only and keeps the lowest alternation end; its DESCENTS lowest alternation ends are
-    further starts of the solve after it."""
+    further starts of the solve after it. The final product (``final``) then takes the end step (``end_step``, against
+    the five init labellings) and the probability output."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
@@ -2697,6 +2824,10 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         log(f"   core: crossovers J {st.J:.1f} -> {st2.J:.1f}")
         lab, st = lab2, st2
         others = [e for e in others if not np.array_equal(e[0], lab)]
+    if polish and final:
+        t0 = time.process_time()
+        lab, st = end_step(model, lab, st, [x for _n, x in inits[:len(vot)]], look, extra_s, extra_l, s_shift, log)
+        log(f"   core: end step CPU s {time.process_time() - t0:.1f}")
     ms = MILP_STATS[n_milp0:]
     stopped = [(round(g, 4), round(w)) for stt, g, _nd, w in ms if stt == 1]
     log(f"   core: MILPs solved {len(ms)}: stopped at the {MILP_NODE_LIMIT}-node limit {len(stopped)}"
@@ -2715,7 +2846,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     ends = [a[1] for a in alt[:DESCENTS]]
     if not polish:  # a preliminary solve: its marginals are not a product's
         return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist, ends)
-    if not marginals:  # a product whose probabilities nothing reads
+    if not final:  # a product whose probabilities nothing reads
         return Result(lab, st, U, None, hist, ends)
     t0 = time.process_time()
     rf = last_rf[0] if last_rf and last_rf[0].st is st and np.array_equal(last_rf[0].lab, lab) else None

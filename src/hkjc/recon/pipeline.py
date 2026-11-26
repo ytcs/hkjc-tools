@@ -1619,7 +1619,7 @@ class RaceRun:
             # every runner's finish is an official time (or it stopped): the camera adds no observation, so the solve
             # runs once, on the evidence a pre-solve would have
             res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log,
-                             marginals=product == "final")
+                             final=product == "final")
             return self._core_outputs(product, res, ev, model, horses), [], self._core_paths(res, ev, model)
         res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, polish=False)
         paths = self._core_paths(res, ev, model)
@@ -1638,7 +1638,7 @@ class RaceRun:
             self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
         # the first solve's lowest alternation ends (and, for the final product, the video labelling) are starts
         res = core.solve(model, start=(*res.ends, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
-                         log=self.log, marginals=product == "final")  # only the final product's feed modelling
+                         log=self.log, final=product == "final")  # only the final product's feed modelling
         return self._core_outputs(product, res, ev, model, horses), fin, self._core_paths(res, ev, model)
 
     def _core_outputs(self, product, res, ev, model, horses):

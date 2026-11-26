@@ -484,6 +484,17 @@ It is the sum of:
 4. Only the `DESCENTS` (2) lowest distinct alternation ends are polished (step 3); the lowest polished end then
    descends again with the crossover runs toward the other end as its pool, while that lowers J. Moves are judged by
    full state steps of J only.
+5. The final product's end step (`core.end_step`), at that best end. Init crossovers: every single part
+   (`core.crossover_parts`) of the labelling against each of the five init MILP labellings; the `END_N` (50) lowest
+   in closed form are refit, and the lowest refit gets a full state step, kept when J falls by more than `MIN_GAIN`.
+   This repeats from a kept labelling, `END_ROUNDS` (3) rounds at most. It reaches multi-horse cascades whose
+   single moves each raise J, when an init labelling holds the cascade as one part. Then the finish: the single-segment moves (`core.segment_moves`), screened by the union of the closed form (lowest
+   `REFIT_TOP - END_P1`) and `Refit.score_p1` (lowest `END_P1`, 50), then refit; the lowest refit gets a full state
+   step, `END_STEPS` (10) at most. `Refit.score_p1` takes each changed horse's along-track mode under physics, prior
+   and its observations alone (no order factors), adds the list's statements at those modes, the lateral, label and
+   detection terms. It is memoised per horse and segment set. It catches the moves the closed form ranks too high,
+   because the closed form treats the order factors as a quadratic about the state path, which fails for a horse
+   jumping between tracklets.
 
 Every full state step starts from scratch and runs the EM over the fault chains to convergence (weights changing
 < 1e-3, at most `EM_ROUNDS` 20), so J is a function of the labelling alone: with the earlier 4 rounds, warm starts from
