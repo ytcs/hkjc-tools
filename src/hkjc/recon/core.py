@@ -785,17 +785,22 @@ class State:
     obs_l: Obs = None
     has_obs: np.ndarray = None  # per horse: any observation
 
-    def sd(self, A, every=10, cache=None):
+    def sd(self, A, every=10, cache=None, factors=None):
         """Posterior sd of every horse on the grid (from the per-horse marginal bands); ``cache`` (dict keyed by the
-        band's id) reuses rows of bands seen before (the lateral solve's cached bands)."""
+        band's id) reuses rows of bands seen before (the lateral solve's cached bands); ``factors`` (list) receives each
+        band's lower Cholesky factor (None where the cache answered)."""
         n = len(self.tg)
         idx = np.unique(np.r_[np.arange(0, n, every), n - 1])
         out = np.zeros((len(A), n))
         for h, ab in enumerate(A):
             if cache is not None and id(ab) in cache and cache[id(ab)][0] is ab:
                 out[h] = cache[id(ab)][1]
+                if factors is not None:
+                    factors.append(None)
                 continue
             c = cholesky_banded(ab, lower=True)
+            if factors is not None:
+                factors.append(c)
             e = np.zeros((n, len(idx)))
             e[idx, np.arange(len(idx))] = 1.0
             v = np.einsum("ij,ij->j", e, cho_solve_banded((c, True), e))
@@ -1114,7 +1119,8 @@ def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift
     sdl_cache = model.__dict__.setdefault("_sdl_cache", {})
     if len(sdl_cache) > 4000:
         sdl_cache.clear()
-    st.sdS, st.sdL = st.sd(As), st.sd(Al, cache=sdl_cache)
+    st.chol_s = []  # the along-track bands' Cholesky factors, shared with kin_costs
+    st.sdS, st.sdL = st.sd(As, factors=st.chol_s), st.sd(Al, cache=sdl_cache)
     tc = _add_cpu("state: sd", tc)
     st.pin = in_view(ev, Xs, Xl, st.sdS, st.sdL, model.tg)
     tc = _add_cpu("state: in_view", tc)
@@ -1308,7 +1314,10 @@ def kin_costs(model: Model, st: State, seg_lab):
             if hit is not None and hit[0] is A[h]:
                 blocks, W = hit[1], hit[2]
             else:
-                W = cho_solve_banded((cholesky_banded(A[h], lower=True), True), E)[nodes]  # A^-1 on the nodes
+                cf = st.chol_s[h] if coord == "s" and getattr(st, "chol_s", None) else None
+                if cf is None:
+                    cf = cholesky_banded(A[h], lower=True)
+                W = cho_solve_banded((cf, True), E)[nodes]  # A^-1 on the nodes
                 blocks = {}
                 for m_, qs in groups:
                     ix = bnd[qs][:, None] + np.arange(m_)[None, :]  # (G, m) chunk positions
