@@ -437,7 +437,8 @@ It is the sum of:
    that leaves it out (20260301_ST_2's final: the split-list start reaches the TV-confirmed chains). Then the caller's
    labellings. Each distinct start gets a full state step. `core.milp` memoises its solutions in-process by a digest
    of every input, so a product's pre-solve and solve (same model) solve the start MILPs once. HiGHS stops a MILP at
-   `MILP_TIME_LIMIT` (300 s, wall clock) with its best labelling so far; each solve logs its MILPs' count, those
+   `MILP_NODE_LIMIT` (2) branch-and-bound nodes, a deterministic limit, with its incumbent (no incumbent is an error;
+   there is no wall-clock limit); each solve logs its MILPs' count, those
    stopped there (with gap and wall time), and the largest node count, gap and wall time. Every MILP (starts and
    alternation) has, besides z <= x at both ends of each link, the valid link-aggregation rows: per segment and runner,
    the link variables to partners that pairwise overlap in frames (greedy cliques, forward and backward) sum to at most

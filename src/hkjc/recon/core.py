@@ -1497,7 +1497,7 @@ def segment_base(ev: Evidence):
 
 _MILP_MEMO: dict = {}  # input digest -> labelling: an assignment already solved in this process is not solved again
 MILP_MEMO_MAX = 256
-MILP_TIME_LIMIT = 300  # s, wall clock: HiGHS stops here (a stopped MILP returns its best labelling so far)
+MILP_NODE_LIMIT = 2  # branch-and-bound nodes: HiGHS stops here (deterministic) and returns its incumbent
 MILP_STATS: list = []  # per MILP solved (memo hits excluded): (HiGHS status, relative gap, B&B nodes, wall s)
 
 
@@ -1609,7 +1609,7 @@ def _milp_solve(U, ev: Evidence, allow=None):
     c = np.r_[U[vs, vh], np.asarray(zc, float)]
     t0 = time.perf_counter()
     res = _milp(c, constraints=LinearConstraint(A, -np.inf, np.r_[np.ones(n_ub1), np.zeros(r - n_ub1)]),
-                integrality=np.ones(nx + nz), bounds=Bounds(0, 1), options=dict(time_limit=MILP_TIME_LIMIT))
+                integrality=np.ones(nx + nz), bounds=Bounds(0, 1), options=dict(node_limit=MILP_NODE_LIMIT))
     gap, nodes = getattr(res, "mip_gap", None), getattr(res, "mip_node_count", None)
     MILP_STATS.append((int(res.status), np.nan if gap is None else float(gap), -1 if nodes is None else int(nodes),
                        time.perf_counter() - t0))
@@ -2554,7 +2554,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         others = [e for e in others if not np.array_equal(e[0], lab)]
     ms = MILP_STATS[n_milp0:]
     stopped = [(round(g, 4), round(w)) for stt, g, _nd, w in ms if stt == 1]
-    log(f"   core: MILPs solved {len(ms)}: stopped at the {MILP_TIME_LIMIT} s time limit {len(stopped)}"
+    log(f"   core: MILPs solved {len(ms)}: stopped at the {MILP_NODE_LIMIT}-node limit {len(stopped)}"
         + (f" (gap, wall s: {stopped})" if stopped else "")
         + (f"; max nodes {max(nd for _s, _g, nd, _w in ms)}, max gap {max(g for _s, g, _n, _w in ms):.2e}, max wall "
            f"{max(w for _s, _g, _n, w in ms):.1f} s" if ms else ""))

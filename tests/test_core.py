@@ -288,7 +288,7 @@ def test_an_assignment_with_the_same_inputs_is_solved_once():
 
 def test_every_solved_assignment_records_its_highs_status_gap_nodes_and_wall_time():
     """core.MILP_STATS gets one (status, gap, nodes, wall s) per MILP solved (a memo hit adds none); status 0 is an
-    optimum, 1 a stop at MILP_TIME_LIMIT."""
+    optimum, 1 a stop at MILP_NODE_LIMIT."""
     from types import SimpleNamespace
 
     ev = SimpleNamespace(links=np.zeros((0, 3)), seg_lo=np.array([0, 0]), seg_hi=np.array([9, 9]),
