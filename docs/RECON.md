@@ -438,7 +438,10 @@ It is the sum of:
    labellings. Each distinct start gets a full state step. `core.milp` memoises its solutions in-process by a digest
    of every input, so a product's pre-solve and solve (same model) solve the start MILPs once. HiGHS stops a MILP at
    `MILP_TIME_LIMIT` (300 s, wall clock) with its best labelling so far; each solve logs its MILPs' count, those
-   stopped there (with gap and wall time), and the largest node count, gap and wall time.
+   stopped there (with gap and wall time), and the largest node count, gap and wall time. Every MILP (starts and
+   alternation) has, besides z <= x at both ends of each link, the valid link-aggregation rows: per segment and runner,
+   the link variables to partners that pairwise overlap in frames (greedy cliques, forward and backward) sum to at most
+   the segment's x. Same feasible set and optimum; the LP relaxation is near-integral, so HiGHS closes the gap.
 2. Alternation, from every start: the assignment step is a MILP over segments × runners (per-frame exclusivity, link
    rewards) on unaries at the current state, followed by a full state step of its proposal. The proposal is kept when
    J falls by more than `MIN_GAIN` (2, about one nat). The alternation stops at a fixed point (the MILP returns the

@@ -301,3 +301,30 @@ def test_every_solved_assignment_records_its_highs_status_gap_nodes_and_wall_tim
     assert len(core.MILP_STATS) == n0 + 1
     status, gap, nodes, wall = core.MILP_STATS[-1]
     assert status == 0 and gap == 0.0 and nodes >= 0 and wall >= 0.0
+
+
+
+def test_the_assignment_reaches_the_exhaustive_optimum_with_branching_links():
+    """core.milp (with the link-aggregation rows) returns a labelling whose objective equals the exhaustive optimum of
+    the base problem (one horse per segment, one segment per horse per frame, a link's reward when both ends hold the
+    same horse) on an instance where a segment links to two overlapping successors."""
+    import itertools
+    from types import SimpleNamespace
+
+    lo, hi = np.array([0, 10, 10, 20, 20]), np.array([9, 19, 19, 29, 29])
+    links = np.array([[0, 1, 4.0], [0, 2, 4.0], [1, 3, 4.0], [2, 4, 4.0], [1, 4, 1.0], [2, 3, 1.0]])
+    ev = SimpleNamespace(links=links, seg_lo=lo, seg_hi=hi, forbid=np.zeros((5, 2), bool))
+    U = np.array([[-1.0, -0.5], [-0.2, -0.9], [-0.8, -0.1], [-0.3, -0.6], [-0.7, -0.2]])
+
+    def obj(lab):
+        o = sum(U[k, h] for k, h in enumerate(lab) if h >= 0)
+        return o - sum(w for a, b, w in links if lab[int(a)] >= 0 and lab[int(a)] == lab[int(b)])
+
+    best = np.inf
+    for lab in itertools.product((-1, 0, 1), repeat=5):
+        if any(lab[a] >= 0 and lab[a] == lab[b] and lo[a] <= hi[b] and lo[b] <= hi[a]
+               for a in range(5) for b in range(a + 1, 5)):
+            continue
+        best = min(best, obj(lab))
+    core._MILP_MEMO.clear()
+    assert np.isclose(obj(core.milp(U, ev).tolist()), best)

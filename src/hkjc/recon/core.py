@@ -1562,9 +1562,12 @@ def _milp_solve(U, ev: Evidence, allow=None):
                 r += 1
     n_ub1 = r
     zc, za, zb = [], [], []
+    succ, pred = {}, {}  # (segment, horse) -> [(partner segment, z index)] over its links forward / backward
     for a, b, w in links:  # z only where both ends can hold the horse
         a, b = int(a), int(b)
         for h in np.flatnonzero((vid[a] >= 0) & (vid[b] >= 0)):
+            succ.setdefault((a, int(h)), []).append((b, len(zc)))
+            pred.setdefault((b, int(h)), []).append((a, len(zc)))
             zc.append(-w)
             za.append(vid[a, h])
             zb.append(vid[b, h])
@@ -1580,6 +1583,28 @@ def _milp_solve(U, ev: Evidence, allow=None):
     vals = np.ones(len(rows))
     if nz:
         vals[-2 * nz:] = -1.0  # the x entries of the link rows
+    # link aggregation (valid, tightens the LP): a segment's links with one horse to partners that pairwise overlap in
+    # frames can hold that horse at most once together, so their z sum to at most the segment's x (greedy cliques of
+    # partners, in order of first frame)
+    ar, ac, av = [], [], []
+    for groups in (succ, pred):
+        for (a, h), lst in groups.items():
+            rest = sorted(lst, key=lambda p: (lo[p[0]], p[1]))
+            while len(rest) > 1:
+                cl, keep = [rest[0]], []
+                for p in rest[1:]:
+                    if all(lo[p[0]] <= hi[q[0]] and lo[q[0]] <= hi[p[0]] for q in cl):
+                        cl.append(p)
+                    else:
+                        keep.append(p)
+                rest = keep
+                if len(cl) > 1:
+                    ar += [r] * (len(cl) + 1)
+                    ac += [nx + k for _b, k in cl] + [vid[a, h]]
+                    av += [1.0] * len(cl) + [-1.0]
+                    r += 1
+    if ar:
+        rows, cols, vals = np.r_[rows, ar], np.r_[cols, ac], np.r_[vals, av]
     A = coo_matrix((vals, (rows, cols)), shape=(r, nx + nz)).tocsr()
     c = np.r_[U[vs, vh], np.asarray(zc, float)]
     t0 = time.perf_counter()
