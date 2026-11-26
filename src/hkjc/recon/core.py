@@ -37,7 +37,6 @@ from functools import partial
 import numpy as np
 from scipy.linalg import cho_solve_banded as _cho_solve_banded
 from scipy.linalg import cholesky_banded as _cholesky_banded
-from scipy.linalg import solve_triangular
 from scipy.special import ndtr
 
 # banded factor and solve without the finiteness scan (the bands are finite by construction)
@@ -365,14 +364,11 @@ def in_view(ev: Evidence, S, L, sdS, sdL, tg):
     def at(X):
         return X[:, k] * (1 - w) + X[:, k + 1] * w
 
-    s_, l_, ss, sl = at(S), at(L), at(sdS), at(sdL)
-    A = V["A"]
-    cx = s_ * A[None, :, 0, 0] + l_ * A[None, :, 1, 0] + A[None, :, 2, 0]
-    cy = s_ * A[None, :, 0, 1] + l_ * A[None, :, 1, 1] + A[None, :, 2, 1]
-    ux = np.hypot(ss * A[None, :, 0, 0], sl * A[None, :, 1, 0]) + VIEW_PX
-    uy = np.hypot(ss * A[None, :, 0, 1], sl * A[None, :, 1, 1]) + VIEW_PX
+    from . import nbk
+
     (x0, x1), (y0, y1) = V["x"], V["y"]
-    return ndtr((cx - x0) / ux) * ndtr((x1 - cx) / ux) * ndtr((cy - y0) / uy) * ndtr((y1 - cy) / uy)
+    return nbk.view(np.asarray(S, float), np.asarray(L, float), np.asarray(sdS, float), np.asarray(sdL, float), k, w,
+                    V["A"], float(x0), float(x1), float(y0), float(y1), VIEW_PX)
 
 
 def miss_terms(ev: Evidence, pin, seg_lab):
@@ -1013,7 +1009,6 @@ class Model:
 
     def lat_one(self, t, y, sd):
         """One horse's lateral smoother (box-bounded) on its observations: -> (mode, J term, band)."""
-        n = self.n
         ab = self.phys_l + self.pri_l[0]
         r = self.pri_l[1].copy()
         c = (0.5 * self.width / self.width) ** 2
@@ -1027,19 +1022,9 @@ class Model:
             np.add.at(r, kk, a * yy)
             np.add.at(r, kk + 1, b * yy)
             c += float((yy * yy).sum())
-        pen = np.zeros(n)
-        tgt = np.zeros(n)
-        for _ in range(8):
-            abp = ab.copy()
-            abp[0] += pen
-            x = cho_solve_banded((cholesky_banded(abp, lower=True), True), r + pen * tgt)
-            lo_v, hi_v = (x < lb - 1e-6) & (pen == 0), (x > ub + 1e-6) & (pen == 0)
-            if not (lo_v.any() or hi_v.any()):
-                break
-            pen[lo_v | hi_v] = 1e4 * float(ab[0].max())
-            tgt[lo_v] = lb
-            tgt[hi_v] = ub
-        Jh = _quad_band(ab, x) - 2.0 * float(r @ x) + c + _logdet(ab)[0] - self.ld_prior_l
+        from . import nbk
+
+        x, Jh = nbk.lat_solve(ab, r, c, lb, ub, self.ld_prior_l)
         return x, Jh, ab
 
     # -- lateral: per horse, box-bounded
@@ -1393,38 +1378,18 @@ def _refit_block(W, p0, p1, w0, y, R, mu, bnd, segs, lab, h, ev, rcost, rok, coo
         if len(conf):
             groups.setdefault(conf.tobytes(), (conf, []))[1].append(q)
     ci = 0 if coord == "s" else 1
+    from . import nbk
+
     for conf, qs in groups.values():
         rm = np.concatenate([np.arange(bnd[qpos[c]], bnd[qpos[c] + 1]) for c in conf])
-        sr = np.sqrt(R[rm])
-        Sm = np.eye(len(rm)) - _cov(W, p0, p1, w0, rm, rm) / sr[:, None] / sr[None, :]
-        try:
-            cS = np.linalg.cholesky(0.5 * (Sm + Sm.T))
-        except np.linalg.LinAlgError:
-            continue
-        t2 = solve_triangular(cS, (y[rm] - mu[rm]) / sr, lower=True)
         qs = np.asarray(qs)
         sizes = bnd[qs + 1] - bnd[qs]
         for m_ in np.unique(sizes):  # segments of equal chunk count together
             qm = qs[sizes == m_]
             ix = bnd[qm][:, None] + np.arange(m_)[None, :]  # (G, m)
-            flat = ix.ravel()
-            T = solve_triangular(cS, (_cov(W, p0, p1, w0, flat, rm) / sr[None, :]).T, lower=True)  # r x G m
-            T = T.reshape(len(rm), len(qm), m_)
-            a0, a1, wa = p0[ix], p1[ix], w0[ix]
-            C = ((1 - wa)[:, :, None] * (1 - wa)[:, None, :] * W[a0[:, :, None], a0[:, None, :]]
-                 + (1 - wa)[:, :, None] * wa[:, None, :] * W[a0[:, :, None], a1[:, None, :]]
-                 + wa[:, :, None] * (1 - wa)[:, None, :] * W[a1[:, :, None], a0[:, None, :]]
-                 + wa[:, :, None] * wa[:, None, :] * W[a1[:, :, None], a1[:, None, :]])
-            C = C + np.einsum("rgi,rgj->gij", T, T)
-            C = 0.5 * (C + C.transpose(0, 2, 1))
-            res = y[ix] - (mu[ix] - np.einsum("rgi,r->gi", T, t2))
-            Rg = R[ix]
-            try:
-                cp = np.linalg.cholesky(C + np.einsum("gi,ij->gij", Rg, np.eye(m_)))
-                z = np.linalg.solve(cp, res[:, :, None])[:, :, 0]
-                v = (z * z).sum(1) + 2.0 * np.log(np.diagonal(cp, axis1=1, axis2=2)).sum(1) - np.log(Rg).sum(1)
-            except np.linalg.LinAlgError:
-                v = np.array([_block_cost(C[g], Rg[g], res[g]) for g in range(len(qm))])
+            v, okS = nbk.refit_group(W, p0, p1, w0, y, R, mu, rm, ix, INF)
+            if not okS:
+                break
             ok = v < INF / 2
             rcost[segs[qm[ok]], h, ci] = v[ok]
             rok[segs[qm[ok]], h, ci] = True
@@ -1844,14 +1809,11 @@ class Refit:
         def at(X):
             return X[:, k] * (1 - w) + X[:, k + 1] * w
 
-        s_, l_, ss, sl = at(S[hs]), at(L[hs]), at(st.sdS[hs]), at(st.sdL[hs])
-        A = V["A"]
-        cx = s_ * A[None, :, 0, 0] + l_ * A[None, :, 1, 0] + A[None, :, 2, 0]
-        cy = s_ * A[None, :, 0, 1] + l_ * A[None, :, 1, 1] + A[None, :, 2, 1]
-        ux = np.hypot(ss * A[None, :, 0, 0], sl * A[None, :, 1, 0]) + VIEW_PX
-        uy = np.hypot(ss * A[None, :, 0, 1], sl * A[None, :, 1, 1]) + VIEW_PX
+        from . import nbk
+
         (x0, x1), (y0, y1) = V["x"], V["y"]
-        return ndtr((cx - x0) / ux) * ndtr((x1 - cx) / ux) * ndtr((cy - y0) / uy) * ndtr((y1 - cy) / uy)
+        return nbk.view(S[hs], L[hs], st.sdS[hs], st.sdL[hs], k, w, V["A"], float(x0), float(x1), float(y0),
+                        float(y1), VIEW_PX)
 
     def d_det(self, hs, new, S, L):
         """J_det at the paths S, L (rows ``hs`` changed) and labelling ``new`` minus the state's J_det."""
@@ -1969,25 +1931,17 @@ class Refit:
         return out
 
     def _horse_quick(self, h, drop, add):
+        from . import nbk
+
         st, tg, ev = self.st, self.model.tg, self.model.ev
         A, X = st.As[h], st.S[h]
         ld0 = self.ld0.get(h)
         if ld0 is None:
             ld0 = self.ld0[h] = _logdet(A)[0]
-        ab, r = A.copy(), _band_matvec(A, X)
-        q0 = float(X @ r)
-        dc = 0.0
-        for c, sgn in ((drop, -1.0), (add, 1.0)):
-            if len(c):
-                _band_add_obs(ab, r, tg, ev.ch_t[c], self.ys[c], ev.ch_sds[c], sgn)
-                dc += sgn * float(((self.ys[c] / ev.ch_sds[c]) ** 2).sum())
-        ab[0] = np.maximum(ab[0], 1e-12)
-        try:
-            cf = cholesky_banded(ab, lower=True)
-        except np.linalg.LinAlgError:
-            return INF, X
-        x = cho_solve_banded((cf, True), r)
-        return dc - float(r @ x) + q0 + 2.0 * float(np.log(cf[0]).sum()) - ld0, x
+        drop, add = np.asarray(drop, int), np.asarray(add, int)
+        d, x = nbk.horse_quick(A, X, ld0, float(tg[0]), DT, len(tg), ev.ch_t[drop], self.ys[drop], ev.ch_sds[drop],
+                               ev.ch_t[add], self.ys[add], ev.ch_sds[add], INF)
+        return float(d), x
 
     def _memo(self, key, f):
         hit = self.smemo.get(key)

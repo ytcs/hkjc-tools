@@ -479,7 +479,9 @@ It is the sum of:
    keep their labels; before the polish ends, every candidate is scored afresh. Each solve logs the polish scoring's CPU by part
    (candidates, Refit setup, closed form, refits, sweeps) and
    the closed form's per-horse terms with their memo hits (`Refit.horse_quick` is memoised per horse, dropped and
-   added chunks). Each solve also logs the CPU of the state steps (joint base, Newton, EM, exact chains and bands,
+   added chunks). The hot loops run as Numba kernels (`hkjc/recon/nbk.py`, cached compilation): the bandwidth-2 band
+   Cholesky / solves / log det of `Refit.horse_quick`, the lateral smoother's box loop, the in-view projection and
+   `kin_costs`' refit downdates (not bitwise equal to the LAPACK / numpy versions; agreement within 1e-6 J measured). Each solve also logs the CPU of the state steps (joint base, Newton, EM, exact chains and bands,
    lateral, sd, in_view, miss terms) and of the unaries (along-track kin, lateral kin, list votes, detection terms).
 4. Only the `DESCENTS` (2) lowest distinct alternation ends are polished (step 3); the lowest polished end then
    descends again with the crossover runs toward the other end as its pool, while that lowers J. Moves are judged by
