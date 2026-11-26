@@ -1498,7 +1498,8 @@ def segment_base(ev: Evidence):
 _MILP_MEMO: dict = {}  # input digest -> labelling: an assignment already solved in this process is not solved again
 MILP_MEMO_MAX = 256
 MILP_NODE_LIMIT = 2  # branch-and-bound nodes: HiGHS stops here (deterministic) and returns its incumbent
-MILP_STATS: list = []  # per MILP solved (memo hits excluded): (HiGHS status, relative gap, B&B nodes, wall s)
+MILP_STATS: list = []  # per MILP solved (memo hits excluded): (HiGHS status, relative gap, B&B nodes, wall s); a
+# MILP with nodes <= 1 closed at the root, so its wall is the root time
 
 
 def _digest(*arrays) -> bytes:
@@ -2557,7 +2558,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     log(f"   core: MILPs solved {len(ms)}: stopped at the {MILP_NODE_LIMIT}-node limit {len(stopped)}"
         + (f" (gap, wall s: {stopped})" if stopped else "")
         + (f"; max nodes {max(nd for _s, _g, nd, _w in ms)}, max gap {max(g for _s, g, _n, _w in ms):.2e}, max wall "
-           f"{max(w for _s, _g, _n, w in ms):.1f} s" if ms else ""))
+           f"{max(w for _s, _g, _n, w in ms):.1f} s, max root-solved wall "
+           f"{max((w for _s, _g, nd, w in ms if nd <= 1), default=0.0):.1f} s" if ms else ""))
     log(f"   core: end J {st.J:.1f}; {len(ends)} start ends; alternation proposals {cnt['rounds']} (kept "
         f"{cnt['acc_r']}), polish steps {cnt['steps']} (kept {cnt['acc_p']}), full state steps {cnt['full']}; CPU s "
         + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))
