@@ -805,6 +805,15 @@ class State:
         return out
 
 
+PART_CPU: dict = {}  # CPU s by part of the state step and the unaries, accumulated over the process (log only)
+
+
+def _add_cpu(part, t0):
+    t = time.process_time()
+    PART_CPU[part] = PART_CPU.get(part, 0.0) + t - t0
+    return t
+
+
 EM_ROUNDS = 20  # EM rounds over the fault chains at most; they stop when the weights change < 1e-3 (4 left J
 # unconverged by up to 12)
 
@@ -886,8 +895,10 @@ class Model:
         fault chains, Newton with line search). -> (X, J_s, J_list, pf, om, per-horse marginal bands, P(order wrong)
         per statement)."""
         H, n, St = self.H, self.n, self.St
+        tc = time.process_time()
         A0, r0 = self._joint_base(obs)
         x = cho_solve_banded((cholesky_banded(A0, lower=True), True), r0) if X0 is None else X0.T.ravel().copy()
+        tc = _add_cpu("state: joint base", tc)
         k, w = self.st_k, self.st_w
         II, vv = self.st_II, self.st_vv
         ia0, ia1, ib0, ib1 = II.T
@@ -912,6 +923,7 @@ class Model:
                 dl = delta(x)
                 _J, pf, om, pw = list_chains(self.Lr, St, _p_order(dl, St.eps)[1], H, dl)
                 wt_new = (1 - pf[St.row]) * np.where(St.unl, 1 - om[St.b, St.row], 1.0 - pw)
+                tc = _add_cpu("state: EM (fault chains)", tc)
                 if _ > 0 and np.abs(wt_new - wt).max() < 1e-3:
                     break
                 wt = wt_new
@@ -948,6 +960,7 @@ class Model:
                 x = x + lam * step
                 if obj - on < 1e-4:
                     break
+            tc = _add_cpu("state: Newton", tc)
         Xs = x.reshape(n, H).T.copy()
         # J_s: the objective at the mode with the exact chains, + Laplace log det
         J_list = 0.0
@@ -980,6 +993,7 @@ class Model:
                     np.add.at(As[h][0], k[m], cw[m] * (1 - w[m]) ** 2)
                     np.add.at(As[h][0], k[m] + 1, cw[m] * w[m] ** 2)
                     np.add.at(As[h][1], k[m], cw[m] * (1 - w[m]) * w[m])
+        _add_cpu("state: exact chains, log det, bands", tc)
         return Xs, J_s, J_list, pf, om, As, pw
 
     def _const_s(self, obs):
@@ -1089,7 +1103,9 @@ def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift
     os_ = Obs.cat([os_, extra_s])
     ol = Obs.cat([ol, extra_l])
     Xs, J_s, J_list, pf, om, As, pw = model.solve_s(os_, X0)
+    tc = time.process_time()
     Xl, J_l, Al = model.solve_l(ol)
+    tc = _add_cpu("state: lateral", tc)
     J_lab = label_terms(ev, seg_lab)
     has = np.zeros(model.H, bool)
     has[np.unique(os_.h)] = True
@@ -1099,8 +1115,11 @@ def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift
     if len(sdl_cache) > 4000:
         sdl_cache.clear()
     st.sdS, st.sdL = st.sd(As), st.sd(Al, cache=sdl_cache)
+    tc = _add_cpu("state: sd", tc)
     st.pin = in_view(ev, Xs, Xl, st.sdS, st.sdL, model.tg)
+    tc = _add_cpu("state: in_view", tc)
     J_det, st.p_det, st.c_un, st.c_lab = miss_terms(ev, st.pin, seg_lab)
+    _add_cpu("state: miss terms", tc)
     st.J = J_s + J_l + J_list + J_lab + J_det
     st.parts = dict(J_s=J_s, J_lat=J_l, J_list=J_list, J_lab=J_lab, J_det=J_det)
     return st
@@ -1276,7 +1295,10 @@ def kin_costs(model: Model, st: State, seg_lab):
     ccache = model.__dict__.setdefault("_kin_cache", {})  # lateral bands are reused while a horse's labels stay
     if len(ccache) > 64:
         ccache.clear()
+    tc = time.process_time()
     for coord in ("s", "l"):
+        if coord == "l":
+            tc = _add_cpu("unaries: along-track kin", tc)
         A = st.As if coord == "s" else st.Al
         X = st.S if coord == "s" else st.L
         y = (ev.ch_s if coord == "s" else ev.ch_l)[order]
@@ -1329,6 +1351,7 @@ def kin_costs(model: Model, st: State, seg_lab):
                 z = np.linalg.solve(cp, (y[ixr] - mu[ixr])[:, :, None])[:, :, 0]
                 ld = 2.0 * np.log(np.diagonal(cp, axis1=1, axis2=2)).sum(1)
                 out[segs[qs[rest]], h] += (z * z).sum(1) + ld - np.log(R[ixr]).sum(1)
+    _add_cpu("unaries: lateral kin", tc)
     both = rok.sum(2) == 2
     out[both] = rcost.sum(2)[both]
     return out
@@ -1648,13 +1671,17 @@ def unaries(model: Model, st: State, seg_lab):
     and silk."""
     ev = model.ev
     lab = np.asarray(seg_lab)
-    U = kin_costs(model, st, lab) + list_votes(model, st, lab)
+    U = kin_costs(model, st, lab)
+    tc = time.process_time()
+    U = U + list_votes(model, st, lab)
+    tc = _add_cpu("unaries: list votes", tc)
     U += segment_base(ev)[:, None] + ev.read_cost + ev.silk_cost
     if st.c_un is not None:  # detection terms: a labelled frame instead of a (possibly in-view) missed one
         fi = np.searchsorted(ev.view["frames"], ev.fr)
         for h in range(model.H):
             U[:, h] += np.bincount(ev.seg, st.c_lab[h, fi] - st.c_un[h, fi], ev.n_seg)
     U[ev.forbid] = INF
+    _add_cpu("unaries: detection terms, base", tc)
     return U
 
 
@@ -2370,6 +2397,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     cpu = dict(state=0.0, unaries=0.0, milp=0.0, scores=0.0)
     pol = dict(candidates=0.0, refit_setup=0.0, closed_form=0.0, refits=0.0, sweeps=0.0)  # parts of cpu["scores"]
     q_count = [0, 0]  # closed-form horse terms requested / memo hits
+    part0 = dict(PART_CPU)
     n_milp0 = len(MILP_STATS)
 
     def look(labs):  # the state step from scratch: J a function of the labelling alone
@@ -2624,6 +2652,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         + (f"; max nodes {max(nd for _s, _g, nd, _w in ms)}, max gap {max(g for _s, g, _n, _w in ms):.2e}, max wall "
            f"{max(w for _s, _g, _n, w in ms):.1f} s, max root-solved wall "
            f"{max((w for _s, _g, nd, w in ms if nd <= 1), default=0.0):.1f} s" if ms else ""))
+    log("   core: state and unaries CPU s by part " + ", ".join(f"{k} {v - part0.get(k, 0.0):.1f}"
+                                                            for k, v in PART_CPU.items()))
     log("   core: polish scores CPU s " + ", ".join(f"{k} {v:.1f}" for k, v in pol.items())
         + f"; closed-form horse terms {q_count[0]}, memo hits {q_count[1]}")
     log(f"   core: end J {st.J:.1f}; {len(ends)} start ends; alternation proposals {cnt['rounds']} (kept "
