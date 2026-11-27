@@ -179,7 +179,9 @@ The mean mosaic of all registered frames: horses average out, rails and painted 
 ### detect
 
 The detections of a self-supervised YOLO avatar detector (conf 0.25, IoU 0.5), made in `features` on the
-render panel; the legend icon band is dropped. On the silk render, below a median of 0.6 N detections per frame
+render panel; the legend icon band is dropped (from each frame's legend row, `video.legend_scan`; a row more than
+`LEGEND_TOL` (8) px from the race's list row, the median over the frames that show the strip, is replaced by it:
+`video.stable_legend_rows`, the same rows feeding the hud mask and the later stages). On the silk render, below a median of 0.6 N detections per frame
 (N runners; all-weather dirt) a map-difference blob detector is added. When detections are read
 (`RaceRun.world_dets`), inside the disclaimer band only conf ≥ 0.45 survives, and a box recurring at one panel cell
 on ≥ 4 % of frames there is overlay text.
