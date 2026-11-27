@@ -562,3 +562,34 @@ def test_the_end_step_takes_a_partner_labellings_part():
     assert st.J < st0.J - core.MIN_GAIN and st.J <= look(right).J + 1e-6
     lab2, st2 = core.end_step(m, wrong.copy(), st0, [wrong], look, log=lambda *_: None)
     assert st2.J <= st0.J
+
+
+def test_the_end_step_takes_a_whole_labelling_only_when_it_lowers_j_and_polishes_from_it():
+    """A complete labelling the solve holds (``wholes``) replaces the current one only when its J is lower; the
+    polish then starts from it; a higher one is left alone."""
+    rows, t, s, lat, who = _race(n_h=2, speeds=[16.0, 16.0], start_s=[100.0, 96.0], gap_lat=1.5)
+    a = np.flatnonzero(((who == 0) & (t < 10)) | ((who == 1) & (t >= 10)))
+    b = np.flatnonzero(((who == 1) & (t < 10)) | ((who == 0) & (t >= 10)))
+    horses = np.array([3, 7])
+    ev = _evidence(rows, t, s, lat, [a, b], horses)
+    fr = np.unique(rows[:, 0])
+    leg = np.c_[fr, np.tile([3, 7, 0, 0, 0, 0, 0, 0], (len(fr), 1))]
+    m = core.Model(ev, core.list_rows(leg, lambda f: np.asarray(f, float) * 0.1 + 1.0, horses),
+                   np.arange(1.0, 20.0, core.DT), width=20.0)
+    right = np.array([np.bincount(who[ev.seg == k], minlength=2).argmax() for k in range(ev.n_seg)])
+    late = np.array([ev.t[ev.seg == k].min() >= 10 for k in range(ev.n_seg)])
+    wrong = np.where(late, 1 - right, right)
+    look = lambda lab: core.evaluate(m, lab)  # noqa: E731
+    polished = []
+
+    def polish(la, sa):
+        polished.append(la.copy())
+        return la, sa
+
+    st0 = look(wrong)
+    lab, st = core.end_step(m, wrong.copy(), st0, [wrong], look, log=lambda *_: None, wholes=[right], polish=polish)
+    assert np.array_equal(polished[0], right) and st.J <= look(right).J + 1e-6 < st0.J - core.MIN_GAIN
+    polished.clear()
+    st1 = look(right)
+    lab2, st2 = core.end_step(m, right.copy(), st1, [right], look, log=lambda *_: None, wholes=[wrong], polish=polish)
+    assert not polished and st2.J <= st1.J + 1e-9

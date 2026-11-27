@@ -2459,8 +2459,11 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
 
 
 def end_step(model: Model, lab, st: State, inits, look, extra_s=None, extra_l=None, s_shift=None, log=print,
-             partners=()):
-    """The final product's end step at the solve's best end. Init crossovers: every single part
+             partners=(), wholes=(), polish=None):
+    """The final product's end step at the solve's best end. Whole-labelling candidates first: every complete
+    labelling in ``wholes`` (the companion solve's final labelling, each start) gets a full state step (``look``); the
+    lowest is kept when J falls by more than MIN_GAIN, then ``polish`` (the solve's bounded polish) descends from it.
+    Init crossovers: every single part
     (``crossover_parts``) of the labelling against each init labelling, and every single part and every run of two
     consecutive parts against each partner labelling (``partners``: the companion solve's), the END_N lowest in closed form
     (``Refit.score_quick``) re-scored by one-horse refits (``Refit.score`` without sweeps), the lowest refit given a
@@ -2470,6 +2473,21 @@ def end_step(model: Model, lab, st: State, inits, look, extra_s=None, extra_l=No
     re-scored by refits, the lowest refit given a full state step and kept when J falls by more than MIN_GAIN,
     END_STEPS steps at most. -> (labelling, state)."""
     ev = model.ev
+    best = None
+    for x in wholes:
+        x = np.asarray(x)
+        if len(x) != ev.n_seg or np.array_equal(x, lab):
+            continue
+        sx = look(x)
+        if sx.J < st.J - MIN_GAIN and (best is None or sx.J < best[1].J):
+            best = (x, sx)
+    if best is not None:
+        n_ch, j0 = int((best[0] != lab).sum()), st.J
+        lab, st = best[0].copy(), best[1]
+        if polish is not None:
+            lab, st = polish(lab, st)
+        log(f"   core: end step whole-labelling candidate: {n_ch} segments, J {j0:.1f} -> {best[1].J:.1f}, "
+            f"polished to {st.J:.1f}")
     tried = set()
     for rnd in range(END_ROUNDS):
         parts = []
@@ -2541,8 +2559,9 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     accepted change touched; an accepted step resumes the alternation. Then the lowest end descends again with the
     crossover runs toward every other end (``crossovers``) as its pool, while that lowers J. The pre-solve without
     the finish camera (``polish`` False) keeps the lowest alternation end; its DESCENTS lowest alternation ends are
-    further starts of the solve after it. The final product (``final``) then takes the end step (``end_step``, against
-    the five init labellings) and the probability output."""
+    further starts of the solve after it. The final product (``final``) then takes the end step (``end_step``: whole
+    candidates from the companion's final labelling and every start, then crossovers against the five init labellings
+    and the companion) and the probability output."""
     ev = model.ev
     seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
@@ -2801,8 +2820,9 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         others = [e for e in others if not np.array_equal(e[0], lab)]
     if polish and final:
         t0 = time.process_time()
+        prt = [np.asarray(x) for x in partners if len(x) == ev.n_seg]
         lab, st = end_step(model, lab, st, [x for _n, x in inits[:len(vot)]], look, extra_s, extra_l, s_shift, log,
-                           [np.asarray(x) for x in partners if len(x) == ev.n_seg])
+                           prt, wholes=prt + [x for _n, x in inits], polish=lambda la, sa: descend(la, sa, []))
         log(f"   core: end step CPU s {time.process_time() - t0:.1f}")
     ms = MILP_STATS[n_milp0:]
     stopped = [(round(g, 4), round(w)) for stt, g, _nd, w in ms if stt == 1]

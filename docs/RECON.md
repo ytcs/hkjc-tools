@@ -488,7 +488,10 @@ It is the sum of:
 4. Only the `DESCENTS` (2) lowest distinct alternation ends are polished (step 3); the lowest polished end then
    descends again with the crossover runs toward the other end as its pool, while that lowers J. Moves are judged by
    full state steps of J only.
-5. The final product's end step (`core.end_step`), at that best end. Init crossovers: every single part
+5. The final product's end step (`core.end_step`), at that best end. Whole-labelling candidates first: every
+   complete labelling the final solve holds (the companion's final labelling, below, and each start) gets a full
+   state step; the lowest is kept when J falls by more than `MIN_GAIN`, and the bounded polish (step 3) descends from
+   it. Init crossovers: every single part
    (`core.crossover_parts`) of the labelling against each of the five init MILP labellings, and every single part
    and run of two consecutive parts against the companion labelling: the same final solve run beforehand on the
    evidence with the scatter taken about each chunk's mean (`core.mean_scatter`), a different optimum whose parts
