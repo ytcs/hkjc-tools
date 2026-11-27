@@ -489,7 +489,10 @@ It is the sum of:
    descends again with the crossover runs toward the other end as its pool, while that lowers J. Moves are judged by
    full state steps of J only.
 5. The final product's end step (`core.end_step`), at that best end. Init crossovers: every single part
-   (`core.crossover_parts`) of the labelling against each of the five init MILP labellings; the `END_N` (50) lowest
+   (`core.crossover_parts`) of the labelling against each of the five init MILP labellings, and every single part
+   and run of two consecutive parts against the companion labelling: the same final solve run beforehand on the
+   evidence with the scatter taken about each chunk's mean (`core.mean_scatter`), a different optimum whose parts
+   hold multi-segment fixes no move of this solve reaches; the `END_N` (50) lowest
    in closed form are refit, and the lowest refit gets a full state step, kept when J falls by more than `MIN_GAIN`.
    This repeats from a kept labelling, `END_ROUNDS` (3) rounds at most. It reaches multi-horse cascades whose
    single moves each raise J, when an init labelling holds the cascade as one part. Then the finish: the single-segment moves (`core.segment_moves`), screened by the union of the closed form (lowest

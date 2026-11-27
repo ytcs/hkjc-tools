@@ -529,3 +529,36 @@ def test_a_constant_speed_chunk_has_no_scatter():
     assert ch["ch_scat"][0] > 1.0
     _cid, ch = core.chunks(t[:2], s[:2] + np.array([0.0, 5.0]), lat[:2], seg[:2], cam[:2])
     assert ch["ch_scat"][0] == 0.0
+
+
+def test_mean_scatter_is_the_scatter_about_each_chunk_mean():
+    rows, t, s, lat, who = _race(n_h=2, speeds=[16.0, 15.0], start_s=[100.0, 96.0])
+    ev = _evidence(rows, t, s, lat, [np.flatnonzero(who == h) for h in range(2)], np.array([1, 2]))
+    ms = core.mean_scatter(ev)
+    c = ev.chunk
+    for k in range(min(5, len(ms))):
+        r = c == k
+        ref = (((ev.s[r] - ev.s[r].mean()) / core.SD_S) ** 2).sum() + (((ev.lat[r] - ev.lat[r].mean()) / core.SD_L) ** 2).sum()
+        assert np.isclose(ms[k], ref)
+
+
+def test_the_end_step_takes_a_partner_labellings_part():
+    """With no init holding the fix, a partner labelling (the companion solve's) that holds it is crossed in."""
+    rows, t, s, lat, who = _race(n_h=2, speeds=[16.0, 16.0], start_s=[100.0, 96.0], gap_lat=1.5)
+    a = np.flatnonzero(((who == 0) & (t < 10)) | ((who == 1) & (t >= 10)))
+    b = np.flatnonzero(((who == 1) & (t < 10)) | ((who == 0) & (t >= 10)))
+    horses = np.array([3, 7])
+    ev = _evidence(rows, t, s, lat, [a, b], horses)
+    fr = np.unique(rows[:, 0])
+    leg = np.c_[fr, np.tile([3, 7, 0, 0, 0, 0, 0, 0], (len(fr), 1))]
+    m = core.Model(ev, core.list_rows(leg, lambda f: np.asarray(f, float) * 0.1 + 1.0, horses),
+                   np.arange(1.0, 20.0, core.DT), width=20.0)
+    right = np.array([np.bincount(who[ev.seg == k], minlength=2).argmax() for k in range(ev.n_seg)])
+    late = np.array([ev.t[ev.seg == k].min() >= 10 for k in range(ev.n_seg)])
+    wrong = np.where(late, 1 - right, right)
+    look = lambda lab: core.evaluate(m, lab)  # noqa: E731
+    st0 = look(wrong)
+    lab, st = core.end_step(m, wrong.copy(), st0, [wrong], look, log=lambda *_: None, partners=[right])
+    assert st.J < st0.J - core.MIN_GAIN and st.J <= look(right).J + 1e-6
+    lab2, st2 = core.end_step(m, wrong.copy(), st0, [wrong], look, log=lambda *_: None)
+    assert st2.J <= st0.J

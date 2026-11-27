@@ -2458,9 +2458,11 @@ def polish_candidates(model: Model, st: State, lab, U, pool=()):
     return out
 
 
-def end_step(model: Model, lab, st: State, inits, look, extra_s=None, extra_l=None, s_shift=None, log=print):
+def end_step(model: Model, lab, st: State, inits, look, extra_s=None, extra_l=None, s_shift=None, log=print,
+             partners=()):
     """The final product's end step at the solve's best end. Init crossovers: every single part
-    (``crossover_parts``) of the labelling against each init labelling, the END_N lowest in closed form
+    (``crossover_parts``) of the labelling against each init labelling, and every single part and every run of two
+    consecutive parts against each partner labelling (``partners``: the companion solve's), the END_N lowest in closed form
     (``Refit.score_quick``) re-scored by one-horse refits (``Refit.score`` without sweeps), the lowest refit given a
     full state step (``look``) and kept when J falls by more than MIN_GAIN; again from a kept labelling, END_ROUNDS
     rounds at most. Then the finish: the single-segment moves (``segment_moves``), the REFIT_TOP - END_P1 lowest in
@@ -2471,13 +2473,16 @@ def end_step(model: Model, lab, st: State, inits, look, extra_s=None, extra_l=No
     tried = set()
     for rnd in range(END_ROUNDS):
         parts = []
-        for x in inits:
-            for g in crossover_parts(ev, lab, x):
-                new = lab.copy()
-                new[g] = x[g]
-                if new.tobytes() not in tried:
-                    tried.add(new.tobytes())
-                    parts.append(new)
+        for x, runs in [(x, 1) for x in inits] + [(x, 2) for x in partners]:
+            ps = crossover_parts(ev, lab, x)
+            for i in range(len(ps)):
+                for j in range(i, min(i + runs, len(ps))):
+                    g = np.concatenate(ps[i:j + 1])
+                    new = lab.copy()
+                    new[g] = x[g]
+                    if new.tobytes() not in tried:
+                        tried.add(new.tobytes())
+                        parts.append(new)
         if not parts:
             break
         rf = Refit(model, st, lab, extra_s, extra_l, s_shift)
@@ -2512,7 +2517,16 @@ def end_step(model: Model, lab, st: State, inits, look, extra_s=None, extra_l=No
     return lab, st
 
 
-def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True, final=True):
+def mean_scatter(ev: Evidence) -> np.ndarray:
+    """Per chunk: the squared residuals of its rows about the chunk's mean, per coordinate over its row variance (the
+    companion solve's scatter rule)."""
+    nc = len(ev.ch_seg)
+    c = ev.chunk
+    return np.bincount(c, (ev.s - ev.ch_s[c]) ** 2 / SD_S**2 + (ev.lat - ev.ch_l[c]) ** 2 / SD_L**2, nc)
+
+
+def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=print, polish=True, final=True,
+          partners=()):
     """Global solve. Starts: five init MILPs (list votes with reads and silk; list votes; reads and silk; the list
     rows of alternate LIST_SPLIT s blocks of each parity with reads and silk) and the caller's labellings. Every start
     alternates: the exact MILP assignment over segments on unaries at the current state (one-horse-refit kinematic
@@ -2787,7 +2801,8 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         others = [e for e in others if not np.array_equal(e[0], lab)]
     if polish and final:
         t0 = time.process_time()
-        lab, st = end_step(model, lab, st, [x for _n, x in inits[:len(vot)]], look, extra_s, extra_l, s_shift, log)
+        lab, st = end_step(model, lab, st, [x for _n, x in inits[:len(vot)]], look, extra_s, extra_l, s_shift, log,
+                           [np.asarray(x) for x in partners if len(x) == ev.n_seg])
         log(f"   core: end step CPU s {time.process_time() - t0:.1f}")
     ms = MILP_STATS[n_milp0:]
     stopped = [(round(g, 4), round(w)) for stt, g, _nd, w in ms if stt == 1]

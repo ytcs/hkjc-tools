@@ -1614,12 +1614,24 @@ class RaceRun:
         tg = np.arange(t0, t1 + fusion.DT / 2, fusion.DT)
         model = core.Model(ev, Lr, tg, self.info.width)
         start = tuple(x for x in start if len(x) == ev.n_seg)  # a start from other segments cannot be compared
+
+        def partners(**kw):  # the final product's companion: the same solve under the mean-chunk scatter
+            if product != "final":
+                return ()
+            import copy
+
+            ev_c = copy.copy(ev)
+            ev_c.ch_scat = core.mean_scatter(ev)
+            model_c = core.Model(ev_c, Lr, tg, self.info.width)
+            quiet = lambda *a, **k: None  # noqa: E731
+            return (core.solve(model_c, log=quiet, final=False, **kw).seg_lab,)
+
         vis = {h for h, tt in (self._official_clock or {}).items() if np.isfinite(tt)}
         if all(int(h) in vis or int(h) in self._nonfin for h in horses):
             # every runner's finish is an official time (or it stopped): the camera adds no observation, so the solve
             # runs once, on the evidence a pre-solve would have
             res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log,
-                             final=product == "final")
+                             final=product == "final", partners=partners(start=start, extra_s=ex_s, extra_l=ex_l))
             return self._core_outputs(product, res, ev, model, horses), [], self._core_paths(res, ev, model)
         res = core.solve(model, start=start, extra_s=ex_s, extra_l=ex_l, log=self.log, polish=False)
         paths = self._core_paths(res, ev, model)
@@ -1637,8 +1649,8 @@ class RaceRun:
                                                            None, 0.0), 2) for o in fin if o.horse in paths}
             self.log(f"   core ({product}): + finish camera, {len(fin)} crossings; camera - path crossing (s): {dts}")
         # the first solve's lowest alternation ends (and, for the final product, the video labelling) are starts
-        res = core.solve(model, start=(*res.ends, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l,
-                         log=self.log, final=product == "final")  # only the final product's feed modelling
+        kw = dict(start=(*res.ends, *start), extra_s=core.Obs.cat([ex_s, f_s]), extra_l=ex_l)
+        res = core.solve(model, log=self.log, final=product == "final", partners=partners(**kw), **kw)
         return self._core_outputs(product, res, ev, model, horses), fin, self._core_paths(res, ev, model)
 
     def _core_outputs(self, product, res, ev, model, horses):
