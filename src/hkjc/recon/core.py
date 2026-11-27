@@ -1737,7 +1737,7 @@ END_STEPS, END_P1 = 10, 50  # its finish: single-segment steps at most; of the R
 # Refit.score_p1 (the rest the lowest in closed form)
 POST_K, POST_BAND = 20, 20.0  # alternatives given a full state step for the probabilities: the K lowest, any within
 # POST_BAND J of the kept labelling
-T_PROB = 50.0  # the probability output's temperature: fitted on a race-hashed half of the dev null-pair races (0333)
+T_PROB = 2.0  # the probability output's temperature: fitted on a race-hashed half of the dev null-pair races
 POST_PRUNE = 2.0 * T_PROB * np.log(1e4)  # J: an alternative whose closed-form screen is above this (weight < 1e-4)
 # keeps that screen as its dJ
 POST_FULL = 100.0  # J: of the POST_K lowest, only those screened below this get a full state step

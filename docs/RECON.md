@@ -522,11 +522,11 @@ product's solve (20260301_ST_2: three chains from 44 s, which TV order facts con
   and its evidence alone, not from the labellings the search visited: a fixed alternative set (`core.alternatives`:
   the chain-aware single relabels of every segment with ≥ `LONG_N` detections, and the pair exchanges over the whole
   race, cut → end and start → cut) is screened in closed form (`Refit.score_quick`); those screened at most
-  `POST_PRUNE` (921 J, weight 1e-4 at `T_PROB`) are re-screened by one-horse refits without the sweeps (`Refit.score`, reusing the final
+  `POST_PRUNE` (36.8 J, weight 1e-4 at `T_PROB`) are re-screened by one-horse refits without the sweeps (`Refit.score`, reusing the final
   polish round's `Refit`, whose scores are memoised per labelling at its state), the rest keep the closed-form value; those screened below `POST_BAND` (20 J) and those of
   the `POST_K` (20) lowest screened below `POST_FULL` (100 J) get a full state step (reusing the solve's), and each segment's P is the kept label's weight 1 against exp(−ΔJ/(2 `T_PROB`)) for every
   alternative's label on it (`core.alternative_posterior`). J's per-detection terms count correlated errors as
-  independent, so the weights are tempered: `T_PROB` 50, fitted on a race-hashed half of the development null-pair
+  independent, so the weights are tempered: `T_PROB` 2, fitted on a race-hashed half of the development null-pair
   races (largest coverage at p ≥ 0.99 with the confident-flip rate within 1.07 pp of main's) and checked on the other.
 - `core_video.npz` / `core_final.npz`: segment labels, the final unaries, J per accepted step; the final's also the
   marginals.
