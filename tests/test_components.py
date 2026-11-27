@@ -515,3 +515,14 @@ def test_a_wider_vivid_band_below_the_list_moves_legend_scan_but_not_the_race_ro
     assert pushed[0] >= 500 and pushed[1]
     rows = [plain[0]] * 9 + [pushed[0]]
     assert video.stable_legend_rows(rows, [True] * 10).tolist() == [437] * 10
+
+
+def test_legend_slot_crops_use_the_given_row():
+    """The slot crops sit at the given (stabilised) legend row, not at the panel's own legend_top."""
+    from hkjc.recon import ocr
+
+    p = np.random.default_rng(1).integers(0, 255, (536, 945, 3), np.uint8)
+    a = ocr._legend_slot_crops(p, 8, row=437)
+    b = ocr._legend_slot_crops(p, 8, row=505)
+    assert np.array_equal(a[0], p[433:471, max(0, ocr._legend_slot_x(945, 8)[0] - 22):ocr._legend_slot_x(945, 8)[0] + 16])
+    assert not np.array_equal(a[0], b[0])

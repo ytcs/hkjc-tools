@@ -112,8 +112,9 @@ def _legend_slot_x(W: int, n_slots: int = 8) -> list:
     return [int(0.4635 * W + (k - (n_slots - 1) / 2) * pitch) for k in range(n_slots)]
 
 
-def _legend_slot_crops(panel, n_slots: int = 8) -> list:
-    lt = video.legend_top(panel)
+def _legend_slot_crops(panel, n_slots: int = 8, row: int | None = None) -> list:
+    """The legend's slot crops at the legend row ``row`` (the race's stabilised row; None: this panel's legend_top)."""
+    lt = video.legend_top(panel) if row is None else int(row)
     return [
         panel[max(0, lt - 4) : lt + 34, max(0, cx - 22) : cx + 16].copy()
         for cx in _legend_slot_x(panel.shape[1], n_slots)
@@ -130,7 +131,8 @@ def _parse_legend(res, n_field: int = 14) -> np.ndarray:
     return row
 
 
-def read_render_hud_cached(cache, *, n_field: int = 14, n_slots: int = 8, clock_every: int = CLOCK_EVERY):
+def read_render_hud_cached(cache, *, n_field: int = 14, n_slots: int = 8, clock_every: int = CLOCK_EVERY,
+                           legend_rows: dict | None = None):
     """Per unique render frame from a ``video.FrameCache``: [frame, clock|NaN, odometer|NaN] and
     [frame, legend slots x8] (left->right = running positions 1..8; 0 = unread; ``n_slots``: slots shown,
     the field size when under 8; 0: no legend, every slot unread). The clock (from the cached left-panel
@@ -139,7 +141,8 @@ def read_render_hud_cached(cache, *, n_field: int = 14, n_slots: int = 8, clock_
     slot changed by an overtake can differ less from its last read than an unchanged slot differs between
     frames, and a skipped read holds a stale number.
     The crops are OCR'd in large batches (all crops of one kind share one size, so batch padding is
-    identical and each read equals the crop's read on its own)."""
+    identical and each read equals the crop's read on its own). ``legend_rows``: {frame: legend row} (the features
+    stage's stabilised rows) for the slot crops; None or a missing frame: the panel's own legend_top."""
     x0, _x1, y0, _y1 = cache.box
     oy0, oy1, ox0, ox1 = AVV_ODO
     frames, clock_at, clock_crops, odo_crops, leg_crops = [], [], [], [], []
@@ -149,7 +152,8 @@ def read_render_hud_cached(cache, *, n_field: int = 14, n_slots: int = 8, clock_
             clock_at.append(n)
             clock_crops.append(np.asarray(cache.clock[n]))
         odo_crops.append(p[oy0 - y0 : oy1 - y0, ox0 - x0 : ox1 - x0].copy())
-        leg_crops.append(_legend_slot_crops(p, n_slots) if n_slots > 0 else [])
+        row = None if legend_rows is None else legend_rows.get(int(i))
+        leg_crops.append(_legend_slot_crops(p, n_slots, row) if n_slots > 0 else [])
     clock = np.full(len(frames), np.nan)
     for n, (t, c) in zip(clock_at, rec_batch(clock_crops)):
         x = _parse_clock(t, c)

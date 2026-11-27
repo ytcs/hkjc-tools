@@ -197,7 +197,8 @@ likelihood ratio in the core (the silk render uses the learned appearance term, 
 ### hud
 
 Recognition-only OCR on fixed crops: the race clock on the film panel (every 10th frame), the render's
-odometer and its 8 legend slots (every frame). No read is skipped by a pixel-change test: the legend's number boxes
+odometer and its 8 legend slots (every frame; the slot crops at the features stage's stabilised legend row,
+`video.stable_legend_rows`). No read is skipped by a pixel-change test: the legend's number boxes
 are not opaque, so a changed slot can differ less from its last read than an unchanged one differs between frames.
 Race-clock origin: `clock_f0 = median(frame − 25·clock)`. When the fixed crop gives fewer than 3 clock reads (a
 sponsor box above the clock pushes it down on some Happy Valley broadcasts), `ocr.read_clock_located` re-reads the

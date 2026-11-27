@@ -693,7 +693,8 @@ class RaceRun:
     def hud(self):
         circle = self.render_style() == "circle"  # no legend strip: its slots are not read
         rows, leg = ocr.read_render_hud_cached(
-            self.cache(), n_field=max(14, self.info.n), n_slots=0 if circle else min(8, self.info.n)
+            self.cache(), n_field=max(14, self.info.n), n_slots=0 if circle else min(8, self.info.n),
+            legend_rows=None if circle else self._lrows(),  # the features stage's stabilised legend rows
         )
         if np.isfinite(rows[:, 1]).sum() < self.HEALTH_CLOCK_READS:
             # the fixed crop missed the clock (a sponsor box above it moves it down): locate it in the video,
