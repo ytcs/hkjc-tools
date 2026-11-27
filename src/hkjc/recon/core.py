@@ -119,7 +119,7 @@ class Evidence:
     ch_l: np.ndarray
     ch_sds: np.ndarray
     ch_sdl: np.ndarray
-    ch_scat: np.ndarray  # within-chunk chi^2 (s and lat) about the chunk mean
+    ch_scat: np.ndarray  # within-chunk chi^2 (s and lat) about the chunk's least-squares line in t
     cam: np.ndarray  # per detection: within CAM_WIN of a camera transition
     read_cost: np.ndarray | None = None  # (S, H) disc reads, -2 log likelihood ratio vs a uniform read
     silk_cost: np.ndarray | None = None  # (S, H) -2 x silk LLR
@@ -260,7 +260,17 @@ def chunks(t, s, lat, seg, cam):
     nc = int(cid.max()) + 1 if len(cid) else 0
     n = np.bincount(cid, minlength=nc).astype(float)
     mt, ms, ml = (np.bincount(cid, x, nc) / n for x in (t, s, lat))
-    scat = np.bincount(cid, (s - ms[cid]) ** 2 / SD_S**2 + (lat - ml[cid]) ** 2 / SD_L**2, nc)
+    # within-chunk scatter: squared residuals about the chunk's least-squares line in t (the horse's own motion is
+    # not scatter), per coordinate over its row variance; a chunk of < 3 rows has none
+    dt = t - mt[cid]
+    stt = np.bincount(cid, dt * dt, nc)
+    scat = np.zeros(nc)
+    for x, mx, sd in ((s, ms, SD_S), (lat, ml, SD_L)):
+        dx = x - mx[cid]
+        sxx, stx = np.bincount(cid, dx * dx, nc), np.bincount(cid, dt * dx, nc)
+        ssr = sxx - np.divide(stx * stx, stt, out=np.zeros(nc), where=stt > 0)
+        scat += np.maximum(ssr, 0.0) / sd**2
+    scat[n < 3] = 0.0
     camc = np.bincount(cid, cam.astype(float), nc) > 0
     sds = np.sqrt(SD_S**2 / n + SD_S_COMMON**2 + np.where(camc, CAM_SD_S**2, 0.0))
     sdl = np.sqrt(SD_L**2 / n + SD_L_COMMON**2 + np.where(camc, CAM_SD_L**2, 0.0))

@@ -513,3 +513,19 @@ def test_the_no_order_screen_computes_each_horse_set_once_per_refit():
     rf.smemo.clear()
     assert rf.score_p1(to1) == a and rf.p1_calls == 12 and rf.p1_hits == 6
     assert core.Refit(m, st, lab).score_p1(to2) == b
+
+
+
+def test_a_constant_speed_chunk_has_no_scatter():
+    """The within-chunk scatter is taken about the chunk's least-squares line in t: rows moving at a constant speed (in
+    s and across) score 0, the chunk observation is still the mean at the mean time; noise about the line scores."""
+    t = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
+    s, lat = 100.0 + 20.5 * t, 3.0 - 0.4 * t
+    seg, cam = np.zeros(5, int), np.zeros(5, bool)
+    _cid, ch = core.chunks(t, s, lat, seg, cam)
+    assert len(ch["ch_scat"]) == 1 and abs(ch["ch_scat"][0]) < 1e-9
+    assert np.isclose(ch["ch_s"][0], s.mean()) and np.isclose(ch["ch_t"][0], 0.2)
+    _cid, ch = core.chunks(t, s + np.array([0.0, 0.8, 0.0, -0.8, 0.0]), lat, seg, cam)
+    assert ch["ch_scat"][0] > 1.0
+    _cid, ch = core.chunks(t[:2], s[:2] + np.array([0.0, 5.0]), lat[:2], seg[:2], cam[:2])
+    assert ch["ch_scat"][0] == 0.0

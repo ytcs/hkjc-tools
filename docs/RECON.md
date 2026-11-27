@@ -342,7 +342,9 @@ Tracker continuity across a cut is a link with a reward in the objective: `LINK_
 between segments (≤ 1 s, ≤ 3 m at the segment's speed, ≤ 1 unit across). Exclusivity is per frame: one segment per
 horse per frame. A segment's detections are summarised by their means per `CHUNK` (0.5 s), sd
 √(0.8²/n + `SD_S_COMMON`²) along and √(0.35²/n + `SD_L_COMMON`²) across, plus `CAM_SD_S`/`CAM_SD_L` within `CAM_WIN`
-of a camera transition. The within-chunk scatter is a label-independent cost of a labelled chunk. The hard
+of a camera transition. The within-chunk scatter (per coordinate, the squared residuals about the chunk's least-squares
+line in t over the row variance, so a horse's own motion inside the chunk is not scatter; none for a chunk of < 3
+rows) is a label-independent cost of a labelled chunk. The hard
 appearance and number splits of `observe` still cut tracklets; in the core they are only extra cuts with no link.
 
 **Per-box P(horse).** `core.p_horse` gives `P_GHOST` (0.01) to a short-lived box (tracklet < 50 detections) in an
