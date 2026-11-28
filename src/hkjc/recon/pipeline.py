@@ -73,7 +73,6 @@ STAGES = (
     "fuse_final",
     "validate",
 )
-# telemetry (identify_scores.npz, identify_em_scores.npz) is written but is NOT a stage output: never a cache key
 OUTPUTS = {
     "frames": ["frames.bin", "frames_idx.npz", "frames_clock.npy"],
     "features": ["feats.npz", "yolo.npz"],  # + the avatar detections (read by detect)
@@ -381,8 +380,8 @@ class RaceRun:
                 pr.join()
         self.write_status()
 
-    # video-only health checks: thresholds sit between the S1/dev silk-render races (worst 5.1 ticks/s,
-    # 0.64 markers per runner) and the 2026/27 numbered-circle render the pipeline cannot read (<= 3.5, ~0.08)
+    # video-only health checks: thresholds sit between readable silk-render races (worst 5.1 ticks/s, 0.64 markers
+    # per runner) and unreadable renders (<= 3.5 ticks/s, ~0.08 markers per runner)
     HEALTH_TICKS_PER_S = 4.0  # unique render frames per expected race second (distance / 16.5 m/s)
     HEALTH_MARKERS = 0.4  # median avatar detections per render frame / runners
     HEALTH_CLOCK_READS = 3  # race-clock reads (the clock zero, film and start need them)
@@ -666,8 +665,7 @@ class RaceRun:
     def silk(self):
         """Silk signature of every detection (``detect.silk_feature``, from the aerial video's render
         panel) + the OFFICIAL silk prototype of every runner (``detect.silk_prototype``; pre-race
-        input). Read by identify's silk LLR (``_silk_llr``, also in the fuse-stage EM identity pass)
-        and observe's appearance split (``tracking.split_by_appearance``)."""
+        input). Read by identify's silk evidence and observe's appearance split (``tracking.split_by_appearance``)."""
         import av
 
         from ..data.silks import silk_path
@@ -1448,7 +1446,7 @@ class RaceRun:
     # product, so a mislabelled render tracklet conflicts with them (and is demoted) instead of bending them
     OFFICIAL_SD = 0.1
     # official INTERIOR times (the leader's time plus a margin quantised to 0.04 s) against the video paths, once each
-    # boundary's shared offset is removed: pooled robust sd over the 60 Stage A development races, residuals beyond 3
+    # boundary's shared offset is removed: pooled robust sd over 60 development races, residuals beyond 3
     # robust sd left out (5 %: the gross misses, which stay identity claims): 0.99 m at 400 m to go (after the render's
     # late camera change), 0.88 m at the other boundaries
     OFFICIAL_INTERIOR_SD = 0.88
@@ -1961,9 +1959,8 @@ class RaceRun:
         w = np.where(t < kt[0], kw[0] + d[0] * (t - kt[0]), w)
         return np.where(t > kt[-1], kw[-1] + d[-1] * (t - kt[-1]), w)
 
-    # m: the render metric bias at the line minus at the last official boundary before it (median over the tune half
-    # of the Stage A development list, main's video paths: silk +1.07 (check half +1.68); disc -0.50, within its
-    # spread of zero (sd 2.4 m over 10 races), so 0)
+    # m: the render metric bias at the line minus at the last official boundary before it (per-style median over
+    # development races' video paths: silk +1.07; disc -0.50, within its spread of zero (sd 2.4 m), so 0)
     FINISH_STEP = {"silk": 1.07, "disc": 0.0}
 
     def _metric_bias(self, paths):

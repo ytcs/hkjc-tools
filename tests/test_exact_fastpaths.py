@@ -1,4 +1,4 @@
-"""Speed rewrites that must give exactly the old results: seeking decode, render-gate and finish-line fast paths."""
+"""Fast paths that must give exactly the reference results: seeking decode, render-gate and finish-line fast paths."""
 
 import numpy as np
 import pytest

@@ -72,7 +72,7 @@ def test_hud_reads_equal_per_frame_reads(monkeypatch):
     odo, own = _own_reads(cache)
     assert np.array_equal(leg, own)
     assert np.array_equal(rows[:, 2], odo)
-    # the one-pixel changes are read on the frame they appear (a pooled change test would have held the old reads)
+    # the one-pixel changes are read on the frame they appear (a pooled change test would hold the previous frame's reads)
     assert leg[:, 4].tolist() == [4] * 4 + [9] * 5
     assert rows[:, 2].tolist() == [800.0] * 5 + [790.0] * 4
     # the clock: video-locked, every CLOCK_EVERY-th frame, NaN between

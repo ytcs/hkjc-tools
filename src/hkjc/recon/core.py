@@ -1,4 +1,4 @@
-"""Stage A core: render detections + race facts -> labelled paths, one objective (RECON 4, identify / fuse).
+"""The core: render detections + race facts -> labelled paths, one objective (RECON 4, identify / fuse).
 
 The unit of identity is the SEGMENT: a piece of a tracker tracklet between cuts (stitched gaps, lateral jumps,
 encounters with another tracklet's end, render camera transitions). Tracker continuity across a cut is a LINK whose
@@ -86,7 +86,7 @@ P_AHEAD_UNSEEN = 0.25  # start solve: P(an undetected horse is ahead of a detect
 MAX_RANK = 8
 # detection: frame-level probability that an in-view horse is boxed, from the frame's own count
 P_DET_MIN = 0.05
-# ceiling of a frame's detection probability: the detector's measured recall of visible horses (0330): silk 0.95,
+# ceiling of a frame's detection probability: the detector's measured recall of visible horses: silk 0.95,
 # 0.86 on bends (small vertical / diagonal avatars), disc 0.985
 P_DET_MAX = {("silk", False): 0.95, ("silk", True): 0.86, ("disc", False): 0.985, ("disc", True): 0.985}
 VIEW_PX = 5.0  # px: projection uncertainty floor of the in-view test

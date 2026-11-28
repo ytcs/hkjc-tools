@@ -26,7 +26,7 @@ paths.parquet gains
   enclosed_late  hypothesis B-1's regressor: enclosed for >= 1 s in the final 600 m while within four lengths of the
                leader (``box_columns``)
 det_margins_final.npz  per tracks row: 2 log(p / (1 - p)) of the final label, p its probability from the core's
-               per-segment posterior (``core.posterior``); NaN where unlabelled
+               probability output (``core.probability_output``); NaN where unlabelled
 contract.json          the definitions behind the columns, the run's flagged stretches, the running-order list windows
                held in near-cloth order, the per-crossing position verdicts, the noise table, id_robust's
                per-section and per-horse bend verdicts with the run's yield, the run's lane pitch and origin, and the
@@ -884,7 +884,7 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=No
                                    "and home linear in x = d - home straight length between the ramp ends; "
                                    "sd_lat_m_scale = sigma x |lat_m - a|, defined wherever lat_m is",
                            "source": "noise-free race-to-race sd of log(render sd / drone sd) within venue x render "
-                                     "style, drone-era q3d frames (0304)"},
+                                     "style, drone-era q3d frames"},
         },
         "flag": {"stretches": stretches, "rule": "E1 video == final label, E2 >= 1 s after the first render detection, E3 "
                  "before the line, E4 firm and no overlap on the final paths, E5 tracklet disc-read majority (circle); "
@@ -928,7 +928,7 @@ def describe(stretches, frozen=(), crossings=(), anchors=None, idr=None, lane=No
 # rows here (the thresholds were fitted so). No read source (no numbers.npz, no legend rows): read support is not tested.
 # A window is robust when Rmax <= tR and read support >= tP.
 # Thresholds (ID_THRESHOLDS) by render style and window type, by a stated rule: the median of the two folds' selected
-# thresholds of one cross-fit (journal 0286 addendum: legend- and disc-masked reruns, 2-fold race split by md5 parity,
+# thresholds of one cross-fit (legend- and disc-masked reruns, 2-fold race split by md5 parity,
 # each fold's set the maximum-yield one whose fit-fold kappa / ICC clears its bar + 0.05; pack exposure was never cut, so
 # it is dropped). Read support is a different quantity per render style, so each style has its own pair. Not yet
 # confirmed on a fresh set: neither fold was scored with these medians, and the folds' out-of-fold kappa / ICC do not

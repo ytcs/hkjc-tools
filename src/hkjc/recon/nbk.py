@@ -1,5 +1,4 @@
-"""Numba kernels for the core's hot loops (step-2 prototype; copied into a scratch export as hkjc/recon/nbk.py, not
-the library's code). Bandwidth-2 lower bands (3 x n: diagonal, first and second subdiagonal) as core uses them."""
+"""Numba kernels for the core's hot loops (cached compilation). Bandwidth-2 lower bands (3 x n: diagonal, first and second subdiagonal) as core uses them."""
 import math
 
 import numpy as np

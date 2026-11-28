@@ -26,7 +26,7 @@ def test_track_widths_by_course():
 
 
 def test_bend_segments_measured():
-    # measured from rendered rail curvature (> 1 mrad/m), journal 0249
+    # measured from rendered rail curvature (> 1 mrad/m)
     hv, st, st_back = track_for("HV", 1650), track_for("ST", 2000), track_for("ST", 1600)
     assert hv.bend_segments == ((315.0, 590.0), (920.0, 1480.0)) and hv.circumference == 1480.0
     assert st.bend_segments == ((430.0, 900.0), (1385.0, 1900.0)) and st.circumference == 1900.0

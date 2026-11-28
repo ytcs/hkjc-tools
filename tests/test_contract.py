@@ -1,4 +1,4 @@
-"""Output contract: free-running flag, E-step margins."""
+"""Output contract: free paths, frozen list, validity and position flags, uncertainty, id_robust, lanes, box-in."""
 
 import numpy as np
 import polars as pl

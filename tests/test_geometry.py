@@ -151,7 +151,7 @@ def test_refine_rail_keeps_the_dp_line_between_parallel_rails():
     near, _ = rails.refine_rail(img, cnt, to_px, Rail, 1, ok, nearest=True)
     assert np.abs(near[:, 1] - 100).max() < 1.0
     strong, _ = rails.refine_rail(img, cnt, to_px, Rail, 1, ok)
-    assert np.abs(strong[:, 1] - 116).min() < 1.0  # the old snap does switch
+    assert np.abs(strong[:, 1] - 116).min() < 1.0  # the strongest-ridge snap does switch
 
 
 def test_refine_rail_nearest_equals_strongest_on_a_single_rail():
