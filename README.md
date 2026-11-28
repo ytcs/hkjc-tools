@@ -36,8 +36,9 @@ paths = run.paths()                             # the product: horse_no, t, s, d
 uv run --group vision python -m hkjc.recon 20260603 HV 8 [--force fuse_final,validate] [--stages ...]
 ```
 
-Detector weights are expected in `models/` (`avv_avatar_yolo11n.onnx`/`.pt`, the self-trained
-render-avatar detector; `coco_yolov8x.pt` from Ultralytics). They are not distributed in git.
+Weights are expected in `models/` (`avv_avatar_yolo11n.onnx`/`.pt`, the self-trained render-avatar detector;
+`coco_yolov8x.pt` from Ultralytics; `render_appearance/`, the silk render's appearance model and its frozen
+ResNet-18). They are not distributed in git.
 Environment variables (all optional; unset = CPU):
 
 | Variable | Effect |
@@ -51,8 +52,8 @@ Environment variables (all optional; unset = CPU):
 | `HKJC_AVATAR_WEIGHTS` | Path to avatar-detector weights, overriding the lookup in `models/`. |
 | `HKJC_MASK` | `none` (default), `boundary=J` or `outcome`: official outcome data withheld from the reconstruction (validation still scores against the full record; CLI `--mask`). Give a masked run its own root. |
 
-Detector boxes, and so camera poses, depend slightly on the device (CPU vs CUDA on HV 06-03 R8 moves
-paths by ≤ 0.18 m); the reference baseline is a CUDA run.
+Detector boxes, and so camera poses, depend slightly on the device, so results are compared only within one
+device.
 
 ## Layout
 
@@ -82,11 +83,14 @@ src/hkjc/recon/   race info + videos -> paths
     bfmatch.py    opt-in brute-force ORB matching (CUDA/CPU), index-identical to OpenCV
     ortsession.py ONNX Runtime sessions without spin-waiting (identical outputs, less idle CPU)
     tracking.py   world-frame multi-horse tracking + stitching (initialisation only)
-    identity.py   tracklet -> saddlecloth number (legend order, elimination, silk)
-    silkmap.py    learned official-silk -> render-silk appearance map (identity's silk evidence)
-    assoc.py      detection-level EM association against the fused continuous paths
+    appearance.py silk render: learned avatar appearance per detection (appearance.npz) and its cost in J
+    silkmap.py    learned official-silk -> render-silk appearance map (circle render's silk evidence)
     finishcam.py  finish-line camera: cloth OCR, order + spatial gaps, finish identity
-    fusion.py     Bayesian path reconstruction from all feeds' proposals (physics + geometry priors)
+    core.py       identify / fuse_video / fuse_final: labels and paths from one objective (segments, list
+                  order facts, physics prior; MILP starts, refit-scored moves, probability output)
+    nbk.py        Numba kernels for the core's hot loops
+    fusion.py     path and observation containers, the physics prior
+    contract.py   output contract: flag, uncertainty, lane and box-in columns, contract.json
     validate.py   fixed gates on the video-only paths vs the full official record
     audit.py      label-free consistency invariants of a reconstruction (audit.json)
 docs/RECON.md     architecture: stages, artifacts, mask and held-out evaluation, gates, environment, known limitations

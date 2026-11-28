@@ -41,9 +41,9 @@ results; failures are reported as failures.
 | Source | Content | Enters |
 |---|---|---|
 | aerial feed | split screen: live race film (left, with the race clock) and the AVV 3D render (right) with a HUD odometer and a top-8 running-order legend | every in-race position (render), world frame, HUD clock/odometer/legend, painted-marker crossings in the film, gate opening in the start film |
-| full feed | TV broadcast; after the race it replays a fixed finish-line camera | finish order and spatial gaps from saddlecloth OCR (`finish`, `identify`, every fuse) |
-| patrol feed | head-on camera | synced viewer only |
-| drone feed | one shot gate to finish | synced viewer only |
+| full feed | TV broadcast; after the race it replays a fixed finish-line camera | finish order and spatial gaps from saddlecloth OCR (`finish`, every fuse) |
+| patrol feed | head-on camera | not used |
+| drone feed | one shot gate to finish | not used |
 | pre-race facts | distance, course and rail width, runners, official silk images | every stage (course shape, lateral bounds, silk evidence, runner numbers) |
 | draw | stall per runner | `fuse_final` (position at t = 0) |
 | official records | cumulative sectional times, finish times, placings | `fuse_final` only (`pipeline.READS_OUTCOME`): official observations (interior times as noisy measurements, the finish near-hard), shared metric bias, finish-camera crossings replaced by the official finish, final identity pass, finish re-timing, placing ties |
@@ -87,12 +87,12 @@ Evidence part (from `observe` on, `pipeline.READS_EVIDENCE`), for held-out scori
   detector had missed them: tracking, identity and every fusion pass run without them. `rails` (upstream)
   still sees them.
 - `Mask(discs=P)` counts every disc-number read (circle render) on the race clock's odd `P`-second blocks
-  `[kP, (k+1)P)` as unread (`discs_phase=0`: the even blocks), in all three consumers: `observe`'s number
-  split, `identify`'s votes and the fusion's blind set (`RaceRun._number_reads`).
+  `[kP, (k+1)P)` as unread (`discs_phase=0`: the even blocks), in every consumer: `observe`'s number split,
+  the core's read term and the contract's read checks, all through `RaceRun._number_reads`.
 - `Mask(legend=P)` counts every legend read (silk render: the 8 running-order slots of a render tick) on the
   race clock's odd `P`-second blocks as unread (`legend_phase=0`: the even blocks), its slots read as on the circle
-  render, in all three consumers: `identify`'s legend votes, the EM identity pass and the detection-level E-step
-  (rank costs, negative legend evidence, blind set), all through `RaceRun.legend_rows`.
+  render, in every consumer: the core's list rows (both products) and the contract's read checks, all through
+  `RaceRun.legend_rows`.
 
 Select it with `RaceRun(info, mask=...)`, CLI `--mask SPEC`, or env `HKJC_MASK`; a spec is `none` or
 `;`-joined parts `boundary=J[+K...]` | `subsplit=K` | `outcome`, `dets=I,J,...`, `discs=P` | `discs=P@PHASE`, `legend=P` | `legend=P@PHASE`
@@ -336,7 +336,7 @@ A guard re-computes each detection's silk feature on the decoded panel and count
 
 ### The core: identify, fuse_video, fuse_final (`recon.core`)
 
-Design memo (Stage A of the core redesign: render-only evidence). The three stages share one model and one objective.
+The three stages share one model and one objective.
 The video-only product and the final product run the same code; they differ only in which observations the mask
 leaves visible (the final product adds the draw, the official times and the metric bias). Nothing is decided
 before the output: labels stay soft inside the solve, and the argmax is taken only when the label files are written.
@@ -404,8 +404,7 @@ order. Two persistent fault chains act on top (`core.list_chains`, forward-backw
   `P_OMIT_STAY`). A listed horse is not omitted unless its read can be a dropped-digit partner's number (below);
 - per unordered pair the list states adjacent, over that pair's adjacent facts, an order-wrong state in which the
   pair's stated order says nothing (a coin flip): a list that misplaces a horse for a stretch costs the chain's entry
-  and a coin flip per row, not a misread per row (`P_WRONG_IN` 3e-3, `P_WRONG_STAY` 0.98 per fact, fitted by maximum
-  likelihood of held-out list rows of the development races against masked runs' paths). Its emission is the ratio
+  and a coin flip per row, not a misread per row (`P_WRONG_IN` 3e-3, `P_WRONG_STAY` 0.98 per fact). Its emission is the ratio
   to the kept order, weighted by the row's P(not frozen); a fact's factor weight is (1 − P(frozen))(1 − P(wrong)),
   and the rank-count vote treats a slot in proportion to its pair facts' P(wrong).
 
@@ -437,8 +436,8 @@ It is the sum of:
   −2 log(q_h / max q) ≥ 0, against the best-matching runner; labelled versus clutter stays with P(horse) and the
   kinematics. The tracklet's cost is split additively over its segments (each keeps its own rows' evidence and its
   share of the rest), so a tracklet costs the same however it is cut. `RHO` (0.48: a tracklet
-  pools to about two detections) and `EPS` (0.031) were fitted by maximum likelihood on development races the model
-  never saw, against confident product tracklet labels. On the circle render: −2 × the clipped `silkmap` LLR of
+  pools to about two detections); `EPS` (0.031) the share of avatars that render like another runner's silk. On the
+  circle render: −2 × the clipped `silkmap` LLR of
   each segment with ≥ 10 features;
 - hard exclusions (stopped non-finishers after their last section).
 
@@ -448,7 +447,7 @@ It is the sum of:
    only segments with a positive gain: the list's rank-count vote (undetected horses ahead at `P_AHEAD_UNSEEN`) with
    reads and silk; the vote alone; reads and silk alone; the vote of the list rows in alternate `LIST_SPLIT` (7) s
    blocks (each parity) with reads and silk. A list stretch the full vote gets wrong is outvoted only from a start
-   that leaves it out (20260301_ST_2's final: the split-list start reaches the TV-confirmed chains). Then the caller's
+   that leaves it out. Then the caller's
    labellings. Each distinct start gets a full state step. `core.milp` memoises its solutions in-process by a digest of
    every input, so a product's pre-solve and solve (same model) solve the start MILPs once. HiGHS stops a MILP at
    `MILP_NODE_LIMIT` (2) branch-and-bound nodes, a deterministic limit, with its incumbent (no incumbent is an error;
@@ -495,7 +494,7 @@ It is the sum of:
    the closed form's per-horse terms with their memo hits (`Refit.horse_quick` is memoised per horse, dropped and
    added chunks). The hot loops run as Numba kernels (`hkjc/recon/nbk.py`, cached compilation): the bandwidth-2 band
    Cholesky / solves / log det of `Refit.horse_quick`, the lateral smoother's box loop, the in-view projection and
-   `kin_costs`' refit downdates (not bitwise equal to the LAPACK / numpy versions; agreement within 1e-6 J measured). Each solve also logs the CPU of the state steps (joint base, Newton, EM, exact chains and bands,
+   `kin_costs`' refit downdates (not bitwise equal to the LAPACK / numpy versions; they agree within 1e-6 J). Each solve also logs the CPU of the state steps (joint base, Newton, EM, exact chains and bands,
    lateral, sd, in_view, miss terms) and of the unaries (along-track kin, lateral kin, list votes, detection terms).
 4. Only the `DESCENTS` (2) lowest distinct alternation ends are polished (step 3); the lowest polished end then
    descends again with the crossover runs toward the other end as its pool, while that lowers J. Moves are judged by
@@ -519,15 +518,13 @@ It is the sum of:
    jumping between tracklets.
 
 Every full state step starts from scratch and runs the EM over the fault chains to convergence (weights changing
-< 1e-3, at most `EM_ROUNDS` 20), so J is a function of the labelling alone: with the earlier 4 rounds, warm starts from
-neighbouring labellings moved J by up to 12.
+< 1e-3, at most `EM_ROUNDS` 20), so J is a function of the labelling alone.
 
 Each product solves twice: a pre-solve without the finish camera (steps 1–2, the lowest alternation end kept) whose
 state places the camera's crossings (`finish_camera`), then the full solve with them, the pre-solve's `DESCENTS`
 lowest alternation ends and (for the final product) the video labels being further starts. When every runner's finish
 is an official time (or it stopped), the final product's camera adds no observation and it solves once, from the
-video labels and the starts. The official interior times re-identify horses in the final
-product's solve (20260301_ST_2: three chains from 44 s, which TV order facts confirm).
+video labels and the starts. The official interior times re-identify horses in the final product's solve.
 
 **Outputs.**
 - `segs.npz` (identify): segments, links, P(horse), camera-transition detections.
@@ -541,44 +538,22 @@ product's solve (20260301_ST_2: three chains from 44 s, which TV order facts con
   polish round's `Refit`, whose scores are memoised per labelling at its state), the rest keep the closed-form value; those screened below `POST_BAND` (20 J) and those of
   the `POST_K` (20) lowest screened below `POST_FULL` (100 J) get a full state step (reusing the solve's), and each segment's P is the kept label's weight 1 against exp(−ΔJ/(2 `T_PROB`)) for every
   alternative's label on it (`core.alternative_posterior`). J's per-detection terms count correlated errors as
-  independent, so the weights are tempered: `T_PROB` 100, fitted on a race-hashed half of the development null-pair
-  races (the smallest T whose p ≥ 0.99 labels flip under the legend mask at most 1 % + 0.5 pp) and checked on the other.
+  independent, so the weights are tempered: `T_PROB` 100, the smallest temperature whose p ≥ 0.99 labels keep the
+  masking property (they flip under the legend mask at most 1 % + 0.5 pp).
 - `core_video.npz` / `core_final.npz`: segment labels, the final unaries, J per accepted step; the final's also the
   marginals.
 - `det_margins_final.npz`: 2 log(p/(1 − p)) of the kept label.
 - `paths_video.parquet`, `fuse_video.pkl` (segment labels, finish observations, paths), `paths.parquet` and the
-  contract, as before.
+  contract.
 
 `fuse_final` then:
 1. sets the render metric bias at the visible boundaries from the video paths (`_metric_bias`), as a shift of chunk s;
    a withheld finish takes the last visible boundary's bias plus `FINISH_STEP` (the render's step between the last
-   boundary and the line, a per-style median over the development list's tune half: silk 1.07 m, disc 0);
+   boundary and the line, per render style: silk 1.07 m, disc 0);
 2. runs the core with the draw, the official times and the stopped horses' exclusions;
 3. re-evaluates the state once on the metric-line shape (HV), labels fixed;
 4. ends stopped horses at their last labelled detection;
 5. re-times onto the official finish (`_official_retime`).
-
-**Decision points of 0316 §6, status in this slice.**
-- **Gone:**
-  - 1: atomic tracklets;
-  - 2: argmax between stages;
-  - 3: whole-field gating;
-  - 7: anchor demotion;
-  - 9: the iteration cap;
-  - 10: greedy association and orphans;
-  - 11: shadow and post-finish release;
-  - 13: the RANK_ATTR cap;
-  - 8: skeleton replacement (official times are observations in J).
-- **Pending:**
-  - 4: on the circle render the silk term is still the per-segment clipped histogram LLR;
-  - 5: observe's appearance and number splits;
-  - 6: finish-camera handling: the anchor-or-registration clock inside `finish_camera`, camera crossings computed
-    once from the first state. The camera's `fixed` names, line elimination and blind veto are gone;
-  - 12: the metric bias and HV shape as point estimates;
-  - 14: top-1 OCR integers;
-  - the unseated rule (UR) is not ported;
-  - cost: the replaced stages' CPU per race is measured per release (journal); state steps, unaries and polish
-    scores dominate.
 
 ### Lateral in metres
 
@@ -677,10 +652,9 @@ none of the additions is a stage output or cache key.
   - Sha Tin home straight: one unsplit 0.58 m term (the map's leave-race-out residual p90 / 1.645), carried as the
     persistent part; its per-node 0 means not split.
   - NaN everywhere else, including every Happy Valley segment, even where `lat_m` is defined; NaN where `lat_m` is.
-  - These are design values, not a fit: Sha Tin only, from a 7–9-race drone comparison. On the Sha Tin bend,
-    `sd_lat_m` alone is badly overconfident and `sd_lat_m_total` is close to calibrated (refit leaving each race out:
-    z RMS 15.1 → 1.4, 90 % coverage 0.18 → 0.86), but still narrow at the tail out of sample. The home-straight term
-    has not been scored.
+  - These are design values, not a fit: Sha Tin only, from a drone comparison. On the Sha Tin bend, `sd_lat_m` alone
+    is overconfident and `sd_lat_m_total` is close to calibrated but narrow at the tail. The home-straight term has
+    not been scored.
   - Race-level scale (`LAT_M_SCALE_*`, `contract.lat_m_scale_sd`): the render's per-race lateral scale varies race
     to race, and no tested observable predicts it (field size, the abreast-gap ruler, the drawn width, the drone box
     ruler). It is carried as variance: error = z × σ × (lat_m − a), with z ~ N(0, 1) ONE per race and segment, shared
@@ -690,11 +664,6 @@ none of the additions is a stage output or cache key.
     - σ (log-scale sd): 0.15 in the start and straights; in bend and home a ramp in x = d − home straight length,
       0.11 at x ≤ 0, 0.26 at x ≥ 400 m, linear between. These are the noise-free race-to-race sds of the render/drone
       lateral ratio within venue × render style (drone-era q3d frames); contract.json `lat_m_err.race_scale`.
-    - Against the drone (Sha Tin, 42 races per segment, rank-paired kept frames), with the scale term vs without:
-      per race (mean error over the segment) z SD 4.8 → 1.4 on the bend and 3.8 → 1.1 on the home straight, 90 %
-      coverage 0.43 → 0.79 and 0.45 → 0.86; per node z SD 1.44 → 0.99 and 1.30 → 0.92, coverage 0.83 → 0.91 and 0.82
-      → 0.92. On the 7-race identity-linked bend means (whose horse term was set from those same rows) the total with
-      the scale term is too wide (z SD 0.51, coverage 1.00).
 - Lane (`contract.lane_columns`, appended after the lateral-metre error): `lane_units` counts lateral in the race's own
   abreast pitch from its rail runner, and `lane` is its category: 1 rail (< 1.5), 2 two-wide (< 2.5), 3 three-plus.
   The count is scale-free, so it needs no metres and is defined in every season and render style.
@@ -721,8 +690,7 @@ none of the additions is a stage output or cache key.
     - inside: the same on the inside, or the rail (`lane_units` < 1.5).
   - Runs of enclosed nodes are joined over gaps under 0.5 s and kept when they last ≥ 1 s.
   - One pitch is about 1.2–1.4 m of `lat_m` off the home straight and 1.8 m in it (derived: drone-era race pitch ×
-    the `lat_m` slope), so this is a broader state than the same rule with 1 m lanes in metres: 30 % of drone-era
-    `lat_m` nodes against 16 %, and 29 % of in-race horse-time over 458 turf-oval races (2023-09 to 2026-11).
+    the `lat_m` slope), so this is a broader state than the same rule with 1 m lanes in metres.
   - Both `enclosed` and `boxed_in` are false wherever `lane_units` is NaN, so false can mean undefined.
     contract.json `box` holds the rules of both columns.
 - Boxed in (`contract.box_columns`, after `enclosed`): `boxed_in` marks a horse held up behind in the final 600 m. It
@@ -740,9 +708,9 @@ none of the additions is a stage output or cache key.
     d ≤ 600 m, and within four lengths (9.6 m) of the leader. The leader is the furthest-forward horse at the node,
     capped at the post, so the rule needs no labels.
   - Runs are joined over gaps under 0.5 s and kept when they last ≥ 1 s, as for `enclosed`.
-- `det_margins_final.npz`: per tracks row, the final identity pass's assignment margin: the frame's optimal E-step
-  cost with that detection forbidden from its horse minus the optimal cost (−2 log-likelihood units; NaN where
-  unlabelled, `assoc.assign_frames(margin_out=)`). A margin, not a calibrated probability.
+- `det_margins_final.npz`: per tracks row, 2 log(p/(1 − p)) of the final label, p its probability in
+  `det_labels_final.npz` (`core.probability_output`); NaN where unlabelled. Written by the core's outputs, not a stage
+  output.
 - `contract.json`: the definitions, the run's flagged stretches, its frozen-list windows, every visible crossing's
   position verdict (observed, firm, r_v, identity check, pass), the uncertainty constants with the run's axis anchors,
   the provisional `LAT_M_ERR` values, the run's lane pitch and origin per segment class, and `NOISE_TABLE`, the
@@ -787,7 +755,7 @@ official sectional ends, 400 m apart. The thresholds are `validate.GATES`.
 | `finish_n_short` | ≤ 2 | runners with an official finish time but no scored finish |
 | `lateral_scale_err` | ≤ 0.75 m | \|racing-to-fixed rail gap on the map − course table\|; n/a where unmeasurable (A course, no supported ridge) |
 
-The last four were declared before any held-out race was run. "Timing gates" are the first five; "non-lateral
+"Timing gates" are the first five; "non-lateral
 gates" the first eight.
 
 ### Yardsticks
@@ -805,9 +773,9 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
   whose label equals the read number.
 - **Withheld detections** (§3, `Mask(dets=...)`). Per race, two horses × one 3 s stretch in the middle third of
   the race, chosen by a fixed seeded rule from an unmasked reference run: ≥ 80 % of the stretch's render frames carry
-  a detection both the video-only and the final E-step label as the horse, the horse is never the frame's
+  a detection both the video-only and the final labels give the horse, the horse is never the frame's
   frontmost detection, and stretches with another detection within 3 m along and 2 m across in at least half the
-  frames are preferred. Every detection either E-step labels as the horse in the stretch is withheld (plus
+  frames are preferred. Every detection either product labels as the horse in the stretch is withheld (plus
   unlabelled duplicate boxes within 0.6 m / 0.4 m). Scores: along-track and lateral RMS and max error against the
   withheld detections, and whether the path in the gap overlaps another horse's firm path (|Δs| < 2.0 m and
   |Δlat| < 0.7 m); the unmasked run gives the floor.
@@ -824,7 +792,7 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
   MID between).
 - **Identity score.** Spearman of reconstructed vs official crossing times and the share of horse-boundaries
   within 0.25 s after removing each boundary's common mode.
-- **Per-horse census** (what a viewer of the synced video sees). A horse-run is good when its posterior sd < 3 m
+- **Per-horse census.** A horse-run is good when its posterior sd < 3 m
   on ≥ 90 % of the span from the first render detection to its crossing, it is scored at the line, and its
   largest boundary error with the boundary's race median removed is ≤ 0.25 s (~4 m). On the product the official
   records are inputs, so the census detects conflict only.
@@ -866,28 +834,25 @@ identical. Not bit-exact:
 - **Lateral metres.** Metres exist only in `lat_m` (§4), for drone-era turf races in the tested segments; lateral
   order is usable everywhere, lateral metres nowhere else. Not covered: the Sha Tin disc start, the Happy Valley
   disc bends and home straight, the Happy Valley silk start and home straight, and every pre-2026 season. The
-  home-straight scale holds to about ±7 % across course settings (Sha Tin A reads about +0.3 m wide); bend metres
+  home-straight scale varies slightly across course settings; bend metres
   are calibrated against a linear rail-to-rail drone ruler, which does not model perspective or rail height on
   oblique bend views. The map's own error (`sd_lat_m_*`, §4) is provisional: design values for the Sha Tin bend
-  and home straight only, from a 7–9-race drone comparison; NaN at Happy Valley and in every other segment. Its
+  and home straight only, from a small drone comparison; NaN at Happy Valley and in every other segment. Its
   race-level scale term (`sd_lat_m_scale`) is shared per race and segment and defined wherever `lat_m` is.
-- **Lane category.** Against the official running comments' explicit lane statements, `lane` agrees about 0.83 of the
-  time (0.90 in 2026/27), and stated three-plus horses read low (recall 0.78). No season reaches 90 %.
-- **Boxed in.** Scored per run against the stewards' late blocked-run statements (566 statements on 458 turf-oval
-  races, 2023-09 to 2026-11), `boxed_in` finds 0.52 of them, 1.9 times the share chance would find. Its flagged runs
-  overlap a statement 2.0 times as often as chance (precision 0.125).
-  - The closing term was chosen on these same statements, so the figures are not confirmed on a fresh set.
+- **Lane category.** Against the official running comments' explicit lane statements, `lane` agrees with most but
+  falls short of 90 % in every season, and stated three-plus horses read low.
+- **Boxed in.** `boxed_in` finds about half of the stewards' late blocked-run statements, and most of its flagged runs
+  match no statement.
+  - The closing term was chosen on those statements, so its agreement is not confirmed on a fresh set.
   - Node timing inside the late part is not validated.
-  - It fires for about a third of runners. The stewards report about one horse per race, so most of its flags have no
-    statement to confirm or refute them. Across masked reruns its horse × race κ is 0.69 on the silk
-  render (0.88 on `id_robust` units) and about 0.96 on the disc render, so on silk use it beside `id_robust`.
-- **Enclosed late.** Across masked reruns (both arms at one commit; 176 silk and 153 disc races) its horse × race κ is
-  0.85 on the silk render (0.93 on `id_robust` units) and 0.99 on the disc render, at a base rate of about half the
-  runners with late nodes. No calibrated probability goes with it: a per-node probability built from the identity
+  - It fires for about a third of runners; the stewards report about one horse per race, so most of its flags have no
+    statement to confirm or refute them. It is less stable under masked reruns on the silk render than on the disc
+    render, so on silk use it beside `id_robust`.
+- **Enclosed late.** Less stable under masked reruns on the silk render than on the disc render. No calibrated
+  probability goes with it: a per-node probability built from the identity
   margins understates the rerun disagreement on both renders.
 - **Enclosed is not a costly box-in.** Enclosure is common and often cheap before the home turn. In the final 600 m it
-  agrees with the stewards' blocked-run statements only 1.4 times as often as chance would give. Across masked
-  reruns, its horse × section reliability (κ) is 0.86 on the silk render and 0.97 on the disc render.
+  agrees with the stewards' blocked-run statements little more often than chance.
 - **Draw units.** `fuse_final` carries the spread unchanged: the draw prior (`STALL1_LAT`, `STALL_PITCH`, from a drone
   frame, approximately metres) acts only at t = 0, and the lateral box never binds.
 - **Shared metric error.** Between visible boundaries the product's distance metric is the render's, shifted by the
@@ -904,17 +869,11 @@ identical. Not bit-exact:
   should ship with the flag attached, not filtered by it.
 - **Render-vs-official conflicts.** A horse whose render path and official interior times disagree by more than a
   few metres keeps its render path; the video alone cannot say which side is wrong.
-- **Silk evidence.** The render appearance term pools a tracklet to about two detections (a whole tracklet's read
-  is the product's label about three times in four on races the model never saw; look-alike silks, the red and
-  blue families and navy rendered teal are systematic), so it costs at most about 12 J units per tracklet and
+- **Silk evidence.** The render appearance term pools a tracklet to about two detections (look-alike silks, the red
+  and blue families and navy rendered teal, are systematic errors), so it costs at most about 12 J units per tracklet and
   decides near-ties only (summed over a tracklet it never makes labelling cheaper than clutter); the draw does not enter identity.
 - **Finish-short horses.** A horse unobserved over the last metres has a path to the grid end, extrapolated with
   growing sd; once sd_s exceeds `SD_MAX`, or the grid ends first, it has no scored finish crossing.
-- **Blind near-line cost.** It can remove correctly placed unread back markers. More generally, near the line a horse's
-  own tracker fragment can be cut from it: the blind and camera-unread costs bar it, and its path runs on at race speed
-  while the horse slows, so the fragment's last detections stay anonymous and the path crosses early. With the finish
-  withheld this is one cause of tail horses without a label at the line (others: no detection there, or detections
-  labelled to another horse).
 - **Fixed-rail drawing.** On some Sha Tin course settings (A+3, B, B+2) the render draws the fixed rail at a
   constant offset from the course table's gap, so `lateral_scale_err` fails there while the lateral scale is
   consistent.
@@ -934,18 +893,13 @@ identical. Not bit-exact:
   births a second track.
 - **Static-overlay filter.** It can delete a real horse the camera holds at one panel cell in the disclaimer band,
   and misses disclaimer text below its bar, which the hard rank cost then treats as horses.
-- **Tracklet exclusivity.** `assign_global` forbids one number on tracklets whose spans overlap, which can leave a
-  tracklet unlabelled when its number's holder overlaps it by a few frames inside a gap.
-- **Orphan elimination.** The last uncovered horse takes the largest leftover chain without an anchor check, which
-  can give a tailed-off horse a mid-field chain (§4 fuse_video).
 - **Video resolution.** The pipeline assumes a 1920 × 1080 aerial feed; seasons before 2023-05 are 1280 × 720.
-- **Non-finishers.** A stopped horse's path ends at its last observation, not where it stopped, and before the last
-  50 m its label can still ride another horse's avatar (ST 2025-07-05 R5 #2 from 385 m to 68 m out). An unseated
-  horse's path runs to the grid end (constant-speed extrapolation, growing sd); it can still take another runner's
-  detections where `identify` left the fragment unlabelled, and where `identify` put its number on another runner's
-  avatar the rule holds it there (ST 2023-10-15 R3 #14 on #12's avatar). With the finish withheld (evaluation masks) no placing
-  code is visible, so neither rule applies and a non-finisher's label can ride a finisher's avatar to the line. In the
-  video-only product nothing marks a non-finisher. Its completed sections count for coverage and `sectional_mae`, but
+- **Non-finishers.** A stopped horse (PU, FE, DNF) is barred from detections only from `NONFIN_BLIND` (50 m) before
+  its first boundary without a time, so before that its label can still ride another horse's avatar, and its path
+  ends at its last labelled detection, not where it stopped. An unseated horse (UR) has no rule: its path runs to the
+  grid end (growing sd) and can take another runner's detections. With the finish withheld (evaluation masks) no
+  placing code is visible, so no rule applies and a non-finisher's label can ride a finisher's avatar to the line. In
+  the video-only product nothing marks a non-finisher. Its completed sections count for coverage and `sectional_mae`, but
   it is excluded from the finish gates.
 - **Post-start non-runners.** A horse declared a non-runner after the start (WXNR) is not a runner and gets no path,
   even if it raced.

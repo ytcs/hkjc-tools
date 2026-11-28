@@ -17,10 +17,10 @@ and skipped when its ``OUTPUTS`` exist (``force=`` re-runs named stages). Stages
   observe   detections -> (d, lateral) metres (odometer-tick distance calibration) -> world tracklets
   finish    RF/drone finish-line camera: saddlecloth OCR -> finish order + spatial gaps
   appearance  silk render: the learned avatar model's per-detection runner likelihoods (appearance.npz)
-  identify  tracklet -> saddlecloth number (legend order + finish camera + elimination + silk)
-  fuse_video  Bayesian fusion with physics/geometry priors -> paths_video.parquet (no official
-            outcome data)
-  fuse_final  + the official records the mask leaves visible -> paths.parquet
+  identify  the core's label-free evidence: segments, links, per-box P(horse) (segs.npz)
+  fuse_video  the core's video-only product: labels and paths under physics/geometry priors ->
+            paths_video.parquet (no official outcome data)
+  fuse_final  the core again with the official records the mask leaves visible -> paths.parquet + the contract
   validate  gates vs the full official record
 
 Memory: run under a hard cap (``scripts/capped.sh``) — the MP4s and feature caches are large.
@@ -60,13 +60,13 @@ STAGES = (
     "pose",
     "worldmap",
     "detect",
-    "silk",  # silk signatures + official prototypes (identify's silk LLR, observe's appearance split)
+    "silk",  # silk signatures + official prototypes (circle render's silk term, observe's appearance split)
     "hud",
     "rails",
     "start",  # gate opening in the start film: re-anchors the race clock when the overlay clock lags
     "film",  # race-film marker crossings -> the metric's constant offset
     "observe",
-    "finish",  # independent of the render; before identify (finish-camera identity votes)
+    "finish",  # independent of the render (finish-camera crossings in every fuse)
     "appearance",  # silk render only (the circle render has no avatars)
     "identify",
     "fuse_video",
@@ -1761,19 +1761,15 @@ class RaceRun:
         self._official_clock = self._official_finish()
         nonfin = self.info.official_nonfinish()
         self._nonfin = self._stopped(nonfin)
-        self._unseated = {h for h, c in nonfin.items() if c in self.UNSEATED}
         try:
             self._fuse_final()
         finally:
             self._official_clock = None
             self._render_bias = None
             self._nonfin = {}
-            self._unseated = set()
 
     _nonfin: dict = {}
-    _unseated: set = set()
     STOPPED = ("PU", "FE", "DNF")  # official placing codes of a horse that stops: pulled up, fell, did not finish
-    UNSEATED = ("UR",)  # rider unseated: the horse may gallop on riderless, and the render may still draw it
     NONFIN_BLIND = 50.0  # m before the first boundary a stopped horse has no time for
 
     def _stopped(self, nonfin) -> dict:
