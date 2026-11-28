@@ -64,3 +64,23 @@ def test_runner_columns_follow_the_cache_numbers_and_rows_follow_det_idx():
     assert int(np.argmin(C[0])) == horses.index(5)
     C = A.costs(app, np.arange(0, 10), np.zeros(10, int), 1, horses, np.full(10, 0.97), [np.arange(10)])
     assert int(np.argmin(C[0])) == horses.index(7)
+
+
+def test_load_raises_when_appearance_rows_are_another_dets(tmp_path):
+    """appearance.npz rows are dets.npz rows: a file computed from another detection set (other row count or other
+    file) must not be read."""
+    import hashlib
+
+    import pytest
+
+    dets = tmp_path / "dets.npz"
+    np.savez(dets, rows=np.zeros((3, 6)))
+    md5 = hashlib.md5(dets.read_bytes()).hexdigest()
+    arrays = dict(logp=np.zeros((3, 2)), ok=np.ones(3, bool), nos=np.array([1, 2]), has_gif=np.ones(2, bool))
+    np.savez(tmp_path / "ok.npz", n_dets=3, dets_md5=md5, **arrays)
+    assert A.load(tmp_path / "ok.npz", dets)["logp"].shape == (3, 2)
+    np.savez(tmp_path / "n.npz", n_dets=4, dets_md5=md5, **arrays)
+    np.savez(tmp_path / "md5.npz", n_dets=3, dets_md5="0" * 32, **arrays)
+    for bad in ("n.npz", "md5.npz"):
+        with pytest.raises(ValueError):
+            A.load(tmp_path / bad, dets)

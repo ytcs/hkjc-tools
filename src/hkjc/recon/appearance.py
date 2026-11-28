@@ -40,6 +40,24 @@ RHO = 0.48
 EPS = 0.031
 
 
+def load(app_path, dets_path) -> dict:
+    """``appearance.npz``'s arrays, after checking that its rows are this run's detections: its ``n_dets`` and
+    ``dets_md5`` (the dets.npz it was computed from) must match ``dets_path``; raises ValueError otherwise (rows of
+    another detection set would read other boxes' likelihoods)."""
+    import hashlib
+
+    with np.load(app_path) as za:
+        app = {k: za[k] for k in ("logp", "ok", "nos", "has_gif")}
+        n_app, md5_app = int(za["n_dets"]), str(za["dets_md5"])
+    with np.load(dets_path) as zd:
+        n = len(zd["rows"])
+    md5 = hashlib.md5(open(dets_path, "rb").read()).hexdigest()
+    if n_app != n or md5_app != md5:
+        raise ValueError(f"{app_path} was computed from another dets.npz (n_dets {n_app} md5 {md5_app}; "
+                         f"this run's dets.npz: {n} rows, md5 {md5})")
+    return app
+
+
 def log_ratios(app, det_idx, horses, p_horse):
     """Per tracks row: (log r_dh (rows x runners), scored mask)."""
     horses = np.asarray(horses, int)
