@@ -107,7 +107,7 @@ last visible boundary, §4) and is not re-timed, so the product's error there is
 ## 4. Pipeline
 
 Stages run in this order: `frames → features → pose → worldmap → detect → silk → hud → rails → start → film →
-observe → finish → identify → fuse_video → fuse_final → validate`. `hud` and `finish` read only the videos and
+observe → finish → appearance → identify → fuse_video → fuse_final → validate`. `hud` and `finish` read only the videos and
 run in background processes until the first stage that depends on them. `pipeline.DEPS` declares each stage's
 inputs: forcing a stage re-runs every requested stage downstream of it. A requested stage that has never run
 (none of its outputs exist) counts as forced, since its consumers' artifacts predate it; a stage missing only
@@ -322,6 +322,18 @@ tracks are built; not on the Sha Tin side-on camera, where horses abreast share 
 most, and other horses get `gap_h = gap_r + x_h − x_r` from ≥ 2 shared frames, which recovers horses occluded
 at the line (sd = robust spread / √n, floor 15 px).
 
+### appearance
+
+Silk render only (the circle render has no avatars, and its run writes nothing here). `appearance.produce` scores
+every detection of `dets.npz` with the learned render-appearance model and writes `appearance.npz` (rows = dets.npz
+rows): per detection the calibrated log p(runner | crop) over the race's runners with an official silk (`logp`),
+the raw scaled cosines, the 64-dim crop embedding, and the `dets_md5` / `n_dets` of the detections it was computed
+from. Inputs: the detections and panel box, the aerial video (only frames with a detection are decoded), the
+runners' official silk GIFs and the weights under `models/render_appearance/` (crop and silk towers, their input
+standardisation, the render temperature and a frozen ImageNet ResNet-18, run through OpenVINO on the CPU at f32).
+A guard re-computes each detection's silk feature on the decoded panel and counts mismatches against `silk.npz`
+(`silk_mismatch`). The stage reads no outcome data and no evidence the mask withholds, so masked runs share it.
+
 ### The core: identify, fuse_video, fuse_final (`recon.core`)
 
 Design memo (Stage A of the core redesign: render-only evidence). The three stages share one model and one objective.
@@ -416,9 +428,8 @@ It is the sum of:
 - disc reads: per detection, error `READ_ERR`, `READ_ERR_TOUCH` with another disc within 50 px, `READ_ERR_DROP`
   between dropped-digit partners;
 - appearance (silk render, `recon.appearance`): the learned avatar model's calibrated per-detection log
-  p(runner | crop), read from the run dir's `appearance.npz` (an upstream artifact of the frozen M3-R2 model, rows =
-  dets.npz rows; a silk-render run without it fails, and so does one whose file was computed from another dets.npz:
-  its `n_dets` and `dets_md5` must match the run's dets.npz). The softmax has no "not a horse" outcome, so each detection's
+  p(runner | crop), read from the run dir's `appearance.npz` (the `appearance` stage; rows = dets.npz rows; a file
+  computed from another dets.npz is refused: its `n_dets` and `dets_md5` must match the run's dets.npz). The softmax has no "not a horse" outcome, so each detection's
   ratio to a uniform read is P(horse)·G·p + (1 − P(horse)) (G runners with an official silk). Detections of one
   avatar are strongly correlated, so the unit is the tracker tracklet: each detection weighs 1/(1 + (n − 1) `RHO`),
   n the tracklet's P(horse)-weighted count, and the tracklet reads q = (1 − `EPS`) softmax + `EPS`/H. Appearance

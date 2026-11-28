@@ -37,16 +37,24 @@ def _run(tmp_path, cls=RaceRun):
     return cls(SimpleNamespace(key="race"), root=tmp_path, log=lambda *_: None)
 
 
-def test_force_reruns_consumers(tmp_path):
-    R = _run(tmp_path)
+def _finished(R, style=None):
+    """Every stage output present; frames_idx.npz records the render style (silk caches carry none)."""
     for outs in OUTPUTS.values():
         for o in outs:
             R.p(o).touch()
+    np.savez(R.p("frames_idx.npz"), idx=np.arange(3), **({} if style is None else {"style": style}))
+
+
+def test_force_reruns_consumers(tmp_path):
+    R = _run(tmp_path)
+    _finished(R)
     assert R.plan() == []
     assert R.plan(force=("rails",)) == [
         "rails", "observe", "identify", "fuse_video", "fuse_final", "validate"
     ]
     assert R.plan(force=("finish",)) == ["finish", "identify", "fuse_video", "fuse_final", "validate"]
+    assert R.plan(force=("silk",)) == ["silk", "observe", "appearance", "identify", "fuse_video", "fuse_final",
+                                       "validate"]
     # a large artifact deleted for space is regenerated (deterministic) without invalidating its consumers
     R.p("frames.bin").unlink()
     assert R.plan() == ["frames"]
@@ -67,6 +75,22 @@ class _Failing(RaceRun):
 
     def features(self):
         raise RuntimeError("main-chain failure")
+
+
+def test_appearance_is_a_silk_render_stage(tmp_path):
+    """A silk run without appearance.npz computes it and re-runs its consumers; the circle render has no appearance
+    artifact, so a finished circle run plans nothing."""
+    R = _run(tmp_path / "silk")
+    _finished(R)
+    R.p("appearance.npz").unlink()
+    assert R.plan() == ["appearance", "identify", "fuse_video", "fuse_final", "validate"]
+    C = _run(tmp_path / "circle")
+    _finished(C, style="circle")
+    C.p("appearance.npz").unlink()
+    assert C.done("appearance") and C.plan() == []
+    assert C.plan(force=("appearance",)) == ["appearance", "identify", "fuse_video", "fuse_final", "validate"]
+    C.appearance()  # writes nothing on the circle render
+    assert not C.p("appearance.npz").exists()
 
 
 def test_failed_stage_terminates_background(tmp_path):

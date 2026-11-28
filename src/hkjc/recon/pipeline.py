@@ -16,6 +16,7 @@ and skipped when its ``OUTPUTS`` exist (``force=`` re-runs named stages). Stages
   film      race-film leader crossings of the painted markers -> the metric's constant offset
   observe   detections -> (d, lateral) metres (odometer-tick distance calibration) -> world tracklets
   finish    RF/drone finish-line camera: saddlecloth OCR -> finish order + spatial gaps
+  appearance  silk render: the learned avatar model's per-detection runner likelihoods (appearance.npz)
   identify  tracklet -> saddlecloth number (legend order + finish camera + elimination + silk)
   fuse_video  Bayesian fusion with physics/geometry priors -> paths_video.parquet (no official
             outcome data)
@@ -66,6 +67,7 @@ STAGES = (
     "film",  # race-film marker crossings -> the metric's constant offset
     "observe",
     "finish",  # independent of the render; before identify (finish-camera identity votes)
+    "appearance",  # silk render only (the circle render has no avatars)
     "identify",
     "fuse_video",
     "fuse_final",
@@ -86,6 +88,7 @@ OUTPUTS = {
     "observe": ["tracks.npz"],
     "identify": ["segs.npz"],
     "finish": ["finish.npz"],
+    "appearance": ["appearance.npz"],  # none on the circle render (RaceRun.outputs)
     "fuse_video": ["paths_video.parquet", "fuse_video.pkl"],
     "fuse_final": ["paths.parquet"],
     "validate": ["validation.json"],
@@ -113,7 +116,8 @@ DEPS = {
     "film": ("hud",),
     "observe": ("pose", "detect", "silk", "hud", "rails", "start", "film"),
     "finish": (),
-    "identify": ("observe", "hud", "silk", "finish", "pose"),
+    "appearance": ("frames", "detect", "silk"),
+    "identify": ("observe", "hud", "silk", "finish", "pose", "appearance"),
     "fuse_video": ("identify", "observe", "finish", "hud", "silk", "rails", "pose"),
     "fuse_final": ("fuse_video",),
     "validate": ("fuse_video", "fuse_final"),
@@ -231,10 +235,16 @@ class RaceRun:
         """Context yielding the temporary path to write artifact ``name`` to (atomic rename)."""
         return video.atomic(self.p(name))
 
+    def outputs(self, stage: str) -> list:
+        """``OUTPUTS[stage]`` of this run: the circle render has no appearance artifact."""
+        if stage == "appearance" and self.p("frames_idx.npz").exists() and self.render_style() == "circle":
+            return []
+        return OUTPUTS[stage]
+
     def done(self, stage: str) -> bool:
         if stage == "features":
             self._backfill_yolo()
-        return all(self.p(o).exists() for o in OUTPUTS[stage])
+        return all(self.p(o).exists() for o in self.outputs(stage))
 
     def _backfill_yolo(self):
         """Run dirs made before features saved its detections: a YOLO-only dets.npz holds exactly
@@ -257,7 +267,7 @@ class RaceRun:
         A requested stage that has never run (none of its outputs exist) counts as forced: artifacts
         made before one of their inputs existed are stale. A stage missing only some outputs (large
         files deleted for space) is regenerated without invalidating its consumers (deterministic)."""
-        never = {st for st in stages if not any(self.p(o).exists() for o in OUTPUTS[st])}
+        never = {st for st in stages if (o := self.outputs(st)) and not any(self.p(x).exists() for x in o)}
         forced = set(force) | never
         for st in STAGES:
             if any(d in forced for d in DEPS[st]):
@@ -1119,6 +1129,18 @@ class RaceRun:
             f"{np.median(np.abs(resid)):.2f} m); {len(members)} tracklets, top lens "
             f"{[len(m) for m in members[: self.info.n]]}"
         )
+
+    def appearance(self):
+        """Silk render: ``appearance.produce`` on this run's detections (the circle render has none)."""
+        if self.render_style() == "circle":
+            return
+        from . import appearance
+        from ..data.silks import silk_path
+
+        runners = [(int(r.no), r.horse_id, silk_path(r.horse_id)) for r in self.info.runners]
+        with self.out("appearance.npz") as fp:
+            msg = appearance.produce(fp, self.p("dets.npz"), self.p("silk.npz"), self.video(), runners, _nproc())
+        self.log(msg)
 
     def identify(self):
         """The core's label-free evidence (``core.build_evidence``): segments, links, P(horse), camera transitions.

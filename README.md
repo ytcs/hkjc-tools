@@ -67,7 +67,7 @@ src/hkjc/data/    HKJC interfaces. Other sources (racecards, live odds/pools, tr
     tracks.py     track geometry per venue x surface x course (TrackGeometry, track_for)
 src/hkjc/recon/   race info + videos -> paths
     pipeline.py   RaceRun: cached stages frames -> features -> pose -> worldmap -> detect -> silk
-                  -> hud -> rails -> start -> film -> observe -> finish -> identify -> fuse_video
+                  -> hud -> rails -> start -> film -> observe -> finish -> appearance -> identify -> fuse_video
                   -> fuse_final -> validate
     video.py      frame access, AVV render gating / 10 Hz de-dup / HUD masks
     register.py   turf ORB features, RANSAC similarity + least-squares refit
@@ -91,6 +91,6 @@ src/hkjc/recon/   race info + videos -> paths
     audit.py      label-free consistency invariants of a reconstruction (audit.json)
 docs/RECON.md     architecture: stages, artifacts, mask and held-out evaluation, gates, environment, known limitations
 docs/HKJC_*.md    HKJC data sources and track specifications
-models/           detector weights (git-ignored)
+models/           detector and render-appearance weights (git-ignored)
 ```
 

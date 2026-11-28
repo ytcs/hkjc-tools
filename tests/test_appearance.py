@@ -84,3 +84,41 @@ def test_load_raises_when_appearance_rows_are_another_dets(tmp_path):
     for bad in ("n.npz", "md5.npz"):
         with pytest.raises(ValueError):
             A.load(tmp_path / bad, dets)
+
+
+# ------------------------------------------------------------------------------------------------------------- producer
+def test_palette_is_the_soft_histogram_of_each_crop_cell():
+    """The batched palette equals the per-cell soft palette histogram (3 x 2 cells of 16 x 24 px) of each crop."""
+    rng = np.random.default_rng(0)
+    crops = rng.integers(0, 256, (70, 48, 48, 3), dtype=np.uint8)
+    got = A.palette(crops)
+    for c, g in zip(crops[[0, 33, 69]], got[[0, 33, 69]]):
+        L = A._lab(c)
+        ref = np.concatenate([A._palhist(L[16 * r:16 * (r + 1), 24 * q:24 * (q + 1)]) for r in range(3) for q in range(2)])
+        assert np.allclose(g, ref, atol=1e-6)
+    assert np.allclose((got.reshape(70, 6, 16) ** 2).sum(-1), 1.0, atol=1e-5)
+
+
+def test_crop_is_a_square_around_the_box_with_zero_padding():
+    import cv2
+
+    panel = np.zeros((100, 200, 3), np.uint8)
+    panel[40:60, 90:110] = 255
+    pad = cv2.copyMakeBorder(panel, A.PAD, A.PAD, A.PAD, A.PAD, cv2.BORDER_CONSTANT)
+    c = A.crop48(pad, 100.0, 50.0, 20.0, 20.0)  # a 30 px square: the white box fills its middle two thirds
+    assert c.shape == (48, 48, 3) and c[24, 24].tolist() == [255, 255, 255] and c[1, 1].tolist() == [0, 0, 0]
+    edge = A.crop48(pad, 2.0, 2.0, 20.0, 20.0)  # off the panel corner: the padding reads black
+    assert edge.shape == (48, 48, 3) and edge[0, 0].tolist() == [0, 0, 0]
+
+
+def test_scores_are_log_probabilities_over_runners_with_a_silk():
+    rng = np.random.default_rng(1)
+    has = np.array([True, False, True, True])
+    ok = np.array([True, True, False, True, True])
+    lg = rng.normal(0, 3, (5, 3)).astype(np.float32)
+    logp, logit = A.log_softmax_scores(lg, has, ok, 1.3)
+    assert np.isnan(logp[:, 1]).all() and np.isnan(logp[2]).all() and np.isnan(logit[2]).all()
+    good = np.flatnonzero(ok)
+    assert np.allclose(np.exp(logp[good][:, has]).sum(1), 1.0, atol=1e-6)
+    assert np.allclose(logit[good][:, has], lg[good])
+    assert np.array_equal(np.argmax(logp[good][:, has], 1), np.argmax(lg[good], 1))
