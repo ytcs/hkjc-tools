@@ -156,8 +156,12 @@ _STEP_NN = {}  # fork-shared bfmatch cross-check tables for the step matches (em
 _STYLE = "silk"  # render style of the race being processed (fork-shared with the feature workers)
 
 
+def _legend_job(k):
+    return video.legend_scan(_CACHE.panel(k))
+
+
 def _feat_job(args):
-    k, nfeat, raw = args
+    k, nfeat, raw, lrow = args
     i, p = _CACHE.idx[k], _CACHE.panel(k)
     if _STYLE == "circle":  # numbered discs, no legend strip
         from . import circles
@@ -166,7 +170,7 @@ def _feat_job(args):
         rs = circles.centres(p)
         hist = [np.zeros(14) for _ in rs]
     else:
-        lt = video.legend_top(p)
+        lt = int(lrow)  # the race's stabilised legend row of this frame (video.stable_legend_rows)
         # the avatar detector's boxes (+ shadows) are masked too: the colour mask misses brown horses
         rs = _detect.AvatarDetector.drop_legend(raw, lt)  # raw: the detector pool's boxes
         hist = [_detect.silk_hist(p, r) for r in rs]
@@ -508,11 +512,14 @@ class RaceRun:
         nw = min(_nproc(), 4)  # detector pool feeding the feature workers; one accelerator context
         with mp.get_context("fork").Pool(nw) as pool:
             if _STYLE == "circle":  # no avatar detector
-                res = pool.map(_feat_job, [(k, nfeat, None) for k in range(K)], chunksize=8)
+                res = pool.map(_feat_job, [(k, nfeat, None, None) for k in range(K)], chunksize=8)
             else:
+                scan = pool.map(_legend_job, range(K), chunksize=16)
+                lrows = video.stable_legend_rows([r for r, _f in scan], [f for _r, f in scan])
                 with mp.get_context("fork").Pool(1 if accel else nw, initializer=_det_init) as dpool:
                     raws = dpool.imap(_det_job, range(K), chunksize=8)
-                    res = list(pool.imap(_feat_job, ((k, nfeat, r) for k, r in enumerate(raws)), chunksize=8))
+                    res = list(pool.imap(_feat_job, ((k, nfeat, r, lrows[k]) for k, r in enumerate(raws)),
+                                         chunksize=8))
         # a NEW pool: workers fork the parent's state, so the features must exist before forking
         _FEATS_PAR = [r[2] for r in res]
         pairs = [k for k in range(1, len(res)) if res[k][0] - res[k - 1][0] <= 6]
@@ -686,7 +693,8 @@ class RaceRun:
     def hud(self):
         circle = self.render_style() == "circle"  # no legend strip: its slots are not read
         rows, leg = ocr.read_render_hud_cached(
-            self.cache(), n_field=max(14, self.info.n), n_slots=0 if circle else min(8, self.info.n)
+            self.cache(), n_field=max(14, self.info.n), n_slots=0 if circle else min(8, self.info.n),
+            legend_rows=None if circle else self._lrows(),  # the features stage's stabilised legend rows
         )
         if np.isfinite(rows[:, 1]).sum() < self.HEALTH_CLOCK_READS:
             # the fixed crop missed the clock (a sponsor box above it moves it down): locate it in the video,

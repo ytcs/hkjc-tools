@@ -77,8 +77,12 @@ def frame_box(img, layout_box: PanelBox | None = None) -> PanelBox:
     return b if d <= BOX_JITTER else layout_box
 
 
-def legend_top(panel) -> int:
-    """Top row of the bottom silk-legend strip (dense band of vivid boxes), panel-relative."""
+LEGEND_TOL = 8  # px: a frame's legend row farther than this from the race's list row is replaced by it
+
+
+def legend_scan(panel) -> tuple[int, bool]:
+    """(top row of the bottom silk-legend strip, panel-relative: the first row whose vivid-pixel count exceeds 30 % of
+    the strip's maximum; whether a strip was found: maximum >= 5 % of the panel width, else 0.8 x the panel height)."""
     import cv2
 
     h = panel.shape[0]
@@ -91,9 +95,25 @@ def legend_top(panel) -> int:
     vivid &= 1
     band = vivid.sum(1).astype(float)
     if band.max(initial=0.0) < 0.05 * panel.shape[1]:
-        return int(0.80 * h)
+        return int(0.80 * h), False
     rows = np.where(band > 0.30 * band.max())[0]
-    return int(rows.min()) + top
+    return int(rows.min()) + top, True
+
+
+def legend_top(panel) -> int:
+    """Top row of the bottom silk-legend strip of one panel (``legend_scan``)."""
+    return legend_scan(panel)[0]
+
+
+def stable_legend_rows(rows, found) -> np.ndarray:
+    """A race's per-frame legend rows (``legend_scan``): where the strip was found, a row more than LEGEND_TOL px from the
+    race's list row (the median over those frames) is replaced by it (a vivid band below the list, e.g. the red apron
+    in the final view, raises the strip maximum and pushes the row under the icons); frames without a strip keep theirs."""
+    rows, found = np.asarray(rows, int), np.asarray(found, bool)
+    if not found.any():
+        return rows.copy()
+    lrow = int(np.median(rows[found]))
+    return np.where(found & (np.abs(rows - lrow) > LEGEND_TOL), lrow, rows)
 
 
 def hud_mask(panel, legend_row: int | None = None) -> np.ndarray:

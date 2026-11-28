@@ -5,6 +5,7 @@ from hkjc.recon import detect, finishcam
 
 def test_features_job_masks_the_detector_pool_boxes(monkeypatch):
     from hkjc.recon import pipeline
+    from hkjc.recon import video as video_mod
 
     raw = np.array([[10.0, 20.0, 30.0, 44.0], [5.0, 400.0, 25.0, 420.0]]), np.array([0.9, 0.8])
 
@@ -16,7 +17,9 @@ def test_features_job_masks_the_detector_pool_boxes(monkeypatch):
 
     monkeypatch.setattr(pipeline, "_CACHE", Cache())
     monkeypatch.setattr(pipeline, "_STYLE", "silk")
-    i, lt, f, shape, rs, hist = pipeline._feat_job((0, 500, raw))
+    lrow = video_mod.legend_top(Cache().panel(0))
+    i, lt, f, shape, rs, hist = pipeline._feat_job((0, 500, raw, lrow))
+    assert lt == lrow
     assert i == 7 and shape == (535, 945)
     assert np.array_equal(rs, detect.AvatarDetector.drop_legend(raw, lt)) and len(hist) == len(rs)
     assert len(f.pts) == len(f.des)
@@ -482,3 +485,44 @@ def test_film_lazy_leads_match_eager_reads():
         assert got == film.crossings_from_rows(eager, odo_at, f0=0.0) and list(got) == [300]
         assert len(calls) < n_need
     assert abs(got[300] - 1039.0 / 25.0) < 0.05  # the second crossing, the first had no odometer
+
+
+def test_stable_legend_rows_replace_only_far_rows_of_frames_that_show_the_strip():
+    """The race's list row (median over frames showing the strip) replaces a frame's row more than LEGEND_TOL px off
+    it (a vivid band below the list pushed it under the icons); rows within the tolerance and frames without a strip
+    keep their own."""
+    from hkjc.recon import video
+
+    rows = np.array([437, 436, 438, 437, 505, 459, 428, 437])
+    found = np.array([True, True, True, True, True, True, False, True])
+    out = video.stable_legend_rows(rows, found)
+    assert out.tolist() == [437, 436, 438, 437, 437, 437, 428, 437]
+    assert video.stable_legend_rows(rows, np.zeros(8, bool)).tolist() == rows.tolist()
+
+
+def test_a_wider_vivid_band_below_the_list_moves_legend_scan_but_not_the_race_row():
+    """legend_scan alone follows a wider vivid band below the list (its 30 % threshold rises above the icon rows);
+    the race-level rule restores the list row."""
+    from hkjc.recon import video
+
+    p = np.full((536, 945, 3), (40, 140, 60), np.uint8)  # turf (BGR)
+    p[437:500, 100:300] = (0, 0, 230)  # icon strip: vivid red over 200 px
+    plain = video.legend_scan(p)
+    assert plain == (437, True)
+    q = p.copy()
+    q[520:536, :] = (0, 0, 230)  # a full-width vivid band below the list
+    pushed = video.legend_scan(q)
+    assert pushed[0] >= 500 and pushed[1]
+    rows = [plain[0]] * 9 + [pushed[0]]
+    assert video.stable_legend_rows(rows, [True] * 10).tolist() == [437] * 10
+
+
+def test_legend_slot_crops_use_the_given_row():
+    """The slot crops sit at the given (stabilised) legend row, not at the panel's own legend_top."""
+    from hkjc.recon import ocr
+
+    p = np.random.default_rng(1).integers(0, 255, (536, 945, 3), np.uint8)
+    a = ocr._legend_slot_crops(p, 8, row=437)
+    b = ocr._legend_slot_crops(p, 8, row=505)
+    assert np.array_equal(a[0], p[433:471, max(0, ocr._legend_slot_x(945, 8)[0] - 22):ocr._legend_slot_x(945, 8)[0] + 16])
+    assert not np.array_equal(a[0], b[0])
