@@ -308,7 +308,8 @@ def test_recon_reads_disc_numbers_and_detections_only_where_the_mask_applies():
     assert readers("self.legend_rows()") == ["_core_product", "_fuse_final"]
     assert readers("self.world_dets()") == ["_observed_dets", "rails"]  # _observed_dets applies the detection mask
     assert readers("self._observed_dets()") == ["_shape_bias", "observe"]
-    assert readers('self.p("dets.npz")') == ["_backfill_yolo", "silk", "world_dets"]
+    # _evidence passes dets.npz to appearance.load only for the alignment check (row count and file md5, no boxes)
+    assert readers('self.p("dets.npz")') == ["_backfill_yolo", "_evidence", "silk", "world_dets"]
     assert {"rails", "silk", "detect"} & RaceRun._downstream(READS_EVIDENCE) == set()
 
 

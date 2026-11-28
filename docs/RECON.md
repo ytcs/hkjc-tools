@@ -420,7 +420,8 @@ It is the sum of:
   between dropped-digit partners;
 - appearance (silk render, `recon.appearance`): the learned avatar model's calibrated per-detection log
   p(runner | crop), read from the run dir's `appearance.npz` (an upstream artifact of the frozen M3-R2 model, rows =
-  dets.npz rows; a silk-render run without it fails). The softmax has no "not a horse" outcome, so each detection's
+  dets.npz rows; a silk-render run without it fails, and so does one whose file was computed from another dets.npz:
+  its `n_dets` and `dets_md5` must match the run's dets.npz). The softmax has no "not a horse" outcome, so each detection's
   ratio to a uniform read is P(horse)·G·p + (1 − P(horse)) (G runners with an official silk). Detections of one
   avatar are strongly correlated, so the unit is the tracker tracklet: each detection weighs 1/(1 + (n − 1) `RHO`),
   n the tracklet's P(horse)-weighted count, and the tracklet reads q = (1 − `EPS`) softmax + `EPS`/H. Appearance

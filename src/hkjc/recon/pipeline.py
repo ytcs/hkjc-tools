@@ -1158,8 +1158,7 @@ class RaceRun:
         if silk_style:  # the learned render appearance term is the silk render's appearance evidence
             from . import appearance
 
-            with np.load(self.p("appearance.npz")) as za:
-                app = {k: za[k] for k in ("logp", "ok", "nos", "has_gif")}
+            app = appearance.load(self.p("appearance.npz"), self.p("dets.npz"))
             ev.silk_cost = appearance.costs(app, T["det_idx"], ev.seg, ev.n_seg, ev.horses, ev.p_horse, members)
         return ev
 
