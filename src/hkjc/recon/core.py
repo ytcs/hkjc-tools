@@ -776,6 +776,9 @@ def _logdet(ab):
     return 2.0 * float(np.log(c[0]).sum()), c
 
 
+SD_EVERY = 10  # grid points between the posterior variances State.sd solves exactly (interpolated between)
+
+
 @dataclass
 class State:
     tg: np.ndarray
@@ -791,12 +794,13 @@ class State:
     obs_l: Obs = None
     has_obs: np.ndarray = None  # per horse: any observation
 
-    def sd(self, A, every=10, cache=None, factors=None):
+    def sd(self, A, cache=None, factors=None):
         """Posterior sd of every horse on the grid (from the per-horse marginal bands); ``cache`` (dict keyed by the
         band's id) reuses rows of bands seen before (the lateral solve's cached bands); ``factors`` (list) receives each
-        band's lower Cholesky factor (None where the cache answered)."""
+        band's lower Cholesky factor (None where the cache answered). Variances are solved every SD_EVERY grid points
+        and interpolated."""
         n = len(self.tg)
-        idx = np.unique(np.r_[np.arange(0, n, every), n - 1])
+        idx = np.unique(np.r_[np.arange(0, n, SD_EVERY), n - 1])
         out = np.zeros((len(A), n))
         for h, ab in enumerate(A):
             if cache is not None and id(ab) in cache and cache[id(ab)][0] is ab:
@@ -827,6 +831,7 @@ def _add_cpu(part, t0):
 
 EM_ROUNDS = 20  # EM rounds over the fault chains at most; they stop when the weights change < 1e-3 (4 left J
 # unconverged by up to 12)
+S_NEWTON_IT = 30  # Newton steps of the joint s mode per EM round at most
 
 
 class Model:
@@ -901,7 +906,7 @@ class Model:
         sb = X[St.b, k] * (1 - w) + X[St.b, k + 1] * w
         return sa - sb
 
-    def solve_s(self, obs: Obs, X0=None, rounds=EM_ROUNDS, max_it=30):
+    def solve_s(self, obs: Obs, X0=None):
         """Joint mode of every horse's s under physics, observations and the weighted order factors (EM over the
         fault chains, Newton with line search). -> (X, J_s, J_list, pf, om, per-horse marginal bands, P(order wrong)
         per statement)."""
@@ -929,7 +934,7 @@ class Model:
         pf = np.zeros(len(self.Lr.tau))
         om = np.zeros((H, len(self.Lr.tau)))
         pw = np.zeros(m_st)
-        for _ in range(rounds if m_st else 1):
+        for _ in range(EM_ROUNDS if m_st else 1):
             if m_st:
                 dl = delta(x)
                 _J, pf, om, pw = list_chains(self.Lr, St, _p_order(dl, St.eps)[1], H, dl)
@@ -938,7 +943,7 @@ class Model:
                 if _ > 0 and np.abs(wt_new - wt).max() < 1e-3:
                     break
                 wt = wt_new
-            for _it in range(max_it):
+            for _it in range(S_NEWTON_IT):
                 Ax = _band_matvec(A0, x)
                 gq = 2.0 * (Ax - r0)
                 q0 = float(x @ Ax) - 2.0 * float(r0 @ x)
@@ -1130,7 +1135,7 @@ def evaluate(model: Model, seg_lab, extra_s=None, extra_l=None, X0=None, s_shift
 # the assignment step
 
 
-MIN_GAIN = 2.0  # a proposal is kept when it lowers J by more than this (about 1 nat; below T_POST's resolution)
+MIN_GAIN = 2.0  # a proposal is kept when it lowers J by more than this (about 1 nat)
 
 
 def _band_add_obs(ab, r, tg, t, y, sd, sign=1.0):
@@ -1741,7 +1746,6 @@ T_PROB = 100.0  # the probability output's temperature: the smallest whose confi
 POST_PRUNE = 2.0 * T_PROB * np.log(1e4)  # J: an alternative whose closed-form screen is above this (weight < 1e-4)
 # keeps that screen as its dJ
 POST_FULL = 100.0  # J: of the POST_K lowest, only those screened below this get a full state step
-T_POST = 10.0  # J's per-detection terms treat correlated errors as independent: the posterior is tempered by this
 ABREAST_S, ABREAST_L, ABREAST_T = 1.5, 3.0, 5.0  # m, units, s: two paths this close for this long run level
 EXCH_S, EXCH_L = 3.0, 4.0  # m, units: two paths this close at a camera cut may exchange labels from it on
 CHAIN_NEAR, CHAIN_K, CHAIN_DT = 10.0, 8, 1.0  # m, chains, s: an inconsistent chain trades labels with the
@@ -2402,19 +2406,6 @@ def alternative_posterior(lab, alts, H):
     return P / P.sum(1, keepdims=True)
 
 
-def posterior(seen, lab, J_best, H):
-    """Per segment P(label) (H + 1 columns, the last clutter) over every labelling the solve scored, each weighted by
-    exp(-(J - J_best) / (2 T_POST)); the kept labelling has J_best."""
-    labs = np.array([x for x, _ in seen]) if seen else np.array([lab])
-    J = np.array([j for _, j in seen]) if seen else np.array([J_best])
-    w = np.exp(-(J - J.min()) / (2.0 * T_POST))
-    P = np.zeros((labs.shape[1], H + 1))
-    col = np.where(labs >= 0, labs, H)
-    for i in range(len(w)):
-        P[np.arange(labs.shape[1]), col[i]] += w[i]
-    return P / P.sum(1, keepdims=True)
-
-
 def segment_moves(model: Model, lab, U):
     """Every single segment moved to a horse (the horse's segments overlapping it become clutter) or to clutter, where
     its unary at the state is less than SEG_SLACK above its current one. -> list of (description, labelling)."""
@@ -2563,7 +2554,6 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
     candidates from the companion's final labelling and every start, then crossovers against the five init labellings
     and the companion) and the probability output."""
     ev = model.ev
-    seen = []  # every labelling the state step scored: (labels, J); the posterior over them gives the marginals
     memo = {}
     last_rf = []  # the latest polish round's Refit (its state and memoised one-horse refits)
     cnt = dict(full=0, rounds=0, steps=0, acc_r=0, acc_p=0)
@@ -2581,7 +2571,6 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         st_ = evaluate(model, labs, extra_s, extra_l, s_shift=s_shift)
         cpu["state"] += time.process_time() - t0
         cnt["full"] += 1
-        seen.append((np.asarray(labs).copy(), st_.J))
         memo[key] = st_
         return st_
 
@@ -2840,9 +2829,7 @@ def solve(model: Model, start=(), extra_s=None, extra_l=None, s_shift=None, log=
         + ", ".join(f"{k} {v:.1f}" for k, v in cpu.items()))
     U = unaries_of(st, lab)
     ends = [a[1] for a in alt[:DESCENTS]]
-    if not polish:  # a preliminary solve: its marginals are not a product's
-        return Result(lab, st, U, posterior(seen, lab, st.J, model.H), hist, ends)
-    if not final:  # a product whose probabilities nothing reads
+    if not (polish and final):  # a pre-solve or a product whose probabilities nothing reads
         return Result(lab, st, U, None, hist, ends)
     t0 = time.process_time()
     rf = last_rf[0] if last_rf and last_rf[0].st is st and np.array_equal(last_rf[0].lab, lab) else None

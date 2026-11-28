@@ -16,18 +16,6 @@ def test_node_free_uses_one_length_and_the_abreast_spacing():
     assert f[3][1].tolist() == [True, True]
 
 
-def test_core_posterior_is_uncertain_where_scored_labellings_cost_alike():
-    """det_labels_final.npz `prob` comes from the core's posterior over the labellings the solve scored (tempered by
-    T_POST): two labellings of a segment within a few J units leave it uncertain; one far worse leaves it near 1."""
-    from hkjc.recon import core
-
-    seen = [(np.array([0, 1, -1]), 1000.0), (np.array([1, 0, -1]), 1002.0), (np.array([0, 1, 0]), 1400.0)]
-    P = core.posterior(seen, np.array([0, 1, -1]), 1000.0, 2)
-    assert np.allclose(P.sum(1), 1.0)
-    assert 0.4 < P[0, 0] < 0.6 and 0.4 < P[1, 1] < 0.6
-    assert P[2, 2] > 0.99
-
-
 # ------------------------------------------------------------------------------------------- frozen running-order list
 def _held(read, t):
     return np.tile(np.asarray(read, int), (len(t), 1))

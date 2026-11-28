@@ -642,39 +642,3 @@ def identity_match(
         n=len(keys),
     )
     return out, fit
-
-
-def eliminate(fit, labelled_keys, used_nums, *, tol=0.12, sep=0.15):
-    """ELIMINATION at the line: tracklets that reach the line WITHOUT a label are matched only to
-    numbers that have NO line-reaching tracklet (``used_nums``), under the race-wide label-free
-    registration (``fit`` from identity_match: t_w, C, tc, gaps). Back-markers never appear in the
-    top-8 legend, so the legend cannot name them. A pair is accepted if its residual < ``tol`` and
-    forbidding it raises the optimal assignment cost by >= ``sep`` s (assignment-level ambiguity).
-    -> {key: num}."""
-    from scipy.optimize import linear_sum_assignment
-
-    keys = [k for k in fit["tc"] if k not in labelled_keys]
-    nums = [n for n, g in fit["gaps"].items() if n not in used_nums and np.isfinite(g)]
-    if not keys or not nums:
-        return {}
-    t = np.array([fit["tc"][k] for k in keys])
-    P = fit["t_w"] + np.array([fit["gaps"][n] for n in nums]) / fit["C"]
-    R = np.minimum(np.abs(t[:, None] - P[None, :]), 1.0)
-    pad = max(len(keys), len(nums))
-    Rp = np.full((pad, pad), 1.0)  # dummy rows/cols = "unmatched" at the cap cost
-    Rp[: len(keys), : len(nums)] = R
-
-    def cost(M):
-        r, c = linear_sum_assignment(M)
-        return M[r, c].sum(), r, c
-
-    c0, r, c = cost(Rp)
-    out = {}
-    for i, j in zip(r, c):
-        if i >= len(keys) or j >= len(nums) or R[i, j] >= tol:
-            continue
-        M = Rp.copy()
-        M[i, j] = 10.0
-        if cost(M)[0] - c0 >= sep:
-            out[keys[i]] = int(nums[j])
-    return out

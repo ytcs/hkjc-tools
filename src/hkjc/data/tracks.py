@@ -64,22 +64,6 @@ class TrackGeometry:
         dm = d_from_finish % self.circumference
         return any(a <= dm < b for a, b in self.bend_segments)
 
-    def bend_fraction(self, distance: float, step: float = 25.0) -> float:
-        """Fraction of a race of ``distance`` run on turns."""
-        pts = max(1, int(distance / step))
-        ds = [distance * (i + 0.5) / pts for i in range(pts)]
-        return sum(self.is_bend(d) for d in ds) / pts
-
-
-# ----------------------------------------------------------- physical scale constants
-THOROUGHBRED_LENGTH_M = 2.4    # nose-to-tail; the HKJC margin unit ("a length", ~8 ft)
-HORSE_LANE_WIDTH_M = 1.10      # effective lateral lane a galloping horse+jockey occupies
-                              # (barrel ~0.5-0.6 m + leg spread/safety) = min centre-to-centre
-
-# Uniformly spaced stalls across the full track width; draw d sits in stall d (scratchings leave
-# gaps, so this is the venue standard, not the field size). Maps draw -> start lateral.
-BARRIER_STALLS = {"HV": 14, "ST": 14}
-
 
 # --------------------------------------------------------------------------- venues
 # Happy Valley turf, measured (see the module docstring):
@@ -162,14 +146,6 @@ SHA_TIN_AWT = TrackGeometry(
     courses={"AWT": (365.0, 22.8)},
     bend_segments=((365.0, 795.0), (1130.0, 1560.0)),
 )
-
-TRACKS = {
-    "HV": HAPPY_VALLEY,
-    "ST": SHA_TIN_TURF,
-    "ST_BACK": SHA_TIN_TURF_BACK,
-    "ST_STRAIGHT": SHA_TIN_STRAIGHT,
-    "ST_AWT": SHA_TIN_AWT,
-}
 
 _AWT_ALIASES = {"awt", "aw", "dirt", "all weather", "all-weather", "all weather track"}
 

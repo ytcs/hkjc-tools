@@ -3,8 +3,7 @@
 The **reference data** of Hong Kong racing: the physical tracks, the handicap/
 competition system, and the pari-mutuel pools with their economics. This is the
 authoritative, slow-changing layer. The track geometry is encoded in `hkjc.data.tracks`
-(`TrackGeometry`, `TRACKS`, `track_for`; the first and last are also exported from
-`hkjc.data`) and the incident codes in `hkjc.data.historical.incidents`; import those
+(`TrackGeometry`, `track_for`; both are also exported from `hkjc.data`) and the incident codes in `hkjc.data.historical.incidents`; import those
 rather than hard-coding them. The competition and betting rules are documented here only.
 
 > Venue codes used everywhere: **`ST` = Sha Tin**, **`HV` = Happy Valley** — the only
@@ -28,8 +27,7 @@ geometry is *not* fixed per venue. The `Course` field (`A`, `A+2`, `B`, `B+2`, `
 | C | 21.3 m | 22.5 m |
 | C+3 | 18.3 m | 19.5 m |
 
-`hkjc.data.tracks` holds a `TrackGeometry` per *venue × surface × configuration* (the
-`TRACKS` dict) with a resolver `track_for(venue, distance, surface)`. Widths and home
+`hkjc.data.tracks` holds a `TrackGeometry` per *venue × surface × configuration* with a resolver `track_for(venue, distance, surface)`. Widths and home
 straights are official. The turf bend segments are measured from the rendered rail's
 curvature (> 1 mrad/m, 201 races; method in the `hkjc.data.tracks` docstring), with
 distances on the odometer's line about 4 m outside the rail. The encoded geometries:

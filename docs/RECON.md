@@ -301,8 +301,6 @@ not a dropped digit of the current one, and it holds for the next 20 reads, ~2 s
 swaps identities where discs touch. Swaps between 1 and 11 (or 2 and 12, ...) look like dropped digits and are
 not caught.
 
-`HKJC_PERTURB_SEED=k` drops 1 % of detections here (seeded) for robustness ensembles.
-
 ### finish
 
 The full feed is scanned from `distance/18` s for 70 s for the finish camera: a white vertical line at a stable
@@ -813,9 +811,6 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
   the unmasked run is the reference.
 - **Lateral yardstick.** AUC of final-path lateral position against the stewards' comments (WIDE > INSIDE, with
   MID between).
-- **Perturbation ensembles.** Seeds of `HKJC_PERTURB_SEED` per race; arms are compared paired by seed with SE from
-  per-seed differences, under an adoption rule declared before reading results. A run never scores a directory
-  another run writes into.
 - **Identity score.** Spearman of reconstructed vs official crossing times and the share of horse-boundaries
   within 0.25 s after removing each boundary's common mode.
 - **Per-horse census** (what a viewer of the synced video sees). A horse-run is good when its posterior sd < 3 m
@@ -834,7 +829,7 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
 - `HKJC_OCR_THREADS`, `HKJC_OCR_DEVICE`: OCR threads and device. `HKJC_MATCH_DEVICE=cuda`: ORB brute-force tables
   on the GPU in a helper interpreter (integer popcounts, OpenCV's tie order).
 - `HKJC_FILM_DEVICE`: the film detector alone, e.g. `intel:gpu`.
-- `HKJC_MASK`, `HKJC_FINAL_HOLDOUT`: the mask (§3). `HKJC_PERTURB_SEED`: seeded 1 % detection drop in `observe`.
+- `HKJC_MASK`, `HKJC_FINAL_HOLDOUT`: the mask (§3).
 
 Scheduling: one matcher helper interpreter serves the race from features to pose, and features runs the avatar
 detector in its own process feeding up to 4 feature workers (a CUDA context per race from features to pose).

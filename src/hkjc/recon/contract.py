@@ -376,36 +376,6 @@ def position_flag(run, P):
     return cr, node_pos_ok(cr, P, dets)
 
 
-def flag_run(rd, key, mask=None, conflicts=False):
-    """Research-script entry (same signature as the scorecard's flag.py): stretches of run dir ``rd`` (race ``key``),
-    ``mask`` None | ("discs", phase) | ("legend", phase) with 10 s blocks. -> (stretches DataFrame, rows DataFrame,
-    {})."""
-    from pathlib import Path
-
-    import polars as pl
-
-    from ..data import Mask, race_info
-    from .pipeline import RaceRun
-
-    d_, v, n = key.split("_")
-    mk = Mask()
-    if mask is not None:
-        mk = Mask(discs=10.0, discs_phase=mask[1]) if mask[0] == "discs" else Mask(legend=10.0, legend_phase=mask[1])
-    run = RaceRun(race_info(d_, v, int(n)), root=str(Path(rd).parent), log=lambda *a, **k: None, mask=mk)
-    P = pl.read_parquet(run.p("paths.parquet"))
-    st, rows = flag_stretches(run, P)
-    if not st:
-        return pl.DataFrame(), pl.DataFrame(), {}
-    T = np.load(run.p("tracks.npz"), allow_pickle=True)
-    D = float(run.info.distance)
-    ST = pl.DataFrame([dict(r, race=key, stretch_id=i) for i, r in enumerate(st)])
-    DT = pl.concat([pl.DataFrame(dict(horse=[r["horse"]] * len(g), stretch_id=[i] * len(g), row=g,
-                                      t=T["t"][g].astype(float), s=D - T["d"][g].astype(float),
-                                      lat=T["lat"][g].astype(float), tier=[r["tier"]] * len(g)))
-                    for i, (r, g) in enumerate(zip(st, rows))])
-    return ST, DT, {}
-
-
 # ------------------------------------------------------------------------------------------------------ uncertainty
 # Along-track error terms the posterior sd_s omits, added at write time (the paths are unchanged). They do not meet the
 # calibration targets yet (RECON 7).
@@ -1080,16 +1050,15 @@ def id_signals(run, P) -> dict:
     return dict(horses=horses, tg=tg, sections=secs, section_masks=masks, bends=bends)
 
 
-def id_robust(run, P, thresholds=None):
-    """``id_robust`` of run ``run`` on its final paths ``P`` (``id_signals``); ``thresholds`` {(style, window): (tR, tP)},
-    default ``ID_THRESHOLDS``. -> (per row of ``P``: its node's section unit is robust (no unit: False); sections with
+def id_robust(run, P):
+    """``id_robust`` of run ``run`` on its final paths ``P`` (``id_signals``) under ``ID_THRESHOLDS`` {(style, window):
+    (tR, tP)}. -> (per row of ``P``: its node's section unit is robust (no unit: False); sections with
     their verdict ``robust``; bends with ``robust`` (None without a bend node); yield dict)."""
-    th = ID_THRESHOLDS if thresholds is None else thresholds
     style = "circle" if run.p("numbers.npz").exists() else "silk"
     sig = id_signals(run, P)
 
     def ok(r, window):
-        tR, tP = th[(style, window)]
+        tR, tP = ID_THRESHOLDS[(style, window)]
         return bool(r["Rmax"] <= tR and (not np.isfinite(r["P"]) or r["P"] >= tP))
 
     horses, tg = sig["horses"], sig["tg"]

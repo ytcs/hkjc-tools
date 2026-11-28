@@ -1041,14 +1041,9 @@ class RaceRun:
                     odo=odo, d_lead=d_lead)
 
     def _observed_dets(self):
-        """observe's detections: world_dets less the perturbation and the mask's withheld detections
-        (``self._wd_idx`` follows) -> rows, X, hist"""
+        """observe's detections: world_dets less the mask's withheld detections (``self._wd_idx`` follows)
+        -> rows, X, hist"""
         rows, X, hist, _P = self.world_dets()
-        seed = os.environ.get("HKJC_PERTURB_SEED")  # DIAGNOSTIC: robustness perturbation
-        if seed:  # drop 1 % of detections (seeded) -> spread of the downstream gate metrics
-            keep = np.random.default_rng(int(seed)).random(len(rows)) >= 0.01
-            rows, X, hist = rows[keep], X[keep], hist[keep]
-            self._wd_idx = self._wd_idx[keep]
         if self.mask.dets:  # evidence mask: withheld detections, as if the detector had missed them
             keep = ~np.isin(self._wd_idx, np.fromiter(self.mask.dets, int))
             rows, X, hist = rows[keep], X[keep], hist[keep]
@@ -1944,22 +1939,6 @@ class RaceRun:
         w = np.where(t < kt[0], kw[0] + d[0] * (t - kt[0]), w)
         return np.where(t > kt[-1], kw[-1] + d[-1] * (t - kt[-1]), w)
 
-    def _metric_corrected(self, obs, paths, bias=None):
-        """FINAL product only: the render's distance metric has a smooth SHARED error b(s) (all
-        horses cross a boundary early/late together), and many render observations treated as
-        independent would outvote the single official time. b at each official boundary = median
-        over horses of (crossing delay x speed), interpolated along s; render s shifted by b."""
-        bias = self._metric_bias(paths) if bias is None else bias
-        if bias is None:
-            return obs
-        sb, b = bias
-        out = []
-        for ob in obs:
-            if ob.feed == "render" and ob.s is not None:
-                ob = replace(ob, s=ob.s + np.interp(ob.s, sb, b))
-            out.append(ob)
-        return out
-
     # m: the render metric bias at the line minus at the last official boundary before it (median over the tune half
     # of the Stage A development list, main's video paths: silk +1.07 (check half +1.68); disc -0.50, within its
     # spread of zero (sd 2.4 m over 10 races), so 0)
@@ -2030,10 +2009,6 @@ class RaceRun:
         """The finish camera's cached scan (finish.npz) for ``finishcam``: line, cloth reads, and the camera's
         geometry (Happy Valley's is overhead: one image band per lane; Sha Tin's is side-on)."""
         return dict(line_x=float(zf["line_x"]), reads=zf["reads"], overhead=self.info.venue == "HV")
-
-    def _fc_read(self, zf) -> set:
-        """Horses the finish camera read (negative evidence / shadow-path tie-break): those with a GAP."""
-        return {int(k) for k in finishcam.finish_gaps(self.finish_sc(zf))[1]}
 
     def paths(self):
         import polars as pl
