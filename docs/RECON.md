@@ -3,7 +3,7 @@
 `hkjc.recon` turns one race's facts (`hkjc.data.race_info`) and its four HKJC replay videos into
 per-horse paths on the race clock (`t = 0` when the gates open), each with a posterior sd: `d(t)` metres to the
 finish along the racing rail, `s = distance − d` metres run, and `lat(t)` outward of the racing (movable) rail in
-the render's lateral units (§8; metres in `lat_m` where a validated map exists, §4).
+the render's lateral units (§7; metres in `lat_m` where a validated map exists, §4).
 
 ```python
 from hkjc.data import race_info
@@ -13,7 +13,7 @@ run = RaceRun(race_info("20260603", "HV", 8)); run.run(); run.paths()
 
 CLI: `uv run --group vision python -m hkjc.recon DATE VENUE RACE_NO [...] [--force stage,...] [--stages stage,...]
 [--mask SPEC] [--root DIR]`. Stages are cached under `<root>/<date>_<venue>_<no>/` (default root
-`data_cache/recon`); a stage is skipped when its outputs exist. Environment variables: §7.
+`data_cache/recon`); a stage is skipped when its outputs exist. Environment variables: §6.
 
 ## 1. What the library produces
 
@@ -33,8 +33,7 @@ no feed acting as a master that the others correct.
 | `timings.jsonl` | per stage: wall s, CPU s (the stage's process and its own children; background stages count only in their own record), peak RSS |
 | `mask.txt` | the run's mask, when not empty (§3) |
 
-Computer vision is validated by reprojecting the reconstruction onto raw frames (`viz.reproject`, the
-synced video), because aggregate numbers hide failures. Gates are fixed and never loosened after seeing
+Computer vision is validated on raw frames, because aggregate numbers hide failures. Gates are fixed and never loosened after seeing
 results; failures are reported as failures.
 
 ## 2. Information and where it enters
@@ -103,7 +102,7 @@ non-empty mask in `mask.txt`, and a run refuses a dir whose mask-dependent artif
 mask (the outcome part governs `fuse_final`/`validate`, the evidence part `observe` and everything downstream;
 an evidence-masked run therefore starts from a dir without `observe`'s outputs). A withheld boundary is absent
 from the official observations, sets no metric bias (a withheld finish takes the prior step `FINISH_STEP` from the
-last visible boundary, §4) and is not re-timed, so the product's error there is independent of that record. The yardsticks built on the mask are in §6.
+last visible boundary, §4) and is not re-timed, so the product's error there is independent of that record. The yardsticks built on the mask are in §5.
 
 ## 4. Pipeline
 
@@ -118,7 +117,7 @@ done; a failed stage terminates the background stages.
 Stages that read a later part of a replay (film, finish, silk, the shifted clock search) seek to the IDR keyframe
 before the first frame they need (`video.decode_from`; same frame indices and pixels as decoding from frame 0, else
 it decodes from frame 0). ONNX Runtime sessions (avatar detector, OCR) run with intra-op spin-waiting off
-(`ortsession.no_spin`): same threads and work split, identical outputs. Devices and scheduling: §7.
+(`ortsession.no_spin`): same threads and work split, identical outputs. Devices and scheduling: §6.
 
 ### frames
 
@@ -759,21 +758,7 @@ finish-order inversions). `audit.rail_blocking` flags the rail as unusable on a 
 stations, fewer than 3 markers, or marker spacing off by more than 10 %; it is logged, and the audit never fails or
 stops a run.
 
-## 5. Feed synchronisation
-
-`viz.sync_video` draws the four feeds beside the reconstructed field on a map built from the run's own rail.
-Offsets, supplied by the caller, are video seconds at race clock 0: a constant or `[(race t, offset), ...]`
-interpolated linearly (`None`: the feed is drawn blank).
-- aerial: `run.clock_f0() / 25`, the race-clock zero (after `start` re-anchoring) at 25 fps.
-- full: `viz.full_offset`, the lag maximising thumbnail correlation between the aerial's left panel (a scaled
-  copy of the TV picture) and the full feed, on two windows, added to the aerial's offset.
-- patrol and drone: no offset is computed; the caller reads the gate opening on the feed. The drone feed loses
-  time during the race, so it is anchored at both the gate and the finish board where the board is visible.
-
-Display: a ring marks sd 1.5–3 m, a hollow marker 3–10 m; positions with sd > 10 m are omitted and listed as
-"not placed"; the leader and window use sd < 3 m. A small sd does not flag a confident error.
-
-## 6. Acceptance
+## 5. Acceptance
 
 ### Fixed gates (`recon.validate`)
 
@@ -840,9 +825,9 @@ What each measures and how; the scripts beyond `validate`/`audit` live outside t
 - **Glitch-seconds** (product). Per horse, gap = d − the median d of horses still running; horse-seconds where
   the gap changes by > 3 m/s over a 1 s window, between the first render detection + 1 s and the first finisher
   − 1 s, with sd < 3 m at both ends.
-- **Pixels.** `viz.reproject` and the synced video; every change is checked on frames.
+- **Pixels.** Every change is checked on frames.
 
-## 7. Environment
+## 6. Environment
 
 - `HKJC_DEVICE`: `cpu`, `cuda`, `intel:…` (OpenVINO). `HKJC_NPROC`: workers per race. `HKJC_AVATAR_WEIGHTS`:
   detector weights.
@@ -864,7 +849,7 @@ identical. Not bit-exact:
 - Poses depend on the avatar detector's device (CPU, CUDA and OpenVINO boxes differ slightly and change ORB steps),
   so results are compared only within one device.
 
-## 8. Known limitations
+## 7. Known limitations
 
 - **All-weather track.** Not supported: on the brown dirt the avatar detector misses horses, so races on the all-weather
   track are not reconstructed reliably.

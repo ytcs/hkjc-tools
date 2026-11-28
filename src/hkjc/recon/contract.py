@@ -408,7 +408,7 @@ def flag_run(rd, key, mask=None, conflicts=False):
 
 # ------------------------------------------------------------------------------------------------------ uncertainty
 # Along-track error terms the posterior sd_s omits, added at write time (the paths are unchanged). They do not meet the
-# calibration targets yet (RECON 8).
+# calibration targets yet (RECON 7).
 # Shared axis: a race-level latent b(s) common to every horse at the same s. Its core is a stationary OU process along s
 # (variance AXIS_S2 m^2, correlation length AXIS_ELL m) conditioned on its values at the visible anchors (the official
 # boundaries the metric bias is set at); a scale mixture gives it a heavy tail (weight AXIS_PI at AXIS_K x the core sd).

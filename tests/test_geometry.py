@@ -4,10 +4,15 @@ import pytest
 from hkjc.recon import pose, rails, register
 
 
+def sim_matrix(s, th_rad, tx, ty) -> np.ndarray:
+    c, n = s * np.cos(th_rad), s * np.sin(th_rad)
+    return np.array([[c, -n, tx], [n, c, ty], [0, 0, 1.0]])
+
+
 def test_umeyama_recovers_similarity():
     rng = np.random.default_rng(1)
     A = rng.uniform(0, 900, (200, 2))
-    S = register.sim_matrix(1.03, 0.2, 30.0, -12.0)
+    S = sim_matrix(1.03, 0.2, 30.0, -12.0)
     B = A @ S[:2, :2].T + S[:2, 2]
     assert np.allclose(register.umeyama(A, B), S, atol=1e-9)
 
@@ -16,12 +21,12 @@ def test_pose_graph_closes_a_loop():
     K = 40
     ang = np.linspace(0, 2 * np.pi, K, endpoint=False)
     G_true = np.stack(
-        [register.sim_matrix(1.0, a, 1000 * np.cos(a), 1000 * np.sin(a)) for a in ang]
+        [sim_matrix(1.0, a, 1000 * np.cos(a), 1000 * np.sin(a)) for a in ang]
     )
     rel = lambda i, j: np.linalg.inv(G_true[j]) @ G_true[i]  # noqa: E731
     rng = np.random.default_rng(2)
     noisy = [np.eye(3)] + [
-        rel(k - 1, k) @ register.sim_matrix(1.0, rng.normal(0, 2e-3), *rng.normal(0, 1.0, 2))
+        rel(k - 1, k) @ sim_matrix(1.0, rng.normal(0, 2e-3), *rng.normal(0, 1.0, 2))
         for k in range(1, K)
     ]
     G0 = pose.chain(noisy)

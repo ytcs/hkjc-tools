@@ -1,9 +1,0 @@
-20240501_HV_9 lg0: kept final J 65189.6, re-evaluated 64648.8; segments V != F 2
-  final evidence                     J(V) - J(F)    +738.6  (J_s 963, J_lat -229, J_list -2, J_lab 3, J_det 3)
-  without official s observations    J(V) - J(F)    -378.0  (J_s -150, J_lat -229, J_list -1, J_lab 3, J_det -1)
-  without finish crossings           J(V) - J(F)    +738.6  (J_s 963, J_lat -229, J_list -2, J_lab 3, J_det 3)
-  without extra lateral observations J(V) - J(F)    +738.6  (J_s 963, J_lat -229, J_list -2, J_lab 3, J_det 3)
-  metric shift undone                J(V) - J(F)    +226.7  (J_s 455, J_lat -229, J_list -3, J_lab 3, J_det 0)
-  no shift, no extra observations    J(V) - J(F)    -382.2  (J_s -154, J_lat -229, J_list -1, J_lab 3, J_det -1)
-  by window (F with V's labels on the segments starting in it; final evidence):
-       60- 70 s:   2 segments, J   +738.5 (J_s 963, J_lat -229, J_list -2, J_lab 3, J_det 3)

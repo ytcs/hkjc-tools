@@ -1514,7 +1514,7 @@ class RaceRun:
                                                  lane=lane_desc, box=ct.describe_box()), indent=1, default=float))
         return P
 
-    # Lateral in metres. The render spreads the field laterally (RECON 8), more in the compact field
+    # Lateral in metres. The render spreads the field laterally (RECON 7), more in the compact field
     # before the home turn than in the fanned-out home straight. One map, continuous in the distance to go d, for both
     # venues and both drone-era render styles: true = a + b(x) x render lateral, x = d - home straight length,
     # b = LAT_MAP's b at x <= LAT_RAMP[0], LAT_B_FAR at x >= LAT_RAMP[1], linear between. In the home straight it is the

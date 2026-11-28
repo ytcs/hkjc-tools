@@ -62,11 +62,6 @@ def extract(panel, mask, n: int = 3000) -> Feats:
     return Feats(np.float32([k.pt for k in kp]), des)
 
 
-def sim_matrix(s, th_rad, tx, ty) -> np.ndarray:
-    c, n = s * np.cos(th_rad), s * np.sin(th_rad)
-    return np.array([[c, -n, tx], [n, c, ty], [0, 0, 1.0]])
-
-
 def umeyama(A, B) -> np.ndarray:
     """Closed-form least-squares similarity A -> B (3x3)."""
     ma, mb = A.mean(0), B.mean(0)

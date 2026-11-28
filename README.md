@@ -89,7 +89,6 @@ src/hkjc/recon/   race info + videos -> paths
     fusion.py     Bayesian path reconstruction from all feeds' proposals (physics + geometry priors)
     validate.py   fixed gates on the video-only paths vs the full official record
     audit.py      label-free consistency invariants of a reconstruction (audit.json)
-    viz.py        synced four-feed video with the reconstructed track map
 docs/RECON.md     architecture: stages, artifacts, mask and held-out evaluation, gates, environment, known limitations
 docs/HKJC_*.md    HKJC data sources and track specifications
 models/           detector weights (git-ignored)
